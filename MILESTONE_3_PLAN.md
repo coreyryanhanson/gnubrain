@@ -237,8 +237,10 @@ confirmation gate and the `create` flow end to end.
    insert-before-delete; same-or-shallower boundary; final section sweeps
    trailing content), `delete` (block or `doc: true` via `removeDocByID`;
    backlink check over the walk set in the confirmation), `move` (block-level
-   with tool-derived destination anchor from the destination outline; `doc:
-   true` via `moveDocsByID`; self-descendant pre-check; intra-KB by
+   with tool-derived destination anchor from the destination outline — last top-level
+   node of the `toHeadingId` section (heading-recursed), end-of-section semantics
+   identical to `append`; heading-anchored placement rejected as fold-state-dependent
+   per §4 anchor rule; `doc: true` via `moveDocsByID`; self-descendant pre-check; intra-KB by
    construction; doc-level move also covers the un-nest case (`toDocId`
    omitted → `toID` = notebook ID). Anchors always tool-derived; targets
    agent-supplied from echoed data.
@@ -260,6 +262,12 @@ confirmation gate and the `create` flow end to end.
 
 ### Acceptance criteria
 
+- [ ] Unit: move-anchor derivation — end-of-section anchor on a plain section,
+      nested-heading recursion (section ending in a subheading → after the subsection,
+      not inside it), trailing list/quote container anchor (placement at section level,
+      never nested into the container); fold-state independence (folded destination
+      heading does not change the anchor); same-doc move derives the anchor from the
+      already-in-hand outline (no extra kernel call) (§10).
 - [ ] Unit: replace-section call order — mocked suite asserts insert precedes
       delete; failed delete after successful insert leaves duplication, never
       loss (§10).

@@ -701,7 +701,24 @@ for the identity property.
      the doc boundary, which is the whole reason `move` exists as one tool call instead of
      insert-copy + delete (copy-delete mints fresh IDs and orphans every inbound ref to the
      deleted source blocks — the exact §4 no-whole-doc-rewrites hazard at block granularity;
-     `moveBlock` preserves block IDs, so provenance survives the move). Omitted
+     `moveBlock` preserves block IDs, so provenance survives the move). **Anchor rule
+     (decision record, kernel-source verified)**: with a `toHeadingId`, the anchor is
+     the **last top-level node of that heading's section**, derived from the destination
+     outline already in hand — last child is itself a heading → step into it, repeat
+     (§3 recursion bound applies); `moveBlock` with `previousID` = that node → exact
+     end-of-section placement, **semantics identical to `append`'s `nextID` idiom** (§4
+     append anchor rule), so "into a section" means end-of-section for both write
+     vehicles and the agent holds one doctrine. Two reasons not to anchor on the heading
+     itself (`previousID = <heading>`): it places the block *first* under the heading
+     (top-of-section), and the kernel's folded-heading branch (`doMove`,
+     `transaction.go:645-650`) silently jumps past the section children when the
+     destination heading is folded — heading-anchored placement is fold-state-dependent,
+     i.e. nondeterministic from data the outline carries. Same-doc moves derive the
+     anchor from the source doc's own outline (already in hand for the result echo) —
+     no extra kernel round-trips. The kernel has no `nextID` for moves (only
+     `insertBlock` honors it — `doMove` never reads `operation.NextID`), so the
+     insert-style "before next heading" idiom is inexpressible; end-of-section via the
+     last-node anchor is the equivalent reachable through `moveBlock`. Omitted
      `toHeadingId` → destination doc end (`appendBlock`-on-root fallback, same default as
      `append`).
    - **`move` with `doc: true` (doc-level, decision record)** — moves the whole source doc
