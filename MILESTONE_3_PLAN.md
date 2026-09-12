@@ -365,7 +365,11 @@ Polish and the M3 gate (§11).
 - [ ] Scope survives session restart (resume reads the persisted entry).
 - [ ] `/kb <name> on` and `/kb all off` land mid-session.
 - [ ] Write confirmation refuse/allow verified interactively.
-- [ ] Auth breaker degrades after 3 consecutive auth failures (live).
+- [ ] Auth breaker degrades after 3 consecutive auth failures (live): set a
+      bogus token, issue 3 read calls (each errors), then a 4th — assert it
+      returns `refused` with zero kernel requests (request-log evidence), and
+      that `/kb` recovery with the corrected token restores reads. 429s in
+      between do not reset the consecutive count (§5 breaker rule).
 - [ ] Write-path integration suite green (Sprint 5b).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
