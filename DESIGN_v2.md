@@ -23,7 +23,7 @@ Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages)
 - **Agent-driven memory loop**: a pi agent distills knowledge into SiYuan during sessions and
   recalls it in later sessions — the "tell it to remember X, restart, ask for X back" test.
 - **General and robust from day 1**: clean package boundaries, typed client, version-checked
-  API. Two separate repositories — `siyuan-kernel-api` (npm-published client) and `pi-kb`
+  API. Two separate repositories — `siyuan-kernel-api` (npm-published client) and `gnubrain`
   (local-only extension; split done and validated in M1).
 - **Model-neutral**: the extension makes **zero** model/provider calls. The agent is the
   intelligence; SiYuan is the memory.
@@ -37,7 +37,7 @@ Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages)
   first (GBrain's own zero-key mode proves it works), and v1 stays embedding-free by
   construction so the vector sidecar lands later without re-architecture (§6 — vectors are
   derived data over the same storage).
-- No npm publication of the `pi-kb` extension itself (shared locally); no hard multi-KB
+- No npm publication of the `gnubrain` extension itself (shared locally); no hard multi-KB
   isolation (see §6, Named ceilings).
 - No backup machinery — whatever backs the workspace (git, SiYuan sync, nothing) is the
   user's business. The extension only ever speaks to the kernel API.
@@ -53,7 +53,7 @@ repos green, `file:` dependency working):
 ┌────────────────────────────┐        ┌──────────────────────────────┐
 │  pi (harness, agent loop)  │        │  host: docker-compose SiYuan │
 │  ┌──────────────────────┐  │  HTTP  │  kernel API, port 6806      │
-│  │ pi-kb extension      │──────────▶│  Authorization: Token <key> │
+│  │ gnubrain extension   │──────────▶│  Authorization: Token <key> │
 │  │ (tools, scope)       │  │        │                             │
 │  └─────────┬────────────┘  │        │  workspace data/            │
 │            │ library       │        │   └─ kb/ (.sy doc trees)    │
@@ -105,7 +105,7 @@ repos green, `file:` dependency working):
   extension's parser certification (§3).
 - Any extension can consume it; only this project's KB extension registers pi tools.
 
-### `pi-kb` extension (the pi extension)
+### `gnubrain` extension (the pi extension)
 
 - Registers the curated pi tool set (query/search/read/write-back).
 - Owns all pi API surface: `session_start`/`session_shutdown`, `pi.appendEntry` scope state,
@@ -160,7 +160,7 @@ Curated pi tools (one set, not per-KB):
 Tool results are a **map, not the territory**: oversized results are cached to disk, never
 truncated away. Mechanism adopted from the proven shape in `~/pi-browser`
 (`capFetchContent`): content within the inline limit is returned directly; overflow is
-written to `os.tmpdir()/pi-kb/<session-id>/{tool}-{sha256-16hex}.jsonl|.md` — per-session
+written to `os.tmpdir()/gnubrain/<session-id>/{tool}-{sha256-16hex}.jsonl|.md` — per-session
 subdirectory, so concurrent sessions querying the same KB never collide — hash =
 first 16 hex chars of the SHA-256 of the full spilled content, so identical payloads
 dedupe and names never collide. **No cleanup machinery** (decision record):
@@ -201,7 +201,7 @@ default and the per-KB search `pageSize`) and one helper.
   earned.
 - **query scoping (decision record)** — `kb` (array, §5) resolves to notebook IDs; the
   extension owns the `box IN (...)` predicate, the agent never writes `box` or knows IDs.
-  Certification is **parser-based, not token-scanned**: `pi-kb` uses **`node-sql-parser`**
+  Certification is **parser-based, not token-scanned**: `gnubrain` uses **`node-sql-parser`**
   (SQLite dialect) — the extension's one runtime dependency of its own (the client is the
   other dependency, and `siyuan-kernel-api` itself stays zero-dep; scoping is policy, and
   §3 policy is extension-owned) — **pinned to the exact
@@ -1003,13 +1003,13 @@ duplicate doc, never a silent clobber.
 ## 5. Multi-KB config & scope state
 
 - **Config (declarative)**: settings.json holds the KB array plus connection settings under
-  one parent key, `pi-kb` — the parent key matches the package name, avoiding settings.json
+  one parent key, `gnubrain` — the parent key matches the package name, avoiding settings.json
   namespace collisions with other extensions (renaming later would be a breaking config
   change; accepted for local-only use). Exact shape:
 
   ```json
   {
-    "pi-kb": {
+    "gnubrain": {
       "baseUrl": "http://192.168.100.1:6806",
       "apiToken": "…token copied from the workspace conf.json…",
       "kbs": [
@@ -1098,7 +1098,7 @@ duplicate doc, never a silent clobber.
   fires on any upgrade.
 - **Write confirmation across modes (decision record)**: interactive sessions always
   confirm writes via `pi.ui.confirm`; sessions with no UI at all (`pi -p`) require
-  `pi-kb.allowUnattendedWrites: true` (default false = default-deny: no UI ⇒ write
+  `gnubrain.allowUnattendedWrites: true` (default false = default-deny: no UI ⇒ write
   refused). **RPC mode (`pi --mode rpc`) is NOT headless for this rule** (pi source-read,
   deliberately not pinned by test): `ctx.ui.confirm` in RPC mode emits an
   `extension_ui_request` (`method: "confirm"`) over stdout and blocks until the client
@@ -1112,7 +1112,7 @@ duplicate doc, never a silent clobber.
   unattended writes — a full client behaves like an interactive session with a remote
 confirm UI, a minimal one degrades to refused writes. The sub-protocol behavior is
 checked once, manually, at first real RPC use (§10 residual checklist). The timeout value is the
-  **`pi-kb.writeConfirmTimeout`** setting (seconds, default 60 — pinned, not invented
+  **`gnubrain.writeConfirmTimeout`** setting (seconds, default 60 — pinned, not invented
   per implementer; this is the disruption-vs-oversight dial, so it is user-owned rather
   than a constant): `0` waits **indefinitely** (the dialog blocks the write until
   answered — the right value for a user who is usually at the keyboard; no tokens burn
@@ -1171,10 +1171,10 @@ writes; the opt-out is typed, in settings.
     convention survives, so no janitor subcommand exists); a KB named `all` is rejected
     at shape validation (validation order, above).
 - **Scope read rule**: active scope = the latest `kb-scope` entry in the session file,
-  else `pi-kb.defaultKBs` — latest entry wins, so resume/fork and mid-session switches
+  else `gnubrain.defaultKBs` — latest entry wins, so resume/fork and mid-session switches
   are the same mechanism. The `kb`-param rejection message names the command:
   *`'projects' exists but is not in the active scope — activate it with /kb, or
-  change pi-kb.defaultKBs in settings`*.
+  change gnubrain.defaultKBs in settings`*.
   - **Headless bound (decision record)**: extension commands are dispatched by core
     `session.prompt()` whenever `expandPromptTemplates` is true (the default), and print
     mode (`pi -p`) and RPC mode's `prompt` command both call it unmodified — so `/kb`
@@ -1185,7 +1185,7 @@ writes; the opt-out is typed, in settings.
     itself cannot trigger `/kb` — `sendUserMessage` (the extension/agent path) defaults
     `expandPromptTemplates` to false (`agent-session.ts`), so dispatch only fires on
     directly-typed input. Only user-typed text (slash command, headless prompt text) or
-    settings changes scope. `pi-kb.defaultKBs` remains the default when no `/kb` was
+    settings changes scope. `gnubrain.defaultKBs` remains the default when no `/kb` was
     issued; the `kb`-param rejection message names `/kb` and the `defaultKBs` path without
     claiming either is interactive-only. **Residual (named, not worked around)**: headless
     prompt text is only user-typed when the pipeline says so — a `pi -p` prompt that
@@ -1304,10 +1304,10 @@ writes; the opt-out is typed, in settings.
 - **Fresh-session scope (decision record)**: `appendEntry` state persists across
   resume/fork of the same session file; a brand-new session starts with no scope entries.
   Resolution rule, one line: on `session_start`, active scope =
-  persisted `kb-scope` entries if present, else `pi-kb.defaultKBs` from settings. This keeps
+  persisted `kb-scope` entries if present, else `gnubrain.defaultKBs` from settings. This keeps
   resume behavior unchanged and makes the fresh-session case a *declaration*, not an
   inference — no "if exactly one KB, assume it" cardinality guessing.
-  - `pi-kb.defaultKBs: string[]` — KB names matching the config array, validated against it at
+  - `gnubrain.defaultKBs: string[]` — KB names matching the config array, validated against it at
     `session_start` (a default naming an unknown/renamed/deleted KB warns loudly at startup
     instead of silently producing an empty or half scope; same validation pass covers the
     stale-notebook-config edge). Empty default = strict start-empty behavior for anyone
@@ -1361,12 +1361,12 @@ writes; the opt-out is typed, in settings.
   - Unknown KB (typo) → reject with `unknown KB 'recipies'. Active: recipes, projects`.
   - Valid but not in active scope → reject with the activation path named:
     `'projects' exists but is not in the active scope — activate it with /kb
-    or change pi-kb.defaultKBs in settings`.
+    or change gnubrain.defaultKBs in settings`.
     Keeps the scope boundary meaningful without making it a trap.
   - **Empty array (decision record)**: `kb: []` on the read tools is rejected at the
     extension layer, before any kernel call, with the same envelope as the other
     rejections: `no KBs in scope — activate one with /kb <name> on, or set
-    pi-kb.defaultKBs`. Never forwarded to the kernel on either transport: on query,
+    gnubrain.defaultKBs`. Never forwarded to the kernel on either transport: on query,
     the resolved set would build `box IN ()` (a SQLite syntax error) — or, worse, an
     implementer's "empty filter = no filter" shortcut would skip injection entirely,
     letting box-less aggregate rows (backstop-exempt, since layer 1 is supposed to
@@ -1438,12 +1438,12 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   interface only (`192.168.100.1:6806`, *not* `0.0.0.0`), non-empty access auth code set
   (this is what makes `IsAccessAuthRequired()` true and keeps the anonymous-admin bypass
   path in `CheckAuth` dead), API token copied from the workspace `conf.json` into the
-  extension's settings.json (`pi-kb.apiToken`) — settings.json is the **only** config surface
+  extension's settings.json (`gnubrain.apiToken`) — settings.json is the **only** config surface
   the extension reads (§5); there is no env-var fallback. A user who prefers env indirection
   just puts the value (or a `$VAR` reference, if their settings pipeline expands it) into
   settings.json themselves; the access auth code never leaves the host. **Token placement
   is a token-disclosure decision**: settings.json lives where the agent's own tools (file
-  read, shell) can read it, so an agent that goes looking can lift `pi-kb.apiToken` and
+  read, shell) can read it, so an agent that goes looking can lift `gnubrain.apiToken` and
   call the kernel directly — bypassing parser certification, `method` enforcement,
   scoping, and write confirmation at once. Accepted (the threat model is model accident,
   not a hostile agent — §6), but stated plainly: every §3/§4 guard is tool-surface-only.
@@ -1480,7 +1480,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 ## 10. Testing posture
 
 - **Stack**: TypeScript + vitest (pi-tbox precedent); `node-sql-parser@5.4.0` (SQLite
-  dialect, exact-pinned — §3 query scoping) in `pi-kb` is the one runtime dependency of
+  dialect, exact-pinned — §3 query scoping) in `gnubrain` is the one runtime dependency of
   its own besides the client — `siyuan-kernel-api` stays zero-dep.
 - **Unit**: `siyuan-kernel-api` client tested with mocked `fetch` — request shapes, auth header,
   error mapping, version fetch (the core holds no gate — §2 ownership).
@@ -1623,7 +1623,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   spike's round-trip assertions (§3) against the new version, *before* updating the pin.
   A parser bump is earned the same way as a kernel re-pin: verified conclusion, never a
   version-number bump. **Fixture policy**: setup creates **two**
-  disposable notebooks, `pi-kb-test-fixture-a-<timestamp>` and `pi-kb-test-fixture-b-<timestamp>`,
+  disposable notebooks, `gnubrain-test-fixture-a-<timestamp>` and `gnubrain-test-fixture-b-<timestamp>`,
   via the documented `createNotebook` endpoint and teardown removes them via `removeNotebook` —
   every write-path case (and every read case that filters by box) operates only inside the
   fixtures, so a failed run leaves at worst two stray fixture notebooks (recoverable via
@@ -1918,7 +1918,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | --- | --- | --- |
 | 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM against `http://192.168.100.1:6806`; pinned kernel version **3.8.3**. See §8 for the deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning. |
 | 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green; extension loads in a real pi session; offline §5 settings validator enforces the full rejection matrix. No build step in either repo — both ship raw `.ts` (`exports` → `index.ts`). |
-| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0; `pi-kb` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
+| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0; `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
 | 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | Tools callable from pi; scope survives session restart; `/kb <name> on` and `/kb all off` land mid-session; write confirmation refuse/allow verified; auth circuit breaker degrades after 3 consecutive auth failures; write-path integration suite green under the fixture policy (§10), incl. the title-guard kernel round-trip pin, the version-refusal contract pin (§2/§5), the stale-target contract pin (§4), and the headless `/kb` dispatch exercised for real (`/kb all off` from `pi -p` — converting the §5 scope-activation source-read claim into evidence before M4's harness depends on it) |
 | 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write confirmation, status slot) |
 
@@ -1941,7 +1941,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Create addressing (R3, **supersedes the v1 slug mint address**) | Title + stored-title guard on kernel ground truth; ground-truth submission path; verified-create by-ID asserts | Slug-hpath guard; slugifier as mint address | §4, §10 |
 | Title policy (R4, **supersedes the v1 "create determinism" claim**) | Four-tier taxonomy; accepted-duplicate tier; vector sidecar eventually primary | Claiming same-title identity determinism | §4, §6 |
 | User edits (R5) | Safe by construction; no rename-detection machinery or janitor | Hand-rename advisory; `fix-slugs` subcommand | §4, §9 |
-| Settings parent key | Single `pi-kb` parent key (= package name) | Bare `kb` key; flat per-KB keys | §5 |
+| Settings parent key | Single `gnubrain` parent key (= package name) | Bare `kb` key; flat per-KB keys | §5 |
 | Project/global config split | `kbs` + connection global-only **by read path** (extension reads them from the global settings file specifically, never the merged view — pi exposes no settings API to extensions, and array-replace makes warn-on-merge unguardable); `defaultKBs` at both levels, extension-implemented project-wins replace | Projects re-declaring `kbs`; absent = activate-all; warn-on-merged-view enforcement (unguardable for array keys) | §5 |
 | Error surface | Pinned status classes (`ok`/`near_matches`/`duplicate`/`error`/`refused`); `truncated`/`post_filtered` are payload markers | Free-text statuses; `truncated` as a sixth status | §5 |
 | Headless writes | Default-deny via `allowUnattendedWrites`; RPC is not headless; confirm timeout fail-closed | Default-allow; CLI flag; per-session toggle | §5, §9 |
@@ -1956,7 +1956,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Multi-KB search fan-out | One kernel call per resolved KB, merged; per-call truncation accounting | One multi-`paths` call under one `pageSize`; raised `pageSize` | §3, §9, §10 |
 | Search method param | Tool-owned `method: 0`; aux params omitted (kernel defaults) | Agent-supplied `method`/aux params; tool-invented defaults | §3 |
 | replace-section ordering | Insert-before-delete | Delete-then-insert | §4 |
-| Write-confirmation timeout | `pi-kb.writeConfirmTimeout` (default 60 s; `0` = indefinite); timeout refusal `confirm_timeout` is terminal per write | Pinned constant; `0` = auto-approve; non-terminal timeout refusal | §5, §10 |
+| Write-confirmation timeout | `gnubrain.writeConfirmTimeout` (default 60 s; `0` = indefinite); timeout refusal `confirm_timeout` is terminal per write | Pinned constant; `0` = auto-approve; non-terminal timeout refusal | §5, §10 |
 | Auth lockout | Breaker at 3 consecutive auth failures; 429 is its own class with a local cooldown deadline | Message-only 429 refusal; counting 429s toward the breaker; restart-only recovery | §2, §5, §9, §10 |
 | Encrypted notebooks | Rejected at `session_start` validation — one flag check, both lock states (`lsNotebooks` reports `encrypted: true` for locked boxes too) | Warn-and-proceed; a separate locked-box stale-ID drop branch | §5, §9, §10 |
 | Tool surface for reconciliation | `delete` + `move` modes (block/doc level); tool-fetched destination outline | Defer out of v1; insert-copy+delete for cross-doc moves | §4 |

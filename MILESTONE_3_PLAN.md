@@ -4,7 +4,7 @@ Implements the M3 row of DESIGN_v2.md §11: *KB extension — tool set, `kb` par
 validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via
 `appendEntry`), interactive write confirmation.*
 
-Everything here is extension-side (`pi-kb`). The client (`siyuan-kernel-api@0.1.0`)
+Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api@0.1.0`)
 already exposes every kernel method M3 needs — `getVersion`, `listNotebooks`,
 `query`, `search`, `exportMarkdown`, `getChildBlocks`, `createDocWithMarkdown`,
 `insertBlock`/`appendBlock`/`updateBlock`/`deleteBlock`/`moveBlock`,
@@ -43,7 +43,7 @@ The machinery every tool call routes through. No tools registered yet.
    `defaultKBs`; project file wins over global for `defaultKBs`; `kbs` +
    connection keys read from the global settings file only. Absent key = empty
    set, never activate-all. Composition with the existing single-object
-   validator: the full `validatePiKbSettings` run applies to the global file
+   validator: the full `validateGnubrainSettings` run applies to the global file
    (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file
    supplies `defaultKBs` names only, each checked for existence against the
    global `kbs` set — the project file is never run through the full
@@ -117,7 +117,7 @@ The discovery half of the loop. Adds the one new runtime dependency:
 
 1. **Spill/budget helper (§3)** — the four constants (`SPILL_DIR`,
    `PREVIEW_CHARS` 8000, `OUTLINE_HEADINGS` 200, `RESULT_LIMIT` 64) and one
-   helper: per-session temp dir `os.tmpdir()/pi-kb/<session-id>/`, SHA-256-16hex
+   helper: per-session temp dir `os.tmpdir()/gnubrain/<session-id>/`, SHA-256-16hex
    hash names, JSONL vs `.md` spill formats, newline-boundary preview +
    `… N more — full result in <path>`, no cleanup machinery.
 2. **query tool (§3)** — parser certification (single top-level SELECT, DML /
@@ -378,7 +378,7 @@ Polish and the M3 gate (§11).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
       RPC use (§10 residual list).
-- [ ] README/AGENTS.md of `pi-kb` updated to describe the tool surface; DESIGN
+- [ ] README/AGENTS.md of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
