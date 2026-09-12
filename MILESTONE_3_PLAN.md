@@ -42,7 +42,12 @@ The machinery every tool call routes through. No tools registered yet.
 4. **Scope resolution (§5)** — latest `kb-scope` `appendEntry` wins, else
    `defaultKBs`; project file wins over global for `defaultKBs`; `kbs` +
    connection keys read from the global settings file only. Absent key = empty
-   set, never activate-all.
+   set, never activate-all. Composition with the existing single-object
+   validator: the full `validatePiKbSettings` run applies to the global file
+   (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file
+   supplies `defaultKBs` names only, each checked for existence against the
+   global `kbs` set — the project file is never run through the full
+   validator.
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -65,7 +70,8 @@ The machinery every tool call routes through. No tools registered yet.
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
-      set; status-slot rendering headless-safe (§10).
+      set, and the project/global validator composition above; status-slot
+      rendering headless-safe (§10).
 
 ---
 
@@ -78,7 +84,8 @@ Scope persistence and the mid-session activation vehicle.
 2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
    single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
    `all off`; zero-valid-KB no-op reported); reserved keyword `all` (names
-   already rejected in `settings.ts`); verbless `/kb <name>` prints usage.
+   already rejected in `settings.ts`, so the S2 test exercises the `/kb`
+   subcommand dispatch of `all` only); verbless `/kb <name>` prints usage.
 3. **Recovery hook (§5)** — every `/kb` dispatch re-runs the full validation pass
    (settings re-read, shape, probe, `lsNotebooks`) before subcommand dispatch;
    success clears degradation + breaker counter; failure re-engages
@@ -89,14 +96,16 @@ Scope persistence and the mid-session activation vehicle.
 ### Acceptance criteria
 
 - [ ] Unit: toggle writes — bare `/kb`, verbless usage output, idempotent
-      re-toggle, `/kb all off` empty-scope write, zero-valid-KB no-op, reserved
-      keyword rejection, name-grammar rejection (§10).
+      re-toggle, `/kb all off` empty-scope write, zero-valid-KB no-op, `/kb all`
+      subcommand dispatch (the settings-level `all`-name rejection is already
+      covered in Sprint 1's settings tests), name-grammar rejection (§10).
 - [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
       rule unchanged.
 - [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
       clears degraded flag; failed re-check re-engages degradation without
       looping (§10).
-- [ ] Tools validate `kb` against the live post-toggle scope mid-session.
+- [ ] Unit: the S1 `kb`-param validator consumes the live post-toggle scope
+      (tool-level composition is asserted with the read tools in Sprint 3).
 
 ---
 
@@ -122,10 +131,17 @@ The discovery half of the loop. Adds the one new runtime dependency:
 3. **search tool (§3)** — per-KB fan-out (one kernel call per resolved KB,
    `paths: [<boxId>]`, `pageSize = RESULT_LIMIT`), merged results in per-KB
    kernel order, aggregated truncation marker; `method: 0` tool-owned, agent
-   `method`/`types`/`orderBy`/`groupBy` rejected, aux params omitted entirely;
-   echo contract per row (`id`, `root_id`, `hpath`, `box` → resolved KB name,
-   `updated`).
-4. **read tool (§3)** — `exportMdContent` (GFM only, never `getDoc`); ownership
+   `method`/`types`/`orderBy`/`groupBy` rejected at the tool schema (the client
+   already hardcodes `method: 0` and exposes no aux params), aux params
+   omitted entirely; echo contract per row (`id`, `root_id`, `hpath`, `box` →
+   resolved KB name, `updated`).
+4. **Tool descriptions (§5, §3)** — read-tool descriptions carry the pinned
+   content: `refs`/`blocks` table schemas with the two semantics notes (`sort`
+   is a type weight, `hpath` is display-only) and the include-`hpath`
+   discovery pattern. Write-tool doctrine lines ("mint by title… consume by
+   ID", search ownership constraints) are authored with the write tools in
+   Sprints 4–5, not deferred.
+5. **read tool (§3)** — `exportMdContent` (GFM only, never `getDoc`); ownership
    query doubles as scope check (`SELECT root_id FROM blocks WHERE id = ? AND
    box = ?`); outline ride-along via the documented `getChildBlocks` walk
    (heading filter for rendering only, full unfiltered ID set retained for write
@@ -143,14 +159,18 @@ The discovery half of the loop. Adds the one new runtime dependency:
       keeps the injected LIMIT; agent LIMIT passthrough (§10).
 - [ ] Unit: post-filter — box-less aggregate rows skip the backstop; truncation
       fires when `kept + dropped` reaches the limit (§10).
-- [ ] Unit: search rejects agent-supplied `method`/aux params; fan-out issues N
-      calls with per-call `pageSize`; single-KB degenerates to the single-call
-      shape (§10).
+- [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
+      assertion); fan-out issues N calls with per-call `pageSize`; single-KB
+      degenerates to the single-call shape (§10).
+- [ ] Read-tool descriptions contain the §5-pinned table schemas + semantics
+      notes and the include-`hpath` discovery pattern.
 - [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
       inlines first N lines + pointer while verification runs on the full walk
       set (§10).
 - [ ] Read tools callable from a real pi session against the live kernel
-      (manual smoke).
+      (manual smoke); tool `kb` validation composes with the live post-toggle
+      scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
+      scope, now asserted through real tools).
 
 ---
 
@@ -219,8 +239,9 @@ confirmation gate and the `create` flow end to end.
    backlink check over the walk set in the confirmation), `move` (block-level
    with tool-derived destination anchor from the destination outline; `doc:
    true` via `moveDocsByID`; self-descendant pre-check; intra-KB by
-   construction). Anchors always tool-derived; targets agent-supplied from
-   echoed data.
+   construction; doc-level move also covers the un-nest case (`toDocId`
+   omitted → `toID` = notebook ID). Anchors always tool-derived; targets
+   agent-supplied from echoed data.
 2. **Write-result contract (§4)** — every doc-targeting result carries root
    `docId`, stored title, real `hpath`, fresh `outline` (cap applies to inline
    rendering only), `anchor` where placement-bearing, `newBlockId` extracted
@@ -259,6 +280,9 @@ confirmation gate and the `create` flow end to end.
       `invalidRefs`; doc-level `move` carries outline + title/hpath echo, no
       `anchor`/`newBlockId`/`destOutline`; same-doc move collapses to
       outline + anchor (§10).
+- [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
+      title… consume by ID", search ownership constraints), completing the
+      description work started in Sprint 3 item 4.
 
 ---
 
@@ -275,7 +299,10 @@ last, encrypted case on its own disposable workspace).
    by new stored title).
 2. **Nested-mint + duplicate-disambiguation cases** — nested create → echo →
    read → guard on re-create; stale-parent fail-loud; `duplicate` rows with
-   outlines → `confirmNew: true` third mint → deletes → guard exact leg.
+   outlines → `confirmNew: true` third mint → deletes → guard exact leg;
+   guard-stop staging round-trip (§10): guard-stopped large-body create
+   retried with `markdownFile: <stagedPath>` + `confirmNew: true` mints, and
+   content read back matches the staged file.
 3. **Tool-path verified-create** — pre-existing title → guard matches first, no
    create call fires.
 4. **Version-refusal contract pin** — pin deliberately set to a version 3.8.3
@@ -289,7 +316,9 @@ last, encrypted case on its own disposable workspace).
 7. **replace-section end to end** — list/quote-ending section, final-section
    trailing sweep, heading ID survives, planted content-block ref orphans with
    `invalidRefs` echo; `updateBlock` preserves IDs (`listInvalidBlockRefs`
-   zero, direct kernel call — test-only exception to documented-endpoints).
+   zero, direct kernel call — test-only exception to documented-endpoints);
+   doc-level `delete` backlink case (§10): confirmation surfaced the backlink
+   count and referring hpaths, and ref reports come back invalid afterward.
 8. **move cases** — doc-level (`moveDocsByID`, IDs survive, echo, follow-up
    write by echoed docId, self-descendant rejected, depth-cap error verbatim,
    own-parent no-op), cross-doc block move (`movedBlockId` equality,
@@ -298,7 +327,10 @@ last, encrypted case on its own disposable workspace).
    on a search hit's `root_id` succeeds), two-KB saturation pin (fan-out),
    OR-precedence aggregate, `exportMdContent` block-ID absence.
 10. **Write-result freshness** — write-result `outline` matches a fresh
-    post-write query; `refs` sync-flush pin; `newBlockId` response-shape pin.
+    post-write query; `refs` sync-flush pin; `newBlockId` response-shape pin;
+    multi-block walk-set diff pin (§10): multi-block `append` → post-write
+    walk-set diff contains every new ID with `newBlockId` among them,
+    single-block → diff of exactly one ID.
 11. **Headless `/kb` dispatch** — `/kb all off` from `pi -p` (converts the §5
     source-read claim into evidence before M4's harness depends on it).
 12. **Read-consistency / throttle / raw-DELETE / encrypted-notebook cases** —
@@ -309,8 +341,9 @@ last, encrypted case on its own disposable workspace).
 
 - [ ] Setup asserts kernel version exactly equals the pin (accidental upgrade →
       red suite).
-- [ ] All cases above green against live 3.8.3 under the fixture policy; a
-      failed run leaves at most two stray fixture notebooks.
+- [ ] All cases above green against live 3.8.3 under the fixture policy; the
+      teardown itself is asserted (post-teardown notebook count back to
+      baseline — zero strays, or exactly the pre-registered known strays).
 - [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
       encrypted case isolated).
 
@@ -343,14 +376,19 @@ stale-target contract pin, and real headless `/kb` dispatch.
 ```text
 Sprint 1 (chassis) ──► Sprint 2 (scope + /kb)    ┐
 Sprint 1 (chassis) ──► Sprint 3 (read tools)     ├──► Sprint 5 (write modes; needs
-Sprint 1 (chassis) ──► Sprint 4 (confirm + create)┘      outline helper + spill from S3)
+Sprint 1 (chassis) ──► Sprint 4 (confirm + create)┘      outline helper + spill from S3;
+Sprint 4 ──► Sprint 5                            confirmation gate, timeouts, file
+                                                 capture, confirmNew from S4)
 Sprint 4 + 5 ──► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
 ```
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
 surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it). Sprint 4 also needs only Sprint 1's
-chassis plus the spill helper from Sprint 3 (guard-stop draft staging writes
-into the session spill dir) — sequencing S3's helper first keeps the parallel
-split clean.
+Sprint 1 and everything else inherits it). Sprint 4 needs Sprint 1's chassis
+plus the spill helper **and the outline walk helper** from Sprint 3 (the
+`duplicate` guard stop returns budgeted outlines per §4, and guard-stop draft
+staging writes into the session spill dir) — sequencing S3's helpers first
+keeps the parallel split clean. Sprint 5 is **not** parallel with Sprint 4:
+every mode rides Sprint 4's confirmation gate, `writeConfirmTimeout`, file-path
+read-once capture, and `confirmNew` handling.
