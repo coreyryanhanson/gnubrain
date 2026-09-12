@@ -66,7 +66,8 @@ The machinery every tool call routes through. No tools registered yet.
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
       zero further kernel calls; recovery clears it; 429 → no breaker increment,
       no retry, local cooldown refusal with zero kernel round-trips, post-expiry
-      call succeeds (§10).
+      call succeeds (§10; the 429 branch is exercised with a genuine
+      `SiYuanRateLimitError` instance, not a synthetic 429 shape).
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
@@ -343,7 +344,10 @@ last, encrypted case on its own disposable workspace).
     source-read claim into evidence before M4's harness depends on it).
 12. **Read-consistency / throttle / raw-DELETE / encrypted-notebook cases** —
     ordered per §10; throttle implemented in the client's profile already
-    (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not re-implemented.
+    (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not re-implemented; the
+    extension-side cooldown refusal (local `refused`, zero kernel round-trips)
+    is deliberately pinned unit-only in Sprint 1 — no live 429 case here, since
+    arming the real per-IP lock costs ~4 min per run (§10).
 
 ### Acceptance criteria
 
