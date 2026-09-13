@@ -68,7 +68,8 @@ The machinery every tool call routes through. No tools registered yet.
       rejection for both lock states (mocked `listNotebooks`; kernel endpoint
       `lsNotebooks`), stale-notebook drop, project/global read path, token-failure
       branch, shape-check failure degrading the session (tools stay registered,
-      calls rejected with the problem named — not a crash) (§10 unit list).
+      calls rejected with the problem named — not a crash) (§5 step 1; §10 pins
+      the validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors.
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
@@ -211,11 +212,18 @@ The highest-stakes path, split across two sprints. This sprint: the
 confirmation gate and the `create` flow end to end.
 
 1. **Write confirmation (§5)** — `pi.ui.confirm` always on for interactive;
-   headless (`pi -p`) default-deny unless `allowUnattendedWrites: true`;
+   headless (`pi -p`) default-deny unless `allowUnattendedWrites: true` (the
+   dialog is skipped; the write proceeds unattended);
    RPC is not headless; every confirm carries `writeConfirmTimeout` (default
    60 s, `0` = indefinite), every non-answer resolves to `refused`; timeout
    expiry = `confirm_timeout`, terminal for that write in that session (re-request
    → immediate refusal, no new dialog); explicit decline stays recoverable.
+   Timeout mechanism: pi's `ui.confirm` resolves to a bare `boolean` and its
+   native dialog auto-dismisses on timeout, making a timed-out dialog
+   indistinguishable from a decline — so the extension owns the timeout clock
+   (race an extension-side timer against the confirm promise; `confirm_timeout`
+   only when the timer wins; the native `timeout` option may be passed for UI
+   countdown only), never inferring timeout from a `false` resolution.
 2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
    call start, the captured string drives guard → confirm → kernel → verify;
    missing / not-a-regular-file / unreadable → structured error naming the
@@ -234,9 +242,9 @@ confirmation gate and the `create` flow end to end.
    read-back stored title (ground truth, never the submitted title); stale
    parent → fail-loud structured error.
 6. **Guard stops (§4)** — one uniform `duplicate` stop for exact-leg rows,
-   single- or multi-row alike (§4 step 1, amended: the design's separate
-   single-match "Found" branch is folded here — a single exact match is the
-   same decision the agent faces, write into it or mint a conscious sibling):
+   single- or multi-row alike (per §4 step 1 with step 3's fold — a single exact
+   match is the same decision the agent faces, write into it or mint a
+   conscious sibling):
    all rows with `updated` + budgeted outlines + per-row full-markdown spill
    paths (grep-able side-by-side candidates; a single-row response
    additionally echoes block IDs so the agent can go straight to `edit` by
@@ -269,7 +277,8 @@ confirmation gate and the `create` flow end to end.
 - [ ] Unit: headless write default-deny (§5) — no-UI session with
       `allowUnattendedWrites` absent or false → `refused` naming the enabling
       setting, zero confirm calls and zero kernel calls on the request log;
-      `allowUnattendedWrites: true` → the confirm path proceeds.
+      `allowUnattendedWrites: true` → the write proceeds unattended (dialog
+      skipped per item 1).
 - [ ] Unit: file-path input — missing file → error, zero kernel calls (request
       log); read-once capture under mid-flow file mutation; XOR shape
       validation (§10).
@@ -422,7 +431,8 @@ deliberately keeps fixture lifecycle and these pins out of the client.
     source-read claim into evidence before M4's harness depends on it).
 12. **Throttle / raw-DELETE / encrypted-notebook cases** —
     ordered per §10 (read-consistency is covered by item 10's pins); throttle
-    arming (6 bogus-token requests → 429 with `Retry-After`) reuses the
+    arming (6 bogus-token requests arm the lock — 6th still 401, 7th surfaces
+    the distinct 429 — with `Retry-After`) reuses the
     client's opt-in profile (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not
     re-implemented; the extension-side cooldown leg rides the same armed lock:
     one kb read during the lock → 429 envelope, a second kb call inside the
