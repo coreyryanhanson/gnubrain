@@ -22,8 +22,9 @@ Design references below are §-sections of DESIGN_v2.md. Every sprint ends green
 
 The machinery every tool call routes through. No tools registered yet.
 
-1. **Startup validation pipeline (§5 validation order)** — steps 2–3; step 1
-   (shape) is already done in `settings.ts`:
+1. **Startup validation pipeline (§5 validation order)** — steps 2–3; the
+   core step-1 shape check lives in `settings.ts`, but Sprint 1 adds the
+   step-1 `defaultKBs`-against-`kbs` work named in item 4 below:
    - Kernel probe at `session_start` via `getVersion()`; extension-owned
      `PINNED_SIYUAN_VERSION = "3.8.3"`, strict full-version match; writes
      fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
@@ -36,9 +37,10 @@ The machinery every tool call routes through. No tools registered yet.
 2. **Error envelope (§5)** — one shared helper:
    `{status: ok | near_matches | duplicate | error | refused, message, ...payload}`,
    with `truncated`/`post_filtered` as payload markers, never statuses.
-3. **`kb` param contract (§5)** — required on every call; array on read tools,
-   exactly one name on writes; unknown / not-in-scope / empty-array rejections
-   with the pinned messages (empty array refused locally, no kernel call).
+3. **`kb` param contract (§5)** — required on every call; array on `query` and
+   `search` (the multi-scope sweep tools), exactly one name on `read` and every
+   write; unknown / not-in-scope / empty-array rejections with the pinned
+   messages (empty array refused locally, no kernel call).
 4. **Scope resolution (§5)** — latest `kb-scope` `appendEntry` wins, else
    `defaultKBs`; project file wins over global for `defaultKBs`; `kbs` +
    connection keys read from the global settings file only. Absent key = empty
@@ -99,7 +101,8 @@ Scope persistence and the mid-session activation vehicle.
 - [ ] Unit: toggle writes — bare `/kb`, verbless usage output, idempotent
       re-toggle, `/kb all off` empty-scope write, zero-valid-KB no-op, `/kb all`
       subcommand dispatch (the settings-level `all`-name rejection is already
-      covered in Sprint 1's settings tests), name-grammar rejection (§10).
+      covered by the pre-existing M1 tests in `settings.test.ts`),
+      name-grammar rejection (§10).
 - [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
       rule unchanged.
 - [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
@@ -121,9 +124,10 @@ The discovery half of the loop. Adds the one new runtime dependency:
    hash names, JSONL vs `.md` spill formats, newline-boundary preview +
    `… N more — full result in <path>`, no cleanup machinery.
 2. **query tool (§3)** — parser certification (single top-level SELECT, DML /
-   multi-statement / FROM-allowlist / JOIN / subquery / CTE / UNION rejection —
-   keyed on the executed spike findings: `Array.isArray` for multi-statement,
-   `_next`/`set_op` for UNION); AST rebuild: splice `box IN (...)`, inject LIMIT
+   multi-statement / FROM-allowlist / JOIN / subquery / CTE / UNION / bare
+   `HAVING` rejection — §3 pins the bare-`HAVING` rule even though §10's unit
+   list omits it; keyed on the executed spike findings: `Array.isArray` for
+   multi-statement, `_next`/`set_op` for UNION); AST rebuild: splice `box IN (...)`, inject LIMIT
    64 iff AST shows none, serialize, **re-parse and verify**, execute the
    re-parsed statement with `mode: "readonly"`; agent-supplied LIMIT passes
    through uncapped; post-filter backstop (box-less aggregate rows exempt);
@@ -142,7 +146,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
    discovery pattern. Write-tool doctrine lines ("mint by title… consume by
    ID", search ownership constraints) are authored with the write tools in
    Sprints 4–5, not deferred.
-5. **read tool (§3)** — `exportMdContent` (GFM only, never `getDoc`); ownership
+5. **read tool (§3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
+   endpoint `exportMdContent`); ownership
    query doubles as scope check (`SELECT root_id FROM blocks WHERE id = ? AND
    box = ?`); outline ride-along via the documented `getChildBlocks` walk
    (heading filter for rendering only, full unfiltered ID set retained for write
@@ -152,8 +157,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
 ### Acceptance criteria
 
 - [ ] Unit: parser certification matrix — DML, multi-statement, comma
-      cross-join, CTE shadow (`WITH blocks AS …`), subquery, UNION, JOIN
-      (§10).
+      cross-join, CTE shadow (`WITH blocks AS …`), subquery, UNION, JOIN, bare
+      `HAVING` (§10; the `HAVING` leg per §3's policy, which §10's list omits).
 - [ ] Unit: injected-predicate re-parse — OR precedence, round-trip parity for
       escaped quotes / LIKE backslash escapes / clause keywords in strings /
       non-ASCII literals; LIMIT presence off the AST; `||`-containing statement
@@ -168,6 +173,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
       inlines first N lines + pointer while verification runs on the full walk
       set (§10).
+- [ ] Unit: `read` on a `docId` from another KB returns no rows — the ownership
+      query doubles as the scope check (§10).
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -322,24 +329,27 @@ last, encrypted case on its own disposable workspace).
    branch mocked if no honest live route exists).
 6. **Fresh-content live pin** — kernel-side content change between outline and
    edit → `stale_content` refusal, content untouched; control run applies.
-7. **replace-section end to end** — list/quote-ending section, final-section
-   trailing sweep, heading ID survives, planted content-block ref orphans with
-   `invalidRefs` echo; `updateBlock` preserves IDs (`listInvalidBlockRefs`
-   zero, direct kernel call — test-only exception to documented-endpoints);
-   doc-level `delete` backlink case (§10): confirmation surfaced the backlink
-   count and referring hpaths, and ref reports come back invalid afterward.
+7. **replace-section + delete-orphans end to end** — list/quote-ending section,
+   final-section trailing sweep, heading ID survives, planted content-block ref
+   orphans with `invalidRefs` echo; `updateBlock` preserves IDs
+   (`listInvalidBlockRefs` zero, direct kernel call — test-only exception to
+   documented-endpoints); doc-level `delete` backlink case (§10): confirmation
+   surfaced the backlink count and referring hpaths, and ref reports come back
+   invalid afterward; block-level `delete` orphan case (§10): planted ref to a
+   single fixture block deleted via the tool → `invalidRefs` echo.
 8. **move cases** — doc-level (`moveDocsByID`, IDs survive, echo, follow-up
    write by echoed docId, self-descendant rejected, depth-cap error verbatim,
    own-parent no-op), cross-doc block move (`movedBlockId` equality,
    `destOutline` freshness, provenance survives), same-doc shape pin.
 9. **Search + query pins** — scoping shape, recall-loop echo assertion (`read`
    on a search hit's `root_id` succeeds), two-KB saturation pin (fan-out),
-   OR-precedence aggregate, `exportMdContent` block-ID absence.
+   OR-precedence aggregate, `exportMarkdown` block-ID absence.
 10. **Write-result freshness** — write-result `outline` matches a fresh
     post-write query; `refs` sync-flush pin; `newBlockId` response-shape pin;
-    multi-block walk-set diff pin (§10): multi-block `append` → post-write
-    walk-set diff contains every new ID with `newBlockId` among them,
-    single-block → diff of exactly one ID.
+    anchor-echo pin (§10): `append` onto a trailing-content-after-last-heading
+    doc reports `anchor: appendBlock(root)`; multi-block walk-set diff pin
+    (§10): multi-block `append` → post-write walk-set diff contains every new
+    ID with `newBlockId` among them, single-block → diff of exactly one ID.
 11. **Headless `/kb` dispatch** — `/kb all off` from `pi -p` (converts the §5
     source-read claim into evidence before M4's harness depends on it).
 12. **Read-consistency / throttle / raw-DELETE / encrypted-notebook cases** —
@@ -390,18 +400,20 @@ stale-target contract pin, and real headless `/kb` dispatch.
 ## Dependencies & ordering
 
 ```text
-Sprint 1 (chassis) ──► Sprint 2 (scope + /kb)    ┐
-Sprint 1 (chassis) ──► Sprint 3 (read tools)     ├──► Sprint 5 (write modes; needs
-Sprint 1 (chassis) ──► Sprint 4 (confirm + create)┘      outline helper + spill from S3;
-Sprint 4 ──► Sprint 5                            confirmation gate, timeouts, file
-                                                 capture, confirmNew from S4)
-Sprint 4 + 5 ──► Sprint 5b (integration)
+Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
+Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
+Sprint 1 (chassis) ──► Sprint 4 (confirm + create) ──► Sprint 5 (write modes;
+                       needs outline helper + spill from S3; confirmation gate,
+                       timeouts, file capture, confirmNew from S4)
 Sprint 5b ──► Sprint 6 (gate)
 ```
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
 surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it). Sprint 4 needs Sprint 1's chassis
+Sprint 1 and everything else inherits it). Sprint 5b also requires Sprint 2
+(item 11's headless `/kb` dispatch) and Sprint 3 (items 9–10's read pins, on
+top of the transitive S3 → S4 → S5 path), and the Sprint 6 gate needs Sprint 2
+for the `/kb` mid-session and live-breaker-recovery checks. Sprint 4 needs Sprint 1's chassis
 plus the spill helper **and the outline walk helper** from Sprint 3 (the
 `duplicate` guard stop returns budgeted outlines per §4, and guard-stop draft
 staging writes into the session spill dir) — sequencing S3's helpers first
