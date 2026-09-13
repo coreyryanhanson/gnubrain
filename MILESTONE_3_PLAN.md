@@ -76,8 +76,9 @@ The machinery every tool call routes through. No tools registered yet.
       no retry, local cooldown refusal with zero kernel round-trips, post-expiry
       call succeeds (§10; the 429 branch is exercised with a genuine
       `SiYuanRateLimitError` instance, not a synthetic 429 shape; the 429
-      neither increments nor resets the consecutive count — the property
-      Sprint 6's live checklist defers here).
+      neither increments nor resets the consecutive count — that property
+      stays unit-only; Sprint 6's live checklist deliberately does not stage
+      it (§10).
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
@@ -94,9 +95,12 @@ Scope persistence and the mid-session activation vehicle.
    snapshot of the active set; read on `session_start` (latest entry wins).
 2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
    single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
-   `all off`; zero-valid-KB no-op reported); reserved keyword `all` (names
-   already rejected in `settings.ts`, so the S2 test exercises the `/kb`
-   subcommand dispatch of `all` only); verbless `/kb <name>` prints usage.
+   `all off`; zero-valid-KB no-op reported); reserved keyword `all` (§10 groups
+   the name-level rejection under `/kb` toggle writes; we assert it at the
+   settings layer instead — already covered by the pre-existing M1 tests in
+   `settings.test.ts`, a deliberate relocation — so the S2 test exercises the
+   `/kb` subcommand dispatch of `all` only); verbless `/kb <name>` prints
+   usage.
 3. **Recovery hook (§5)** — every `/kb` dispatch re-runs the full validation pass
    (settings re-read, shape, probe, `lsNotebooks`) before subcommand dispatch;
    success clears degradation + breaker counter; failure re-engages
@@ -117,8 +121,9 @@ Scope persistence and the mid-session activation vehicle.
 - [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
       clears degraded flag; failed re-check re-engages degradation without
       looping (§10).
-- [ ] Unit: the S1 `kb`-param validator consumes the live post-toggle scope
-      (tool-level composition is asserted with the read tools in Sprint 3).
+- [ ] Unit: the S1 `kb`-param validator reads the live post-toggle scope at
+      call time (asserted against a stub tool here; tool-level composition
+      deferred to Sprint 3, asserted with the real read tools).
 
 ---
 
@@ -149,10 +154,11 @@ The discovery half of the loop. Adds the one new runtime dependency:
    already hardcodes `method: 0` and exposes no aux params), aux params
    omitted entirely; echo contract per row (`id`, `root_id`, `hpath`, `box` →
    resolved KB name, `updated`).
-4. **Tool descriptions (§5, §3)** — read-tool descriptions carry the pinned
-   content: `refs`/`blocks` table schemas with the two semantics notes (`sort`
-   is a type weight, `hpath` is display-only) and the include-`hpath`
-   discovery pattern. Write-tool doctrine lines ("mint by title… consume by
+4. **Tool descriptions (§5, §3)** — the **query** tool description carries the
+   pinned content (§5 pins it there specifically): `refs`/`blocks` table schemas
+   with the two semantics notes (`sort` is a type weight, `hpath` is
+   display-only) and the include-`hpath` discovery pattern; the other read
+   tools may carry a shorter pointer. Write-tool doctrine lines ("mint by title… consume by
    ID", search ownership constraints) are authored with the write tools in
    Sprints 4–5, not deferred.
 5. **read tool (§3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
@@ -178,8 +184,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
       assertion); fan-out issues N calls with per-call `pageSize`; single-KB
       degenerates to the single-call shape (§10).
-- [ ] Read-tool descriptions contain the §5-pinned table schemas + semantics
-      notes and the include-`hpath` discovery pattern.
+- [ ] The query tool description contains the §5-pinned table schemas +
+      semantics notes and the include-`hpath` discovery pattern.
 - [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
       inlines first N lines + pointer while verification runs on the full walk
       set (§10).
@@ -318,7 +324,11 @@ confirmation gate and the `create` flow end to end.
 The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
 execution order: search-shape first, throttle after all kernel cases, raw-DELETE
-last, encrypted case on its own disposable workspace).
+last, encrypted case on its own disposable workspace). A test-only
+raw-kernel-call helper (direct `fetch`) provides `createNotebook` /
+`removeNotebook` / `renameDoc` / `LockBox` / `listInvalidBlockRefs` / raw
+DELETE and the bogus-token arming requests — the client stays unchanged; §10
+deliberately keeps fixture lifecycle and these pins out of the client.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
@@ -371,11 +381,16 @@ last, encrypted case on its own disposable workspace).
     source-read claim into evidence before M4's harness depends on it).
 12. **Throttle / raw-DELETE / encrypted-notebook cases** —
     ordered per §10 (read-consistency is covered by item 10's pins); throttle
-    implemented in the client's profile already
-    (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not re-implemented; the
-    extension-side cooldown refusal (local `refused`, zero kernel round-trips)
-    is deliberately pinned unit-only in Sprint 1 — no live 429 case here, since
-    arming the real per-IP lock costs ~4 min per run (§10).
+    arming (6 bogus-token requests → 429 with `Retry-After`) reuses the
+    client's opt-in profile (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not
+    re-implemented; the extension-side cooldown leg rides the same armed lock:
+    one kb read during the lock → 429 envelope, a second kb call inside the
+    cooldown → local `refused` with zero kernel round-trips, then stop — the
+    self-heal wait-out (the ~4 min cost) stays pinned in the client's test;
+    the raw-DELETE case follows the deletes with a kernel reindex to bound
+    `siyuan.db` desync (§10).
+    The 429-does-not-count-toward-the-breaker property remains unit-only
+    (Sprint 1).
 
 ### Acceptance criteria
 
@@ -407,14 +422,14 @@ Polish and the M3 gate (§11).
       token restores reads immediately (kernel-side leakage bound: a post-trip
       leak of ≥3 further failures would have armed the kernel's 6-failure lock
       and killed recovery too). The 429s-do-not-reset-the-count leg is
-      unit-only (Sprint 1's 429 AC) — staging a live 429 means arming the
-      kernel's per-IP lock, the ~4-min cost 5b item 12 already declined (§5
-      breaker rule).
+      unit-only (Sprint 1's 429 AC) — 5b item 12's throttle leg arms the
+      kernel's per-IP lock but stops before the ~4-min self-heal wait, so no
+      live leg exercises the count behavior (§5 breaker rule).
 - [ ] Write-path integration suite green (Sprint 5b).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
       RPC use (§10 residual list).
-- [ ] README/AGENTS.md of `gnubrain` updated to describe the tool surface; DESIGN
+- [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
@@ -428,9 +443,9 @@ stale-target contract pin, and real headless `/kb` dispatch.
 ```text
 Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
 Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
-Sprint 1 (chassis) ──► Sprint 4 (confirm + create) ──► Sprint 5 (write modes;
-                       needs outline helper + spill from S3; confirmation gate,
-                       timeouts, file capture, confirmNew from S4)
+Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
+Sprint 3 (spill + outline helpers) ──► Sprint 4
+Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
 Sprint 5b ──► Sprint 6 (gate)
 ```
 
