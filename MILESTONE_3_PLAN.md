@@ -113,9 +113,12 @@ Scope persistence and the mid-session activation vehicle.
 - [ ] Unit: toggle writes — bare `/kb`, verbless usage output, idempotent
       re-toggle, `/kb all on` activates the full valid set, `/kb all off`
       empty-scope write, zero-valid-KB no-op, `/kb all`
-      subcommand dispatch (the settings-level `all`-name rejection is already
-      covered by the pre-existing M1 tests in `settings.test.ts`),
-      name-grammar rejection (§10).
+      subcommand dispatch, unknown-name toggle rejection (validates against
+      the config array with the same rejection message as the tool param,
+      §5). The settings-level `all`-name and name-grammar rejections are
+      already covered by the pre-existing M1 tests in `settings.test.ts` —
+      deliberate relocations: a KB whose name violates the grammar can never
+      be configured, so no toggle-path leg exists for either.
 - [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
       rule unchanged.
 - [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
@@ -190,7 +193,7 @@ The discovery half of the loop. Adds the one new runtime dependency:
       inlines first N lines + pointer while verification runs on the full walk
       set (§10).
 - [ ] Unit: `read` on a `docId` from another KB returns no rows — the ownership
-      query doubles as the scope check (§10).
+      query doubles as the scope check (§4; §5 tool shape).
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -238,11 +241,19 @@ confirmation gate and the `create` flow end to end.
       cap + marker; `confirmNew` skip path; param absent from the declared tool
       schema (assert on the schema object) (§10).
 - [ ] Unit: mint-policy rejections — each with its message; verified-create
-      asserts incl. simulated stale parent failing loud (§10).
+      asserts incl. simulated stale parent failing loud (§10; §10's
+      guard→create race leg is deliberately folded here rather than given its
+      own case — it is only reachable in the mocked suite and its duplicate
+      lands in the accepted reconcilable class, §4 R3/R4, so verified-create's
+      by-ID asserts are all that observes it).
 - [ ] Unit: write-confirmation branches — allow/refuse; cancelled and timed-out
       confirms both refuse; `confirm_timeout` terminal (confirm mock fires
       exactly once across both calls); explicit decline recoverable; timeout 0
       issues an untimed confirm (§10).
+- [ ] Unit: headless write default-deny (§5) — no-UI session with
+      `allowUnattendedWrites` absent or false → `refused` naming the enabling
+      setting, zero confirm calls and zero kernel calls on the request log;
+      `allowUnattendedWrites: true` → the confirm path proceeds.
 - [ ] Unit: file-path input — missing file → error, zero kernel calls (request
       log); read-once capture under mid-flow file mutation; XOR shape
       validation (§10).
@@ -351,7 +362,11 @@ deliberately keeps fixture lifecycle and these pins out of the client.
 6. **Fresh-content live pin** — kernel-side content change between outline and
    edit → `stale_content` refusal, content untouched; control run applies.
 7. **replace-section + delete-orphans end to end** — list/quote-ending section,
-   final-section trailing sweep, heading ID survives, planted content-block ref
+   final-section trailing sweep, heading ID survives, the §10 outline-ordering
+   pin (headings in document order across a list/quote-ending section,
+   re-asserted after the replace-section round-trip — the load-bearing
+   freshness case where the superseded SQL outline provably broke), planted
+   content-block ref
    orphans with `invalidRefs` echo; `updateBlock` preserves IDs
    (`listInvalidBlockRefs` zero, direct kernel call — test-only exception to
    documented-endpoints); doc-level `delete` backlink case (§10): confirmation
@@ -385,10 +400,13 @@ deliberately keeps fixture lifecycle and these pins out of the client.
     client's opt-in profile (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not
     re-implemented; the extension-side cooldown leg rides the same armed lock:
     one kb read during the lock → 429 envelope, a second kb call inside the
-    cooldown → local `refused` with zero kernel round-trips, then stop — the
-    self-heal wait-out (the ~4 min cost) stays pinned in the client's test;
-    the raw-DELETE case follows the deletes with a kernel reindex to bound
-    `siyuan.db` desync (§10).
+    cooldown → local `refused` with zero kernel round-trips, then wait out the
+    lock (bounded by the last served `Retry-After`, ~4 min — any call during an
+    active lock extends it, §5; same profile as the client's throttle test) and
+    assert the post-expiry call succeeds with no recovery step (§5
+    self-healing expiry); the raw-DELETE case then runs on the expired backoff
+    (§10 execution order) and follows the deletes with a kernel reindex to
+    bound `siyuan.db` desync (§10).
     The 429-does-not-count-toward-the-breaker property remains unit-only
     (Sprint 1).
 
@@ -422,9 +440,11 @@ Polish and the M3 gate (§11).
       token restores reads immediately (kernel-side leakage bound: a post-trip
       leak of ≥3 further failures would have armed the kernel's 6-failure lock
       and killed recovery too). The 429s-do-not-reset-the-count leg is
-      unit-only (Sprint 1's 429 AC) — 5b item 12's throttle leg arms the
-      kernel's per-IP lock but stops before the ~4-min self-heal wait, so no
-      live leg exercises the count behavior (§5 breaker rule).
+      unit-only (Sprint 1's 429 AC) — 5b item 12's throttle leg does wait out
+      the kernel's per-IP lock and asserts post-expiry self-healing, but no
+      live leg observes the breaker counter itself, so the count behavior
+      (never incremented, never reset by 429s) stays pinned by Sprint 1's unit
+      AC (§5 breaker rule).
 - [ ] Write-path integration suite green (Sprint 5b).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
@@ -446,6 +466,7 @@ Sprint 1 (chassis) ──► Sprint 3 (read tools) ─────────�
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
 Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
+Sprint 5 (write modes) ──► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
 ```
 
