@@ -228,17 +228,28 @@ confirmation gate and the `create` flow end to end.
    nested asserts re-read the parent and compare child hpath against the
    read-back stored title (ground truth, never the submitted title); stale
    parent → fail-loud structured error.
-6. **Guard stops (§4)** — `duplicate` returns all rows with `updated` +
-   budgeted outlines + `stagedPath` draft staging for inline bodies;
-   `near_matches` returns candidates (docId, title, first paragraph,
-   `updated`) with the `confirmNew` message; `confirmNew: true` bypasses both
-   legs, confirmation + verified-create still apply.
+6. **Guard stops (§4)** — one uniform `duplicate` stop for exact-leg rows,
+   single- or multi-row alike (§4 step 1, amended: the design's separate
+   single-match "Found" branch is folded here — a single exact match is the
+   same decision the agent faces, write into it or mint a conscious sibling):
+   all rows with `updated` + budgeted outlines + per-row full-markdown spill
+   paths (grep-able side-by-side candidates; a single-row response
+   additionally echoes block IDs so the agent can go straight to `edit` by
+   blockId) + `stagedPath` draft staging for inline bodies; the message names
+   the docIds and the `confirmNew: true` exit. `near_matches` stays
+   excerpt-only — name variants are already the clue and the 20-row cap
+   bounds the count: candidates (docId, title, first paragraph, `updated`),
+   `stagedPath` draft staging, and the `confirmNew` message;
+   `confirmNew: true` bypasses both legs, confirmation + verified-create
+   still apply.
 
 ### Acceptance criteria
 
 - [ ] Unit: guard — exact leg matches ASCII-cased variants and HTML-special
       titles via escape parity; near-match legs incl. the underscore leg; 20-row
-      cap + marker; `confirmNew` skip path; param absent from the declared tool
+      cap + marker; `confirmNew` skip path; the unified exact-leg stop
+      (single-row and multi-row both return all rows + per-row spill paths;
+      single row adds the block-ID echo); param absent from the declared tool
       schema (assert on the schema object) (§10).
 - [ ] Unit: mint-policy rejections — each with its message; verified-create
       asserts incl. simulated stale parent failing loud (§10; §10's
@@ -258,7 +269,9 @@ confirmation gate and the `create` flow end to end.
       log); read-once capture under mid-flow file mutation; XOR shape
       validation (§10).
 - [ ] Unit: guard-stop staging — `stagedPath` in the session spill dir,
-      byte-equal content, `markdownFile` retry message; no staging when the
+      byte-equal content, `markdownFile` retry message; exact-leg stop spills
+      each matching doc's markdown with per-row paths; near-match candidates
+      stay excerpt-only (no candidate spill); no staging when the
       body already came from a file or on non-guard stops (§10).
 
 ---
@@ -347,12 +360,14 @@ deliberately keeps fixture lifecycle and these pins out of the client.
    by new stored title).
 2. **Nested-mint + duplicate-disambiguation cases** — nested create → echo →
    read → guard on re-create; stale-parent fail-loud; `duplicate` rows with
-   outlines → `confirmNew: true` third mint → deletes → guard exact leg;
+   outlines + per-row spilled markdown → `confirmNew: true` third mint →
+   deletes → guard exact leg;
    guard-stop staging round-trip (§10): guard-stopped large-body create
    retried with `markdownFile: <stagedPath>` + `confirmNew: true` mints, and
    content read back matches the staged file.
 3. **Tool-path verified-create** — pre-existing title → guard matches first, no
-   create call fires.
+   create call fires, the existing doc's docId returned in the `duplicate`
+   stop with the block-ID echo and its spilled markdown (§10).
 4. **Version-refusal contract pin** — pin deliberately set to a version 3.8.3
    doesn't report → every write refused naming both versions, reads proceed.
 5. **Stale-target contract pin** — kernel-deleted fixture block: edit error

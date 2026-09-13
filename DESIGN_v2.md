@@ -510,10 +510,11 @@ for the identity property.
 **Create/update/reconcile flow** (the tool decides, not the agent's guess):
 
 1. Agent supplies a title (create) → tool trims and validates it (mint policy, above) and
-   runs the guard's exact leg. **More than one row** (a normal kernel-created state —
-   same-titled siblings are creatable in the UI, and the guard→create race can produce
-   one) → `duplicate`
-   status: return all rows — docId, title, each doc's **`updated` timestamp** (the
+   runs the guard's exact leg. **One or more rows** → `duplicate` status, one
+   uniform stop regardless of count (same-titled siblings are a normal kernel-created
+   state — creatable in the UI, and the guard→create race can produce one; a single
+   exact match poses the same decision the multi-row case does — write into it or mint
+   a conscious sibling): return all rows — docId, title, each doc's **`updated` timestamp** (the
    recency signal for the reconciliation judgment: when the loop is "told X twice, the
    second version differs", the agent must be able to tell which doc is current — without
    it the reconciliation below is a coin flip between echoed IDs), and each doc's
@@ -523,7 +524,11 @@ for the identity property.
    paragraph excerpt shows neither structure nor enough surface to judge — while the
    outline, plus the `updated` recency signal above, does; rows at the exact-leg stop
    are few, so the outline budget is affordable here; budgeted like §3's outline cap,
-   spill-backed). An inline body is draft-staged to
+   spill-backed), and each doc's **full markdown spilled to the session's spill dir**
+   with the path on its row — the agent can grep the candidates side by side before
+   judging (§3 spill formats, no cleanup). A single-row response additionally echoes
+   the doc's **block IDs (with content)** so the agent can go straight to `edit` by
+   blockId. An inline body is draft-staged to
    `stagedPath` on this stop too (guard-stop draft staging, below — the merge exit reuses
    the staged file for the `append`/`edit` content). The agent reconciles before any
    write — edit/append onto the wanted docId, or `delete {docId, doc: true}` of the
@@ -589,9 +594,9 @@ for the identity property.
    first-paragraph excerpts rather than outlines (up to 20 rows — excerpts scan
    cheaply; the outline upgrade is reserved for the exact-leg stop, where rows are
    few and excerpts are worthless).
-3. **Found** → return the doc's root docId, outline + block IDs (with content), and let
-   the agent pick the write mode — the target for that write is the echoed docId, never
-   the title (R1). **Anchor ownership (decision record)**: the tool derives all block
+3. **Single exact row** → folded into the `duplicate` stop above (step 1): one uniform
+   guard stop for one-or-more exact rows, with the block-ID echo covering the single-row
+   case. The target for the follow-up write is the echoed docId, never the title (R1). **Anchor ownership (decision record)**: the tool derives all block
    anchors (`previousID`/`nextID`/`parentID`) from the outline it just fetched — the agent
    never supplies block anchors. An agent-supplied `previousID` after a section-ending list
    is exactly the nesting trap the anchor rule exists to avoid (below); tool-derived anchors
