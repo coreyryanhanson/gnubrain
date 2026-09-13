@@ -53,7 +53,7 @@ The machinery every tool call routes through. No tools registered yet.
    (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file
    supplies `defaultKBs` names only, each checked for existence against the
    global `kbs` set — the project file is never run through the full
-   validator.
+   validator (`allowUnattendedWrites` is also global-only, §5).
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -186,7 +186,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
       fires when `kept + dropped` reaches the limit (§10).
 - [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
       assertion); fan-out issues N calls with per-call `pageSize`; single-KB
-      degenerates to the single-call shape (§10).
+      degenerates to the single-call shape (the fan-out/degeneration policy is
+      §3's record — §10's unit list only pins the method/aux rejection; the
+      live pin for both is §10's two-KB saturation case).
 - [ ] The query tool description contains the §5-pinned table schemas +
       semantics notes and the include-`hpath` discovery pattern.
 - [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
@@ -197,7 +199,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
-      scope, now asserted through real tools).
+      scope, now asserted through real tools). **Gated on Sprint 2** — this
+      assertion needs the persisted post-toggle scope, so it runs after S2
+      lands; the rest of Sprint 3 stays parallel with S2.
 
 ---
 
@@ -214,8 +218,9 @@ confirmation gate and the `create` flow end to end.
    → immediate refusal, no new dialog); explicit decline stays recoverable.
 2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
    call start, the captured string drives guard → confirm → kernel → verify;
-   missing/unreadable → structured error, no kernel call; both/neither → shape
-   error.
+   missing / not-a-regular-file / unreadable → structured error naming the
+   path, no kernel call (§4 trust posture: "must exist, must be a regular
+   file", no path allowlisting); both/neither → shape error.
 3. **Title guard (§4 R3)** — exact leg (`LIKE`, pattern from HTML-escaped title,
    `%`/`_` LIKE-escaped) then near-match scan (space/hyphen/underscore prefix
    variants, capped at 20 rows with `truncated` marker); single-notebook scope.
@@ -282,13 +287,17 @@ confirmation gate and the `create` flow end to end.
    `append` (tool-derived `nextID = next heading` anchor; final section →
    `appendBlock` on doc root), `replace-section` (one call: walk-enumerated
    delete set via `getChildBlocks` document-order walk — never SQL;
-   insert-before-delete; same-or-shallower boundary; final section sweeps
-   trailing content), `delete` (block or `doc: true` via `removeDocByID`;
+   insert-before-delete with the same anchor rule as `append` (`insertBlock`
+   `nextID` = next heading's ID, or `appendBlock` on the doc root for the
+   final section — headings are leaves, bare `parentID` is rejected);
+   same-or-shallower boundary; final section sweeps trailing content), `delete` (block or `doc: true` via `removeDocByID`;
    backlink check over the walk set in the confirmation), `move` (block-level
    with tool-derived destination anchor from the destination outline — last top-level
    node of the `toHeadingId` section (heading-recursed), end-of-section semantics
    identical to `append`; heading-anchored placement rejected as fold-state-dependent
-   per §4 anchor rule; `doc: true` via `moveDocsByID`; self-descendant pre-check; intra-KB by
+   per §4 anchor rule; omitted `toHeadingId` → destination doc end
+   (`appendBlock`-on-root fallback, same default as `append`); `doc: true` via
+   `moveDocsByID`; self-descendant pre-check; intra-KB by
    construction; doc-level move also covers the un-nest case (`toDocId`
    omitted → `toID` = notebook ID). Anchors always tool-derived; targets
    agent-supplied from echoed data.
@@ -369,7 +378,9 @@ deliberately keeps fixture lifecycle and these pins out of the client.
    create call fires, the existing doc's docId returned in the `duplicate`
    stop with the block-ID echo and its spilled markdown (§10).
 4. **Version-refusal contract pin** — pin deliberately set to a version 3.8.3
-   doesn't report → every write refused naming both versions, reads proceed.
+   doesn't report → every write refused naming both versions, reads proceed;
+   the override is per-test config, not a global constant mutation (§10), so
+   it doesn't fight the setup's pin-equality assert.
 5. **Stale-target contract pin** — kernel-deleted fixture block: edit error
    verbatim; append's walk-set assertion turns silent rollback into `error`;
    delete no-op with evidence; move synchronous `-1` surfaced (tree-level-miss
@@ -487,7 +498,10 @@ Sprint 5b ──► Sprint 6 (gate)
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
 surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it). Sprint 5b also requires Sprint 2
+Sprint 1 and everything else inherits it), with one exception: S3's final AC
+(tool `kb` validation composing with the live post-toggle scope mid-session)
+is gated on Sprint 2 — it consumes S2's persisted scope and runs after S2
+lands; the parallel split covers S3's build work itself. Sprint 5b also requires Sprint 2
 (item 11's headless `/kb` dispatch) and Sprint 3 (items 9–10's read pins, on
 top of the transitive S3 → S4 → S5 path), and the Sprint 6 gate needs Sprint 2
 for the `/kb` mid-session and live-breaker-recovery checks. Sprint 4 needs Sprint 1's chassis
