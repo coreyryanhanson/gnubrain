@@ -23,8 +23,12 @@ Design references below are §-sections of DESIGN_v2.md. Every sprint ends green
 The machinery every tool call routes through. No tools registered yet.
 
 1. **Startup validation pipeline (§5 validation order)** — steps 2–3; the
-   core step-1 shape check lives in `settings.ts`, but Sprint 1 adds the
-   step-1 `defaultKBs`-against-`kbs` work named in item 4 below:
+   core step-1 shape check incl. the global-file `defaultKBs`-against-`kbs`
+   check already lives in `settings.ts` (M1 tests cover it); Sprint 1 adds
+   only the project-file `defaultKBs`-vs-global-`kbs` composition named in
+   item 4. Per §5 step 1, a shape-check failure **degrades** the session —
+   tools stay registered, every call is rejected with the problem named —
+   rather than crashing it:
    - Kernel probe at `session_start` via `getVersion()`; extension-owned
      `PINNED_SIYUAN_VERSION = "3.8.3"`, strict full-version match; writes
      fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
@@ -61,15 +65,19 @@ The machinery every tool call routes through. No tools registered yet.
 ### Acceptance criteria
 
 - [ ] Unit: validation order shape → probe → notebooks, incl. encrypted-notebook
-      rejection for both lock states (mocked `lsNotebooks`), stale-notebook drop,
-      project/global read path, token-failure branch (§10 unit list).
+      rejection for both lock states (mocked `listNotebooks`; kernel endpoint
+      `lsNotebooks`), stale-notebook drop, project/global read path, token-failure
+      branch, shape-check failure degrading the session (tools stay registered,
+      calls rejected with the problem named — not a crash) (§10 unit list).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors.
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
       zero further kernel calls; recovery clears it; 429 → no breaker increment,
       no retry, local cooldown refusal with zero kernel round-trips, post-expiry
       call succeeds (§10; the 429 branch is exercised with a genuine
-      `SiYuanRateLimitError` instance, not a synthetic 429 shape).
+      `SiYuanRateLimitError` instance, not a synthetic 429 shape; the 429
+      neither increments nor resets the consecutive count — the property
+      Sprint 6's live checklist defers here).
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
@@ -99,7 +107,8 @@ Scope persistence and the mid-session activation vehicle.
 ### Acceptance criteria
 
 - [ ] Unit: toggle writes — bare `/kb`, verbless usage output, idempotent
-      re-toggle, `/kb all off` empty-scope write, zero-valid-KB no-op, `/kb all`
+      re-toggle, `/kb all on` activates the full valid set, `/kb all off`
+      empty-scope write, zero-valid-KB no-op, `/kb all`
       subcommand dispatch (the settings-level `all`-name rejection is already
       covered by the pre-existing M1 tests in `settings.test.ts`),
       name-grammar rejection (§10).
@@ -156,8 +165,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
 
 ### Acceptance criteria
 
-- [ ] Unit: parser certification matrix — DML, multi-statement, comma
-      cross-join, CTE shadow (`WITH blocks AS …`), subquery, UNION, JOIN, bare
+- [ ] Unit: parser certification matrix — DML, multi-statement, FROM-allowlist
+      violation (plain wrong table incl. comma cross-join), CTE shadow
+      (`WITH blocks AS …`), subquery, UNION, JOIN, bare
       `HAVING` (§10; the `HAVING` leg per §3's policy, which §10's list omits).
 - [ ] Unit: injected-predicate re-parse — OR precedence, round-trip parity for
       escaped quotes / LIKE backslash escapes / clause keywords in strings /
@@ -295,7 +305,8 @@ confirmation gate and the `create` flow end to end.
 - [ ] Unit: write-result shapes — doc-level `delete` carries only
       `invalidRefs`; doc-level `move` carries outline + title/hpath echo, no
       `anchor`/`newBlockId`/`destOutline`; same-doc move collapses to
-      outline + anchor (§10).
+      outline + anchor, with `movedBlockId` present (§10 pins it; §4 verifies
+      every move via it).
 - [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
       title… consume by ID", search ownership constraints), completing the
       description work started in Sprint 3 item 4.
@@ -341,19 +352,26 @@ last, encrypted case on its own disposable workspace).
    write by echoed docId, self-descendant rejected, depth-cap error verbatim,
    own-parent no-op), cross-doc block move (`movedBlockId` equality,
    `destOutline` freshness, provenance survives), same-doc shape pin.
-9. **Search + query pins** — scoping shape, recall-loop echo assertion (`read`
-   on a search hit's `root_id` succeeds), two-KB saturation pin (fan-out),
+9. **Search + query pins** — scoping shape, recall-loop echo assertion (a
+   two-fixture search hit's row carries `root_id`, `box`, the per-row resolved
+   KB name, and a non-empty `updated` matching `\d{14}`; `read` on that hit's
+   `root_id` succeeds), two-KB saturation pin (fan-out),
    OR-precedence aggregate, `exportMarkdown` block-ID absence.
 10. **Write-result freshness** — write-result `outline` matches a fresh
     post-write query; `refs` sync-flush pin; `newBlockId` response-shape pin;
     anchor-echo pin (§10): `append` onto a trailing-content-after-last-heading
-    doc reports `anchor: appendBlock(root)`; multi-block walk-set diff pin
-    (§10): multi-block `append` → post-write walk-set diff contains every new
-    ID with `newBlockId` among them, single-block → diff of exactly one ID.
+    doc reports `anchor: appendBlock(root)`; anchor-placement pin (§10):
+    `insertBlock` with `nextID=<next heading>` lands where the outline says —
+    including a section ending in a list/quote (the AST-sibling nesting trap,
+    §4) and the final-section `appendBlock`-on-root case; multi-block walk-set
+    diff pin (§10): multi-block `append` → post-write walk-set diff contains
+    every new ID with `newBlockId` among them, single-block → diff of exactly
+    one ID.
 11. **Headless `/kb` dispatch** — `/kb all off` from `pi -p` (converts the §5
     source-read claim into evidence before M4's harness depends on it).
-12. **Read-consistency / throttle / raw-DELETE / encrypted-notebook cases** —
-    ordered per §10; throttle implemented in the client's profile already
+12. **Throttle / raw-DELETE / encrypted-notebook cases** —
+    ordered per §10 (read-consistency is covered by item 10's pins); throttle
+    implemented in the client's profile already
     (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not re-implemented; the
     extension-side cooldown refusal (local `refused`, zero kernel round-trips)
     is deliberately pinned unit-only in Sprint 1 — no live 429 case here, since
@@ -381,9 +399,17 @@ Polish and the M3 gate (§11).
 - [ ] Write confirmation refuse/allow verified interactively.
 - [ ] Auth breaker degrades after 3 consecutive auth failures (live): set a
       bogus token, issue 3 read calls (each errors), then a 4th — assert it
-      returns `refused` with zero kernel requests (request-log evidence), and
-      that `/kb` recovery with the corrected token restores reads. 429s in
-      between do not reset the consecutive count (§5 breaker rule).
+      returns `{status: refused}` with the breaker message, not an auth error
+      (the observable signature of a local refusal vs a kernel round-trip; the
+      zero-further-kernel-calls property itself stays pinned by Sprint 1's unit
+      AC on the counting-fetch request log — no extension request log exists in
+      a live interactive session), and that `/kb` recovery with the corrected
+      token restores reads immediately (kernel-side leakage bound: a post-trip
+      leak of ≥3 further failures would have armed the kernel's 6-failure lock
+      and killed recovery too). The 429s-do-not-reset-the-count leg is
+      unit-only (Sprint 1's 429 AC) — staging a live 429 means arming the
+      kernel's per-IP lock, the ~4-min cost 5b item 12 already declined (§5
+      breaker rule).
 - [ ] Write-path integration suite green (Sprint 5b).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
