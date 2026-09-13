@@ -27,8 +27,10 @@ The machinery every tool call routes through. No tools registered yet.
    check already lives in `settings.ts` (M1 tests cover it); Sprint 1 adds
    only the project-file `defaultKBs`-vs-global-`kbs` composition named in
    item 4. Per §5 step 1, a shape-check failure **degrades** the session —
-   tools stay registered, every call is rejected with the problem named —
-   rather than crashing it:
+   every tool call is rejected with the problem named, not a crash (the
+   tools-stay-registered half of the behavior is asserted in Sprint 3, the
+   first sprint that registers tools; S1 asserts the degrade flag + rejection
+   gate itself):
    - Kernel probe at `session_start` via `getVersion()`; extension-owned
      `PINNED_SIYUAN_VERSION = "3.8.3"`, strict full-version match; writes
      fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
@@ -53,22 +55,29 @@ The machinery every tool call routes through. No tools registered yet.
    (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file
    supplies `defaultKBs` names only, each checked for existence against the
    global `kbs` set — the project file is never run through the full
-   validator (`allowUnattendedWrites` is also global-only, §5).
+   validator (`allowUnattendedWrites` is also global-only, §5; `writeConfirmTimeout`
+   joins them as global-only — §5's read-path record never classifies it, and as the
+   disruption-vs-oversight dial it is a deployment fact like `allowUnattendedWrites`,
+   not a per-project default a project file may lower).
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
    recovery via the `/kb` re-check hook (dispatch point in place now, subcommands
    land in Sprint 2).
 6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; glyphs per
-   probe state; cleared on `session_shutdown`.
+   probe state plus the degraded-config state (§5: ok → accent,
+   unreachable/never-probed → red/grey, degraded config → yellow); cleared on
+   `session_shutdown`.
 
 ### Acceptance criteria
 
 - [ ] Unit: validation order shape → probe → notebooks, incl. encrypted-notebook
       rejection for both lock states (mocked `listNotebooks`; kernel endpoint
       `lsNotebooks`), stale-notebook drop, project/global read path, token-failure
-      branch, shape-check failure degrading the session (tools stay registered,
-      calls rejected with the problem named — not a crash) (§5 step 1; §10 pins
+      branch, shape-check failure degrading the session (degrade flag set, calls
+      rejected with the problem named — not a crash; the tools-stay-registered
+      clause is asserted in Sprint 3, S1 registers no tools),
+      `writeConfirmTimeout` read from the global file only (§5 step 1; §10 pins
       the validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors.
@@ -77,14 +86,15 @@ The machinery every tool call routes through. No tools registered yet.
       no retry, local cooldown refusal with zero kernel round-trips, post-expiry
       call succeeds (§10; the 429 branch is exercised with a genuine
       `SiYuanRateLimitError` instance, not a synthetic 429 shape; the 429
-      neither increments nor resets the consecutive count — that property
-      stays unit-only; Sprint 6's live checklist deliberately does not stage
-      it (§10).
+      never increments the consecutive count (§5's pin) and never resets it —
+      an inferred consequence of §5's "any successful authenticated call resets
+      the counter" rule, not a separately pinned property — both unit-only;
+      Sprint 6's live checklist deliberately does not stage it (§10).
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
       set, and the project/global validator composition above; status-slot
-      rendering headless-safe (§10).
+      rendering headless-safe, incl. the degraded-config glyph (§10).
 
 ---
 
@@ -157,7 +167,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
    `method`/`types`/`orderBy`/`groupBy` rejected at the tool schema (the client
    already hardcodes `method: 0` and exposes no aux params), aux params
    omitted entirely; echo contract per row (`id`, `root_id`, `hpath`, `box` →
-   resolved KB name, `updated`).
+   resolved KB name, `updated` — `root_id`/`hpath` are renamed from the
+   client's `rootID`/`hPath` (client `SearchBlock`), never echoed raw).
 4. **Tool descriptions (§5, §3)** — the **query** tool description carries the
    pinned content (§5 pins it there specifically): `refs`/`blocks` table schemas
    with the two semantics notes (`sort` is a type weight, `hpath` is
@@ -188,8 +199,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
       assertion); fan-out issues N calls with per-call `pageSize`; single-KB
       degenerates to the single-call shape (the fan-out/degeneration policy is
-      §3's record — §10's unit list only pins the method/aux rejection; the
-      live pin for both is §10's two-KB saturation case).
+      §3's record — §10's unit list only pins the method/aux rejection; §10's
+      two-KB saturation case is the live pin for the fan-out only, degeneration
+      stays unit-only).
 - [ ] The query tool description contains the §5-pinned table schemas +
       semantics notes and the include-`hpath` discovery pattern.
 - [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
@@ -200,7 +212,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
-      scope, now asserted through real tools). **Gated on Sprint 2** — this
+      scope, now asserted through real tools, incl. the S1 shape-check
+      degradation clause deferred from Sprint 1 (degraded session → tools stay
+      registered, calls rejected with the problem named). **Gated on Sprint 2** — this
       assertion needs the persisted post-toggle scope, so it runs after S2
       lands; the rest of Sprint 3 stays parallel with S2.
 
@@ -347,8 +361,9 @@ confirmation gate and the `create` flow end to end.
       zero kernel write calls on the request log; matching re-check proceeds;
       replace-section baselines the delete set and the confirmation displays
       it (§10).
-- [ ] Unit: confirmation for a final-section replace displays the trailing
-      blocks' current content + inbound-ref count and referring hpaths;
+- [ ] Unit: confirmation for a final-section replace displays the enumerated
+      delete set's block count + the trailing blocks' current content + inbound-ref
+      count and referring hpaths;
       delete-bearing results carry `invalidRefs` (§10).
 - [ ] Unit: write-result shapes — doc-level `delete` carries only
       `invalidRefs`; doc-level `move` carries outline + title/hpath echo, no
@@ -356,7 +371,9 @@ confirmation gate and the `create` flow end to end.
       outline + anchor, with `movedBlockId` present (§10 pins it; §4 verifies
       every move via it).
 - [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
-      title… consume by ID", search ownership constraints), completing the
+      title… consume by ID", search ownership constraints) and the §4
+      replace-first preference (prefer `edit`/`replace-section` over `append`;
+      append is for genuinely new facts), completing the
       description work started in Sprint 3 item 4.
 
 ---
@@ -369,7 +386,9 @@ execution order: search-shape first, throttle after all kernel cases, raw-DELETE
 last, encrypted case on its own disposable workspace). A test-only
 raw-kernel-call helper (direct `fetch`) provides `createNotebook` /
 `removeNotebook` / `renameDoc` / `LockBox` / `listInvalidBlockRefs` / raw
-DELETE and the bogus-token arming requests — the client stays unchanged; §10
+DELETE / `EnableEncryptedNotebook` + `/api/notebook/createEncryptedNotebook`
+(encrypted case, own data dir) / the kernel reindex trigger (raw-DELETE case)
+and the bogus-token arming requests — the client stays unchanged; §10
 deliberately keeps fixture lifecycle and these pins out of the client.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
@@ -475,11 +494,12 @@ Polish and the M3 gate (§11).
       a live interactive session), and that `/kb` recovery with the corrected
       token restores reads immediately (kernel-side leakage bound: a post-trip
       leak of ≥3 further failures would have armed the kernel's 6-failure lock
-      and killed recovery too). The 429s-do-not-reset-the-count leg is
+      and killed recovery too). The 429-count leg is
       unit-only (Sprint 1's 429 AC) — 5b item 12's throttle leg does wait out
       the kernel's per-IP lock and asserts post-expiry self-healing, but no
       live leg observes the breaker counter itself, so the count behavior
-      (never incremented, never reset by 429s) stays pinned by Sprint 1's unit
+      (never incremented — §5's pin; never reset by 429s — inferred from §5's
+      successful-call-reset rule) stays pinned by Sprint 1's unit
       AC (§5 breaker rule).
 - [ ] Write-path integration suite green (Sprint 5b).
 - [ ] Manual residual checklist started: write-confirmation allow/refuse in a
@@ -500,6 +520,8 @@ stale-target contract pin, and real headless `/kb` dispatch.
 Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
 Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
+Sprint 2 (scope + /kb) ┄┄► Sprint 3 (final AC only: live post-toggle scope)
+Sprint 2 (scope + /kb) ┄┄► Sprint 6 (gate: /kb mid-session, breaker recovery)
 Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
 Sprint 5 (write modes) ──► Sprint 5b (integration)
