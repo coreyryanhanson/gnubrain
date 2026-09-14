@@ -92,7 +92,10 @@ The machinery every tool call routes through. No tools registered yet.
 6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; glyphs per
    probe state plus the degraded-config state (§5: ok → accent,
    unreachable/never-probed → red/grey, degraded config → yellow); cleared on
-   `session_shutdown`.
+   `session_shutdown`. Degraded-config causes share the yellow glyph and branch
+   a two-word cause tag in the slot text, first match wins in severity order:
+   shape failure → `● kb: config`, tripped breaker → `● kb: breaker`, version
+   drift → `● kb: version`; `/kb` names the full problem (§5).
 
 ### Acceptance criteria
 
@@ -125,7 +128,9 @@ The machinery every tool call routes through. No tools registered yet.
       set, and the project/global validator composition above — incl. project
       `defaultKBs` naming an unknown KB: loud startup warning, name dropped,
       valid siblings kept, no fallback to the global `defaultKBs`; status-slot
-      rendering headless-safe, incl. the degraded-config glyph (§10).
+      rendering headless-safe, incl. the degraded-config glyph and the
+      per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
+      `version`, first match in that order) (§10).
 
 ---
 

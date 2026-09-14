@@ -1314,7 +1314,11 @@ writes; the opt-out is typed, in settings.
   theme-colored glyphs, try/catch-guarded for headless) surfaces active KBs plus
   connectivity/config state: probe ok → `● kb: projects, recipes` (accent, active scope
   names), unreachable/never-probed → red/grey, degraded config → yellow; cleared on
-  `session_shutdown`.
+  `session_shutdown`. All degraded-config causes share the yellow glyph; the cause
+  shows as a two-word tag in the slot text, first match wins in severity order:
+  shape failure → `● kb: config`, tripped breaker → `● kb: breaker`, version drift →
+  `● kb: version`. The bar stays a glance surface (two words max); `/kb` names the
+  full problem and is the recovery gesture for every degraded cause.
 - **Fresh-session scope (decision record)**: `appendEntry` state persists across
   resume/fork of the same session file; a brand-new session starts with no scope entries.
   Resolution rule, one line: on `session_start`, active scope =
