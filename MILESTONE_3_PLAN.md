@@ -4,14 +4,16 @@ Implements the M3 row of DESIGN_v2.md §11: *KB extension — tool set, `kb` par
 validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via
 `appendEntry`), interactive write confirmation.*
 
-Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api@0.1.0`)
-already exposes every kernel method M3 needs — `getVersion`, `listNotebooks`,
-`query`, `search`, `exportMarkdown`, `getChildBlocks`, `createDocWithMarkdown`,
-`insertBlock`/`appendBlock`/`updateBlock`/`deleteBlock`/`moveBlock`,
-`removeDocByID`, `moveDocsByID` — so no client work is planned; if a gap shows up
-mid-sprint it is a deliberate, recorded change to that repo. (Naming note: the
-client method is `exportMarkdown`, wrapping the kernel's `exportMdContent`
-endpoint — both names appear below.)
+Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api`)
+exposes every kernel method M3's runtime paths need — `getVersion`,
+`listNotebooks`, `query`, `search`, `exportMarkdown`, `getChildBlocks`,
+`createDocWithMarkdown`, `insertBlock`/`appendBlock`/`updateBlock`/`deleteBlock`/`moveBlock`,
+`removeDocByID`, `moveDocsByID`. Notebook lifecycle (`createNotebook`,
+`removeNotebook`, `renameNotebook`, `renameDocByID`, `listInvalidBlockRefs`)
+lands in `siyuan-kernel-api@0.2.0` and gates Sprint 5b (its raw-helper list
+shrinks accordingly); any further gap is a deliberate, recorded change to that
+repo. (Naming note: the client method is `exportMarkdown`, wrapping the kernel's
+`exportMdContent` endpoint — both names appear below.)
 
 Design references below are §-sections of DESIGN_v2.md. Every sprint ends green:
 `npm test`, `npm run typecheck`, `npm run lint`.
@@ -384,16 +386,19 @@ The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
 execution order: search-shape first, throttle after all kernel cases, raw-DELETE
 last, encrypted case on its own disposable workspace). A test-only
-raw-kernel-call helper (direct `fetch`) provides `createNotebook` /
-`removeNotebook` / `renameDoc` / `LockBox` / `listInvalidBlockRefs` / raw
+raw-kernel-call helper (direct `fetch`) provides `LockBox` / raw
 DELETE / `EnableEncryptedNotebook` + `/api/notebook/createEncryptedNotebook`
 (encrypted case, own data dir) / the kernel reindex trigger (raw-DELETE case)
-and the bogus-token arming requests — the client stays unchanged; §10
-deliberately keeps fixture lifecycle and these pins out of the client.
+and the bogus-token arming requests. The notebook/doc lifecycle calls
+(`createNotebook`, `removeNotebook`, `renameDocByID` fixtures,
+`listInvalidBlockRefs`) ride the typed client (`siyuan-kernel-api@0.2.0`, exact
+pin); the remaining helper calls — LockBox, raw DELETE, reindex trigger,
+encrypted-case machinery, bogus-token arming — stay raw: §10 deliberately keeps
+fixture lifecycle and those pins out of the client.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
-   titles store verbatim + expected hpath; kernel `renameDoc` mid-test re-finds
+   titles store verbatim + expected hpath; kernel `renameDocByID` mid-test re-finds
    by new stored title).
 2. **Nested-mint + duplicate-disambiguation cases** — nested create → echo →
    read → guard on re-create; stale-parent fail-loud; `duplicate` rows with
@@ -422,8 +427,8 @@ deliberately keeps fixture lifecycle and these pins out of the client.
    freshness case where the superseded SQL outline provably broke), planted
    content-block ref
    orphans with `invalidRefs` echo; `updateBlock` preserves IDs
-   (`listInvalidBlockRefs` zero, direct kernel call — test-only exception to
-   documented-endpoints); doc-level `delete` backlink case (§10): confirmation
+   (`listInvalidBlockRefs` zero, direct client call); doc-level `delete`
+   backlink case (§10): confirmation
    surfaced the backlink count and referring hpaths, and ref reports come back
    invalid afterward; block-level `delete` orphan case (§10): planted ref to a
    single fixture block deleted via the tool → `invalidRefs` echo.
@@ -526,6 +531,7 @@ Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
 Sprint 5 (write modes) ──► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
+siyuan-kernel-api 0.2.0 (notebook lifecycle) ──► Sprint 5b
 ```
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
