@@ -1632,7 +1632,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     any recovery step (§5);
   - settings validation order (shape → probe → notebooks, incl. the
     project/global read path (global-only `kbs`/connection keys plus
-    `writeConfirmTimeout` read from the global file specifically; project `defaultKBs`
+    `allowUnattendedWrites` and `writeConfirmTimeout` read from the global file
+    specifically; project `defaultKBs`
     wins over global when present) and the
     token-failure branch);
   - encrypted-notebook rejection (§5) — a mocked `lsNotebooks` response carrying an
@@ -2025,7 +2026,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Title policy (R4, **supersedes the v1 "create determinism" claim**) | Four-tier taxonomy; accepted-duplicate tier; vector sidecar eventually primary | Claiming same-title identity determinism | §4, §6 |
 | User edits (R5) | Safe by construction; no rename-detection machinery or janitor | Hand-rename advisory; `fix-slugs` subcommand | §4, §9 |
 | Settings parent key | Single `gnubrain` parent key (= package name) | Bare `kb` key; flat per-KB keys | §5 |
-| Project/global config split | `kbs` + connection keys + `writeConfirmTimeout` global-only **by read path** (extension reads them from the global settings file specifically, never the merged view — pi exposes no settings API to extensions, and array-replace makes warn-on-merge unguardable); `defaultKBs` at both levels, extension-implemented project-wins replace | Projects re-declaring `kbs`; absent = activate-all; warn-on-merged-view enforcement (unguardable for array keys) | §5 |
+| Project/global config split | `kbs` + connection keys + `allowUnattendedWrites` + `writeConfirmTimeout` global-only **by read path** (extension reads them from the global settings file specifically, never the merged view — pi exposes no settings API to extensions, and array-replace makes warn-on-merge unguardable); `defaultKBs` at both levels, extension-implemented project-wins replace | Projects re-declaring `kbs`; absent = activate-all; warn-on-merged-view enforcement (unguardable for array keys) | §5 |
 | Error surface | Pinned status classes (`ok`/`near_matches`/`duplicate`/`error`/`refused`); `truncated`/`post_filtered` are payload markers | Free-text statuses; `truncated` as a sixth status | §5 |
 | Headless writes | Default-deny via `allowUnattendedWrites`; RPC is not headless; confirm timeout fail-closed | Default-allow; CLI flag; per-session toggle | §5, §9 |
 | Spill files | Per-session dir, content-hash names, JSONL/`.md`, **no cleanup machinery** | TSV; flat dir; terminal-shutdown cleanup | §3, §9 |

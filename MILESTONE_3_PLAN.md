@@ -95,8 +95,8 @@ The machinery every tool call routes through. No tools registered yet.
    accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
    with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
    renders hollow — no toolsets registered yet; Sprint 3's read toolset brings the blue
-   branch, Sprint 4's write toolset the green branch + repaint on
-   `TOOLSET_EVENTS.changed`/`restored`. Glyph state reads live toolset state, so any
+   branch, Sprint 5's write toolset the green branch + repaint on
+   `TOOLSET_EVENTS.changed`/`restored` (and after `session_tree` restore, §5). Glyph state reads live toolset state, so any
    disabler (our toggle, `toolsetDefaults` settings pins, allowlist mode, external
    managers) is reflected (§5). Cleared on `session_shutdown`. Degraded-config causes
    share the yellow glyph and branch a two-word cause tag in the slot text, first match
@@ -138,7 +138,7 @@ The machinery every tool call routes through. No tools registered yet.
       per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
-      Sprints 3–4) with degraded/beaten precedence over the healthy colors
+      Sprints 3 and 5) with degraded/beaten precedence over the healthy colors
       (§10).
 
 ---
