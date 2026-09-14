@@ -89,13 +89,19 @@ The machinery every tool call routes through. No tools registered yet.
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
    recovery via the `/kb` re-check hook (dispatch point in place now, subcommands
    land in Sprint 2).
-6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; glyphs per
-   probe state plus the degraded-config state (§5: ok → accent,
-   unreachable/never-probed → red/grey, degraded config → yellow); cleared on
-   `session_shutdown`. Degraded-config causes share the yellow glyph and branch
-   a two-word cause tag in the slot text, first match wins in severity order:
-   shape failure → `● kb: config`, tripped breaker → `● kb: breaker`, version
-   drift → `● kb: version`; `/kb` names the full problem (§5).
+6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; severity-first
+   precedence: unreachable/never-probed → red/grey, degraded config → yellow, healthy →
+   dot color carries the tool capability (§5: writes on → success/green, else reads on →
+   accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
+   with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
+   renders hollow — no toolsets registered yet; Sprint 3's read toolset brings the blue
+   branch, Sprint 4's write toolset the green branch + repaint on
+   `TOOLSET_EVENTS.changed`/`restored`. Glyph state reads live toolset state, so any
+   disabler (our toggle, `toolsetDefaults` settings pins, allowlist mode, external
+   managers) is reflected (§5). Cleared on `session_shutdown`. Degraded-config causes
+   share the yellow glyph and branch a two-word cause tag in the slot text, first match
+   wins in severity order: shape failure → `● kb: config`, tripped breaker →
+   `● kb: breaker`, version drift → `● kb: version`; `/kb` names the full problem (§5).
 
 ### Acceptance criteria
 
@@ -130,7 +136,10 @@ The machinery every tool call routes through. No tools registered yet.
       valid siblings kept, no fallback to the global `defaultKBs`; status-slot
       rendering headless-safe, incl. the degraded-config glyph and the
       per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
-      `version`, first match in that order) (§10).
+      `version`, first match in that order) and the healthy-state capability
+      ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
+      Sprints 3–4) with degraded/beaten precedence over the healthy colors
+      (§10).
 
 ---
 
@@ -187,8 +196,8 @@ registration silently overrides the builtin — so every tool carries the `kb_` 
 short names below are internal labels). The write tool's registered name (`kb_write`)
 lands with Sprint 4.
 
-The discovery half of the loop. Adds the one new runtime dependency:
-`node-sql-parser@5.4.0` (exact-pinned).
+The discovery half of the loop. Adds the new runtime dependencies:
+`node-sql-parser@5.4.0` and `pi-tool-masking@1.3.0` (both exact-pinned).
 
 1. **Spill/budget helper (§3)** — the four constants (`SPILL_DIR`,
    `PREVIEW_CHARS` 8000, `OUTLINE_HEADINGS` 200, `RESULT_LIMIT` 64) and one
@@ -234,6 +243,12 @@ The discovery half of the loop. Adds the one new runtime dependency:
    (heading filter for rendering only, full unfiltered ID set retained for write
    verification; extension-owned recursion depth bound); `OUTLINE_HEADINGS` cap
    with spill of the full outline.
+6. **Read toolset (§5 tool-masking record)** — `defineToolset(pi, { id:
+   "gnubrain.read", names: {kb_query, kb_search, kb_read}, persistKey:
+   "toolset-state:gnubrain.read", defaultEnabled: true })`; no toggle subcommand
+   (§5: nothing asks to hide reads yet) — the toolset exists so the surface is
+   declared and maskable from day one, default behavior unchanged. Status bar:
+   healthy dot turns accent/blue once this toolset is active (hollow before).
 
 ### Acceptance criteria
 
@@ -264,6 +279,8 @@ The discovery half of the loop. Adds the one new runtime dependency:
       set (§10).
 - [ ] Unit: `read` on a `docId` from another KB returns no rows — the ownership
       query doubles as the scope check (§4; §5 tool shape).
+- [ ] Unit: read toolset registered with the three `kb_` read tools as members,
+      default-enabled, persist key `toolset-state:gnubrain.read` (§5).
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -401,6 +418,22 @@ confirmation gate and the `create` flow end to end. Registered name
    served); re-check after confirmation approval, before the kernel call;
    mismatch → `stale_content` refusal with current content + fresh outline, no
    kernel write. Scope: `edit` and `replace-section` only.
+5. **Write toolset + toggle (§5 tool-masking record)** — `defineToolset(pi, { id:
+   "gnubrain.write", names: {kb_write}, persistKey: "toolset-state:gnubrain.write",
+   defaultEnabled: true, requires: ["gnubrain.read"] })` — the pi-tool-masking
+   dependency cascade makes write-without-read unrepresentable (enabling writes
+   auto-enables reads; disabling reads cascades to disable dependents; settings
+   pins resolve through the cascade too). Extends Sprint 2's `/kb` dispatcher
+   with the `writes` reserved keyword: `/kb writes on|off` toggles the toolset
+   (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output
+   gains the toolset state line; `settings.ts`'s `RESERVED_KB_NAMES` gains
+   `writes` (M1 validator + test updated — a KB named `writes` becomes
+   unconfigurable, same relocation as `all`). Status-bar integration: the
+   healthy dot turns success/green when the write toolset is enabled and back
+   to accent/blue (or hollow if the read toolset is also masked — e.g. a
+   `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
+   `restored` so `/kb writes on|off` recolors mid-session (§5 status-bar
+   record; text unchanged — `● kb: <scope names>`).
 
 ### Acceptance criteria
 
@@ -437,6 +470,17 @@ confirmation gate and the `create` flow end to end. Registered name
       replace-first preference (prefer `edit`/`replace-section` over `append`;
       append is for genuinely new facts), completing the
       description work started in Sprint 3 item 4.
+- [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — enabling
+      writes cascades reads on; disabling reads cascades writes off; a
+      `toolsetDefaults` write pin resolves through the cascade (write pin on +
+      read unpinned → both active) (§5).
+- [ ] Unit: status-bar capability colors — healthy + write toolset enabled →
+      success/green, write masked + read active → accent/blue, both masked →
+      `○ kb` hollow (incl. a masked read toolset — `toolsetDefaults` pin /
+      allowlist mode — not only our toggle), text identical across healthy
+      states; degraded (yellow) and unreachable (red) beat the healthy colors
+      in the precedence ladder; glyph repaints on `TOOLSET_EVENTS.changed`/
+      `restored` (§5).
 
 ---
 
@@ -581,7 +625,10 @@ raw-DELETE case like the rest.
 Polish and the M3 gate (§11).
 
 - [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
-      `kb_write` — in a real session; assert none shadows a pi builtin).
+      `kb_write` — in a real session; assert none shadows a pi builtin). Both
+      toolsets registered default-enabled; `/kb writes off` removes `kb_write`
+      from the active tool list (masked ≠ refused — no envelope, tool absent),
+      `/kb writes on` restores it; state survives session resume (§5).
 - [ ] Scope survives session restart (resume reads the persisted entry).
 - [ ] `/kb <name> on` and `/kb all off` land mid-session.
 - [ ] Write confirmation refuse/allow verified interactively.

@@ -1143,6 +1143,26 @@ checked once, manually, at first real RPC use (§10 residual checklist). The tim
   opt-out in settings, never a side effect of a timeout value. The rejected-write message
 names the enabling setting or the interactive path. Silence never grants unattended
 writes; the opt-out is typed, in settings.
+- **Tool masking — read/write toolsets (decision record)**: the tool surface declares two
+  `pi-tool-masking` toolsets (library dependency, npm-published — the §2/§5 namespace
+  rejection was about *scope state*, which KBs are active; tool allowlists are exactly its
+  own semantics, so this is the sanctioned use): `gnubrain.read` (`kb_query`, `kb_search`,
+  `kb_read`) and `gnubrain.write` (`kb_write` — one tool, all mutation modes incl. doc-level
+  move/delete, so masking is all-or-nothing on writes; a per-mode allowlist would need a
+  `kb_write` param and is deferred until a real workflow asks for it). Both
+  `defaultEnabled: true` — default behavior is identical to ungated; the dial is opt-out.
+  Persist keys `toolset-state:gnubrain.read` / `toolset-state:gnubrain.write` — the
+  extension's own namespace. Dependency cascade: the write toolset declares
+  `requires: ["gnubrain.read"]` (pi-tool-masking cascade — enabling writes
+  auto-enables reads, disabling reads auto-disables dependents), so the
+  write-without-read state is unrepresentable by construction. Masking is the
+  **outer** write layer: a masked `kb_write` is
+  absent from the tool list (no schema tokens, no doomed attempts — a read-only KB session
+  by construction); when the toolset is on, confirmation + headless default-deny remain the
+  backstop unchanged. Masked ≠ refused: no refusal envelope exists for an absent tool; bare
+  `/kb` prints toolset state alongside scope so the absence is never mysterious. The toggle
+  is `/kb writes on|off` (below); the read toolset gets no dedicated subcommand (nothing
+  asks to hide reads yet).
 - **Scope (session state)**: active KB scope persisted via `pi.appendEntry("kb-scope", ...)`,
   read on `session_start`. This uses pi's native session persistence — survives session
   resume/fork, stays out of LLM context.
@@ -1181,9 +1201,11 @@ writes; the opt-out is typed, in settings.
     reserved keyword set before KB-name resolution; if it matches, the command is a
     subcommand and consumes no KB-name arguments. Bare `/kb` (no arguments) prints the
     current active scope. `/kb <name>` without an explicit `on|off` verb prints usage —
-    no bare-name default to guess at. The reserved set is just `all` (R5 — no slug
-    convention survives, so no janitor subcommand exists); a KB named `all` is rejected
-    at shape validation (validation order, above).
+    no bare-name default to guess at. The reserved set is `all` plus `writes` — the
+    write-toolset toggle `/kb writes on|off` (§5 tool-masking record; same reserved-keyword
+    - verb grammar as `all`, one more member of the same set) — but nothing else (R5 — no
+    slug convention survives, so no janitor subcommand exists); a KB named `all` or
+    `writes` is rejected at shape validation (validation order, above).
 - **Scope read rule**: active scope = the latest `kb-scope` entry in the session file,
   else `gnubrain.defaultKBs` — latest entry wins, so resume/fork and mid-session switches
   are the same mechanism. The `kb`-param rejection message names the command:
@@ -1310,15 +1332,27 @@ writes; the opt-out is typed, in settings.
     degraded-state message says **wait out the lock first, then `/kb`** (the 429 refusal
     already carries the self-healing expiry note). Session restart remains the alternate
     recovery path.
-- **Status bar**: a `kb` status-bar slot (pi-lean-search pattern: `ctx.ui.setStatus` +
+- **Status bar**: a `kb` status-bar slot (pi-lean-search/portal pattern: `ctx.ui.setStatus` +
   theme-colored glyphs, try/catch-guarded for headless) surfaces active KBs plus
-  connectivity/config state: probe ok → `● kb: projects, recipes` (accent, active scope
-  names), unreachable/never-probed → red/grey, degraded config → yellow; cleared on
+  connectivity/config state. **The text never changes with capability — the dot color
+  carries it** (portal precedent: `fg(learn ? "success" : "accent", "●")`); slot text stays
+  `● kb: <scope names>`. Precedence is severity-first — health always beats capability
+  display: unreachable/never-probed → red/grey; degraded config → yellow (cause tags
+  below); write toolset enabled → success/green (full capability); write toolset masked,
+  read toolset active → accent/blue (read-only); **all kb toolsets masked → `○ kb` hollow**.
+  The hollow state is reachable without our toggle: pi-tool-masking's settings tier
+  (`toolsetDefaults` pins on `toolset-state:gnubrain.*`), allowlist/focus mode, or an
+  external toolset manager can mask any toolset — so the glyph renders from **live toolset
+  state** (events + `isEnabled`), never from "which of our commands ran". The `requires`
+  cascade (above) makes write-without-read unrepresentable, so the ladder never needs a
+  fourth state. Capability rule,
+  one line: writes on → green; else reads on → blue; else hollow. The glyph repaints on `TOOLSET_EVENTS.changed`/`restored` so
+  `/kb writes on|off` recolors mid-session, and after `session_tree` restore; cleared on
   `session_shutdown`. All degraded-config causes share the yellow glyph; the cause
   shows as a two-word tag in the slot text, first match wins in severity order:
   shape failure → `● kb: config`, tripped breaker → `● kb: breaker`, version drift →
   `● kb: version`. The bar stays a glance surface (two words max); `/kb` names the
-  full problem and is the recovery gesture for every degraded cause.
+  full problem, the toolset state, and is the recovery gesture for every degraded cause.
 - **Fresh-session scope (decision record)**: `appendEntry` state persists across
   resume/fork of the same session file; a brand-new session starts with no scope entries.
   Resolution rule, one line: on `session_start`, active scope =
@@ -1983,7 +2017,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Scope state | `pi.appendEntry("kb-scope")` | pi-tool-masking reuse; per-KB toolsets | §5 |
 | Scope mechanism | Required `kb` param — array on read tools, single name on write-back | Hidden/optional scope defaulting to active set | §5 |
 | Scope activation | `/kb <name> on\|off` single-name idempotent toggle + `/kb all on\|off` | Multi-name set-replacement; agent-invocable activation tool | §5 |
-| `/kb` subcommands | Reserved set is just `all` (R5); bare `/kb` prints scope | `/kb repair`; separate top-level commands | §5 |
+| `/kb` subcommands | Reserved set is `all` + `writes` (R5); bare `/kb` prints scope + toolset state | `/kb repair`; separate top-level commands | §5 |
+| Write gating | `pi-tool-masking` toolsets — `gnubrain.write` masked = `kb_write` absent from the tool list | per-mode allowlist param on `kb_write`; hand-rolled `setActiveTools` bookkeeping | §5 |
 | Version gate | Eager `session_start` probe, cached verdict; strict full-version write gate, reads warn-and-proceed; ownership split — `siyuan-kernel-api.getVersion()` fetches only, the extension owns `PINNED_SIYUAN_VERSION` + strict-match policy + refusal message | Major-only refusal; per-write probe; staleness re-probe; version pin inside the core | §2, §8, §10 |
 | Doc addressing & discovery (R1/R2/R6, **supersedes the v1 title-as-primary-key doctrine**) | Echoed docId is identity; mint by title, discover by query/search, consume by ID | Name/hpath resolution; read-by-topic with docId fallback | §4 |
 | Create addressing (R3, **supersedes the v1 slug mint address**) | Title + stored-title guard on kernel ground truth; ground-truth submission path; verified-create by-ID asserts | Slug-hpath guard; slugifier as mint address | §4, §10 |
@@ -2029,4 +2064,4 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | `~/gbrain/` | GBrain methods — lean loop, entity/source separation, zero-key mode (§1, §3, §4, §6); `skills/query` SKILL.md + `MEMORY_VERBS_v1` — the discovery-doctrine anchor for the R1/R2/R6 addressing revision (search discovers, read consumes confirmed targets only) |
 | `~/pi/` | pi harness — extension API, `session_start`/`appendEntry`, settings.json (§2, §5) |
 | `~/pi-tbox/` | Precedent — two-package shape, settings schema, vitest posture (§2, §10) |
-| `~/pi-tool-masking/` | Precedent — library-only core shape; why its namespace was rejected for scope state (§2, §5) |
+| `~/pi-tool-masking/` | Precedent — library-only core shape; why its namespace was rejected for scope state (§2, §5), and the dependency adopted for read/write tool masking (§5) |
