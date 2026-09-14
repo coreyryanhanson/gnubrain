@@ -83,8 +83,9 @@ repos green, `file:` dependency working):
   `/api/system/version` is unauthenticated.
 - **Client surface is policy-free** (implemented and pinned in the
   `siyuan-kernel-api` repo — see its AGENTS.md "Design constraints"): query takes
-  `stmt` + the readonly `mode` flag and **no** limit parameter; search takes an
-  explicit `pageSize` (the kernel's real field); read takes only the doc `id` — so
+  `stmt` + the readonly `mode` flag and **no** limit parameter; search takes
+  `page`/`pageSize` (the kernel's real fields, optional since 0.2.0 — kernel defaults
+  page 1 / pageSize 32 apply when omitted); read takes only the doc `id` — so
   result budgets (§3) are entirely extension-owned. Every endpoint method exists in
   `client.ts` with its request shape pinned by unit and integration tests (§10 M2
   profile, passed against live 3.8.3).
@@ -1636,8 +1637,11 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   live workspace. Two notebooks, not one: the multi-KB pins (multi-element `box IN (...)`,
   two-KB search sweeps, the OR-precedence aggregate) need a deterministic two-KB workspace —
   not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DELETE case below deletes only
-  fixture-created rows. Fixture lifecycle is test setup code calling the kernel API directly —
-  notebook management stays out of `siyuan-kernel-api` and the tool surface. The write path gets
+  fixture-created rows. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
+  typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
+  `listInvalidBlockRefs`); the encrypted-case machinery, LockBox, raw DELETE, the
+  reindex trigger, and bogus-token arming stay raw direct kernel calls, and none of
+  it reaches the tool surface. The write path gets
   dedicated cases here — it is the highest-stakes code in the project.
   **Execution order (summary of the pins scattered below)**: the search-shape case runs
   first (cheapest falsifier of the load-bearing request shape); every other
@@ -1656,8 +1660,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     silently blind); clean titles (leading/trailing space → trimmed, Unicode, the
     512-rune boundary) store verbatim **and** yield the expected child hpath — the live
     pin for the §4 superset claim (any mint-policy-surviving title must transform to
-    itself); a user-retitled doc (kernel
-    `renameDoc` mid-test) still re-finds by its new stored title and misses the old one
+    itself); a user-retitled doc (client `renameDocByID`
+    mid-test) still re-finds by its new stored title and misses the old one
     (one guard miss → accepted-duplicate path, asserting no data loss);
   - nested-mint case (§4 R3): create under an echoed `parentId` → the echo shows the
     real `/parent/child` hpath → `read` by the echoed docId works → re-create with the
@@ -1708,9 +1712,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     is pinned in the mocked unit suite as call order — a failed `deleteBlock` after a
     successful insert leaves visible duplication, never loss;
   - `updateBlock` preserves block IDs — assert zero invalid refs via
-    `/api/search/listInvalidBlockRefs` after an edit (route name per kernel/api/router.go; the route
-    is undocumented in API.md, so the test calls the kernel directly, not through `siyuan-kernel-api` —
-    the §2 documented-endpoints rule is a client rule, not a test constraint);
+    `/api/search/listInvalidBlockRefs` after an edit (client method `listInvalidBlockRefs`,
+    added in `siyuan-kernel-api@0.2.0`);
   - `deleteBlock` orphan behavior on a referenced block;
   - fresh-content precondition live pin (§4): outline a fixture doc through the tool,
     then change a target block's content directly via the kernel (simulating a
@@ -1765,8 +1768,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     sever the source doc's inbound refs), `destOutline` reflects the moved subtree in the
     destination (freshness pin — fetched after the move lands), and the source `outline`
     no longer lists it. Provenance survives: a block ref created into the moved block
-    before the move still resolves afterward (`listInvalidBlockRefs` returns zero, same
-    documented-route exception as the `updateBlock` case above);
+    before the move still resolves afterward (`listInvalidBlockRefs` returns zero, the same
+    client method as the `updateBlock` case above);
   - write-after-create read consistency (the block handlers flush synchronously, but §4's
     find-then-write flow depends on that contract, so a test pins it) — extended to the
     §4 write-result contract: the `outline` field riding a write result must match a
@@ -1923,7 +1926,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | --- | --- | --- |
 | 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM against `http://192.168.100.1:6806`; pinned kernel version **3.8.3**. See §8 for the deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning. |
 | 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green; extension loads in a real pi session; offline §5 settings validator enforces the full rejection matrix. No build step in either repo — both ship raw `.ts` (`exports` → `index.ts`). |
-| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0; `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
+| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0, incremented to 0.2.0 (notebook/doc lifecycle: `createNotebook`, `removeNotebook`, `renameNotebook`, `openNotebook`, `closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`, optional search `page`/`pageSize`); `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
 | 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | Tools callable from pi; scope survives session restart; `/kb <name> on` and `/kb all off` land mid-session; write confirmation refuse/allow verified; auth circuit breaker degrades after 3 consecutive auth failures; write-path integration suite green under the fixture policy (§10), incl. the title-guard kernel round-trip pin, the version-refusal contract pin (§2/§5), the stale-target contract pin (§4), and the headless `/kb` dispatch exercised for real (`/kb all off` from `pi -p` — converting the §5 scope-activation source-read claim into evidence before M4's harness depends on it) |
 | 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write confirmation, status slot) |
 
