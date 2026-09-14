@@ -45,7 +45,11 @@ The machinery every tool call routes through. No tools registered yet.
      states. Token failures here feed the breaker (below).
    - Unreachable kernel → degraded session: tools (once they exist) register,
      reads error per-call, every write first retries the probe per write
-     attempt, still-failed → `refused`.
+     attempt, still-failed → `refused`. Reads never gate on the cached
+     unreachable verdict — each read attempts the kernel call and errors on
+     failure — so once the kernel is reachable again the next read succeeds
+     with no recovery step (§5's reads-recover-per-call rule; only `/kb`
+     recovery clears the degraded flag, reads just stop erroring).
 2. **Error envelope (§5)** — one shared helper:
    `{status: ok | near_matches | duplicate | error | refused, message, ...payload}`,
    with `truncated`/`post_filtered` as payload markers, never statuses; per
@@ -89,7 +93,8 @@ The machinery every tool call routes through. No tools registered yet.
       `writeConfirmTimeout` read from the global file only (classified global-only
       per item 4; §10 pins the validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
-      retry; degraded-session read errors.
+      retry; degraded-session read errors; post-recovery read succeeds with no
+      recovery step (reads bypass the cached unreachable verdict, §5).
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
       zero further kernel calls; recovery clears it; 429 → no breaker increment,
       no retry, local cooldown refusal with zero kernel round-trips, post-expiry
