@@ -24,7 +24,8 @@ Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages)
   recalls it in later sessions — the "tell it to remember X, restart, ask for X back" test.
 - **General and robust from day 1**: clean package boundaries, typed client, version-checked
   API. Two separate repositories — `siyuan-kernel-api` (npm-published client) and `gnubrain`
-  (local-only extension; split done and validated in M1).
+  (npm-published extension — 0.0.2 namespace placeholder already reserved; split done and
+  validated in M1).
 - **Model-neutral**: the extension makes **zero** model/provider calls. The agent is the
   intelligence; SiYuan is the memory.
 - **Minimal context surface**: a small, curated tool set. No MCP tool wall, no per-KB tool
@@ -37,8 +38,7 @@ Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages)
   first (GBrain's own zero-key mode proves it works), and v1 stays embedding-free by
   construction so the vector sidecar lands later without re-architecture (§6 — vectors are
   derived data over the same storage).
-- No npm publication of the `gnubrain` extension itself (shared locally); no hard multi-KB
-  isolation (see §6, Named ceilings).
+- No hard multi-KB isolation (see §6, Named ceilings).
 - No backup machinery — whatever backs the workspace (git, SiYuan sync, nothing) is the
   user's business. The extension only ever speaks to the kernel API.
 
@@ -1019,7 +1019,7 @@ duplicate doc, never a silent clobber.
 - **Config (declarative)**: settings.json holds the KB array plus connection settings under
   one parent key, `gnubrain` — the parent key matches the package name, avoiding settings.json
   namespace collisions with other extensions (renaming later would be a breaking config
-  change; accepted for local-only use). Exact shape:
+  change). Exact shape:
 
   ```json
   {
@@ -1337,7 +1337,7 @@ writes; the opt-out is typed, in settings.
   connectivity/config state. **The text never changes with capability — the dot color
   carries it** (portal precedent: `fg(learn ? "success" : "accent", "●")`); slot text stays
   `● kb: <scope names>`. Precedence is severity-first — health always beats capability
-  display: unreachable/never-probed → red/grey; degraded config → yellow (cause tags
+  display: unreachable → red, never-probed → grey; degraded config → yellow (cause tags
   below); write toolset enabled → success/green (full capability); write toolset masked,
   read toolset active → accent/blue (read-only); **all kb toolsets masked → `○ kb` hollow**.
   The hollow state is reachable without our toggle: pi-tool-masking's settings tier

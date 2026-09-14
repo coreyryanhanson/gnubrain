@@ -10,8 +10,8 @@ exact pin) exposes every kernel method M3's runtime paths need — `getVersion`,
 "readonly"` on the wire), `search`, `exportMarkdown`, `getChildBlocks`,
 `createDocWithMarkdown`, `insertBlock`/`appendBlock`/`updateBlock`/`deleteBlock`/`moveBlock`,
 `removeDocByID`, `moveDocsByID` — plus the notebook/doc lifecycle methods
-(`createNotebook`, `removeNotebook`, `renameNotebook`, `renameDocByID`,
-`listInvalidBlockRefs`) and the encrypted-notebook family
+(`createNotebook`, `removeNotebook`, `renameNotebook`, `openNotebook`,
+`closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`) and the encrypted-notebook family
 (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
 `unlockAndOpenNotebook`; locking an encrypted box is `closeNotebook`'s job),
 all shipped in 0.2.0–0.3.0 and gating Sprint 5b (its raw-helper list shrinks
@@ -38,7 +38,9 @@ The machinery every tool call routes through. No tools registered yet.
    first sprint that registers tools; S1 asserts the degrade flag + rejection
    gate itself):
    - Kernel probe at `session_start` via `getVersion()`; extension-owned
-     `PINNED_SIYUAN_VERSION = "3.8.3"`, strict full-version match; writes
+     `PINNED_SIYUAN_VERSION = "3.8.3"` — the validation/probe pipeline takes
+     the expected version as a parameter defaulting to it (Sprint 5b item 4's
+     per-test override rides this seam, §10), strict full-version match; writes
      fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
    - `listNotebooks()`: stale notebook ID → warn + drop from valid set;
      `encrypted: true` → reject the KB at startup, one branch for both lock
@@ -87,11 +89,17 @@ The machinery every tool call routes through. No tools registered yet.
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
+   message content pinned per §5: the 429 refusal names the lockout, its cause
+   (IP-keyed lock, possibly tripped by another client), and its self-healing
+   expiry (quoting the served `Retry-After`), and tells the model the token is
+   probably correct — do not change the token or settings, do not retry, report
+   the lockout to the user and pause kb work until the stated window passes;
+   the degraded-state message says **wait out the lock first, then `/kb`**;
    recovery via the `/kb` re-check hook applies to the breaker only — the 429
    cooldown self-heals on expiry, §5 pins no `/kb` recovery for it
    (dispatch point in place now, subcommands land in Sprint 2).
 6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; severity-first
-   precedence: unreachable/never-probed → red/grey, degraded config → yellow, healthy →
+   precedence: unreachable → red, never-probed → grey, degraded config → yellow, healthy →
    dot color carries the tool capability (§5: writes on → success/green, else reads on →
    accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
    with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
@@ -122,8 +130,12 @@ The machinery every tool call routes through. No tools registered yet.
       recovery step (reads bypass the cached unreachable verdict, §5).
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
       zero further kernel calls; recovery clears it; 429 → no breaker increment,
-      no retry, local cooldown refusal with zero kernel round-trips, post-expiry
-      call succeeds (§10; the 429 branch is exercised with a genuine
+      no retry, local cooldown refusal with zero kernel round-trips carrying
+      the §5-pinned message content (lockout, cause, self-healing expiry with
+      the served `Retry-After`, do-not-change-token / do-not-retry guidance),
+      post-expiry call succeeds; the degraded-state message carries the
+      "wait out the lock first, then `/kb`" guidance (§5). The 429 branch is
+      exercised with a genuine
       `SiYuanRateLimitError` instance, not a synthetic 429 shape; the 429
       never increments the consecutive count (§5's pin) and never resets it —
       an inferred consequence of §5's "any successful authenticated call resets
@@ -139,7 +151,7 @@ The machinery every tool call routes through. No tools registered yet.
       per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
-      Sprints 3 and 5) with degraded/beaten precedence over the healthy colors
+      Sprints 3 and 5) with degraded/breaker precedence over the healthy colors
       (§10), and the post-`session_tree`-restore repaint (§5, named in item 6).
 
 ---
@@ -202,8 +214,10 @@ The discovery half of the loop. Adds the new runtime dependencies:
 
 1. **Spill/budget helper (§3)** — the four constants (`SPILL_DIR`,
    `PREVIEW_CHARS` 8000, `OUTLINE_HEADINGS` 200, `RESULT_LIMIT` 64) and one
-   helper: per-session temp dir `os.tmpdir()/gnubrain/<session-id>/`, SHA-256-16hex
-   hash names, JSONL vs `.md` spill formats, newline-boundary preview +
+   helper: per-session temp dir `os.tmpdir()/gnubrain/<session-id>/`, file names
+   per §3's template `{tool}-{sha256-16hex}.jsonl|.md` (the `tool` prefix keeps
+   spill files attributable in the grep-side-by-side workflow), JSONL vs `.md`
+   spill formats, newline-boundary preview +
    `… N more — full result in <path>`, no cleanup machinery.
 2. **query tool (`kb_query`, §3)** — parser certification (single top-level SELECT, DML /
    multi-statement / FROM-allowlist / JOIN / subquery / CTE / UNION / bare
@@ -250,7 +264,11 @@ The discovery half of the loop. Adds the new runtime dependencies:
    (pi-tool-masking's `ToolsetSpec.names` is a `Set<string>`, not an array); no
    toggle subcommand
    (§5: nothing asks to hide reads yet) — the toolset exists so the surface is
-   declared and maskable from day one, default behavior unchanged. Status bar:
+   declared and maskable from day one, default behavior unchanged. Bare `/kb`
+   output gains the toolset-state line here, covering the read toolset (§5's
+   tool-masking record: a settings-pinned mask must never be mysterious — the
+   absence is printed, not silent); Sprint 5 extends the line to the write
+   toolset. Status bar:
    healthy dot turns accent/blue once this toolset is active (hollow before).
 
 ### Acceptance criteria
@@ -430,10 +448,13 @@ confirmation gate and the `create` flow end to end. Registered name
    auto-enables reads; disabling reads cascades to disable dependents; settings
    pins resolve through the cascade too). Extends Sprint 2's `/kb` dispatcher
    with the `writes` reserved keyword: `/kb writes on|off` toggles the toolset
-   (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output
-   gains the toolset state line; `settings.ts`'s `RESERVED_KB_NAMES` gains
+   (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output's
+   toolset-state line (landed with Sprint 3's read toolset) extends to the write
+   toolset; `settings.ts`'s `RESERVED_KB_NAMES` gains
    `writes` (M1 validator + test updated — a KB named `writes` becomes
-   unconfigurable, same relocation as `all`). Status-bar integration: the
+   unconfigurable, same relocation as `all`; the now-stale
+   "The only /kb reserved keyword" comment at `settings.ts:23` updated in the
+   same change — it already contradicts §5's `all` + `writes` reserved set). Status-bar integration: the
    healthy dot turns success/green when the write toolset is enabled and back
    to accent/blue (or hollow if the read toolset is also masked — e.g. a
    `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
@@ -477,7 +498,7 @@ confirmation gate and the `create` flow end to end. Registered name
       description work started in Sprint 3 item 4.
 - [ ] Unit: `/kb writes` dispatch — toggles the write toolset, idempotent
       re-toggle reported as no-op (same semantics as KB toggles), bare `/kb`
-      output includes the toolset state line (§10's `/kb`-toggle unit list,
+      output's toolset-state line covers both toolsets (§10's `/kb`-toggle unit list,
       extended with the `writes` keyword per item 5).
 - [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — enabling
       writes cascades reads on; disabling reads cascades writes off; a
