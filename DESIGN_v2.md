@@ -211,7 +211,7 @@ default and the per-KB search `pageSize`) and one helper.
 - **query scoping (decision record)** — `kb` (array, §5) resolves to notebook IDs; the
   extension owns the `box IN (...)` predicate, the agent never writes `box` or knows IDs.
   Certification is **parser-based, not token-scanned**: `gnubrain` uses **`node-sql-parser`**
-  (SQLite dialect) — the extension's one runtime dependency of its own (the client is the
+  (SQLite dialect) — one of the extension's runtime dependencies of its own (the client is the
   other dependency, and `siyuan-kernel-api` itself stays zero-dep; scoping is policy, and
   §3 policy is extension-owned) — **pinned to the exact
   spike-verified version (`node-sql-parser@5.4.0`)**, same discipline as the §8 kernel
@@ -1544,8 +1544,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 ## 10. Testing posture
 
 - **Stack**: TypeScript + vitest (pi-tbox precedent); `node-sql-parser@5.4.0` (SQLite
-  dialect, exact-pinned — §3 query scoping) in `gnubrain` is the one runtime dependency of
-  its own besides the client — `siyuan-kernel-api` stays zero-dep.
+  dialect, exact-pinned — §3 query scoping) and `pi-tool-masking@1.3.0` (exact-pinned —
+  §5 tool masking) are `gnubrain`'s runtime dependencies of its own besides the client —
+  `siyuan-kernel-api` stays zero-dep.
 - **Unit**: `siyuan-kernel-api` client tested with mocked `fetch` — request shapes, auth header,
   error mapping, version fetch (the core holds no gate — §2 ownership).
 - **Unit (extension layer)**: the risky logic lives in the extension, not the client, so the

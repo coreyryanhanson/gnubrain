@@ -140,7 +140,7 @@ The machinery every tool call routes through. No tools registered yet.
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
       Sprints 3 and 5) with degraded/beaten precedence over the healthy colors
-      (§10).
+      (§10), and the post-`session_tree`-restore repaint (§5, named in item 6).
 
 ---
 
@@ -311,15 +311,13 @@ confirmation gate and the `create` flow end to end. Registered name
    60 s, `0` = indefinite), every non-answer resolves to `refused`; timeout
    expiry = `confirm_timeout`, terminal for that write in that session (re-request
    → immediate refusal, no new dialog); explicit decline stays recoverable.
-   Timeout mechanism: pi's `ui.confirm` resolves to a bare `boolean` and its
-   native dialog auto-dismisses on timeout, making a timed-out dialog
-   indistinguishable from a decline — so the extension owns the timeout clock
-   (race an extension-side timer against the confirm promise; `confirm_timeout`
-   only when the timer wins; the native `timeout` option may be passed for UI
-   countdown only, and only omitted or set ≥ the extension timer — a shorter
-   native timeout auto-dismisses the dialog and resolves `false` first, which
-   would misclassify a real timeout as an explicit decline), never inferring
-   timeout from a `false` resolution.
+   Timeout mechanism: the extension owns the timeout clock via `AbortSignal` —
+   `setTimeout(() => controller.abort(), writeConfirmTimeout * 1000)` (no timer when `0`),
+   passed as `ctx.ui.confirm(title, msg, { signal: controller.signal })`; the native dialog
+   auto-dismisses on abort, and `controller.signal.aborted` distinguishes a real timeout
+   from an explicit decline (pi's documented pattern — `examples/extensions/timed-confirm.ts`):
+   `confirm_timeout` only when the signal fired, never inferring timeout from a `false`
+   resolution.
 2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
    call start, the captured string drives guard → confirm → kernel → verify;
    missing / not-a-regular-file / unreadable → structured error naming the
@@ -378,6 +376,9 @@ confirmation gate and the `create` flow end to end. Registered name
 - [ ] Unit: file-path input — missing file → error, zero kernel calls (request
       log); read-once capture under mid-flow file mutation; XOR shape
       validation (§10).
+- [ ] Unit: create-success echo — doc-level create results carry root `docId`,
+      stored title, real `hpath`, fresh `outline` (§4 R3 step 5; the full
+      write-result contract generalizes this in Sprint 5 item 2).
 - [ ] Unit: guard-stop staging — `stagedPath` in the session spill dir,
       byte-equal content, `markdownFile` retry message; exact-leg stop spills
       each matching doc's markdown with per-row paths; near-match candidates
@@ -474,6 +475,10 @@ confirmation gate and the `create` flow end to end. Registered name
       replace-first preference (prefer `edit`/`replace-section` over `append`;
       append is for genuinely new facts), completing the
       description work started in Sprint 3 item 4.
+- [ ] Unit: `/kb writes` dispatch — toggles the write toolset, idempotent
+      re-toggle reported as no-op (same semantics as KB toggles), bare `/kb`
+      output includes the toolset state line (§10's `/kb`-toggle unit list,
+      extended with the `writes` keyword per item 5).
 - [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — enabling
       writes cascades reads on; disabling reads cascades writes off; a
       `toolsetDefaults` write pin resolves through the cascade (write pin on +
@@ -675,6 +680,7 @@ Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────�
 Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
 Sprint 2 (scope + /kb) ┄┄► Sprint 3 (final AC only: live post-toggle scope)
+Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb writes` dispatcher extension)
 Sprint 2 (scope + /kb) ┄┄► Sprint 6 (gate: /kb mid-session, breaker recovery)
 Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
