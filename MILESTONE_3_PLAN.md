@@ -44,7 +44,10 @@ The machinery every tool call routes through. No tools registered yet.
      attempt, still-failed → `refused`.
 2. **Error envelope (§5)** — one shared helper:
    `{status: ok | near_matches | duplicate | error | refused, message, ...payload}`,
-   with `truncated`/`post_filtered` as payload markers, never statuses.
+   with `truncated`/`post_filtered` as payload markers, never statuses; per
+   §5's success-echo contract, every success result echoes the resolved KB
+   name (single-KB calls) or names (multi-KB calls) — spelled out per tool in
+   S3 items 2–3 here, and part of the S5 write-result contract.
 3. **`kb` param contract (§5)** — required on every call; array on `query` and
    `search` (the multi-scope sweep tools), exactly one name on `read` and every
    write; unknown / not-in-scope / empty-array rejections with the pinned
@@ -79,8 +82,8 @@ The machinery every tool call routes through. No tools registered yet.
       branch, shape-check failure degrading the session (degrade flag set, calls
       rejected with the problem named — not a crash; the tools-stay-registered
       clause is asserted in Sprint 3, S1 registers no tools),
-      `writeConfirmTimeout` read from the global file only (§5 step 1; §10 pins
-      the validation order).
+      `writeConfirmTimeout` read from the global file only (classified global-only
+      per item 4; §10 pins the validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors.
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
@@ -214,11 +217,13 @@ The discovery half of the loop. Adds the one new runtime dependency:
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
-      scope, now asserted through real tools, incl. the S1 shape-check
-      degradation clause deferred from Sprint 1 (degraded session → tools stay
-      registered, calls rejected with the problem named). **Gated on Sprint 2** — this
-      assertion needs the persisted post-toggle scope, so it runs after S2
-      lands; the rest of Sprint 3 stays parallel with S2.
+      scope, now asserted through real tools). Two separately-scoped
+      assertions: (a) the S1 shape-check degradation clause deferred from
+      Sprint 1 (degraded session → tools stay registered, calls rejected with
+      the problem named) — needs only S3's own registered tools, runs with S3;
+      (b) the live post-toggle-scope composition — **gated on Sprint 2**, it
+      consumes S2's persisted scope and runs after S2 lands; the rest of
+      Sprint 3 stays parallel with S2.
 
 ---
 
@@ -239,7 +244,10 @@ confirmation gate and the `create` flow end to end.
    indistinguishable from a decline — so the extension owns the timeout clock
    (race an extension-side timer against the confirm promise; `confirm_timeout`
    only when the timer wins; the native `timeout` option may be passed for UI
-   countdown only), never inferring timeout from a `false` resolution.
+   countdown only, and only omitted or set ≥ the extension timer — a shorter
+   native timeout auto-dismisses the dialog and resolves `false` first, which
+   would misclassify a real timeout as an explicit decline), never inferring
+   timeout from a `false` resolution.
 2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
    call start, the captured string drives guard → confirm → kernel → verify;
    missing / not-a-regular-file / unreadable → structured error naming the
@@ -541,7 +549,8 @@ Polish and the M3 gate (§11).
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
       RPC use (§10 residual list).
 - [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
-      doc §11 M3 row marked done.
+      doc §11 M3 row marked done and §5's read-path record amended with the
+      one-line `writeConfirmTimeout` global-only classification (S1 item 4).
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the
