@@ -410,27 +410,24 @@ machinery** (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
 DELETE, reindex trigger, bogus-token arming — stay raw: §10 deliberately keeps
 those pins out of the client.
 
-The encrypted-notebook case (item 12) runs against a **second, externally
-launched kernel instance with an encrypted workspace** (own data dir, port,
-token — opt-in via env vars such as `SIYUAN_ENCRYPTED_BASE_URL` /
-`SIYUAN_ENCRYPTED_API_TOKEN`; the case self-skips when unset, same pattern as
-`SIYUAN_INTEGRATION=1`). This is the §10 "own disposable workspace (separate
-kernel data dir), never the shared one" pin: enabling the master-password key
-domain is workspace-global state and stays off the shared fixture workspace
-(§9). The instance is host-side persistent across runs — the encrypted fixture
-notebook may be pre-created there, so no per-run setup machinery is needed
-(the workspace key domain is host-deployment state; the typed client's
-`getEncryptedNotebookStatus().enabled` is the precondition check and
-`createEncryptedNotebook` requires an already-enabled workspace — enabling
-itself stays out of the client); teardown asserts only that the encrypted
-notebook is removed or pre-registered as a known stray. The two instances never run simultaneously:
-the encrypted case is its own opt-in run (separate test file / npm script),
-executed after a one-time host deployment flip — each run targets exactly one
-kernel, so flipping mid-run is never needed (and a mid-run swap would trip the
-setup version assert and the shared suite's baseline teardown assert). The case
-stays exempt from the execution-order
-pin (§10) — it targets the second instance whenever, so its skip never
-disturbs the shared suite's ordering.
+The encrypted-notebook case (item 12) runs on the **same kernel** as the rest
+of the suite, gated behind the master password (opt-in via an env var such as
+`SIYUAN_ENCRYPTED_PASSWORD`; the case self-skips when unset, same pattern as
+`SIYUAN_INTEGRATION=1`). The workspace's key domain is already enabled — a
+deliberate one-time user action taken through SiYuan's own UI — and the
+extension never enables, disables, or manages encryption (that surface stays
+out of the typed client by design, §10). Once enabled, encrypted and plain
+notebooks coexist on one workspace (§4), so the case adds only disposable
+fixture notebooks, not a second kernel: the typed client's
+`getEncryptedNotebookStatus().enabled` is the precondition check,
+`createEncryptedNotebook` mints the encrypted fixture (with one plain fixture
+alongside it), and the ordinary typed `removeNotebook` tears both down — the
+kernel's `RemoveBox` handles encrypted boxes directly (unmount + encrypted
+index removal), so no workspace disposal or stray pre-registration is
+involved. The case is not exempted as a special instance; it is a normal
+kernel-dependent case, and the only ordering constraint is that it must not run
+inside the throttle lock window (it needs the kernel), so it runs before the
+raw-DELETE case like the rest.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
@@ -502,15 +499,17 @@ disturbs the shared suite's ordering.
     assert the post-expiry call succeeds with no recovery step (§5
     self-healing expiry); the raw-DELETE case then runs on the expired backoff
     (§10 execution order) and follows the deletes with a kernel reindex to
-    bound `siyuan.db` desync (§10). The encrypted-notebook case targets the
-    externally launched encrypted-workspace kernel (see preamble): `lsNotebooks`
-    on that instance reports the fixture notebook `encrypted: true` → startup
-    rejection names the KB for **both lock states** (locked via typed
-    `closeNotebook` — on an encrypted box it clears the cached key and closes
-    the per-box db — unlocked via typed `unlockAndOpenNotebook`; the §5
-    one-rejection pin), and no kernel call
-    from the encrypted KB's tools ever fires. Persistent host-side instance →
-    both lock states flip mid-test without per-run workspace setup.
+    bound `siyuan.db` desync (§10). The encrypted-notebook case runs on the
+    shared kernel, gated behind `SIYUAN_ENCRYPTED_PASSWORD` (see preamble):
+    create the encrypted fixture (typed `createEncryptedNotebook`, which comes
+    back mounted/unlocked) plus one plain fixture, then `lsNotebooks` reports
+    the encrypted box `encrypted: true` → startup rejection names the KB for
+    **both lock states** (unlocked as created; locked via typed `closeNotebook`
+    — on an encrypted box it clears the cached key and closes the per-box db,
+    re-openable with typed `unlockAndOpenNotebook` + the password — the §5
+    one-rejection pin), the plain fixture validates clean alongside, and no
+    kernel call from the encrypted KB's tools ever fires. Teardown is the typed
+    `removeNotebook` for both fixtures, like every other case.
     The 429-does-not-count-toward-the-breaker property remains unit-only
     (Sprint 1).
 
@@ -520,13 +519,14 @@ disturbs the shared suite's ordering.
       red suite).
 - [ ] All cases above green against live 3.8.3 under the fixture policy; the
       teardown itself is asserted (post-teardown notebook count back to
-      baseline — zero strays, or exactly the pre-registered known strays).
+      baseline — zero strays).
 - [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
-      encrypted case isolated on its own instance).
-- [ ] Encrypted case: `lsNotebooks` on the encrypted-workspace instance reports
-      the fixture notebook `encrypted: true` in both lock states → startup
-      rejection names the KB, zero tool kernel calls (§5 one-rejection pin,
-      pinned live); the case self-skips with its instance env vars unset.
+      encrypted case runs before raw-DELETE, never inside the throttle lock).
+- [ ] Encrypted case: `lsNotebooks` on the shared kernel reports the encrypted
+      fixture `encrypted: true` in both lock states → startup rejection names
+      the KB while the plain fixture validates clean, zero tool kernel calls
+      (§5 one-rejection pin, pinned live); the case self-skips with
+      `SIYUAN_ENCRYPTED_PASSWORD` unset or the workspace not encryption-enabled.
 
 ---
 

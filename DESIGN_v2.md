@@ -1480,7 +1480,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | UI rename / hand edits to KB docs | Medium (normal usage) | Safe by construction (§4 R5): identity is the docId, block IDs survive renames, and the doc stays reachable from any query row — every read/write by echoed docId works regardless of retitles. Worst case: a retitled doc no longer matches an agent's remembered mint title, so the next create by that title misses the guard — one reconcilable duplicate, never data loss (the accepted two-docs-reconcilable path). Write confirmation and result-echo keep it visible. No rename-detection machinery exists or is needed; no slug janitor exists (R5 — nothing to repair without a slug convention). |
 | Concurrent pi sessions on one KB | Normal usage, not degenerate | Two sessions can both pass the title guard before either create lands in the SQL index → duplicate topics; interleaved appends are last-writer-wins. Same "two docs, reconcilable later" blast radius as guard misses — never data loss. Verified-create is a by-ID mint assert (§4 R3), not a uniqueness check, so the race surfaces as a reconcilable duplicate, not an immediate error. A racing session's deletions also make stale targets reachable; the §4 stale-target record covers them — never a silent success against a vanished block. Interleaved overwrites are covered too: an `edit`/`replace-section` targeting content another session or the user changed since the agent last saw it hits the §4 fresh-content precondition — a `stale_content` refusal with the current content attached, never a silent clobber; the residue is the millisecond re-check→apply window the record names. No cross-session locking in v1. |
 | SQL-index lag after write breaks find-then-write | Low | If the index lags, the title guard misses → create path → duplicate doc. Verified-create is now a **by-ID assert that proves mint success** (§4 R3), not a uniqueness check — it cannot make the guard→create race visible; that race's duplicate is the accepted reconcilable class (§6, §4 R4). The same lag applies to the advisory backlink checks — the pre-write confirmations and the `invalidRefs` echo (§4) — which is why they are evidence, not proof, and never a safety gate. The design's defense stays fail-loud where the kernel is silent and reconcilable-never-lossy elsewhere. §10's read-consistency test pins the sync-flush contract for `blocks` and `refs` alike. |
-| Encrypted KB notebook | Low (opt-in feature, rejected loudly at startup) | `/api/query/sql` sees only the global `siyuan.db`; an encrypted notebook's blocks live in a separate per-box sqlcipher database invisible to the title guard, verified-create's by-ID asserts, and the backlink check — the §4 flow would misfire (guard misses minting duplicates; verified-create fails loud on a mint the SQL surface cannot see). §5 validation step 3 rejects any configured KB with `encrypted: true` at `session_start`, naming the KB — one flag check covering both lock states (§5 one-rejection pin), pinned live by the §10 encrypted-notebook case on a disposable workspace (enabling the master-password key domain on the live workspace just to test would be deployment damage). |
+| Encrypted KB notebook | Low (opt-in feature, rejected loudly at startup) | `/api/query/sql` sees only the global `siyuan.db`; an encrypted notebook's blocks live in a separate per-box sqlcipher database invisible to the title guard, verified-create's by-ID asserts, and the backlink check — the §4 flow would misfire (guard misses minting duplicates; verified-create fails loud on a mint the SQL surface cannot see). §5 validation step 3 rejects any configured KB with `encrypted: true` at `session_start`, naming the KB — one flag check covering both lock states (§5 one-rejection pin), pinned live by the §10 encrypted-notebook case on the shared workspace, gated behind the master password — enabling the key domain is a deliberate one-time user action via SiYuan's own UI, never the extension's, so the case only observes the rejection of an already-enabled workspace. |
 | Dual writer on the workspace | Low (user-controlled) | §7's serialization argument covers the kernel's own writes only; if the same workspace is also opened in a desktop SiYuan instance while the kernel runs, torn writes are back. Mitigation is deployment hygiene: one kernel per workspace; worth a note in the compose docs. |
 | Spill files accumulate in /tmp | Low (cosmetic) | No cleanup machinery (§3): hash-named files in per-session temp dirs, disk-bounded by spill frequency, wiped by the OS on reboot; crash or quit-then-resume leaves files the resumed transcript may quote — the agent re-queries and re-spills (same hash). A cleanup pass is a v2 add-on if /tmp usage ever matters. |
 
@@ -1618,7 +1618,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   `http://192.168.100.1:6806` (reachable from the dev VM; run manually from the VM —
   the throttle pin locks the *calling* IP out for ~4 min, so CI never runs the profile:
   it self-skips without env, decide per-run rather than wiring secrets into CI);
-  skipped by default so CI never needs SiYuan. **Setup asserts the running kernel version exactly equals the pinned version** — an accidental upgrade produces a red suite instead of silently unverified drift; the upgrade checklist is the deliberate path. **Upgrade checklist (the enforcement procedure the §2 strict write gate backs — the gate fires, this checklist is how the re-pin gets earned; a guard no process runs is not a guard)**: on every
+  skipped by default so CI never needs SiYuan. The encrypted-notebook case is a
+  further-gated sub-case of the same profile (its own `SIYUAN_ENCRYPTED_PASSWORD` gate;
+  see the case bullet below). **Setup asserts the running kernel version exactly equals the pinned version** — an accidental upgrade produces a red suite instead of silently unverified drift; the upgrade checklist is the deliberate path. **Upgrade checklist (the enforcement procedure the §2 strict write gate backs — the gate fires, this checklist is how the re-pin gets earned; a guard no process runs is not a guard)**: on every
   SiYuan upgrade, run the full integration profile against the new kernel *before*
   updating the pinned version (the extension-owned `PINNED_SIYUAN_VERSION` constant, §2); a red suite means a behavior pin broke and
   the affected decision records in this doc need re-verification — the re-pin is a
@@ -1638,7 +1640,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   live workspace. Two notebooks, not one: the multi-KB pins (multi-element `box IN (...)`,
   two-KB search sweeps, the OR-precedence aggregate) need a deterministic two-KB workspace —
   not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DELETE case below deletes only
-  fixture-created rows. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
+  fixture-created rows. The opt-in encrypted-notebook case mints its own encrypted +
+  plain fixture pair and removes both via `removeNotebook`, so the post-run baseline
+  stays zero strays. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
   typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
   `listInvalidBlockRefs`), extended in 0.3.0: the encrypted-notebook machinery
   (`createEncryptedNotebook`, `getEncryptedNotebookStatus`, `unlockAndOpenNotebook`)
@@ -1652,8 +1656,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   kernel-dependent case follows; the auth-throttle case runs after all of them and ends
   by waiting out the extended lock; the raw-DELETE case runs last (it desyncs `siyuan.db`
   until its reindex) and follows the throttle's expired backoff; the encrypted-notebook
-  case is exempt from this ordering — it runs on its own disposable workspace (separate
-  kernel data dir), never the shared one.
+  case runs on the shared kernel like every other fixture case, gated behind the master
+  password — the one ordering constraint is that it needs the kernel, so it runs before
+  the raw-DELETE case and never inside the throttle lock window.
   - title-guard kernel round-trip (§4 R3 — the guard rides `blocks.content`, whose exact
     behavior no unit transcription can prove, so this is the mandatory live pin): create
     docs through the real kernel with adversarial titles — a tab-bearing title must be
@@ -1872,19 +1877,25 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     rebuild SY-FORMAT.md §0.5 describes), bounding any leakage to its own run;
   - encrypted-notebook contract pin (§5 — the startup rejection that guards the
     never-silently-wrong invariant rests on a `model/box.go` source-read; this case
-    converts it into evidence): run against a **disposable workspace** (its own kernel
-    data dir), never the live one — `EnableEncryptedNotebook` establishes a
-    master-password key domain with one-way recovery semantics, and creating one on the
-    user's workspace just to test is deployment damage. Setup enables the feature, mints
-    one encrypted notebook via `/api/notebook/createEncryptedNotebook` and one plain
-    notebook, then asserts: `lsNotebooks` reports `encrypted: true` for the encrypted box
-    while unlocked **and** after it is locked again (locked via the typed client's
-    `closeNotebook`, the kernel's locked state — `unlocked: false`;
-    the always-present-flag pin — a kernel upgrade that starts hiding locked boxes turns
-    this red instead of the guard going blind); `session_start` validation rejects the
-    configured encrypted KB naming it while the plain KB validates clean; and no SQL
-    query from the extension ever targets the encrypted box. Teardown is workspace
-    disposal — no `removeNotebook` against encrypted boxes required.
+    converts it into evidence): runs on the shared workspace with encryption already
+    enabled, gated behind the master password (opt-in env var `SIYUAN_ENCRYPTED_PASSWORD`;
+    self-skips when unset).
+    Enabling the key domain is a deliberate one-time user action taken through SiYuan's
+    own UI — the extension never enables, disables, or manages it
+    (`EnableEncryptedNotebook` stays out of the client) — so the case only observes the
+    rejection of an already-enabled workspace. Setup gates on
+    `getEncryptedNotebookStatus().enabled`, then mints one encrypted notebook via
+    `/api/notebook/createEncryptedNotebook` (it comes back mounted and unlocked) and one
+    plain notebook, then asserts: `lsNotebooks` reports `encrypted: true` for the
+    encrypted box while unlocked **and** after it is locked again (locked via the typed
+    client's `closeNotebook`, the kernel's locked state — `unlocked: false`; re-openable
+    with typed `unlockAndOpenNotebook` + the password; the always-present-flag pin — a
+    kernel upgrade that starts hiding locked boxes turns this red instead of the guard
+    going blind); `session_start` validation rejects the configured encrypted KB naming
+    it while the plain KB validates clean; and no SQL query from the extension ever
+    targets the encrypted box. Teardown is the typed `removeNotebook` for both fixtures,
+    like every other case — the kernel's `RemoveBox` removes encrypted boxes directly
+    (unmount + encrypted index removal), so no workspace disposal is involved.
   - search request shape: `paths`-derived scoping genuinely narrows results (guards the
     silently-ignored-field degradation, §3). **Runs first** (Execution order above) —
     the failure mode it guards is silent (whole-workspace results, not an error).
@@ -1931,7 +1942,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | --- | --- | --- |
 | 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM against `http://192.168.100.1:6806`; pinned kernel version **3.8.3**. See §8 for the deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning. |
 | 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green; extension loads in a real pi session; offline §5 settings validator enforces the full rejection matrix. No build step in either repo — both ship raw `.ts` (`exports` → `index.ts`). |
-| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0, incremented to 0.2.0 (notebook/doc lifecycle: `createNotebook`, `removeNotebook`, `renameNotebook`, `openNotebook`, `closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`, optional search `page`/`pageSize`); `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
+| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0, incremented to 0.2.0 (notebook/doc lifecycle: `createNotebook`, `removeNotebook`, `renameNotebook`, `openNotebook`, `closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`, optional search `page`/`pageSize`) and extended to 0.3.0 for M3 (encrypted-notebook family `createEncryptedNotebook`/`getEncryptedNotebookStatus`/`unlockAndOpenNotebook`; `query()` tightened to `query(stmt)` with `mode: "readonly"` hardcoded; `listNotebooks()` returns the wire envelope); `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
 | 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | Tools callable from pi; scope survives session restart; `/kb <name> on` and `/kb all off` land mid-session; write confirmation refuse/allow verified; auth circuit breaker degrades after 3 consecutive auth failures; write-path integration suite green under the fixture policy (§10), incl. the title-guard kernel round-trip pin, the version-refusal contract pin (§2/§5), the stale-target contract pin (§4), and the headless `/kb` dispatch exercised for real (`/kb all off` from `pi -p` — converting the §5 scope-activation source-read claim into evidence before M4's harness depends on it) |
 | 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write confirmation, status slot) |
 
