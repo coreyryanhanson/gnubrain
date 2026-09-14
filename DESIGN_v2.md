@@ -1283,7 +1283,7 @@ writes; the opt-out is typed, in settings.
     own; reads and writes both surface the same refusal for the lock's duration, and the
     next call after expiry simply succeeds.
   - **Recovery (decision record)**: every `/kb` dispatch first re-runs the session-start
-    validation pass — settings re-read (so a corrected token takes effect mid-session;
+    validation pass — settings re-read of both the global and project files (so a corrected token takes effect mid-session;
     a re-check against the old token would be pointless), shape check, version probe,
     `lsNotebooks` — and updates the cached state (probe verdict, valid-notebook set,
     breaker). On success the degraded flag and the consecutive-failure counter clear —

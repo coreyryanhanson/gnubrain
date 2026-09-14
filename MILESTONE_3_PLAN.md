@@ -149,7 +149,9 @@ Scope persistence and the mid-session activation vehicle.
    `/kb` subcommand dispatch of `all` only); verbless `/kb <name>` prints
    usage.
 3. **Recovery hook (§5)** — every `/kb` dispatch re-runs the full validation pass
-   (settings re-read, shape, probe, `lsNotebooks`) before subcommand dispatch;
+   (settings re-read — both the global and project files, so corrected
+   credentials and `defaultKBs` edits take effect mid-session — shape, probe,
+   `lsNotebooks`) before subcommand dispatch;
    success clears degradation + breaker counter; failure re-engages
    all-or-nothing.
 4. **Headless dispatch** — verified for real in Sprint 5b (`/kb all off` from
@@ -605,6 +607,9 @@ Polish and the M3 gate (§11).
       RPC use (§10 residual list).
 - [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
+- [ ] If M3 code was split into new files: `package.json` `files` updated to
+      include them (currently only `index.ts` / `settings.ts`; anything absent
+      is dropped from `npm publish` in `scripts/release.mjs`).
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the
