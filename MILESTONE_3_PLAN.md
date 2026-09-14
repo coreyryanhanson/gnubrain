@@ -179,7 +179,12 @@ The discovery half of the loop. Adds the one new runtime dependency:
    injected box IDs.
 3. **search tool (§3)** — per-KB fan-out (one kernel call per resolved KB,
    `paths: [<boxId>]`, `pageSize = RESULT_LIMIT`), merged results in per-KB
-   kernel order, aggregated truncation marker; `method: 0` tool-owned, agent
+   kernel order, aggregated truncation marker; same post-filter backstop as
+   query — merged rows dropped unless `box` ∈ resolved set → `post_filtered:
+   true`, truncation marker counts post-filter rows (search rows always carry
+   `box`, so no aggregate exemption; the drop path is unreachable against a
+   well-behaved kernel, hence mocked-only testing per §10); `method: 0`
+   tool-owned, agent
    `method`/`types`/`orderBy`/`groupBy` rejected at the tool schema (the client
    already hardcodes `method: 0` and exposes no aux params), aux params
    omitted entirely; echo contract per row (`id`, `root_id`, `hpath`, `box` →
@@ -212,6 +217,10 @@ The discovery half of the loop. Adds the one new runtime dependency:
       keeps the injected LIMIT; agent LIMIT passthrough (§10).
 - [ ] Unit: post-filter — box-less aggregate rows skip the backstop; truncation
       fires when `kept + dropped` reaches the limit (§10).
+- [ ] Unit: search post-filter — out-of-scope rows dropped, `post_filtered:
+      true`, truncation marker counts post-filter rows (§10: contaminated input
+      is only constructible in the mocked suite; live integration pins the
+      shape only — zero out-of-scope boxes, no flag).
 - [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
       assertion); fan-out issues N calls with per-call `pageSize`; single-KB
       degenerates to the single-call shape (the fan-out/degeneration policy is
