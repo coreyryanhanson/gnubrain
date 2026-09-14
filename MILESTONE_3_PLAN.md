@@ -87,8 +87,9 @@ The machinery every tool call routes through. No tools registered yet.
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
-   recovery via the `/kb` re-check hook (dispatch point in place now, subcommands
-   land in Sprint 2).
+   recovery via the `/kb` re-check hook applies to the breaker only — the 429
+   cooldown self-heals on expiry, §5 pins no `/kb` recovery for it
+   (dispatch point in place now, subcommands land in Sprint 2).
 6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; severity-first
    precedence: unreachable/never-probed → red/grey, degraded config → yellow, healthy →
    dot color carries the tool capability (§5: writes on → success/green, else reads on →
@@ -244,8 +245,10 @@ The discovery half of the loop. Adds the new runtime dependencies:
    verification; extension-owned recursion depth bound); `OUTLINE_HEADINGS` cap
    with spill of the full outline.
 6. **Read toolset (§5 tool-masking record)** — `defineToolset(pi, { id:
-   "gnubrain.read", names: {kb_query, kb_search, kb_read}, persistKey:
-   "toolset-state:gnubrain.read", defaultEnabled: true })`; no toggle subcommand
+   "gnubrain.read", names: new Set(["kb_query", "kb_search", "kb_read"]),
+   persistKey: "toolset-state:gnubrain.read", defaultEnabled: true })`
+   (pi-tool-masking's `ToolsetSpec.names` is a `Set<string>`, not an array); no
+   toggle subcommand
    (§5: nothing asks to hide reads yet) — the toolset exists so the surface is
    declared and maskable from day one, default behavior unchanged. Status bar:
    healthy dot turns accent/blue once this toolset is active (hollow before).
@@ -419,7 +422,8 @@ confirmation gate and the `create` flow end to end. Registered name
    mismatch → `stale_content` refusal with current content + fresh outline, no
    kernel write. Scope: `edit` and `replace-section` only.
 5. **Write toolset + toggle (§5 tool-masking record)** — `defineToolset(pi, { id:
-   "gnubrain.write", names: {kb_write}, persistKey: "toolset-state:gnubrain.write",
+   "gnubrain.write", names: new Set(["kb_write"]),
+   persistKey: "toolset-state:gnubrain.write",
    defaultEnabled: true, requires: ["gnubrain.read"] })` — the pi-tool-masking
    dependency cascade makes write-without-read unrepresentable (enabling writes
    auto-enables reads; disabling reads cascades to disable dependents; settings
