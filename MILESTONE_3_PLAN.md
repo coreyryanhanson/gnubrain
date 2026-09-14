@@ -4,15 +4,19 @@ Implements the M3 row of DESIGN_v2.md §11: *KB extension — tool set, `kb` par
 validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via
 `appendEntry`), interactive write confirmation.*
 
-Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api`)
-exposes every kernel method M3's runtime paths need — `getVersion`,
-`listNotebooks`, `query`, `search`, `exportMarkdown`, `getChildBlocks`,
+Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api@0.3.0`,
+exact pin) exposes every kernel method M3's runtime paths need — `getVersion`,
+`listNotebooks`, `query` (readonly-only; the client hardcodes `mode:
+"readonly"` on the wire), `search`, `exportMarkdown`, `getChildBlocks`,
 `createDocWithMarkdown`, `insertBlock`/`appendBlock`/`updateBlock`/`deleteBlock`/`moveBlock`,
-`removeDocByID`, `moveDocsByID`. Notebook lifecycle (`createNotebook`,
-`removeNotebook`, `renameNotebook`, `renameDocByID`, `listInvalidBlockRefs`)
-lands in `siyuan-kernel-api@0.2.0` and gates Sprint 5b (its raw-helper list
-shrinks accordingly); any further gap is a deliberate, recorded change to that
-repo. (Naming note: the client method is `exportMarkdown`, wrapping the kernel's
+`removeDocByID`, `moveDocsByID` — plus the notebook/doc lifecycle methods
+(`createNotebook`, `removeNotebook`, `renameNotebook`, `renameDocByID`,
+`listInvalidBlockRefs`) and the encrypted-notebook family
+(`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
+`unlockAndOpenNotebook`; locking an encrypted box is `closeNotebook`'s job),
+all shipped in 0.2.0–0.3.0 and gating Sprint 5b (its raw-helper list shrinks
+accordingly). Any further gap is a deliberate, recorded change to that repo.
+(Naming note: the client method is `exportMarkdown`, wrapping the kernel's
 `exportMdContent` endpoint — both names appear below.)
 
 Design references below are §-sections of DESIGN_v2.md. Every sprint ends green:
@@ -162,7 +166,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
    list omits it; keyed on the executed spike findings: `Array.isArray` for
    multi-statement, `_next`/`set_op` for UNION); AST rebuild: splice `box IN (...)`, inject LIMIT
    64 iff AST shows none, serialize, **re-parse and verify**, execute the
-   re-parsed statement with `mode: "readonly"`; agent-supplied LIMIT passes
+   re-parsed statement through the client's readonly-only `query()` (the
+   client hardcodes `mode: "readonly"` on the wire — 0.3.0 dropped the
+   parameter, readonly is the contract); agent-supplied LIMIT passes
    through uncapped; post-filter backstop (box-less aggregate rows exempt);
    truncation marker counts post-filter rows; results echo resolved KB names +
    injected box IDs.
@@ -394,14 +400,15 @@ The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
 execution order: search-shape first, throttle after all kernel cases, raw-DELETE
 last). A test-only
-raw-kernel-call helper (direct `fetch`) provides `LockBox` / raw
-DELETE / the kernel reindex trigger (raw-DELETE case)
-and the bogus-token arming requests. The notebook/doc lifecycle calls
-(`createNotebook`, `removeNotebook`, `renameDocByID` fixtures,
-`listInvalidBlockRefs`) ride the typed client (`siyuan-kernel-api@0.2.0`, exact
-pin); the remaining helper calls — LockBox, raw DELETE, reindex trigger,
-bogus-token arming — stay raw: §10 deliberately keeps
-fixture lifecycle and those pins out of the client.
+raw-kernel-call helper (direct `fetch`) provides raw DELETE / the kernel
+reindex trigger (raw-DELETE case) and the bogus-token arming requests. All
+notebook/doc lifecycle calls (`createNotebook`, `removeNotebook`,
+`renameDocByID` fixtures, `listInvalidBlockRefs`) **and the encrypted-notebook
+machinery** (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
+`unlockAndOpenNotebook`, lock-via-`closeNotebook`) ride the typed client
+(`siyuan-kernel-api@0.3.0`, exact pin); the remaining helper calls — raw
+DELETE, reindex trigger, bogus-token arming — stay raw: §10 deliberately keeps
+those pins out of the client.
 
 The encrypted-notebook case (item 12) runs against a **second, externally
 launched kernel instance with an encrypted workspace** (own data dir, port,
@@ -411,11 +418,12 @@ token — opt-in via env vars such as `SIYUAN_ENCRYPTED_BASE_URL` /
 kernel data dir), never the shared one" pin: enabling the master-password key
 domain is workspace-global state and stays off the shared fixture workspace
 (§9). The instance is host-side persistent across runs — the encrypted fixture
-notebook may be pre-created there, so the raw helper needs no
-`EnableEncryptedNotebook` / `createEncryptedNotebook` machinery at all (those
-cannot establish the key domain alone anyway, so the typed client excludes
-them); teardown asserts only that the encrypted notebook is removed or
-pre-registered as a known stray. The two instances never run simultaneously:
+notebook may be pre-created there, so no per-run setup machinery is needed
+(the workspace key domain is host-deployment state; the typed client's
+`getEncryptedNotebookStatus().enabled` is the precondition check and
+`createEncryptedNotebook` requires an already-enabled workspace — enabling
+itself stays out of the client); teardown asserts only that the encrypted
+notebook is removed or pre-registered as a known stray. The two instances never run simultaneously:
 the encrypted case is its own opt-in run (separate test file / npm script),
 executed after a one-time host deployment flip — each run targets exactly one
 kernel, so flipping mid-run is never needed (and a mid-run swap would trip the
@@ -497,8 +505,10 @@ disturbs the shared suite's ordering.
     bound `siyuan.db` desync (§10). The encrypted-notebook case targets the
     externally launched encrypted-workspace kernel (see preamble): `lsNotebooks`
     on that instance reports the fixture notebook `encrypted: true` → startup
-    rejection names the KB for **both lock states** (locked via the raw `LockBox`
-    helper, unlocked plainly — the §5 one-rejection pin), and no kernel call
+    rejection names the KB for **both lock states** (locked via typed
+    `closeNotebook` — on an encrypted box it clears the cached key and closes
+    the per-box db — unlocked via typed `unlockAndOpenNotebook`; the §5
+    one-rejection pin), and no kernel call
     from the encrypted KB's tools ever fires. Persistent host-side instance →
     both lock states flip mid-test without per-run workspace setup.
     The 429-does-not-count-toward-the-breaker property remains unit-only
@@ -570,7 +580,7 @@ Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
 Sprint 5 (write modes) ──► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
-siyuan-kernel-api 0.2.0 (notebook lifecycle) ──► Sprint 5b
+siyuan-kernel-api 0.3.0 (notebook lifecycle + encrypted family) ──► Sprint 5b
 ```
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent

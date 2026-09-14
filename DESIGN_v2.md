@@ -83,7 +83,8 @@ repos green, `file:` dependency working):
   `/api/system/version` is unauthenticated.
 - **Client surface is policy-free** (implemented and pinned in the
   `siyuan-kernel-api` repo — see its AGENTS.md "Design constraints"): query takes
-  `stmt` + the readonly `mode` flag and **no** limit parameter; search takes
+  only `stmt` — `mode: "readonly"` is hardcoded on the wire (readonly is the
+  contract; the parameter was dropped in 0.3.0) — and **no** limit parameter; search takes
   `page`/`pageSize` (the kernel's real fields, optional since 0.2.0 — kernel defaults
   page 1 / pageSize 32 apply when omitted); read takes only the doc `id` — so
   result budgets (§3) are entirely extension-owned. Every endpoint method exists in
@@ -1639,9 +1640,12 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DELETE case below deletes only
   fixture-created rows. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
   typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
-  `listInvalidBlockRefs`); the encrypted-case machinery, LockBox, raw DELETE, the
-  reindex trigger, and bogus-token arming stay raw direct kernel calls, and none of
-  it reaches the tool surface. The write path gets
+  `listInvalidBlockRefs`), extended in 0.3.0: the encrypted-notebook machinery
+  (`createEncryptedNotebook`, `getEncryptedNotebookStatus`, `unlockAndOpenNotebook`)
+  and locking an encrypted box (typed `closeNotebook` — on an encrypted box it
+  clears the cached key and closes the per-box db, the kernel's locked state) ride
+  the typed client too; raw DELETE, the reindex trigger, and bogus-token arming
+  stay raw direct kernel calls, and none of it reaches the tool surface. The write path gets
   dedicated cases here — it is the highest-stakes code in the project.
   **Execution order (summary of the pins scattered below)**: the search-shape case runs
   first (cheapest falsifier of the load-bearing request shape); every other
@@ -1874,7 +1878,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     user's workspace just to test is deployment damage. Setup enables the feature, mints
     one encrypted notebook via `/api/notebook/createEncryptedNotebook` and one plain
     notebook, then asserts: `lsNotebooks` reports `encrypted: true` for the encrypted box
-    while unlocked **and** after it is locked again (kernel `LockBox` — `unlocked: false`;
+    while unlocked **and** after it is locked again (locked via the typed client's
+    `closeNotebook`, the kernel's locked state — `unlocked: false`;
     the always-present-flag pin — a kernel upgrade that starts hiding locked boxes turns
     this red instead of the guard going blind); `session_start` validation rejects the
     configured encrypted KB naming it while the plain KB validates clean; and no SQL
