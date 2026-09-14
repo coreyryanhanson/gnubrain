@@ -157,6 +157,12 @@ Scope persistence and the mid-session activation vehicle.
 
 ## Sprint 3 — Result budgets + read tools (query / search / read)
 
+Registered tool names per §2/§3 of DESIGN_v2: `kb_query`, `kb_search`, `kb_read`
+(the flat pi tool namespace collides with the builtins `read`/`write` — a same-name
+registration silently overrides the builtin — so every tool carries the `kb_` prefix;
+short names below are internal labels). The write tool's registered name (`kb_write`)
+lands with Sprint 4.
+
 The discovery half of the loop. Adds the one new runtime dependency:
 `node-sql-parser@5.4.0` (exact-pinned).
 
@@ -165,7 +171,7 @@ The discovery half of the loop. Adds the one new runtime dependency:
    helper: per-session temp dir `os.tmpdir()/gnubrain/<session-id>/`, SHA-256-16hex
    hash names, JSONL vs `.md` spill formats, newline-boundary preview +
    `… N more — full result in <path>`, no cleanup machinery.
-2. **query tool (§3)** — parser certification (single top-level SELECT, DML /
+2. **query tool (`kb_query`, §3)** — parser certification (single top-level SELECT, DML /
    multi-statement / FROM-allowlist / JOIN / subquery / CTE / UNION / bare
    `HAVING` rejection — §3 pins the bare-`HAVING` rule even though §10's unit
    list omits it; keyed on the executed spike findings: `Array.isArray` for
@@ -177,7 +183,7 @@ The discovery half of the loop. Adds the one new runtime dependency:
    through uncapped; post-filter backstop (box-less aggregate rows exempt);
    truncation marker counts post-filter rows; results echo resolved KB names +
    injected box IDs.
-3. **search tool (§3)** — per-KB fan-out (one kernel call per resolved KB,
+3. **search tool (`kb_search`, §3)** — per-KB fan-out (one kernel call per resolved KB,
    `paths: [<boxId>]`, `pageSize = RESULT_LIMIT`), merged results in per-KB
    kernel order, aggregated truncation marker; same post-filter backstop as
    query — merged rows dropped unless `box` ∈ resolved set → `post_filtered:
@@ -197,7 +203,7 @@ The discovery half of the loop. Adds the one new runtime dependency:
    tools may carry a shorter pointer. Write-tool doctrine lines ("mint by title… consume by
    ID", search ownership constraints) are authored with the write tools in
    Sprints 4–5, not deferred.
-5. **read tool (§3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
+5. **read tool (`kb_read`, §3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
    endpoint `exportMdContent`); ownership
    query doubles as scope check (`SELECT root_id FROM blocks WHERE id = ? AND
    box = ?`); outline ride-along via the documented `getChildBlocks` walk
@@ -250,7 +256,9 @@ The discovery half of the loop. Adds the one new runtime dependency:
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 
 The highest-stakes path, split across two sprints. This sprint: the
-confirmation gate and the `create` flow end to end.
+confirmation gate and the `create` flow end to end. Registered name
+`kb_write` (§4 schema table pins the param shape: `kb`, `mode`, `markdown` XOR
+`markdownFile`, mode-specific targets).
 
 1. **Write confirmation (§5)** — `pi.ui.confirm` always on for interactive;
    headless (`pi -p`) default-deny unless `allowUnattendedWrites: true` (the
@@ -548,7 +556,8 @@ raw-DELETE case like the rest.
 
 Polish and the M3 gate (§11).
 
-- [ ] Tools callable from pi (all four, in a real session).
+- [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
+      `kb_write` — in a real session; assert none shadows a pi builtin).
 - [ ] Scope survives session restart (resume reads the persisted entry).
 - [ ] `/kb <name> on` and `/kb all off` land mid-session.
 - [ ] Write confirmation refuse/allow verified interactively.

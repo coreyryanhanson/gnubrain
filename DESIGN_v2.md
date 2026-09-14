@@ -109,7 +109,14 @@ repos green, `file:` dependency working):
 
 ### `gnubrain` extension (the pi extension)
 
-- Registers the curated pi tool set (query/search/read/write-back).
+- Registers the curated pi tool set (query/search/read/write-back) under the registered
+  names **`kb_query` / `kb_search` / `kb_read` / `kb_write`** (decision record: pi's
+  builtin tool set includes `read` and `write`, extension tools register into one flat
+  namespace, and a same-name registration silently overrides the builtin
+  (docs/extensions.md) — so bare verb names are unavailable for two of the four and the
+  prefix is applied uniformly. `kb_` mirrors the `kb` param and the settings-level
+  `gnubrain.` namespacing at tool granularity; short names remain the internal labels
+  used throughout this document).
 - Owns all pi API surface: `session_start`/`session_shutdown`, `pi.appendEntry` scope state,
   write confirmation.
 - Reads multi-KB config from settings.json; validates `kb` params against it.
@@ -754,7 +761,7 @@ for the identity property.
      not child docs, and the doc the agent writes into next is the moved one, whose
      outline already rides the result.
 
-**Write-back tool schema (pinned)**: every call takes `kb` (exactly one name, §5), `mode`,
+**Write-back tool schema (pinned, registered name `kb_write`)**: every call takes `kb` (exactly one name, §5), `mode`,
 and a content-bearing body on `create`/`edit`/`replace-section`/`append` (meaningless on
 `delete`/`move`) — **`markdown` (inline string) XOR `markdownFile` (path to a prepared
 markdown file, decision record below)** — plus the mode-specific target: `create` takes
