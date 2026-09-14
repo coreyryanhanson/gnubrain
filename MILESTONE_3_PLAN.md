@@ -65,13 +65,25 @@ The machinery every tool call routes through. No tools registered yet.
    connection keys read from the global settings file only. Absent key = empty
    set, never activate-all. Composition with the existing single-object
    validator: the full `validateGnubrainSettings` run applies to the global file
-   (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file
-   supplies `defaultKBs` names only, each checked for existence against the
-   global `kbs` set — the project file is never run through the full
-   validator (`allowUnattendedWrites` is also global-only, §5; `writeConfirmTimeout`
-   joins them as global-only — §5's read-path record now pins it alongside
-   `allowUnattendedWrites` as a user-owned attention dial, not a per-project default
-   a project file may lower).
+   (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file supplies
+   `defaultKBs` names only, checked against the global `kbs` set, with two
+   failure classes matching §5's existing precedents (the project file is never
+   run through the full validator):
+   - **Shape failure → degrade**: `defaultKBs` present but not an array of
+     strings → session degrades (§5 step 1's rule; identical to how the global
+     file behaves), reusing the existing message verbatim
+     ("defaultKBs must be an array of KB name strings"). Same class for a
+     project `gnubrain` object containing any key other than `defaultKBs` —
+     a stray `kbs`/`baseUrl` in a project file is rejected loudly, never
+     silently ignored (message names the unexpected key). (`allowUnattendedWrites`
+     and `writeConfirmTimeout` are also global-only, §5 — user-owned attention
+     dials, not per-project defaults a project file may lower.)
+   - **Unknown name → warn loudly, drop, keep the valid rest** (§5's
+     stale-notebook precedent: warn and drop, never a crash): a project
+     `defaultKBs` naming a KB absent from the global `kbs` set warns at
+     startup and removes that name from the resolved set, keeping any valid
+     siblings; it never falls back to the global `defaultKBs` — dropping
+     names can only shrink scope, a fallback could silently expand it.
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -90,8 +102,11 @@ The machinery every tool call routes through. No tools registered yet.
       branch, shape-check failure degrading the session (degrade flag set, calls
       rejected with the problem named — not a crash; the tools-stay-registered
       clause is asserted in Sprint 3, S1 registers no tools),
-      `writeConfirmTimeout` read from the global file only (classified global-only
-      per item 4; §10 pins the validation order).
+      project-file validation — non-array `defaultKBs` and a stray non-`defaultKBs`
+      key both degrade the session with the message naming the problem
+      (pinned message reused verbatim for the shape case; unexpected key named
+      for the key case), `writeConfirmTimeout` read from the global file only
+      (classified global-only per item 4; §10 pins the validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors; post-recovery read succeeds with no
       recovery step (reads bypass the cached unreachable verdict, §5).
@@ -107,7 +122,9 @@ The machinery every tool call routes through. No tools registered yet.
 - [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
       path named); envelope shape (§10).
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
-      set, and the project/global validator composition above; status-slot
+      set, and the project/global validator composition above — incl. project
+      `defaultKBs` naming an unknown KB: loud startup warning, name dropped,
+      valid siblings kept, no fallback to the global `defaultKBs`; status-slot
       rendering headless-safe, incl. the degraded-config glyph (§10).
 
 ---

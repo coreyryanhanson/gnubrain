@@ -1363,7 +1363,13 @@ writes; the opt-out is typed, in settings.
       cheap to re-list, unlike notebook IDs.
     Validation note: `defaultKBs` names are validated against the (global-only) `kbs`
     array at `session_start`, so a project default naming a missing/renamed KB still
-    fails loudly at startup rather than producing a half scope.
+    fails loudly at startup rather than producing a half scope — the name is dropped
+    with a warning while valid siblings are kept (stale-notebook precedent; never a
+    fallback to the global default, which could silently expand scope). Two failure
+    classes: a shape failure (non-array `defaultKBs`, or any key other than
+    `defaultKBs` in the project file's `gnubrain` object — stray connection keys are
+    rejected loudly, never silently ignored) **degrades** the session per validation
+    step 1; an unknown name **warns and drops** per the stale-notebook precedent.
 - **Tool shape**: single tool set with a validated `kb` string param (Flavor B: visible,
   validated at call time, helpful rejection on out-of-scope values). Context surface stays
   flat regardless of KB count. **`read` takes exactly one KB name plus a `docId` (the §4
