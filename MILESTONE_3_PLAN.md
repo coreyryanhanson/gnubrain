@@ -385,16 +385,36 @@ confirmation gate and the `create` flow end to end.
 The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
 execution order: search-shape first, throttle after all kernel cases, raw-DELETE
-last, encrypted case on its own disposable workspace). A test-only
+last). A test-only
 raw-kernel-call helper (direct `fetch`) provides `LockBox` / raw
-DELETE / `EnableEncryptedNotebook` + `/api/notebook/createEncryptedNotebook`
-(encrypted case, own data dir) / the kernel reindex trigger (raw-DELETE case)
+DELETE / the kernel reindex trigger (raw-DELETE case)
 and the bogus-token arming requests. The notebook/doc lifecycle calls
 (`createNotebook`, `removeNotebook`, `renameDocByID` fixtures,
 `listInvalidBlockRefs`) ride the typed client (`siyuan-kernel-api@0.2.0`, exact
 pin); the remaining helper calls — LockBox, raw DELETE, reindex trigger,
-encrypted-case machinery, bogus-token arming — stay raw: §10 deliberately keeps
+bogus-token arming — stay raw: §10 deliberately keeps
 fixture lifecycle and those pins out of the client.
+
+The encrypted-notebook case (item 12) runs against a **second, externally
+launched kernel instance with an encrypted workspace** (own data dir, port,
+token — opt-in via env vars such as `SIYUAN_ENCRYPTED_BASE_URL` /
+`SIYUAN_ENCRYPTED_API_TOKEN`; the case self-skips when unset, same pattern as
+`SIYUAN_INTEGRATION=1`). This is the §10 "own disposable workspace (separate
+kernel data dir), never the shared one" pin: enabling the master-password key
+domain is workspace-global state and stays off the shared fixture workspace
+(§9). The instance is host-side persistent across runs — the encrypted fixture
+notebook may be pre-created there, so the raw helper needs no
+`EnableEncryptedNotebook` / `createEncryptedNotebook` machinery at all (those
+cannot establish the key domain alone anyway, so the typed client excludes
+them); teardown asserts only that the encrypted notebook is removed or
+pre-registered as a known stray. The two instances never run simultaneously:
+the encrypted case is its own opt-in run (separate test file / npm script),
+executed after a one-time host deployment flip — each run targets exactly one
+kernel, so flipping mid-run is never needed (and a mid-run swap would trip the
+setup version assert and the shared suite's baseline teardown assert). The case
+stays exempt from the execution-order
+pin (§10) — it targets the second instance whenever, so its skip never
+disturbs the shared suite's ordering.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
@@ -466,7 +486,13 @@ fixture lifecycle and those pins out of the client.
     assert the post-expiry call succeeds with no recovery step (§5
     self-healing expiry); the raw-DELETE case then runs on the expired backoff
     (§10 execution order) and follows the deletes with a kernel reindex to
-    bound `siyuan.db` desync (§10).
+    bound `siyuan.db` desync (§10). The encrypted-notebook case targets the
+    externally launched encrypted-workspace kernel (see preamble): `lsNotebooks`
+    on that instance reports the fixture notebook `encrypted: true` → startup
+    rejection names the KB for **both lock states** (locked via the raw `LockBox`
+    helper, unlocked plainly — the §5 one-rejection pin), and no kernel call
+    from the encrypted KB's tools ever fires. Persistent host-side instance →
+    both lock states flip mid-test without per-run workspace setup.
     The 429-does-not-count-toward-the-breaker property remains unit-only
     (Sprint 1).
 
@@ -478,7 +504,11 @@ fixture lifecycle and those pins out of the client.
       teardown itself is asserted (post-teardown notebook count back to
       baseline — zero strays, or exactly the pre-registered known strays).
 - [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
-      encrypted case isolated).
+      encrypted case isolated on its own instance).
+- [ ] Encrypted case: `lsNotebooks` on the encrypted-workspace instance reports
+      the fixture notebook `encrypted: true` in both lock states → startup
+      rejection names the KB, zero tool kernel calls (§5 one-rejection pin,
+      pinned live); the case self-skips with its instance env vars unset.
 
 ---
 
