@@ -69,9 +69,9 @@ The machinery every tool call routes through. No tools registered yet.
    supplies `defaultKBs` names only, each checked for existence against the
    global `kbs` set — the project file is never run through the full
    validator (`allowUnattendedWrites` is also global-only, §5; `writeConfirmTimeout`
-   joins them as global-only — §5's read-path record never classifies it, and as the
-   disruption-vs-oversight dial it is a deployment fact like `allowUnattendedWrites`,
-   not a per-project default a project file may lower).
+   joins them as global-only — §5's read-path record now pins it alongside
+   `allowUnattendedWrites` as a user-owned attention dial, not a per-project default
+   a project file may lower).
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -573,8 +573,7 @@ Polish and the M3 gate (§11).
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
       RPC use (§10 residual list).
 - [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
-      doc §11 M3 row marked done and §5's read-path record amended with the
-      one-line `writeConfirmTimeout` global-only classification (S1 item 4).
+      doc §11 M3 row marked done.
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the
