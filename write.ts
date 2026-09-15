@@ -405,32 +405,6 @@ function baselineContentsStmt(ids: string[]): string {
 		`(${ids.map(sqlString).join(", ")})`
 	);
 }
-
-/**
- * The fresh-content baseline for the targeted blocks (§4 decision record):
- * served content where the session has seen the block, else the block's
- * CURRENT content — the no-baseline fallback's read, displayed in the write
- * confirmation; the confirmation approval establishes the baseline.
- * Single batched read; called before the dialog so the displayed content is
- * the baseline.
- */
-async function loadBaselines(
-	kernel: WriteKernelClient,
-	baselines: ContentBaselines,
-	ids: string[],
-): Promise<Map<string, string>> {
-	const view = new Map<string, string>();
-	if (ids.length === 0) return view;
-	const fresh = rowsToBaselineView(
-		await kernel.query(baselineContentsStmt(ids)),
-	);
-	for (const row of fresh) {
-		const served = baselines.servedHash(row.blockId);
-		view.set(row.blockId, served ?? contentHash(row.content));
-	}
-	return view;
-}
-
 /**
  * §4 precondition, re-checked after confirmation approval, before any kernel
  * write: the current content must still hash to the baseline. A mismatch →
@@ -1307,7 +1281,6 @@ async function runEditMode(
 	// Fresh-content baseline (§4): served content where the session has seen
 	// this block, else the block's CURRENT content — displayed in the
 	// confirmation; approval establishes it.
-	await loadBaselines(kernel, baselines, [blockId]);
 	const summary =
 		`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
 		`current content:\n${String(rows[0].content)}`;

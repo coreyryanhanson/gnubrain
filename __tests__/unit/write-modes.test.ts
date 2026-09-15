@@ -434,17 +434,17 @@ function setupWithEditMutation(): {
 			confirm: async () => true,
 		} as WriteToolHooks,
 	);
-	// The re-check's content read (`WHERE id IN`) serves the rewritten form
-	// on its second call — the kernel-side change landed after approval (the
-	// first read is the pre-dialog baseline; the second is the re-check).
+	// The re-check's content read (`WHERE id IN`) serves the rewritten form —
+	// the kernel-side change landed after approval (the baseline was
+	// established from the pre-dialog block read; the re-check re-reads NOW).
 	const baseQuery = kernel.client.query.bind(kernel.client);
-	let servedOnce = false;
+	let rechecked = false;
 	kernel.client.query = async (stmt: string) => {
 		const rows = await baseQuery(stmt);
-		if (stmt.includes("WHERE id IN") && servedOnce) {
+		if (stmt.includes("WHERE id IN") && !rechecked) {
+			rechecked = true;
 			return [{ id: "b-1", content: "concurrently rewritten" }];
 		}
-		if (stmt.includes("WHERE id IN")) servedOnce = true;
 		return rows;
 	};
 	const ctx = {
@@ -876,7 +876,11 @@ describe("move-anchor derivation (§4)", () => {
 		];
 		// The walk carries no fold flag — the same data derives the same
 		// anchor whether or not the kernel renders the heading folded.
-		expect(deriveMoveAnchor(walk, "h1")).toEqual(deriveMoveAnchor(walk, "h1"));
+		expect(deriveMoveAnchor(walk, "h1")).toEqual({
+			kind: "move",
+			previousID: "p1",
+			anchor: "previousID=p1 (end of section)",
+		});
 	});
 
 	it("omitted toHeadingId → doc end (appendBlock-on-root fallback)", () => {
