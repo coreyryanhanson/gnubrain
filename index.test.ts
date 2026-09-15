@@ -279,13 +279,14 @@ describe("index wiring", () => {
 });
 
 describe("read toolset wiring (Sprint 3)", () => {
-	it("registers the three kb_ read tools as active-by-default tools", () => {
+	it("registers the kb tools as active-by-default tools (read toolset + kb_write)", () => {
 		const { pi, tools } = fakePi();
 		register(pi, deps());
 		expect(tools.map((t) => t.name)).toEqual([
 			"kb_query",
 			"kb_search",
 			"kb_read",
+			"kb_write", // unmased until Sprint 5's write toolset declares it
 		]);
 	});
 
@@ -301,16 +302,21 @@ describe("read toolset wiring (Sprint 3)", () => {
 		);
 	});
 
-	it("/kb tools off masks the kb tools and /kb tools read restores them", async () => {
+	it("/kb tools off masks the read toolset; kb_write stays (write toolset lands in Sprint 5)", async () => {
 		const { pi, fire, runCommand } = fakePi();
 		register(pi, deps());
 		const { ctx, notifications, statuses } = fakeCtx();
 		await fire("session_start", ctx);
 		await runCommand("tools off", ctx);
-		expect(pi.getActiveTools()).toEqual([]);
+		expect(pi.getActiveTools()).toEqual(["kb_write"]);
 		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
 		await runCommand("tools read", ctx);
-		expect(pi.getActiveTools()).toEqual(["kb_query", "kb_search", "kb_read"]);
+		expect(pi.getActiveTools()).toEqual([
+			"kb_write",
+			"kb_query",
+			"kb_search",
+			"kb_read",
+		]);
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
 		// State-setter idempotence: re-issuing the verb is a reported no-op.
 		await runCommand("tools read", ctx);

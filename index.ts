@@ -19,15 +19,22 @@ import {
 	type SessionValidation,
 } from "./validation.js";
 import { registerReadToolsAndToolset, type KernelReadClient } from "./tools.js";
+import {
+	createWriteConfirmState,
+	registerWriteTool,
+	type WriteKernelClient,
+} from "./write.js";
 
 // Sprint 1 chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot. Sprint 2
 // added the /kb command (scope toggles + recovery). Sprint 3 registers the
 // read tools (kb_query / kb_search / kb_read) and the read toolset on the
-// same register(pi, deps) seam; the write tool arrives in Sprint 4.
+// same register(pi, deps) seam; Sprint 4 registers kb_write (write
+// confirmation gate + create flow) on the same seam.
 
 const STATUS_KEY = "kb";
 
+/** Runtime deps the write tool adds to the register seam. */
 export interface GnubrainDeps {
 	/** Injectable file read — unit tests mock it; the integration suite injects fixture settings in memory through the same seam. */
 	readFile?: (path: string) => Promise<string>;
@@ -58,6 +65,16 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		getValidation: () => validation,
 		getKernel: () => kernelClient as KernelReadClient | undefined,
 		breaker,
+	});
+
+	// Write tool: rides the same gate + probe verdict. The confirm
+	// state is session-scoped machinery, same lifecycle class as the breaker.
+	const confirmState = createWriteConfirmState();
+	registerWriteTool(pi, {
+		getValidation: () => validation,
+		getKernel: () => kernelClient as WriteKernelClient | undefined,
+		breaker,
+		confirmState,
 	});
 
 	const statusInput = (
@@ -198,6 +215,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		}
 		validation = undefined;
 		kernelClient = undefined;
+		confirmState.timedOut.clear();
 	});
 }
 

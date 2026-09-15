@@ -76,7 +76,7 @@ function jsonl(rows: unknown[]): string {
  * overflow spills the full JSONL and the envelope keeps a newline-boundary
  * preview plus the pointer.
  */
-function rowPayload(
+export function rowPayload(
 	sessionId: string,
 	tool: string,
 	kept: Record<string, unknown>[],
@@ -724,27 +724,10 @@ export async function runRead(
 		hpath: doc.hPath,
 	};
 
-	// Outline ride-along: getChildBlocks walk in document order (§3) — never
-	// SQL enumeration (the `sort` column is a type weight, not document order).
-	const walk = await walkBlockTree(kernel, rootId, 1);
-	const headings = walk.filter((b) => b.type === "h");
-	const lines = headings.map((h) => {
-		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
-		return `${"  ".repeat(level - 1)}${h.content} → ${h.id}`;
-	});
-	if (lines.length > OUTLINE_HEADINGS) {
-		const path = spillFile(
-			sessionId,
-			"kb_read-outline",
-			jsonl(headings),
-			"jsonl",
-		);
-		envelope.outline =
-			lines.slice(0, OUTLINE_HEADINGS).join("\n") +
-			`\n… ${lines.length - OUTLINE_HEADINGS} more — full outline in ${path}`;
-		envelope.fullOutlinePath = path;
-	} else {
-		envelope.outline = lines.join("\n");
+	const outline = await renderOutline(kernel, sessionId, "kb_read", rootId);
+	envelope.outline = outline.outline;
+	if (outline.fullOutlinePath !== undefined) {
+		envelope.fullOutlinePath = outline.fullOutlinePath;
 	}
 
 	// §3 read budget: the spill mechanism is the only limit — large docs spill
@@ -761,6 +744,40 @@ export async function runRead(
 			: `${inline}\n${spillPointer(doc.content.length - inline.length, spillPath)}`;
 	envelope.fullResultPath = spillPath;
 	return envelope;
+}
+
+/**
+ * Outline ride-along (§3/§4): getChildBlocks walk in document order — never
+ * SQL enumeration (the `sort` column is a type weight, not document order).
+ * Shared by kb_read and the write flow (duplicate-stop rows, create echo).
+ */
+export async function renderOutline(
+	kernel: KernelReadClient,
+	sessionId: string,
+	tool: string,
+	rootId: string,
+): Promise<{ outline: string; fullOutlinePath?: string }> {
+	const walk = await walkBlockTree(kernel, rootId, 1);
+	const headings = walk.filter((b) => b.type === "h");
+	const lines = headings.map((h) => {
+		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
+		return `${"  ".repeat(level - 1)}${h.content} → ${h.id}`;
+	});
+	if (lines.length > OUTLINE_HEADINGS) {
+		const path = spillFile(
+			sessionId,
+			`${tool}-outline`,
+			jsonl(headings),
+			"jsonl",
+		);
+		return {
+			outline:
+				lines.slice(0, OUTLINE_HEADINGS).join("\n") +
+				`\n… ${lines.length - OUTLINE_HEADINGS} more — full outline in ${path}`,
+			fullOutlinePath: path,
+		};
+	}
+	return { outline: lines.join("\n") };
 }
 
 interface WalkedBlock {
@@ -828,7 +845,7 @@ export function registerReadToolsAndToolset(
 	});
 }
 
-function textResult(envelope: Envelope): {
+export function textResult(envelope: Envelope): {
 	content: { type: "text"; text: string }[];
 	details: Envelope;
 } {
