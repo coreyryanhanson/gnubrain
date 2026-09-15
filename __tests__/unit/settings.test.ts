@@ -4,7 +4,7 @@ import {
 	validateGnubrainSettings,
 	validateProjectSettings,
 	type ValidationResult,
-} from "./settings.js";
+} from "../../settings.js";
 
 function expectErrors(result: ValidationResult): string[] {
 	if (result.ok) throw new Error("expected validation to fail");

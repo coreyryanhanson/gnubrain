@@ -4,13 +4,13 @@ import {
 	SiYuanNetworkError,
 	type NotebookList,
 } from "siyuan-kernel-api";
-import { loadGnubrainSettings } from "./settings.js";
+import { loadGnubrainSettings } from "../../settings.js";
 import {
 	latestPersistedScope,
 	runSessionValidation,
 	type KernelProbeClient,
 	type SessionValidation,
-} from "./validation.js";
+} from "../../validation.js";
 
 function notebookList(
 	notebooks: Partial<NotebookList["notebooks"][number]>[],

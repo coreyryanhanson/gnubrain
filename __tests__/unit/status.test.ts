@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderKbStatus, type KbStatusInput } from "./status.js";
+import { renderKbStatus, type KbStatusInput } from "../../status.js";
 
 // Passthrough theme — the pure render is what's under test; a real theme
 // colorizes the glyph via Theme.fg.

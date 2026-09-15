@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SiYuanAuthError } from "siyuan-kernel-api";
-import register, { type GnubrainDeps } from "./index.js";
+import register, { type GnubrainDeps } from "../../index.js";
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 

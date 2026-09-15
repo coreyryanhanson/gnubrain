@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError } from "siyuan-kernel-api";
-import { CircuitBreaker } from "./breaker.js";
-import type { SessionValidation } from "./validation.js";
+import { CircuitBreaker } from "../../breaker.js";
+import type { SessionValidation } from "../../validation.js";
 import {
 	createContentBaselines,
 	createWriteConfirmState,
@@ -21,8 +21,8 @@ import {
 	type WriteKernelClient,
 	type WriteParams,
 	type WriteToolHooks,
-} from "./write.js";
-import type { WalkedBlock } from "./tools.js";
+} from "../../write.js";
+import type { WalkedBlock } from "../../tools.js";
 
 function validation() {
 	return {

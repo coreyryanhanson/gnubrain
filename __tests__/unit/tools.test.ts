@@ -2,19 +2,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
-import { CircuitBreaker } from "./breaker.js";
-import { EMPTY_SCOPE_MESSAGE } from "./gate.js";
-import { walkBlockTree } from "./tools.js";
-import { inlineOrSpill, PREVIEW_CHARS } from "./spill.js";
+import { CircuitBreaker } from "../../breaker.js";
+import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
+import { walkBlockTree } from "../../tools.js";
+import { inlineOrSpill, PREVIEW_CHARS } from "../../spill.js";
 import {
 	certifySelect,
 	postFilterRows,
 	rebuildWithScope,
 	verifyRebuilt,
 	type KernelReadClient,
-} from "./tools.js";
-import { RESULT_LIMIT, spillFile, spillFileName } from "./spill.js";
-import type { SessionValidation } from "./validation.js";
+} from "../../tools.js";
+import { RESULT_LIMIT, spillFile, spillFileName } from "../../spill.js";
+import type { SessionValidation } from "../../validation.js";
 
 function validation(): SessionValidation {
 	return {
@@ -316,7 +316,7 @@ describe("search tool", () => {
 		// registered via registerSearchTool — see the toolset test below for the
 		// wiring; here we exercise the fan-out through the same helper the tool
 		// uses.
-		const { runSearchFanOut } = await import("./tools.js");
+		const { runSearchFanOut } = await import("../../tools.js");
 		const { calls, client } = kernelStub();
 		const result = await runSearchFanOut(
 			"sess-1",
@@ -357,7 +357,7 @@ describe("search tool", () => {
 	});
 
 	it("drops out-of-scope rows with post_filtered: true (mocked-only contamination, §10)", async () => {
-		const { runSearchFanOut } = await import("./tools.js");
+		const { runSearchFanOut } = await import("../../tools.js");
 		const { client } = kernelStub();
 		const contaminated: KernelReadClient = {
 			...client,
@@ -395,14 +395,14 @@ describe("search tool", () => {
 	});
 
 	it("a single active KB degenerates to the single-call shape", async () => {
-		const { runSearchFanOut } = await import("./tools.js");
+		const { runSearchFanOut } = await import("../../tools.js");
 		const { calls, client } = kernelStub();
 		await runSearchFanOut("sess-1", client, validation(), ["recipes"], "q");
 		expect(calls.filter((c) => c.method === "search")).toHaveLength(1);
 	});
 
 	it("aggregates the truncation marker across fan-out calls", async () => {
-		const { runSearchFanOut } = await import("./tools.js");
+		const { runSearchFanOut } = await import("../../tools.js");
 		const saturated: KernelReadClient = {
 			...kernelStub().client,
 			async search() {
@@ -425,7 +425,7 @@ describe("search tool", () => {
 
 	it("rejects agent-supplied method/aux params at the tool schema", async () => {
 		const { tools, pi, hooks } = fakePiWithTools();
-		const { registerSearchTool } = await import("./tools.js");
+		const { registerSearchTool } = await import("../../tools.js");
 		registerSearchTool(pi as never, hooks);
 		const schema = tools.get("kb_search") as unknown as {
 			parameters: Record<string, unknown>;
@@ -436,7 +436,7 @@ describe("search tool", () => {
 
 describe("read tool", () => {
 	it("the ownership query doubles as the scope check — a docId from another KB returns no rows", async () => {
-		const { runRead } = await import("./tools.js");
+		const { runRead } = await import("../../tools.js");
 		const { client } = kernelStub();
 		const result = await runRead(
 			"sess-1",
@@ -457,7 +457,7 @@ describe("read tool", () => {
 	});
 
 	it("caps the outline at OUTLINE_HEADINGS inline lines with a spill pointer (§3)", async () => {
-		const { runRead } = await import("./tools.js");
+		const { runRead } = await import("../../tools.js");
 		const headings = Array.from({ length: 250 }, (_, i) => ({
 			id: `h${i}`,
 			type: "h",
@@ -508,7 +508,7 @@ import {
 	registerReadToolsAndToolset,
 	READ_TOOLSET_ID,
 	READ_TOOLSET_PERSIST_KEY,
-} from "./tools.js";
+} from "../../tools.js";
 import { getRegisteredToolsets } from "pi-tool-masking";
 
 describe("read toolset + descriptions", () => {

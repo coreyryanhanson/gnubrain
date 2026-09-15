@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SiYuanRateLimitError } from "siyuan-kernel-api";
-import { BREAKER_THRESHOLD, CircuitBreaker } from "./breaker.js";
+import { BREAKER_THRESHOLD, CircuitBreaker } from "../../breaker.js";
 
 const NOW = 1_000_000_000;
 

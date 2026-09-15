@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dispatchKbCommand } from "./kbCommand.js";
-import type { SessionValidation } from "./validation.js";
+import { dispatchKbCommand } from "../../kbCommand.js";
+import type { SessionValidation } from "../../validation.js";
 
 function validation(overrides?: {
 	scope?: string[];

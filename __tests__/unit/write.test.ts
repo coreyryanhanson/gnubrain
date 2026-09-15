@@ -6,8 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CircuitBreaker } from "./breaker.js";
-import type { SessionValidation } from "./validation.js";
+import { CircuitBreaker } from "../../breaker.js";
+import type { SessionValidation } from "../../validation.js";
 import {
 	createWriteConfirmState,
 	guardExactPattern,
@@ -18,7 +18,7 @@ import {
 	type WriteKernelClient,
 	type WriteParams,
 	type WriteToolHooks,
-} from "./write.js";
+} from "../../write.js";
 
 function validation(overrides: Partial<SessionValidation["settings"]> = {}) {
 	return {

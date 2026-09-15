@@ -4,14 +4,14 @@ import {
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 } from "siyuan-kernel-api";
-import { CircuitBreaker } from "./breaker.js";
+import { CircuitBreaker } from "../../breaker.js";
 import {
 	gateWriteAttempt,
 	guardCall,
 	resolveKbParam,
 	runKbCall,
-} from "./gate.js";
-import type { SessionValidation } from "./validation.js";
+} from "../../gate.js";
+import type { SessionValidation } from "../../validation.js";
 
 const NOW = 1_000_000_000;
 
