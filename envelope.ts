@@ -1,7 +1,7 @@
 // §5 error envelope — one shared helper. Every tool result carries
 // {status, message, ...payload}. `truncated`/`post_filtered` are payload
-// markers, never statuses; success results (Sprint 3's read tools onward)
-// carry `status: "ok"` plus their payload.
+// markers, never statuses; success results carry
+// `status: "ok"` plus their payload.
 
 export type EnvelopeStatus =
 	| "ok"

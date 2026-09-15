@@ -1,4 +1,4 @@
-// Sprint 5 ACs — the write toolset declares requires: ["gnubrain.read"]
+// Unit ACs — the write toolset declares requires: ["gnubrain.read"]
 // (§5 tool-masking record): live-toggle cascade legs, and the settings-pin
 // boundary (no cascade at restore — the documented reachable
 // write-without-read state, backstopped by confirmation + headless

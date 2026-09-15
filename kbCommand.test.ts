@@ -123,7 +123,7 @@ describe("dispatchKbCommand", () => {
 		expect(result.newReadsEnabled).toBeUndefined();
 	});
 
-	// /kb tools verbs are state setters over BOTH toolsets (Sprint 5). The
+	// /kb tools verbs are state setters over BOTH toolsets. The
 	// writesEnabled arg defaults to false (tests below pass it explicitly).
 	it("/kb tools read sets the read-only state; re-issuing it is a reported no-op", () => {
 		const on = dispatchKbCommand("tools read", validation(), [], true, false);

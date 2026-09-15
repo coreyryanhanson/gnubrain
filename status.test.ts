@@ -18,7 +18,7 @@ function input(overrides?: Partial<KbStatusInput>): KbStatusInput {
 }
 
 describe("renderKbStatus", () => {
-	it("renders the scope names with a hollow glyph in Sprint 1 (no toolsets)", () => {
+	it("renders the scope names with a hollow glyph when no toolsets are active", () => {
 		expect(renderKbStatus(input(), theme)).toBe("○ kb: recipes, projects");
 	});
 
@@ -64,7 +64,7 @@ describe("renderKbStatus", () => {
 		);
 	});
 
-	it("the healthy capability ladder: reads on → filled dot (Sprint 3 wires the color)", () => {
+	it("the healthy capability ladder: reads on → filled dot", () => {
 		expect(
 			renderKbStatus(input({ readsEnabled: true }), {
 				fg: (c, t) => `[${c}]${t}`,

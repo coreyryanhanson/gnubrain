@@ -1,4 +1,4 @@
-// Sprint 4 unit ACs — write confirmation, file-path input, title guard,
+// Unit ACs — write confirmation, file-path input, title guard,
 // mint policy, verified-create, guard-stop staging — executed through the
 // registered kb_write definition on a fake pi (§10).
 
@@ -62,8 +62,8 @@ interface StubConfig {
 }
 
 /** Kernel stub with a SQL router: guard legs vs parent lookup vs the
- * verified-create read, plus a create-call log. Sprint 5 adds the
- * block-write methods and the mode-flow routes (ownership, root echo,
+ * verified-create read, plus a create-call log. Mode-flow routes add the
+ * block-write methods (ownership, root echo,
  * block-in-doc, content re-check, refs). */
 /** Kernel stub with a SQL router: guard legs vs parent lookup vs the
  * verified-create read, plus a create-call log. Verified rows default to a

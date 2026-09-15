@@ -1,4 +1,4 @@
-// Sprint 5 unit ACs — remaining write modes (edit/append/replace-section/
+// Unit ACs — remaining write modes (edit/append/replace-section/
 // delete/move), the write-result contract, stale-target verification, the
 // fresh-content precondition, anchor derivation, and the description
 // doctrine lines — executed through the registered kb_write definition

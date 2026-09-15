@@ -278,7 +278,7 @@ describe("index wiring", () => {
 	});
 });
 
-describe("read + write toolset wiring (Sprint 3/5)", () => {
+describe("read + write toolset wiring", () => {
 	it("registers the kb tools as active-by-default tools (read + write toolsets)", () => {
 		const { pi, tools } = fakePi();
 		register(pi, deps());

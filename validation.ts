@@ -62,13 +62,13 @@ export function latestPersistedScope(
 }
 
 /**
- * The full startup validation pass (§5). Also the `/kb` recovery hook's body
- * (Sprint 2): re-running it re-reads settings and updates every cached verdict.
+ * The full startup validation pass (§5). Also the `/kb` recovery hook's body:
+ * re-running it re-reads settings and updates every cached verdict.
  */
 export async function runSessionValidation(input: {
 	loaded: LoadedSettings;
 	kernel: KernelProbeClient;
-	/** Sprint 5b's version-refusal pin overrides this per-test. */
+	/** The version-refusal pin overrides this per-test. */
 	pinnedVersion?: string;
 	/** Latest persisted `kb-scope` snapshot, when the session carries one. */
 	persistedScope?: string[] | undefined;

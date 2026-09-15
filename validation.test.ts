@@ -128,7 +128,7 @@ describe("startup validation order", () => {
 		}
 	});
 
-	it("the pinned version is overridable per test (Sprint 5b's version-refusal seam)", async () => {
+	it("the pinned version is overridable per test (the version-refusal seam)", async () => {
 		const { kernel } = stubKernel({ version: "3.9.0" });
 		const result = await runSessionValidation({
 			loaded: await loaded(globalSettings()),

@@ -1,4 +1,4 @@
-// §4 write tool — kb_write. Sprint scope: the confirmation gate and the
+// §4 write tool — kb_write: the confirmation gate and the
 // `create` flow end to end (title guard, mint policy, verified-create,
 // guard-stop staging). Every kernel-touching step rides the S1 gate
 // (runKbCall) and the write-path probe gate (gateWriteAttempt).
@@ -1117,7 +1117,7 @@ async function resolveDocTarget(
 
 /** Mode-specific target params (§4 schema table) — anything else the agent
  * sends is rejected before any kernel call. `confirmNew` is never declared
- * but always accepted at runtime (Sprint 4 decision record). */
+ * in the tool schema but always accepted at runtime (§4 decision record). */
 const MODE_PARAMS: Record<string, string[]> = {
 	create: ["topic", "parentId"],
 	edit: ["docId", "blockId"],
@@ -1821,7 +1821,7 @@ async function runMoveMode(
 }
 
 // ---------------------------------------------------------------------------
-// Write toolset (§5 tool-masking record) — Sprint 5
+// Write toolset (§5 tool-masking record)
 // ---------------------------------------------------------------------------
 
 export const WRITE_TOOLSET_ID = "gnubrain.write";

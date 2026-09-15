@@ -29,14 +29,14 @@ import {
 	type WriteKernelClient,
 } from "./write.js";
 
-// Sprint 1 chassis: the machinery every kb tool call routes through —
-// validation, scope resolution, breaker/cooldown gate, status slot. Sprint 2
-// added the /kb command (scope toggles + recovery). Sprint 3 registers the
-// read tools (kb_query / kb_search / kb_read) and the read toolset on the
-// same register(pi, deps) seam; Sprint 4 registered kb_write (write
-// confirmation gate + create flow); Sprint 5 declares the write toolset
-// (requires the read toolset — live-toggle cascade, §5), adds the /kb tools
+// Chassis: the machinery every kb tool call routes through —
+// validation, scope resolution, breaker/cooldown gate, status slot, the
+// /kb command (scope toggles + recovery), the read tools (kb_query /
+// kb_search / kb_read) and read toolset, kb_write (write
+// confirmation gate + create flow), and the write toolset
+// (requires the read toolset — live-toggle cascade, §5), the /kb tools
 // write verb, the fresh-content baselines, and the write-modes dispatch.
+// All of it hangs off the same register(pi, deps) seam.
 
 const STATUS_KEY = "kb";
 
@@ -65,7 +65,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// Kernel client built from the freshest settings on every validation pass.
 	let kernelClient: KernelProbeClient | undefined;
 
-	// Read tools + toolset (Sprint 3): the hooks read the live closure state,
+	// Read tools + toolset: the hooks read the live closure state,
 	// so masking and post-toggle scope compose mid-session (§5).
 	const readToolset: Toolset = registerReadToolsAndToolset(pi, {
 		getValidation: () => validation,
@@ -177,7 +177,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		renderStatus(ctx);
 	});
 
-	// §5 /kb command (Sprint 2): every dispatch first re-runs the full
+	// §5 /kb command: every dispatch first re-runs the full
 	// validation pass — success clears degradation + the breaker counter,
 	// failure re-engages all-or-nothing — before the subcommand runs.
 	pi.registerCommand("kb", {
