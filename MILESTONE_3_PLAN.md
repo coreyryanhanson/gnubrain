@@ -189,7 +189,7 @@ Scope persistence and the mid-session activation vehicle.
    — `settings.ts`'s `RESERVED_KB_NAMES` gains `writes` here (M1 validator +
    test updated: a KB named `writes` becomes unconfigurable from the day `/kb`
    ships, not when its dispatcher lands in Sprint 5; the stale "The only /kb
-   reserved keyword" comment at `settings.ts:22–23` updated in the same change —
+   reserved keyword" comment at `settings.ts:20–21` updated in the same change —
    it already contradicts §5's `all` + `writes` reserved set). The `all`
    name-level rejection is asserted at the settings layer — already covered by
    the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
@@ -464,7 +464,10 @@ confirmation gate and the `create` flow end to end. Registered name
    `moveDocsByID`; self-descendant pre-check; intra-KB by
    construction; doc-level move also covers the un-nest case (`toDocId`
    omitted → `toID` = notebook ID). Anchors always tool-derived; targets
-   agent-supplied from echoed data.
+   agent-supplied from echoed data. Replace-section and delete-bearing
+   confirmations display the §4 delete-set payload (block count, the trailing
+   blocks' current content, inbound-ref count + referring hpaths), sharing the
+   fresh-content baseline read of item 4.
 2. **Write-result contract (§4)** — every doc-targeting result carries root
    `docId`, stored title, real `hpath`, fresh `outline` (cap applies to inline
    rendering only), `anchor` where placement-bearing, `newBlockId` extracted
@@ -484,9 +487,14 @@ confirmation gate and the `create` flow end to end. Registered name
    "gnubrain.write", names: new Set(["kb_write"]),
    persistKey: "toolset-state:gnubrain.write",
    defaultEnabled: true, requires: ["gnubrain.read"] })` — the pi-tool-masking
-   dependency cascade makes write-without-read unrepresentable (enabling writes
-   auto-enables reads; disabling reads cascades to disable dependents; settings
-   pins resolve through the cascade too). Extends Sprint 2's `/kb` dispatcher
+   dependency cascade makes live write-without-read toggling unrepresentable
+   (enabling writes auto-enables reads; disabling reads cascades to disable
+   dependents). Settings pins do **not** cascade: pi-tool-masking's restore
+   applies each `toolsetDefaults` pin per-toolset without re-running the
+   `requires` cascade, so a hand-pinned write-on + read-off is a reachable
+   write-without-read state — accepted by design; masking is the outer layer
+   and confirmation + headless default-deny still backstop every write (§5).
+   Extends Sprint 2's `/kb` dispatcher
    with the `writes` reserved keyword: `/kb writes on|off` toggles the toolset
    (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output's
    toolset-state line (landed with Sprint 3's read toolset) extends to the write
@@ -538,10 +546,14 @@ confirmation gate and the `create` flow end to end. Registered name
       re-toggle reported as no-op (same semantics as KB toggles), bare `/kb`
       output's toolset-state line covers both toolsets (§10's `/kb`-toggle unit list,
       extended with the `writes` keyword per item 5).
-- [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — enabling
-      writes cascades reads on; disabling reads cascades writes off; a
-      `toolsetDefaults` write pin resolves through the cascade (write pin on +
-      read unpinned → both active) (§5).
+- [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — live-toggle
+      cascade legs: enabling writes cascades reads on; disabling reads cascades
+      writes off. Settings-pin boundary (no cascade at restore, pinned
+      behavior): a `toolsetDefaults` write-on pin with read unpinned leaves
+      both active via read's `defaultEnabled: true` (no cascade involved), and
+      a write-on + read-off pin pair produces the reachable write-without-read
+      state — asserted as the documented boundary, backstopped by
+      confirmation + headless default-deny (§5).
 - [ ] Unit: status-bar capability colors — healthy + write toolset enabled →
       success/green, write masked + read active → accent/blue, both masked →
       `○ kb` hollow (incl. a masked read toolset — `toolsetDefaults` pin /
@@ -759,10 +771,11 @@ siyuan-kernel-api 0.3.0 (notebook lifecycle + encrypted family) ──► Sprint
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
 surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it), with one exception: S3's final AC
-(tool `kb` validation composing with the live post-toggle scope mid-session)
-is gated on Sprint 2 — it consumes S2's persisted scope and runs after S2
-lands; the parallel split covers S3's build work itself. Sprint 5b also requires Sprint 2
+Sprint 1 and everything else inherits it), with two exceptions gated on Sprint
+2: S3 item 6's bare-`/kb` toolset-state line (bare `/kb` output doesn't exist
+until S2) and S3's final AC (tool `kb` validation composing with the live
+post-toggle scope mid-session — it consumes S2's persisted scope and runs
+after S2 lands); the parallel split covers S3's build work itself. Sprint 5b also requires Sprint 2
 (item 11's headless `/kb` dispatch) and Sprint 3 (items 9–10's read pins, on
 top of the transitive S3 → S4 → S5 path), and the Sprint 6 gate needs Sprint 2
 for the `/kb` mid-session and live-breaker-recovery checks. Sprint 4 needs Sprint 1's chassis

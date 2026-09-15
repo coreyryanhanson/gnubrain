@@ -1154,8 +1154,13 @@ writes; the opt-out is typed, in settings.
   Persist keys `toolset-state:gnubrain.read` / `toolset-state:gnubrain.write` — the
   extension's own namespace. Dependency cascade: the write toolset declares
   `requires: ["gnubrain.read"]` (pi-tool-masking cascade — enabling writes
-  auto-enables reads, disabling reads auto-disables dependents), so the
-  write-without-read state is unrepresentable by construction. Masking is the
+  auto-enables reads, disabling reads auto-disables dependents). This holds
+  for live toggles only: pi-tool-masking's settings tier applies
+  `toolsetDefaults` pins per-toolset at restore without re-running the
+  cascade, so a hand-pinned write-on + read-off is a reachable
+  write-without-read state — accepted by design, since masking is only the
+  outer layer and confirmation + headless default-deny still backstop every
+  write. Masking is the
   **outer** write layer: a masked `kb_write` is
   absent from the tool list (no schema tokens, no doomed attempts — a read-only KB session
   by construction); when the toolset is on, confirmation + headless default-deny remain the
@@ -1343,8 +1348,9 @@ writes; the opt-out is typed, in settings.
   The hollow state is reachable without our toggle: pi-tool-masking's settings tier
   (`toolsetDefaults` pins on `toolset-state:gnubrain.*`), allowlist/focus mode, or an
   external toolset manager can mask any toolset — so the glyph renders from **live toolset
-  state** (events + `isEnabled`), never from "which of our commands ran". The `requires`
-  cascade (above) makes write-without-read unrepresentable, so the ladder never needs a
+  state** (events + `isEnabled`), never from "which of our commands ran". The ladder's
+  masking states are orthogonal to the write-without-read caveat above (which
+  is a settings-pin boundary, not a masking state), so the ladder never needs a
   fourth state. Capability rule,
   one line: writes on → green; else reads on → blue; else hollow. The glyph repaints on `TOOLSET_EVENTS.changed`/`restored` so
   `/kb writes on|off` recolors mid-session, and after `session_tree` restore; cleared on
