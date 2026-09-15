@@ -355,7 +355,9 @@ surface is.
    `kbs` (settings test updated here, same relocation pattern as S2's
    `tools`). The reservation error becomes name-agnostic at the same time —
    `KB name '<name>' is reserved`, replacing "reserved for the /kb command"
-   in both the error string and the settings.ts comment — because the user's
+   in the error string (the settings.ts comment is rewritten in the same
+   change to cover the enlarged set — `kbs` is a tool-param discovery name,
+   not a `/kb` subcommand) — because the user's
    action is identical for every reserved name (pick another), and per-name
    rationale in the message would re-touch message + tests on each future
    reservation; the why stays in DESIGN_v2's reserved-set record and the
@@ -367,31 +369,41 @@ surface is.
    `EMPTY_SCOPE_MESSAGE`, exported and reused verbatim). **Schema
    change:** `docId` becomes `Type.Optional` — as written it is
    required, and a discovery call would be rejected by tool-schema
-   validation before `execute` ever runs. The handler then orders three
-   branches: discovery (`kb: "kbs"`) first; then the missing-`docId`
-   refusal — `kb` valid but no `docId` is refused with guidance, never
-   answered with a doc listing or KB metrics (doc listing —
+   validation before `execute` ever runs. Discovery is the only
+   pre-gate branch: after the session-validation guard, the handler
+   re-runs the shape check inline (`validation.shapeErrors.length > 0`
+   → `configRefusalEnvelope`, newly imported into tools.ts — a
+   shape-degraded session still rejects every call, S1's rule), then
+   short-circuits `kb: "kbs"`. It cannot route through
+   `guardCall`/`runKbCall`: `guardCall`'s pinned order fuses shape →
+   breaker → cooldown and cannot stop between them, and `runKbCall`'s
+   success path would reset the breaker counter — the short-circuit
+   sits ahead of breaker/429 cooldown, so discovery succeeds while the
+   breaker is tripped or a lockout is armed (a discovery call carrying
+   a real `docId` still returns the scope branch; `docId` is ignored
+   there). The missing-`docId` refusal is not a handler branch — it
+   lives inside the gated op, after `runKbCall`'s gate has resolved a
+   valid `kb`: kb validity must come first (a typo'd `kb` with no
+   `docId` must get the unknown-KB rejection, not the guidance), and
+   only inside the op does the guard narrow `params.docId` for the
+   `runRead(docId: string)` call — a handler-level guard would not
+   narrow across the op-closure boundary, so the op aliases `const
+   docId = params.docId` first. `kb` valid but `docId` absent or empty
+   (`""` counts as missing) is refused with guidance, never answered
+   with a doc listing or KB metrics (doc listing —
    `SELECT root_id, hpath, updated FROM blocks WHERE type = 'd'` — and
    aggregates already live on `kb_query`, and a success-shaped payload
    would mask the lost-docId mistake the call almost always is), with
    the message naming all three exits: list docs via `kb_query`, KB
-   stats via a `kb_query` aggregate, list active KBs via `kb: "kbs"`;
-   only then the normal read. The short-circuit lives in the `kb_read`
-   handler after the session-validation guard and the shape-error
-   refusal (a shape-degraded session still rejects every call — S1's
-   rule): the handler re-runs the shape check inline
-   (`validation.shapeErrors.length > 0` → `configRefusalEnvelope`,
-   newly imported into tools.ts), since `guardCall`'s pinned order fuses
-   shape → breaker → cooldown and cannot stop between them — and it sits
-   ahead of breaker/429 cooldown: discovery succeeds while the breaker
-   is tripped or a lockout is armed, and it must not route through
-   `runKbCall`, whose success path would reset the breaker counter.
+   stats via a `kb_query` aggregate, list active KBs via `kb: "kbs"`.
    Envelope: `{status: "ok", kb: "kbs", message:
    validation.scope.join(", "), names: validation.scope}` — the echoed
    `kb: "kbs"` is a reserved marker, not a real KB, a deliberate
    exception to the success-echo contract (the payload rides in
-   `names`); empty scope → `{status: "ok", message:
-   EMPTY_SCOPE_MESSAGE, names: []}`. It must not live in the
+   `names`); empty scope → the same form with `message:
+   EMPTY_SCOPE_MESSAGE, names: []` — the `kb: "kbs"` marker is
+   identical in both forms, so a consumer branching on the marker never
+   sees a shape it didn't expect. It must not live in the
    shared `resolveKbParam`: `kb_write` takes the same single-name
    validator, and a shared short-circuit would turn its mandated
    rejection into a read listing. `kb_query`/`kb_search`/`kb_write` get
@@ -446,15 +458,18 @@ surface is.
       the green/masked branches and the repaint events are Sprint 5's AC).
 - [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set
       (`{status: "ok", kb: "kbs", message: <scope joined ", ">, names:
-      <scope>}`) incl. the empty-scope form (`{status: "ok", message:
-      EMPTY_SCOPE_MESSAGE, names: []}`), with zero kernel calls on the
+      <scope>}`) incl. the empty-scope form (`{status: "ok", kb: "kbs",
+      message: EMPTY_SCOPE_MESSAGE, names: []}`), with zero kernel calls on the
       request log and the short-circuit placed after the shape-error
       refusal (a shape-degraded session still refuses it) and ahead of
       breaker/cooldown (discovery succeeds while the breaker is tripped
       and while a cooldown is armed); `docId` is optional in the `kb_read`
-      schema and a valid-`kb`-missing-`docId` call is refused with the
-      three-exit guidance message (never a doc listing or metrics
-      payload); a KB named `kbs` rejected by the M1 validator with the
+      schema and a valid-`kb` call with `docId` absent or empty is refused
+      with the three-exit guidance message (never a doc listing or metrics
+      payload; the refusal sits inside the gated op after kb resolution —
+      a typo'd `kb` with no `docId` gets the unknown-KB rejection instead),
+      and a discovery call with a `docId` present still returns the scope
+      branch; a KB named `kbs` rejected by the M1 validator with the
       name-agnostic reservation message (`KB name 'kbs' is reserved`), and
       the `all`/`tools` reservation assertions reworded to match;
       `kb_query`/`kb_search` reject
