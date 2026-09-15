@@ -1215,7 +1215,9 @@ writes; the opt-out is typed, in settings.
     precedent, all toggling under one namespace) — but nothing else (R5 — no
     slug convention survives, so no janitor subcommand exists); a KB named `all` or
     `tools` is rejected at shape validation (validation order, above). `writes` is
-    deliberately un-reserved — its verb moved under `tools`.
+    deliberately un-reserved — its verb moved under `tools`. The `kbs` discovery
+    name joins the same reserved set at shape validation, but it is a tool-param
+    name, not a `/kb` subcommand (§5 `kb`-param contract).
 - **Scope read rule**: active scope = the latest `kb-scope` entry in the session file,
   else `gnubrain.defaultKBs` — latest entry wins, so resume/fork and mid-session switches
   are the same mechanism. The `kb`-param rejection message names the command:
@@ -1434,13 +1436,14 @@ writes; the opt-out is typed, in settings.
   and the model can never silently write to the wrong KB. Rejection messages are the
   model's discovery mechanism, so they always list the currently active KBs:
   - **Discovery name (decision record)**: the reserved name `kbs` (settings-level
-    reservation alongside `all`/`tools`) is the sanctioned discovery form — calling any
-    read tool with `kb: ["kbs"]` returns the active KB set without touching the kernel
-    (empty set included, with the activation hint); `kbs` mixed with real names is
-    rejected loudly, never silently filtered; the write path rejects it with a message
-    naming it as a read-side discovery keyword (a KB named `kbs` can never exist in
-    settings). The rejection-message discovery path below remains the fallback, not
-    the only path.
+    reservation alongside `all`/`tools`) is the sanctioned discovery form — calling
+    `kb_read` with `kb: "kbs"` returns the active KB set without touching the kernel
+    (empty set included, with the activation hint); the short-circuit lives at the top
+    of the `kb_read` handler, before the shared gate, so breaker/429-cooldown state
+    never blocks it. Only `kb_read` carries the form: `kbs` passed to `kb_query`,
+    `kb_search`, or `kb_write` gets the plain unknown-KB rejection below, which names
+    the active set and is the rejection-message discovery path (the fallback) —
+    a KB named `kbs` can never exist in settings.
   - Unknown KB (typo) → reject with `unknown KB 'recipies'. Active: recipes, projects`.
   - Valid but not in active scope → reject with the activation path named:
     `'projects' exists but is not in the active scope — activate it with /kb
@@ -2038,7 +2041,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Scope state | `pi.appendEntry("kb-scope")` | pi-tool-masking reuse; per-KB toolsets | §5 |
 | Scope mechanism | Required `kb` param — array on read tools, single name on write-back | Hidden/optional scope defaulting to active set | §5 |
 | Scope activation | `/kb <name> on\|off` single-name idempotent toggle + `/kb all on\|off` | Multi-name set-replacement; agent-invocable activation tool | §5 |
-| `/kb` subcommands | Reserved set is `all` + `tools` (R5, M3 amendment — `writes` un-reserved when its verb moved under `tools`); bare `/kb` prints scope + toolset state | `/kb repair`; separate top-level commands | §5 |
+| `/kb` subcommands | Reserved set is `all` + `tools` (R5, M3 amendment — `writes` un-reserved when its verb moved under `tools`), plus the `kbs` tool-param discovery name (not a `/kb` subcommand); bare `/kb` prints scope + toolset state | `/kb repair`; separate top-level commands | §5 |
 | Write gating | `pi-tool-masking` toolsets — `gnubrain.write` masked = `kb_write` absent from the tool list | per-mode allowlist param on `kb_write`; hand-rolled `setActiveTools` bookkeeping | §5 |
 | Version gate | Eager `session_start` probe, cached verdict; strict full-version write gate, reads warn-and-proceed; ownership split — `siyuan-kernel-api.getVersion()` fetches only, the extension owns `PINNED_SIYUAN_VERSION` + strict-match policy + refusal message | Major-only refusal; per-write probe; staleness re-probe; version pin inside the core | §2, §8, §10 |
 | Doc addressing & discovery (R1/R2/R6, **supersedes the v1 title-as-primary-key doctrine**) | Echoed docId is identity; mint by title, discover by query/search, consume by ID | Name/hpath resolution; read-by-topic with docId fallback | §4 |

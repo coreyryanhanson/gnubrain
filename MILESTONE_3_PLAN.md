@@ -352,19 +352,23 @@ surface is.
    healthy dot turns accent/blue once this toolset is active (hollow before).
 7. **`kbs` discovery name (§5 amendment)** — `RESERVED_KB_NAMES` gains
    `kbs` (settings test updated here, same relocation pattern as S2's
-   `tools`); calling any read tool with `kb: ["kbs"]` returns the active
-   KB set without touching the kernel — empty set included, with the
-   activation hint (`no KBs in scope — activate one with /kb <name> on…`);
-   `kbs` mixed with real names is rejected loudly, never silently
-   filtered. The shared `kb`-param rejection vocabulary names `kbs` as a
-   read-side discovery keyword when it reaches the write path (`kb_write`
-   takes exactly one name and a KB named `kbs` can never exist in
-   settings, so the existing rejection covers it; the special-cased
-   message turns a confusing dead end into a self-explaining one — S4
-   inherits this via `kbNameProblem`). Read-tool descriptions gain the
-   discovery line ("call with `kb: ["kbs"]` to list active KBs"), making
-   the §5 rejection-message discovery path the fallback, not the only
-   path.
+   `tools`). Discovery is a `kb_read`-only form: `kb_read` with
+   `kb: "kbs"` (its schema is a single string) returns the active KB set
+   without touching the kernel — empty set included, with the activation
+   hint (`no KBs in scope — activate one with /kb <name> on…`). The
+   short-circuit lives at the top of the `kb_read` handler, **before**
+   the shared gate — breaker and 429 cooldown never block it, since no
+   kernel call is needed and discovery is most useful exactly when the
+   breaker is tripped or a lockout is armed. It must not live in the
+   shared `resolveKbParam`: `kb_write` takes the same single-name
+   validator, and a shared short-circuit would turn its mandated
+   rejection into a read listing. `kb_query`/`kb_search`/`kb_write` get
+   no special case — `kbs` there falls through to the existing
+   `unknown KB 'kbs'. Active: …` rejection, which already names the
+   active set and is §5's rejection-message discovery path (the
+   fallback); a KB named `kbs` can never exist in settings. Only the
+   `kb_read` description carries the discovery line ("call with
+   `kb: "kbs"` to list active KBs").
 
 ### Acceptance criteria
 
@@ -404,11 +408,13 @@ surface is.
 - [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
       active, hollow before it (S3-localized leg of the §5 capability ladder;
       the green/masked branches and the repaint events are Sprint 5's AC).
-- [ ] Unit: `kb: ["kbs"]` listing returns the live active set incl. the
-      empty-scope hint form; `["recipes", "kbs"]` rejected; a KB named
-      `kbs` rejected by the M1 validator; write-path rejection (via
-      `kbNameProblem`) names `kbs` as a read-side discovery keyword;
-      read-tool descriptions carry the discovery line.
+- [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set incl. the
+      empty-scope hint form, with zero kernel calls on the request log and
+      the short-circuit placed ahead of breaker/cooldown (discovery succeeds
+      while the breaker is tripped and while a cooldown is armed); a KB named
+      `kbs` rejected by the M1 validator; `kb_query`/`kb_search`/`kb_write`
+      reject `kbs` via the existing unknown-KB rejection (no special case);
+      the `kb_read` description carries the discovery line.
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
