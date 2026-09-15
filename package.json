@@ -16,8 +16,7 @@
 		"url": "git+https://github.com/coreyryanhanson/gnubrain.git"
 	},
 	"files": [
-		"index.ts",
-		"settings.ts"
+		"*.ts"
 	],
 	"scripts": {
 		"test": "vitest run",

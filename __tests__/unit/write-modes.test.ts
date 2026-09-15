@@ -9,19 +9,21 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import type { SessionValidation } from "../../validation.js";
 import {
-	createContentBaselines,
-	createWriteConfirmState,
 	deriveAppendAnchor,
 	deriveMoveAnchor,
-	modeShapeProblem,
-	registerWriteTool,
 	sectionDeleteSet,
-	type ContentBaselines,
+} from "../../writeAnchors.js";
+import {
+	createWriteConfirmState,
 	type WriteConfirmFn,
+} from "../../writeConfirm.js";
+import { modeShapeProblem, type WriteParams } from "../../writeModes.js";
+import { registerWriteTool, type WriteToolHooks } from "../../write.js";
+import {
+	createContentBaselines,
+	type ContentBaselines,
 	type WriteKernelClient,
-	type WriteParams,
-	type WriteToolHooks,
-} from "../../write.js";
+} from "../../writeResult.js";
 import type { WalkedBlock } from "../../tools.js";
 
 function validation() {

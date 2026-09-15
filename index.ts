@@ -20,13 +20,15 @@ import {
 } from "./validation.js";
 import { registerReadToolsAndToolset, type KernelReadClient } from "./tools.js";
 import { READ_TOOLSET_ID } from "./tools.js";
+import { createWriteConfirmState } from "./writeConfirm.js";
 import {
 	createContentBaselines,
-	createWriteConfirmState,
+	type WriteKernelClient,
+} from "./writeResult.js";
+import {
 	registerWriteTool,
 	WRITE_TOOLSET_ID,
 	WRITE_TOOLSET_PERSIST_KEY,
-	type WriteKernelClient,
 } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
@@ -175,6 +177,11 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// not inherit a partial or tipped count from the previous one. The 429
 		// cooldown is deliberately untouched — wall-clock and self-healing.
 		breaker.reset();
+		// Same lifecycle class: a confirm_timeout is terminal "in this session"
+		// and baselines are session-scoped — neither may leak across a new
+		// session in the same process.
+		confirmState.timedOut.clear();
+		baselines.clear();
 		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
 		if (validation.authFailed) breaker.recordAuthFailure();

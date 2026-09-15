@@ -8,17 +8,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CircuitBreaker } from "../../breaker.js";
 import type { SessionValidation } from "../../validation.js";
+import { createWriteConfirmState, readBodyFile } from "../../writeConfirm.js";
 import {
-	createWriteConfirmState,
 	guardExactPattern,
 	guardNearPatterns,
-	readBodyFile,
-	registerWriteTool,
+	guardNearStmt,
 	validateMintTitle,
-	type WriteKernelClient,
-	type WriteParams,
-	type WriteToolHooks,
-} from "../../write.js";
+} from "../../writeGuard.js";
+import { type WriteParams } from "../../writeModes.js";
+import { registerWriteTool, type WriteToolHooks } from "../../write.js";
+import { type WriteKernelClient } from "../../writeResult.js";
 
 function validation(overrides: Partial<SessionValidation["settings"]> = {}) {
 	return {
@@ -80,7 +79,10 @@ function writeKernelStub(config: StubConfig = {}) {
 		/id = '([^']+)'/.exec(stmt)?.[1];
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
-		getVersion: async () => "3.8.3",
+		getVersion: async () => {
+			calls.push({ method: "getVersion", args: undefined });
+			return "3.8.3";
+		},
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
@@ -184,7 +186,7 @@ type Exec = (params: Record<string, unknown>) => Promise<{
  * module augmentation — the production interface stays clean). */
 type TestHooks = Partial<WriteToolHooks> & { __config?: StubConfig };
 
-function setup(hooks: TestHooks = {}, v = validation()) {
+function setup(hooks: TestHooks = {}, v: SessionValidation = validation()) {
 	const tools = new Map<string, { execute: unknown }>();
 	const pi = {
 		registerTool(tool: { name: string; execute: unknown }) {
@@ -310,6 +312,20 @@ describe("mint policy", () => {
 describe("markdownFile input", () => {
 	it("errors on a missing file with zero kernel calls", async () => {
 		const { execute, kernel } = setup();
+		const r = await execute({
+			...base,
+			markdown: undefined,
+			markdownFile: "/nope/missing.md",
+		});
+		expect(r.details.status).toBe("error");
+		expect(r.details.message).toContain("/nope/missing.md");
+		expect(kernel.calls).toHaveLength(0);
+	});
+
+	it("reads the file before the probe gate — a bad path still fires zero kernel calls on an unreachable kernel", async () => {
+		const v: SessionValidation = validation();
+		v.probe = "unreachable";
+		const { execute, kernel } = setup({}, v);
 		const r = await execute({
 			...base,
 			markdown: undefined,
@@ -568,6 +584,20 @@ describe("title guard", () => {
 	it("near-match fragments are built from the HTML-escaped title", () => {
 		// One-word titles dedupe to a single leg.
 		expect(guardNearPatterns("R&D")).toEqual(["R&amp;D%"]);
+	});
+
+	it("separator-only titles still yield a well-formed near leg (no empty parens)", async () => {
+		for (const topic of ["-", "_", "---", "- _ -"]) {
+			expect(guardNearPatterns(topic).length).toBeGreaterThan(0);
+			expect(guardNearStmt("nb-r", topic)).not.toContain("AND ()");
+		}
+		// End to end: the create mints instead of failing on malformed SQL.
+		const { execute, kernel } = setup();
+		const r = await execute({ ...base, topic: "-" });
+		expect(r.details.status).toBe("ok");
+		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
+			true,
+		);
 	});
 
 	it("exact stop: uniform duplicate for multi-row, all rows + per-row markdown spills", async () => {
