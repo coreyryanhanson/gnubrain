@@ -35,8 +35,9 @@ The machinery every tool call routes through. No tools registered yet.
 Also lands the single registration/dispatch seam in `index.ts` — one
 `register(pi, deps)` entry that Sprint 2's `/kb` command and Sprint 3's
 toolset registration both extend — so the parallel S2/S3 work never
-rewrites the entry module concurrently (the S3-item-6 bare-`/kb`
-toolset-state line stays explicitly gated on Sprint 2).
+rewrites the entry module concurrently (S3-item-6's `/kb`-command additions —
+the bare-`/kb` toolset-state line and the `/kb tools` dispatcher — stay
+explicitly gated on Sprint 2).
 
 1. **Startup validation pipeline (§5 validation order)** — steps 2–3; the
    core step-1 shape check incl. the global-file `defaultKBs`-against-`kbs`
@@ -208,12 +209,16 @@ Scope persistence and the mid-session activation vehicle.
    else `defaultKBs`) landed in Sprint 1 item 4 and its tests stand.
 2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
    single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
-   `all off`; zero-valid-KB no-op reported); reserved keywords `all` + `writes`
-   — `settings.ts`'s `RESERVED_KB_NAMES` gains `writes` here (M1 validator +
-   test updated: a KB named `writes` becomes unconfigurable from the day `/kb`
-   ships, not when its dispatcher lands in Sprint 5; the stale "The only /kb
-   reserved keyword" comment at `settings.ts:22` updated in the same change —
-   it already contradicts §5's `all` + `writes` reserved set). The `all`
+   `all off`; zero-valid-KB no-op reported); reserved keywords `all` + `tools`
+   — `settings.ts`'s `RESERVED_KB_NAMES` gains `tools` here (M1 validator +
+   test updated: a KB named `tools` becomes unconfigurable from the day `/kb`
+   ships, not when its dispatcher lands in Sprint 3). All tool toggling lives under the
+   `/kb tools` command (dispatcher verbs land with the toolsets themselves:
+   S3 item 6 for reads, S5 item 5 for writes) — there is deliberately no
+   top-level tool-toggle verb, so KB names never collide with toolset verbs.
+   (`writes` is deliberately un-reserved: the toolset verb it once kept open
+   now lives under `tools`, so a KB named `writes` is configurable again; the
+   shipped S2 reservation is reverted shortly after this plan lands.) The `all`
    name-level rejection is asserted at the settings layer — already covered by
    the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
    so the S2 test exercises the `/kb` subcommand dispatch of `all` only);
@@ -241,8 +246,10 @@ Scope persistence and the mid-session activation vehicle.
       `/kb`-toggle unit list is superseded by these relocations; §5 makes both
       rejections shape-validation-time, and the shipped M1 tests already pin
       them). The new
-      `writes` reservation: a KB named `writes` is rejected by the M1
-      validator (settings test updated in this sprint).
+      `tools` reservation: a KB named `tools` is rejected by the M1
+      validator (settings test updated in this sprint). The obsoleted
+      `writes` reservation is removed (settings test updated: a KB named
+      `writes` is configurable again).
 
 - [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
       rule unchanged.
@@ -322,13 +329,21 @@ surface is.
    (heading filter for rendering only, full unfiltered ID set retained for write
    verification; extension-owned recursion depth bound); `OUTLINE_HEADINGS` cap
    with spill of the full outline.
-6. **Read toolset (§5 tool-masking record)** — `defineToolset(pi, { id:
+6. **Read toolset + `/kb tools` dispatcher (§5 tool-masking record)** —
+   `defineToolset(pi, { id:
    "gnubrain.read", names: new Set(["kb_query", "kb_search", "kb_read"]),
    persistKey: "toolset-state:gnubrain.read", defaultEnabled: true })`
-   (pi-tool-masking's `ToolsetSpec.names` is a `Set<string>`, not an array); no
-   toggle subcommand
-   (§5: nothing asks to hide reads yet) — the toolset exists so the surface is
-   declared and maskable from day one, default behavior unchanged. Bare `/kb`
+   (pi-tool-masking's `ToolsetSpec.names` is a `Set<string>`, not an array).
+   The `/kb tools` dispatcher lands here (the read toolset is the first
+   toggleable surface), following the state-setter pattern of
+   pi-lean-portal's `/web on|learn|off` — each verb sets an absolute end
+   state rather than flipping, so no state → exactly one command and
+   re-issuing a verb is naturally idempotent:
+   bare `/kb tools` prints toolset state; `/kb tools read` sets the
+   read-only state (enable read; its write-disable leg becomes meaningful
+   when Sprint 5's write toolset exists); `/kb tools off` disables the read
+   toolset (cascades write off once it exists); `/kb tools write` falls
+   through to usage until Sprint 5 adds the verb. Bare `/kb`
    output gains the toolset-state line here, covering the read toolset (§5's
    tool-masking record: a settings-pinned mask must never be mysterious — the
    absence is printed, not silent); Sprint 5 extends the line to the write
@@ -366,6 +381,10 @@ surface is.
       query doubles as the scope check (§4; §5 tool shape).
 - [ ] Unit: read toolset registered with the three `kb_` read tools as members,
       default-enabled, persist key `toolset-state:gnubrain.read` (§5).
+- [ ] Unit: `/kb tools` dispatch — bare prints state; `tools read` sets the
+      read-only state (no-op reported when already there); `tools off`
+      disables; `tools write` falls through to usage until Sprint 5
+      (state-setter semantics per item 6, portal `/web` precedent).
 - [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
       active, hollow before it (S3-localized leg of the §5 capability ladder;
       the green/masked branches and the repaint events are Sprint 5's AC).
@@ -526,16 +545,21 @@ confirmation gate and the `create` flow end to end. Registered name
    `requires` cascade, so a hand-pinned write-on + read-off is a reachable
    write-without-read state — accepted by design; masking is the outer layer
    and confirmation + headless default-deny still backstop every write (§5).
-   Extends Sprint 2's `/kb` dispatcher
-   with the `writes` reserved keyword: `/kb writes on|off` toggles the toolset
-   (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output's
+   Extends Sprint 3's `/kb tools` dispatcher
+   with the `write` verb: `/kb tools write` sets the read+write state
+   (enabling write cascades reads on via `requires`); `/kb tools read` —
+   already landed in Sprint 3 — gains its write-disable leg, so from the
+   read+write state it lands read-only (the portal `/web on` precedent:
+   enable one, explicitly disable the other); `/kb tools off` disables both
+   via read's disable + cascade. All tool toggling stays under `/kb tools`
+   (supersedes DESIGN §5's `/kb writes` verb — recorded as a deliberate M3
+   change); bare `/kb` output's
    toolset-state line (landed with Sprint 3's read toolset) extends to the write
-   toolset; the `writes` name reservation already landed in Sprint 2
-   (`RESERVED_KB_NAMES` = `all` + `writes`), so no settings change here. Status-bar integration: the
+   toolset. Status-bar integration: the
    healthy dot turns success/green when the write toolset is enabled and back
    to accent/blue (or hollow if the read toolset is also masked — e.g. a
    `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
-   `restored` so `/kb writes on|off` recolors mid-session, and repainting
+   `restored` so `/kb tools` verbs recolor mid-session, and repainting
    again after `session_tree` restore (§5 status-bar record; text unchanged —
    `● kb: <scope names>`).
 
@@ -574,10 +598,13 @@ confirmation gate and the `create` flow end to end. Registered name
       replace-first preference (prefer `edit`/`replace-section` over `append`;
       append is for genuinely new facts), completing the
       description work started in Sprint 3 item 4.
-- [ ] Unit: `/kb writes` dispatch — toggles the write toolset, idempotent
-      re-toggle reported as no-op (same semantics as KB toggles), bare `/kb`
-      output's toolset-state line covers both toolsets (§10's `/kb`-toggle unit list,
-      extended with the `writes` keyword per item 5).
+- [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
+      cascades reads on); `/kb tools read` from the read+write state lands
+      read-only (explicit write disable, portal `/web on` precedent);
+      `/kb tools off` disables both; each verb reports a no-op when already in
+      the target state; bare `/kb` output's toolset-state line covers both
+      toolsets (§10's `/kb`-toggle unit list, extended with the `tools` verbs
+      per item 5).
 - [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — live-toggle
       cascade legs: enabling writes cascades reads on; disabling reads cascades
       writes off. Settings-pin boundary (no cascade at restore, pinned
@@ -758,9 +785,9 @@ Polish and the M3 gate (§11).
       all four `kb_` names — the collision check is that the builtins survive,
       not that the `kb_` names aren't builtins, which the prefix alone already
       guarantees). Both
-      toolsets registered default-enabled; `/kb writes off` removes `kb_write`
+      toolsets registered default-enabled; `/kb tools read` removes `kb_write`
       from the active tool list (masked ≠ refused — no envelope, tool absent),
-      `/kb writes on` restores it; state survives session resume (§5).
+      `/kb tools write` restores it; state survives session resume (§5).
 - [ ] Scope survives session restart (resume reads the persisted entry).
 - [ ] `/kb <name> on` and `/kb all off` land mid-session.
 - [ ] Write confirmation refuse/allow verified interactively (manual by design
@@ -810,7 +837,7 @@ Sprint 1 (chassis) ──► Sprint 3 (read tools) ─────────�
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
 Sprint 2 (scope + /kb) ──► Sprint 5b (item 11's headless `/kb` dispatch)
 Sprint 2 (scope + /kb) ┄┄► Sprint 3 (item 6 bare-`/kb` toolset-state line + final AC only: live post-toggle scope)
-Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb writes` dispatcher extension)
+Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb tools write` verb)
 Sprint 2 (scope + /kb) ──► Sprint 6 (gate: /kb mid-session, breaker recovery)
 Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
@@ -825,8 +852,9 @@ surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
 Sprint 1 and everything else inherits it, and both extend Sprint 1's single
 `register(pi, deps)` seam in `index.ts` rather than editing the entry module
 independently), with two exceptions gated on Sprint
-2: S3 item 6's bare-`/kb` toolset-state line (bare `/kb` output doesn't exist
-until S2) and S3's final AC (tool `kb` validation composing with the live
+2: S3 item 6's `/kb`-command additions (the bare-`/kb` toolset-state line and
+the `/kb tools` dispatcher — neither exists until S2 lands the `/kb` command)
+and S3's final AC (tool `kb` validation composing with the live
 post-toggle scope mid-session — it consumes S2's persisted scope and runs
 after S2 lands); the parallel split covers S3's build work itself. Sprint 5b also requires Sprint 2
 (item 11's headless `/kb` dispatch) and Sprint 3 (items 9–10's read pins, on

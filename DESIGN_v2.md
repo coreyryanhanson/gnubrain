@@ -1166,8 +1166,10 @@ writes; the opt-out is typed, in settings.
   by construction); when the toolset is on, confirmation + headless default-deny remain the
   backstop unchanged. Masked ≠ refused: no refusal envelope exists for an absent tool; bare
   `/kb` prints toolset state alongside scope so the absence is never mysterious. The toggle
-  is `/kb writes on|off` (below); the read toolset gets no dedicated subcommand (nothing
-  asks to hide reads yet).
+  is the `/kb tools` dispatcher (below); the read toolset is toggled through it too —
+  `/kb tools read|off` (M3 amendment, superseding the earlier `/kb writes on|off`
+  decision: all tool toggling lives under `/kb tools` so KB names never collide with
+  toolset verbs).
 - **Scope (session state)**: active KB scope persisted via `pi.appendEntry("kb-scope", ...)`,
   read on `session_start`. This uses pi's native session persistence — survives session
   resume/fork, stays out of LLM context.
@@ -1206,11 +1208,13 @@ writes; the opt-out is typed, in settings.
     reserved keyword set before KB-name resolution; if it matches, the command is a
     subcommand and consumes no KB-name arguments. Bare `/kb` (no arguments) prints the
     current active scope. `/kb <name>` without an explicit `on|off` verb prints usage —
-    no bare-name default to guess at. The reserved set is `all` plus `writes` — the
-    write-toolset toggle `/kb writes on|off` (§5 tool-masking record; same reserved-keyword
-    - verb grammar as `all`, one more member of the same set) — but nothing else (R5 — no
+    no bare-name default to guess at. The reserved set is `all` plus `tools` — the
+    toolset dispatcher `/kb tools [read|write|off]` (§5 tool-masking record; M3 amendment
+    superseding the earlier `writes` verb: state-setter verbs per pi-lean-portal's `/web`
+    precedent, all toggling under one namespace) — but nothing else (R5 — no
     slug convention survives, so no janitor subcommand exists); a KB named `all` or
-    `writes` is rejected at shape validation (validation order, above).
+    `tools` is rejected at shape validation (validation order, above). `writes` is
+    deliberately un-reserved — its verb moved under `tools`.
 - **Scope read rule**: active scope = the latest `kb-scope` entry in the session file,
   else `gnubrain.defaultKBs` — latest entry wins, so resume/fork and mid-session switches
   are the same mechanism. The `kb`-param rejection message names the command:
@@ -1353,7 +1357,7 @@ writes; the opt-out is typed, in settings.
   is a settings-pin boundary, not a masking state), so the ladder never needs a
   fourth state. Capability rule,
   one line: writes on → green; else reads on → blue; else hollow. The glyph repaints on `TOOLSET_EVENTS.changed`/`restored` so
-  `/kb writes on|off` recolors mid-session, and after `session_tree` restore; cleared on
+  `/kb tools` verbs recolor mid-session, and after `session_tree` restore; cleared on
   `session_shutdown`. All degraded-config causes share the yellow glyph; the cause
   shows as a two-word tag in the slot text, first match wins in severity order:
   shape failure → `● kb: config`, tripped breaker → `● kb: breaker`, version drift →
