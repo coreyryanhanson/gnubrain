@@ -352,14 +352,21 @@ surface is.
    healthy dot turns accent/blue once this toolset is active (hollow before).
 7. **`kbs` discovery name (§5 amendment)** — `RESERVED_KB_NAMES` gains
    `kbs` (settings test updated here, same relocation pattern as S2's
-   `tools`). Discovery is a `kb_read`-only form: `kb_read` with
-   `kb: "kbs"` (its schema is a single string) returns the active KB set
-   without touching the kernel — empty set included, with the activation
-   hint (`no KBs in scope — activate one with /kb <name> on…`). The
-   short-circuit lives at the top of the `kb_read` handler, **before**
-   the shared gate — breaker and 429 cooldown never block it, since no
-   kernel call is needed and discovery is most useful exactly when the
-   breaker is tripped or a lockout is armed. It must not live in the
+   `tools`; the reservation error and its settings.ts comment generalize
+   from "reserved for the /kb command" — `kbs` is a tool-param discovery
+   name, not a `/kb` subcommand). Discovery is a `kb_read`-only form:
+   `kb_read` with `kb: "kbs"` (its schema is a single string) returns the
+   active KB set without touching the kernel — empty set included, with
+   the activation hint (gate.ts's `EMPTY_SCOPE_MESSAGE`, exported and
+   reused verbatim). The short-circuit lives in the `kb_read` handler
+   after the session-validation guard and the shape-error refusal (a
+   shape-degraded session still rejects every call — S1's rule), and
+   ahead of breaker/429 cooldown: discovery succeeds while the breaker is
+   tripped or a lockout is armed, and it must not route through
+   `runKbCall`, whose success path would reset the breaker counter.
+   Envelope: `{status: "ok", kb: "kbs", names: validation.scope}` with
+   the scope list as the message; empty scope → `{status: "ok",
+   message: EMPTY_SCOPE_MESSAGE, names: []}`. It must not live in the
    shared `resolveKbParam`: `kb_write` takes the same single-name
    validator, and a shared short-circuit would turn its mandated
    rejection into a read listing. `kb_query`/`kb_search`/`kb_write` get
@@ -408,13 +415,18 @@ surface is.
 - [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
       active, hollow before it (S3-localized leg of the §5 capability ladder;
       the green/masked branches and the repaint events are Sprint 5's AC).
-- [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set incl. the
-      empty-scope hint form, with zero kernel calls on the request log and
-      the short-circuit placed ahead of breaker/cooldown (discovery succeeds
-      while the breaker is tripped and while a cooldown is armed); a KB named
-      `kbs` rejected by the M1 validator; `kb_query`/`kb_search`/`kb_write`
-      reject `kbs` via the existing unknown-KB rejection (no special case);
-      the `kb_read` description carries the discovery line.
+- [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set
+      (`{status: "ok", kb: "kbs", names: <scope>}`) incl. the empty-scope
+      form (`{status: "ok", message: EMPTY_SCOPE_MESSAGE, names: []}`), with
+      zero kernel calls on the request log and the short-circuit placed
+      after the shape-error refusal (a shape-degraded session still refuses
+      it) and ahead of breaker/cooldown (discovery succeeds while the
+      breaker is tripped and while a cooldown is armed); a KB named
+      `kbs` rejected by the M1 validator with the generalized reservation
+      message; `kb_query`/`kb_search` reject `kbs` via the existing
+      unknown-KB rejection (no special case; the `kb_write` leg is Sprint
+      4's, landing with that tool); the `kb_read` description carries the
+      discovery line.
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -492,6 +504,9 @@ confirmation gate and the `create` flow end to end. Registered name
       (single-row and multi-row both return all rows + per-row spill paths;
       single row adds the block-ID echo); param absent from the declared tool
       schema (assert on the schema object) (§10).
+- [ ] Unit: `kb_write` rejects `kbs` via the existing unknown-KB rejection
+      (no special case in the write path — the discovery name is never a
+      write target).
 - [ ] Unit: mint-policy rejections — each with its message; verified-create
       asserts incl. simulated stale parent failing loud (§10; §10's
       guard→create race leg is deliberately folded here rather than given its

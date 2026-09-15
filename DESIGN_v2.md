@@ -1438,8 +1438,9 @@ writes; the opt-out is typed, in settings.
   - **Discovery name (decision record)**: the reserved name `kbs` (settings-level
     reservation alongside `all`/`tools`) is the sanctioned discovery form — calling
     `kb_read` with `kb: "kbs"` returns the active KB set without touching the kernel
-    (empty set included, with the activation hint); the short-circuit lives at the top
-    of the `kb_read` handler, before the shared gate, so breaker/429-cooldown state
+    (empty set included, with the activation hint); the short-circuit lives in the
+    `kb_read` handler after the session-validation guard and the shape-error refusal
+    (a shape-degraded session still rejects every call), so breaker/429-cooldown state
     never blocks it. Only `kb_read` carries the form: `kbs` passed to `kb_query`,
     `kb_search`, or `kb_write` gets the plain unknown-KB rejection below, which names
     the active set and is the rejection-message discovery path (the fallback) —
