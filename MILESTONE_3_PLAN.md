@@ -152,7 +152,8 @@ The machinery every tool call routes through. No tools registered yet.
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
       Sprints 3 and 5) with degraded/breaker precedence over the healthy colors
-      (§10), and the post-`session_tree`-restore repaint (§5, named in item 6).
+      (§10), the post-`session_tree`-restore repaint (§5, named in item 6),
+      and the slot cleared on `session_shutdown` (§5, item 6).
 
 ---
 
@@ -164,12 +165,16 @@ Scope persistence and the mid-session activation vehicle.
    snapshot of the active set; read on `session_start` (latest entry wins).
 2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
    single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
-   `all off`; zero-valid-KB no-op reported); reserved keyword `all` (§10 groups
-   the name-level rejection under `/kb` toggle writes; we assert it at the
-   settings layer instead — already covered by the pre-existing M1 tests in
-   `settings.test.ts`, a deliberate relocation — so the S2 test exercises the
-   `/kb` subcommand dispatch of `all` only); verbless `/kb <name>` prints
-   usage.
+   `all off`; zero-valid-KB no-op reported); reserved keywords `all` + `writes`
+   — `settings.ts`'s `RESERVED_KB_NAMES` gains `writes` here (M1 validator +
+   test updated: a KB named `writes` becomes unconfigurable from the day `/kb`
+   ships, not when its dispatcher lands in Sprint 5; the stale "The only /kb
+   reserved keyword" comment at `settings.ts:23` updated in the same change —
+   it already contradicts §5's `all` + `writes` reserved set). The `all`
+   name-level rejection is asserted at the settings layer — already covered by
+   the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
+   so the S2 test exercises the `/kb` subcommand dispatch of `all` only);
+   verbless `/kb <name>` prints usage.
 3. **Recovery hook (§5)** — every `/kb` dispatch re-runs the full validation pass
    (settings re-read — both the global and project files, so corrected
    credentials and `defaultKBs` edits take effect mid-session — shape, probe,
@@ -189,7 +194,10 @@ Scope persistence and the mid-session activation vehicle.
       §5). The settings-level `all`-name and name-grammar rejections are
       already covered by the pre-existing M1 tests in `settings.test.ts` —
       deliberate relocations: a KB whose name violates the grammar can never
-      be configured, so no toggle-path leg exists for either.
+      be configured, so no toggle-path leg exists for either. The new
+      `writes` reservation: a KB named `writes` is rejected by the M1
+      validator (settings test updated in this sprint).
+
 - [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
       rule unchanged.
 - [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
@@ -322,7 +330,7 @@ confirmation gate and the `create` flow end to end. Registered name
 `kb_write` (§4 schema table pins the param shape: `kb`, `mode`, `markdown` XOR
 `markdownFile`, mode-specific targets).
 
-1. **Write confirmation (§5)** — `pi.ui.confirm` always on for interactive;
+1. **Write confirmation (§5)** — `ctx.ui.confirm` always on for interactive;
    headless (`pi -p`) default-deny unless `allowUnattendedWrites: true` (the
    dialog is skipped; the write proceeds unattended);
    RPC is not headless; every confirm carries `writeConfirmTimeout` (default
@@ -450,11 +458,8 @@ confirmation gate and the `create` flow end to end. Registered name
    with the `writes` reserved keyword: `/kb writes on|off` toggles the toolset
    (idempotent no-ops reported, same semantics as KB toggles); bare `/kb` output's
    toolset-state line (landed with Sprint 3's read toolset) extends to the write
-   toolset; `settings.ts`'s `RESERVED_KB_NAMES` gains
-   `writes` (M1 validator + test updated — a KB named `writes` becomes
-   unconfigurable, same relocation as `all`; the now-stale
-   "The only /kb reserved keyword" comment at `settings.ts:23` updated in the
-   same change — it already contradicts §5's `all` + `writes` reserved set). Status-bar integration: the
+   toolset; the `writes` name reservation already landed in Sprint 2
+   (`RESERVED_KB_NAMES` = `all` + `writes`), so no settings change here. Status-bar integration: the
    healthy dot turns success/green when the write toolset is enabled and back
    to accent/blue (or hollow if the read toolset is also masked — e.g. a
    `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
@@ -609,9 +614,12 @@ raw-DELETE case like the rest.
 12. **Throttle / raw-DELETE / encrypted-notebook cases** —
     ordered per §10 (read-consistency is covered by item 10's pins); throttle
     arming (6 bogus-token requests arm the lock — 6th still 401, 7th surfaces
-    the distinct 429 — with `Retry-After`) reuses the
-    client's opt-in profile (`SIYUAN_INTEGRATION_THROTTLE=1`), referenced not
-    re-implemented; the extension-side cooldown leg rides the same armed lock:
+    the distinct 429 — with `Retry-After`) arms the lock via this suite's own
+    raw-kernel-call helper under the same env-flag name
+    (`SIYUAN_INTEGRATION_THROTTLE=1`); the client's throttle profile lives in
+    the client repo's own suite and is not part of the published npm package,
+    so the extension suite re-implements the arming, reusing only the flag
+    name and the arming shape; the extension-side cooldown leg rides the same armed lock:
     one kb read during the lock → 429 envelope, a second kb call inside the
     cooldown → local `refused` with zero kernel round-trips, then wait out the
     lock (bounded by the last served `Retry-After`, ~4 min — any call during an
@@ -700,7 +708,7 @@ stale-target contract pin, and real headless `/kb` dispatch.
 Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
 Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
-Sprint 2 (scope + /kb) ┄┄► Sprint 3 (final AC only: live post-toggle scope)
+Sprint 2 (scope + /kb) ┄┄► Sprint 3 (item 6 bare-`/kb` toolset-state line + final AC only: live post-toggle scope)
 Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb writes` dispatcher extension)
 Sprint 2 (scope + /kb) ┄┄► Sprint 6 (gate: /kb mid-session, breaker recovery)
 Sprint 3 (spill + outline helpers) ──► Sprint 4

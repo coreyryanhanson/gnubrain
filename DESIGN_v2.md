@@ -1111,7 +1111,7 @@ duplicate doc, never a silent clobber.
   a new session) — under the strict full-version gate (§2) this is the one message that
   fires on any upgrade.
 - **Write confirmation across modes (decision record)**: interactive sessions always
-  confirm writes via `pi.ui.confirm`; sessions with no UI at all (`pi -p`) require
+  confirm writes via `ctx.ui.confirm`; sessions with no UI at all (`pi -p`) require
   `gnubrain.allowUnattendedWrites: true` (default false = default-deny: no UI ⇒ write
   refused). **RPC mode (`pi --mode rpc`) is NOT headless for this rule** (pi source-read,
   deliberately not pinned by test): `ctx.ui.confirm` in RPC mode emits an
