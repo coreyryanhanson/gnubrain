@@ -42,6 +42,10 @@ The machinery every tool call routes through. No tools registered yet.
      the expected version as a parameter defaulting to it (Sprint 5b item 4's
      per-test override rides this seam, §10), strict full-version match; writes
      fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
+     Version-refusal message content pinned per §5 (static text naming the
+     kernel version, the pinned version, and the fix — run the §10 upgrade
+     checklist against the new kernel, re-pin, then start a new session); the
+     429-refusal message pin in item 5 is the precedent for how it's tested.
    - `listNotebooks()`: stale notebook ID → warn + drop from valid set;
      `encrypted: true` → reject the KB at startup, one branch for both lock
      states. Token failures here feed the breaker (below).
@@ -162,14 +166,15 @@ The machinery every tool call routes through. No tools registered yet.
 Scope persistence and the mid-session activation vehicle.
 
 1. **Scope persistence (§5)** — `pi.appendEntry("kb-scope", ...)` writes a full
-   snapshot of the active set; read on `session_start` (latest entry wins).
+   snapshot of the active set. Write side only — the reader (latest entry wins,
+   else `defaultKBs`) landed in Sprint 1 item 4 and its tests stand.
 2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
    single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
    `all off`; zero-valid-KB no-op reported); reserved keywords `all` + `writes`
    — `settings.ts`'s `RESERVED_KB_NAMES` gains `writes` here (M1 validator +
    test updated: a KB named `writes` becomes unconfigurable from the day `/kb`
    ships, not when its dispatcher lands in Sprint 5; the stale "The only /kb
-   reserved keyword" comment at `settings.ts:23` updated in the same change —
+   reserved keyword" comment at `settings.ts:22–23` updated in the same change —
    it already contradicts §5's `all` + `writes` reserved set). The `all`
    name-level rejection is asserted at the settings layer — already covered by
    the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
@@ -219,6 +224,12 @@ lands with Sprint 4.
 
 The discovery half of the loop. Adds the new runtime dependencies:
 `node-sql-parser@5.4.0` and `pi-tool-masking@1.3.0` (both exact-pinned).
+First task on landing: smoke-verify pi-tool-masking's actual API surface
+(`defineToolset`, `ToolsetSpec.names` as `Set<string>`, `requires` cascade,
+`TOOLSET_EVENTS.changed`/`restored`, the `toolsetDefaults` settings tier)
+against its installed types — items 6 below and Sprint 5 item 5 assert this
+surface, and it is not backed by the design's spike the way the kernel client
+surface is.
 
 1. **Spill/budget helper (§3)** — the four constants (`SPILL_DIR`,
    `PREVIEW_CHARS` 8000, `OUTLINE_HEADINGS` 200, `RESULT_LIMIT` 64) and one
@@ -258,7 +269,10 @@ The discovery half of the loop. Adds the new runtime dependencies:
    display-only) and the include-`hpath` discovery pattern; the other read
    tools may carry a shorter pointer. Write-tool doctrine lines ("mint by title… consume by
    ID", search ownership constraints) are authored with the write tools in
-   Sprints 4–5, not deferred.
+   Sprints 4–5, not deferred. That placement is deliberate — §4 pins the
+   doctrine lines in "the tool descriptions" without saying which; they live on
+   the write tools because they govern the mint/consume decisions, so nobody
+   relocates them mid-build.
 5. **read tool (`kb_read`, §3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
    endpoint `exportMdContent`); ownership
    query doubles as scope check (`SELECT root_id FROM blocks WHERE id = ? AND
@@ -693,8 +707,9 @@ Polish and the M3 gate (§11).
 - [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
 - [ ] If M3 code was split into new files: `package.json` `files` updated to
-      include them (currently only `index.ts` / `settings.ts`; anything absent
-      is dropped from `npm publish` in `scripts/release.mjs`).
+      include them (currently only `index.ts` / `settings.ts`; npm publish's
+      `files` allowlist itself drops anything absent — `scripts/release.mjs`
+      only stages git changes, the enforcement is npm's).
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the
@@ -708,6 +723,7 @@ stale-target contract pin, and real headless `/kb` dispatch.
 Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
 Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
 Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
+Sprint 2 (scope + /kb) ──► Sprint 5b (item 11's headless `/kb` dispatch)
 Sprint 2 (scope + /kb) ┄┄► Sprint 3 (item 6 bare-`/kb` toolset-state line + final AC only: live post-toggle scope)
 Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb writes` dispatcher extension)
 Sprint 2 (scope + /kb) ┄┄► Sprint 6 (gate: /kb mid-session, breaker recovery)
