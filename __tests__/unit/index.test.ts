@@ -276,6 +276,33 @@ describe("index wiring", () => {
 		// The re-check cleared the breaker and the empty valid set.
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
 	});
+
+	it("a new session does not inherit a tipped breaker count", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		const d = deps();
+		const base = d.createClient!;
+		let authError: Error | undefined = new SiYuanAuthError(401);
+		d.createClient = () => {
+			const client = base("", "") as unknown as Record<string, unknown>;
+			if (authError) {
+				client.listNotebooks = () => Promise.reject(authError!);
+			}
+			return client as never;
+		};
+		register(pi, d);
+		const { ctx, statuses } = fakeCtx();
+		await fire("session_start", ctx);
+		await runCommand("all on", ctx);
+		await runCommand("all on", ctx);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: breaker");
+
+		await fire("session_shutdown", ctx);
+		authError = undefined; // the token is fixed, but the closure lives on
+		await fire("session_start", ctx);
+		// The count restarted: a healthy re-check renders the healthy slot,
+		// not the carried breaker tag.
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+	});
 });
 
 describe("read + write toolset wiring", () => {

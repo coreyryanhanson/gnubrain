@@ -171,6 +171,10 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
+		// The breaker counts per session; a new session in this process must
+		// not inherit a partial or tipped count from the previous one. The 429
+		// cooldown is deliberately untouched — wall-clock and self-healing.
+		breaker.reset();
 		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
 		if (validation.authFailed) breaker.recordAuthFailure();
