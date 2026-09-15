@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { validateGnubrainSettings, type ValidationResult } from "./settings.js";
+import {
+	loadGnubrainSettings,
+	validateGnubrainSettings,
+	validateProjectSettings,
+	type ValidationResult,
+} from "./settings.js";
 
 function expectErrors(result: ValidationResult): string[] {
 	if (result.ok) throw new Error("expected validation to fail");
@@ -162,5 +167,99 @@ describe("validateGnubrainSettings", () => {
 		);
 		expect(result.ok).toBe(true);
 		expect(result.ok && result.settings.defaultKBs).toEqual(["dev"]);
+	});
+});
+
+describe("project settings (§5 project-vs-global split)", () => {
+	it("a project file with no gnubrain key is simply no project settings", () => {
+		const result = validateProjectSettings({ other: {} });
+		expect(result.errors).toEqual([]);
+		expect(result.defaultKBs).toBeUndefined();
+	});
+
+	it("a non-object file or non-object gnubrain degrades", () => {
+		expect(validateProjectSettings("not json").errors).toContain(
+			"project settings file must contain a JSON object",
+		);
+		expect(validateProjectSettings({ gnubrain: 42 }).errors).toContain(
+			"project gnubrain must be an object",
+		);
+	});
+
+	it("a stray non-defaultKBs key degrades with the key named", () => {
+		const result = validateProjectSettings({
+			gnubrain: { kbs: [{ name: "x", notebook: "y" }] },
+		});
+		expect(result.errors).toContain(
+			"project gnubrain settings only support 'defaultKBs'; unexpected key 'kbs'",
+		);
+	});
+
+	it("connection and attention dials are global-only — a project copy is rejected loudly", () => {
+		for (const key of [
+			"baseUrl",
+			"apiToken",
+			"writeConfirmTimeout",
+			"allowUnattendedWrites",
+		]) {
+			const result = validateProjectSettings({
+				gnubrain: { [key]: true },
+			});
+			expect(result.errors).toContain(
+				`project gnubrain settings only support 'defaultKBs'; unexpected key '${key}'`,
+			);
+		}
+	});
+
+	it("a non-array project defaultKBs degrades with the M1 message verbatim", () => {
+		expect(
+			validateProjectSettings({ gnubrain: { defaultKBs: "dev" } }).errors,
+		).toContain("defaultKBs must be an array of KB name strings");
+		expect(
+			validateProjectSettings({ gnubrain: { defaultKBs: [1] } }).errors,
+		).toContain("defaultKBs must be an array of KB name strings");
+	});
+
+	it("a valid project defaultKBs is preserved", () => {
+		const result = validateProjectSettings({
+			gnubrain: { defaultKBs: ["dev"] },
+		});
+		expect(result.errors).toEqual([]);
+		expect(result.defaultKBs).toEqual(["dev"]);
+	});
+
+	it("the loader reads the global file through the full validator and a missing project file is no settings", async () => {
+		const loaded = await loadGnubrainSettings(
+			async () => JSON.stringify(validConfig()),
+			"global",
+			undefined,
+		);
+		expect(loaded.global.ok).toBe(true);
+		expect(loaded.project.errors).toEqual([]);
+	});
+
+	it("a missing global file is a shape failure; a missing project file is not", async () => {
+		const notFound = Object.assign(new Error("nope"), { code: "ENOENT" });
+		const loaded = await loadGnubrainSettings(
+			async () => {
+				throw notFound;
+			},
+			"global",
+			"project",
+		);
+		expect(loaded.global.ok).toBe(false);
+		expect(!loaded.global.ok && loaded.global.errors[0]).toContain("not found");
+		expect(loaded.project.errors).toEqual([]);
+	});
+
+	it("unparseable JSON degrades both files with the path named", async () => {
+		const loaded = await loadGnubrainSettings(
+			async () => "{oops",
+			"global",
+			"project",
+		);
+		expect(loaded.global.ok).toBe(false);
+		expect(!loaded.global.ok && loaded.global.errors[0]).toContain("global");
+		expect(loaded.project.errors[0]).toContain("project");
 	});
 });

@@ -1,5 +1,7 @@
 // §5 validation step 1 — offline shape validation of the `gnubrain` settings entry.
-// No network, no kernel calls (those are validation steps 2–3, M2/M3).
+// No network, no kernel calls (those are validation steps 2–3).
+// §5 project-vs-global split: `kbs` + connection keys + interaction dials are
+// global-only; the project file supplies `defaultKBs` names only.
 
 export interface KbEntry {
 	name: string;
@@ -44,6 +46,122 @@ function checkName(name: string, errors: string[]): void {
 	if (/\s/.test(name) || name.includes("/")) {
 		errors.push(`KB name '${name}' must not contain whitespace or /`);
 	}
+}
+
+// A project settings.json needs no `gnubrain` key at all (other extensions
+// share the file); when present, only `defaultKBs` may live under it.
+export interface ProjectValidation {
+	/** Non-empty = shape failure → the session degrades (§5 step 1). */
+	errors: string[];
+	defaultKBs: string[] | undefined;
+}
+
+export function validateProjectSettings(raw: unknown): ProjectValidation {
+	if (!isRecord(raw)) {
+		return {
+			errors: ["project settings file must contain a JSON object"],
+			defaultKBs: undefined,
+		};
+	}
+	const config = raw["gnubrain"];
+	if (config === undefined) {
+		return { errors: [], defaultKBs: undefined };
+	}
+	if (!isRecord(config)) {
+		return {
+			errors: ["project gnubrain must be an object"],
+			defaultKBs: undefined,
+		};
+	}
+	const errors: string[] = [];
+	for (const key of Object.keys(config)) {
+		if (key !== "defaultKBs") {
+			errors.push(
+				`project gnubrain settings only support 'defaultKBs'; unexpected key '${key}'`,
+			);
+		}
+	}
+	let defaultKBs: string[] | undefined;
+	if (config.defaultKBs !== undefined) {
+		if (
+			!Array.isArray(config.defaultKBs) ||
+			!config.defaultKBs.every((n) => typeof n === "string")
+		) {
+			// Same class as the global file's shape failure — message reused verbatim.
+			errors.push("defaultKBs must be an array of KB name strings");
+		} else {
+			defaultKBs = config.defaultKBs;
+		}
+	}
+	return { errors, defaultKBs };
+}
+
+export interface LoadedSettings {
+	global: ValidationResult;
+	project: ProjectValidation;
+}
+
+/**
+ * §5 read path — injectable file read (S1 unit tests mock it; the integration
+ * suite injects fixture settings in memory through the same seam). The global
+ * file carries everything; a missing global file is a shape failure. A missing
+ * project file is simply "no project settings".
+ */
+export async function loadGnubrainSettings(
+	readFile: (path: string) => Promise<string>,
+	globalPath: string,
+	projectPath: string | undefined,
+): Promise<LoadedSettings> {
+	const read = async (
+		path: string,
+	): Promise<{ found: boolean; raw: string } | { found: false }> => {
+		try {
+			return { found: true, raw: await readFile(path) };
+		} catch (err) {
+			if (
+				err instanceof Error &&
+				"code" in err &&
+				(err as NodeJS.ErrnoException).code === "ENOENT"
+			) {
+				return { found: false };
+			}
+			throw err;
+		}
+	};
+
+	let global: ValidationResult;
+	const globalFile = await read(globalPath);
+	if (!globalFile.found) {
+		global = {
+			ok: false,
+			errors: [`global settings file not found: ${globalPath}`],
+		};
+	} else {
+		try {
+			global = validateGnubrainSettings(JSON.parse(globalFile.raw));
+		} catch {
+			global = {
+				ok: false,
+				errors: [`global settings file is not valid JSON: ${globalPath}`],
+			};
+		}
+	}
+
+	let project: ProjectValidation = { errors: [], defaultKBs: undefined };
+	if (projectPath !== undefined) {
+		const projectFile = await read(projectPath);
+		if (projectFile.found) {
+			try {
+				project = validateProjectSettings(JSON.parse(projectFile.raw));
+			} catch {
+				project = {
+					errors: [`project settings file is not valid JSON: ${projectPath}`],
+					defaultKBs: undefined,
+				};
+			}
+		}
+	}
+	return { global, project };
 }
 
 export function validateGnubrainSettings(raw: unknown): ValidationResult {
