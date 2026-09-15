@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { CircuitBreaker } from "./breaker.js";
+import { EMPTY_SCOPE_MESSAGE } from "./gate.js";
 import { walkBlockTree } from "./tools.js";
 import { inlineOrSpill, PREVIEW_CHARS } from "./spill.js";
 import {
@@ -641,6 +642,264 @@ describe("degraded session (S1 shape clause, asserted with S3's registered tools
 function ctx2(sessionId: string) {
 	return { sessionManager: { getSessionId: () => sessionId } };
 }
+
+// ---------------------------------------------------------------------------
+// `kbs` discovery name (§3 item 7)
+// ---------------------------------------------------------------------------
+
+describe('kbs discovery (kb_read kb: "kbs")', () => {
+	function registeredReadTool(
+		validation: SessionValidation,
+		kernelCalls: unknown[],
+		opts: { breaker?: CircuitBreaker; tool?: string } = {},
+	) {
+		const registered: {
+			name: string;
+			description?: string;
+			parameters?: unknown;
+			execute?: (
+				id: string,
+				params: unknown,
+				signal: undefined,
+				onUpdate: undefined,
+				ctx: unknown,
+			) => Promise<{ content: { text: string }[] }>;
+		}[] = [];
+		const pi = {
+			registerTool(tool: never) {
+				registered.push(tool as never);
+			},
+			on: () => {},
+			events: { emit: () => {} },
+		};
+		registerReadToolsAndToolset(pi as never, {
+			getValidation: () => validation,
+			getKernel: () =>
+				({
+					baseUrl: "http://127.0.0.1:6806",
+					query: async (stmt: string) => {
+						kernelCalls.push(stmt);
+						return [];
+					},
+				}) as never,
+			breaker: opts.breaker ?? new CircuitBreaker(),
+		});
+		return registered.find((t) => t.name === (opts.tool ?? "kb_read"))!;
+	}
+
+	const parse = (r: { content: { text: string }[] }) =>
+		JSON.parse(r.content[0]!.text) as Record<string, unknown>;
+
+	it("returns the active set with zero kernel calls", async () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.kb).toBe("kbs");
+		expect(envelope.message).toBe("recipes, projects");
+		expect(envelope.names).toEqual(["recipes", "projects"]);
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("empty scope uses EMPTY_SCOPE_MESSAGE verbatim with the same marker shape", async () => {
+		const kernelCalls: unknown[] = [];
+		const v = validation();
+		v.scope = [];
+		const read = registeredReadTool(v, kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.kb).toBe("kbs");
+		expect(envelope.message).toBe(EMPTY_SCOPE_MESSAGE);
+		expect(envelope.names).toEqual([]);
+	});
+
+	it("a shape-degraded session still refuses discovery (the short-circuit sits after the shape check)", async () => {
+		const kernelCalls: unknown[] = [];
+		const v = validation();
+		v.shapeErrors = ["kbs must be an array"];
+		const read = registeredReadTool(v, kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("refused");
+		expect(envelope.message).toContain("kbs must be an array");
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("discovery succeeds while the breaker is tripped and leaves it untouched (no recordSuccess)", async () => {
+		const kernelCalls: unknown[] = [];
+		const breaker = new CircuitBreaker();
+		// Trip the breaker.
+		for (let i = 0; i < 3; i++) breaker.recordAuthFailure();
+		expect(breaker.tripped).toBe(true);
+		const read = registeredReadTool(validation(), kernelCalls, { breaker });
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.names).toEqual(["recipes", "projects"]);
+		expect(kernelCalls).toHaveLength(0);
+		// The breaker stays tripped — a discovery call is neither a success nor
+		// an auth failure (the short-circuit bypasses the gate entirely).
+		expect(breaker.tripped).toBe(true);
+	});
+
+	it("discovery succeeds while a 429 cooldown is armed", async () => {
+		const kernelCalls: unknown[] = [];
+		const breaker = new CircuitBreaker();
+		breaker.recordRateLimit({ retryAfterSeconds: 60 } as never, Date.now());
+		const read = registeredReadTool(validation(), kernelCalls, { breaker });
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("a discovery call carrying a docId still returns the scope branch (docId ignored)", async () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs", docId: "20260101-x" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.kb).toBe("kbs");
+		expect(envelope.names).toEqual(["recipes", "projects"]);
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("valid kb with docId absent is refused with the three-exit guidance inside the gated op", async () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "recipes" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("refused");
+		const message = String(envelope.message);
+		expect(message).toContain("kb_query");
+		expect(message).toContain('kb: "kbs"');
+		expect(message).not.toContain("rows"); // never a doc listing or metrics
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("empty-string docId counts as missing", async () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "recipes", docId: "" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("refused");
+		expect(kernelCalls).toHaveLength(0);
+	});
+
+	it("a typo'd kb with no docId gets the unknown-KB rejection, not the guidance", async () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "recipies" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("refused");
+		expect(String(envelope.message)).toContain("unknown KB 'recipies'");
+		expect(String(envelope.message)).not.toContain("docId is required");
+	});
+
+	it("docId is optional in the kb_read schema", () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		const props = (read.parameters as { properties: Record<string, unknown> })
+			.properties;
+		expect(props["docId"]).toBeDefined();
+		// TypeBox marks optional properties by omitting them from `required`.
+		const required =
+			(read.parameters as { required?: string[] }).required ?? [];
+		expect(required).toContain("kb");
+		expect(required).not.toContain("docId");
+	});
+
+	it("the kb_read description carries the discovery line", () => {
+		const kernelCalls: unknown[] = [];
+		const read = registeredReadTool(validation(), kernelCalls);
+		expect(read.description).toContain('kb: "kbs"');
+	});
+
+	it('kb_query rejects kb: ["kbs"] via the existing unknown-KB rejection (no special case)', async () => {
+		const kernelCalls: unknown[] = [];
+		const query = registeredReadTool(validation(), kernelCalls, {
+			tool: "kb_query",
+		});
+		const envelope = parse(
+			await query.execute!(
+				"id",
+				{ kb: ["kbs"], sql: "SELECT id FROM blocks" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("refused");
+		expect(String(envelope.message)).toContain("unknown KB 'kbs'");
+		expect(String(envelope.message)).toContain("Active: recipes, projects");
+		expect(kernelCalls).toHaveLength(0);
+	});
+});
 
 describe("inline-cut preview", () => {
 	it("returns short content directly with no spill", () => {

@@ -10,8 +10,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { Type } from "typebox";
 import { CircuitBreaker } from "./breaker.js";
-import { errorEnvelope, type Envelope } from "./envelope.js";
-import { runKbCall } from "./gate.js";
+import {
+	configRefusalEnvelope,
+	errorEnvelope,
+	type Envelope,
+	refusedEnvelope,
+} from "./envelope.js";
+import { EMPTY_SCOPE_MESSAGE, runKbCall } from "./gate.js";
 import {
 	inlineOrSpill,
 	OUTLINE_HEADINGS,
@@ -582,7 +587,27 @@ export async function runSearchFanOut(
  * (§3; the §4 7-level cap counts hpath separators, a different axis). */
 const MAX_WALK_DEPTH = 32;
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
+
+/**
+ * The `kbs` discovery form (§3 item 7): `kb_read` with `kb: "kbs"` returns
+ * the active KB set without touching the kernel. The echoed `kb: "kbs"` is a
+ * reserved marker, not a real KB — a deliberate exception to the
+ * success-echo contract; the payload rides in `names`. The marker is
+ * identical in both forms (populated and empty scope) so a consumer branching
+ * on it never sees a shape it didn't expect.
+ */
+export function kbsDiscoveryEnvelope(validation: SessionValidation): Envelope {
+	return {
+		status: "ok",
+		kb: "kbs",
+		message:
+			validation.scope.length > 0
+				? validation.scope.join(", ")
+				: EMPTY_SCOPE_MESSAGE,
+		names: [...validation.scope],
+	};
+}
 
 export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 	pi.registerTool({
@@ -591,12 +616,17 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		description: READ_DESCRIPTION,
 		parameters: Type.Object({
 			kb: Type.String({
-				description: "KB name the doc belongs to — must be in the active scope",
-			}),
-			docId: Type.String({
 				description:
-					"Document root block ID (root_id from kb_query/kb_search rows)",
+					"KB name the doc belongs to — must be in the active scope, or the reserved discovery name 'kbs' to list active KBs",
 			}),
+			// Optional so the kb: "kbs" discovery form passes schema validation;
+			// a real read with no docId is refused inside the gated op (item 7).
+			docId: Type.Optional(
+				Type.String({
+					description:
+						"Document root block ID (root_id from kb_query/kb_search rows)",
+				}),
+			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
@@ -607,6 +637,20 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					),
 				);
 			}
+			// Discovery short-circuit (kb: "kbs"): ahead of breaker/cooldown —
+			// discovery succeeds while the breaker is tripped or a lockout is
+			// armed and leaves the breaker state untouched. It cannot route
+			// through guardCall/runKbCall: guardCall's pinned order fuses shape
+			// → breaker → cooldown and cannot stop between them, and
+			// runKbCall's success path would reset the breaker counter. The
+			// shape check is a deliberate duplicate of guardCall's first check —
+			// kept a one-liner so the two cannot drift (§3 item 7).
+			if (params.kb === "kbs") {
+				if (validation.shapeErrors.length > 0) {
+					return textResult(configRefusalEnvelope(validation.shapeErrors));
+				}
+				return textResult(kbsDiscoveryEnvelope(validation));
+			}
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "single" },
@@ -616,12 +660,29 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 							"kb tools are not ready — settings did not load",
 						);
 					}
+					// The missing-docId refusal lives inside the gated op, after
+					// the gate resolved a valid kb: a typo'd kb with no docId must
+					// get the unknown-KB rejection, not the guidance. Returned as
+					// refused (never thrown), so runKbCall treats it as a
+					// successful call (recordSuccess) — the pre-existing pattern
+					// for op-internal refusals. Never answered with a doc listing
+					// or metrics: a success-shaped payload would mask the
+					// lost-docId mistake the call almost always is.
+					const docId = params.docId;
+					if (docId === undefined || docId === "") {
+						return refusedEnvelope(
+							`docId is required to read a doc. List docs via kb_query ` +
+								`(SELECT id, root_id, hpath FROM blocks WHERE type = 'd'), ` +
+								`KB stats via a kb_query aggregate, or list active KBs ` +
+								`with kb: "kbs".`,
+						);
+					}
 					return runRead(
 						ctx.sessionManager.getSessionId(),
 						kernel,
 						validation,
 						names[0] as string,
-						params.docId,
+						docId,
 					);
 				},
 			);

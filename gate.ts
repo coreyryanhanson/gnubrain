@@ -28,7 +28,9 @@ import { PINNED_SIYUAN_VERSION } from "./validation.js";
 /** `query`/`search` take an array of names; every other tool exactly one. */
 export type KbArity = "array" | "single";
 
-const EMPTY_SCOPE_MESSAGE =
+/** §5's empty-scope wording — shared by the gate and the `kbs` discovery
+ * form (kb_read), which reuses it verbatim for an empty active set. */
+export const EMPTY_SCOPE_MESSAGE =
 	"no KBs in scope — activate one with /kb <name> on, or set gnubrain.defaultKBs";
 
 function activeList(validation: SessionValidation): string {

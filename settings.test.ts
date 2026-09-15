@@ -134,14 +134,9 @@ describe("validateGnubrainSettings", () => {
 			"KB name 'dev/kb' must not contain whitespace or /",
 			[{ name: "dev/kb", notebook: "a" }],
 		],
-		[
-			"KB name 'all' is reserved for the /kb command",
-			[{ name: "all", notebook: "a" }],
-		],
-		[
-			"KB name 'tools' is reserved for the /kb command",
-			[{ name: "tools", notebook: "a" }],
-		],
+		["KB name 'all' is reserved", [{ name: "all", notebook: "a" }]],
+		["KB name 'tools' is reserved", [{ name: "tools", notebook: "a" }]],
+		["KB name 'kbs' is reserved", [{ name: "kbs", notebook: "a" }]],
 	])("rejects %s", (expected, kbs) => {
 		expect(
 			expectErrors(validateGnubrainSettings(validConfig({ kbs }))),

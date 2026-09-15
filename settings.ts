@@ -21,10 +21,11 @@ export type ValidationResult =
 	| { ok: true; settings: GnubrainSettings }
 	| { ok: false; errors: string[] };
 
-// §5 /kb reserved keywords — `all` is the set-wide toggle form, `tools` is
-// the toolset dispatcher (/kb tools [read|write|off]); a KB can never take
-// either name. (`writes` was un-reserved when its verb moved under `tools`.)
-const RESERVED_KB_NAMES = new Set(["all", "tools"]);
+// §5 reserved KB names — `all` is the set-wide toggle form, `tools` is the
+// toolset dispatcher (/kb tools [read|write|off]), and `kbs` is the kb_read
+// discovery name (kb: "kbs" lists the active set). A KB can never take any
+// of these names. (`writes` was un-reserved when its verb moved under `tools`.)
+const RESERVED_KB_NAMES = new Set(["all", "tools", "kbs"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,7 +44,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 function checkName(name: string, errors: string[]): void {
 	if (RESERVED_KB_NAMES.has(name)) {
-		errors.push(`KB name '${name}' is reserved for the /kb command`);
+		errors.push(`KB name '${name}' is reserved`);
 	}
 	if (/\s/.test(name) || name.includes("/")) {
 		errors.push(`KB name '${name}' must not contain whitespace or /`);
