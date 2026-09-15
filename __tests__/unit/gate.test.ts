@@ -3,6 +3,7 @@ import {
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
+	SiYuanTimeoutError,
 } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import {
@@ -326,6 +327,27 @@ describe("runKbCall error classification", () => {
 				"SiYuan unreachable at http://127.0.0.1:6806",
 			);
 		}
+		expect(breaker.tripped).toBe(false);
+	});
+
+	it("a timeout maps to the same unreachable error envelope and never counts toward the breaker", async () => {
+		const breaker = new CircuitBreaker();
+		const envelope = await runKbCall(
+			{
+				validation: validation(),
+				breaker,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async () => {
+				throw new SiYuanTimeoutError(30_000);
+			},
+		);
+		expect(envelope.status).toBe("error");
+		expect(envelope.message).toBe(
+			"SiYuan unreachable at http://127.0.0.1:6806",
+		);
 		expect(breaker.tripped).toBe(false);
 	});
 });

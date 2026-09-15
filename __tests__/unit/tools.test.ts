@@ -434,6 +434,88 @@ describe("search tool", () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Query tool — happy path through the registered kb_query definition
+// ---------------------------------------------------------------------------
+
+describe("query tool", () => {
+	/** Register the read tools on a fake pi with a query-only kernel stub
+	 * returning `rows`; execute kb_query through the registered definition. */
+	async function executeQuery(rows: Record<string, unknown>[]) {
+		const registered: Record<
+			string,
+			{ execute: (...a: unknown[]) => Promise<{ details: unknown }> }
+		> = {};
+		const pi = {
+			registerTool(tool: { name: string; execute: unknown }) {
+				registered[tool.name] = tool as never;
+			},
+			on: () => {},
+			events: { emit: () => {} },
+		};
+		const kernelCalls: string[] = [];
+		registerReadToolsAndToolset(pi as never, {
+			getValidation: () => validation(),
+			getKernel: () =>
+				({
+					baseUrl: "http://127.0.0.1:6806",
+					query: async (stmt: string) => {
+						kernelCalls.push(stmt);
+						return rows;
+					},
+				}) as never,
+			breaker: new CircuitBreaker(),
+		});
+		const tool = registered.kb_query!;
+		return {
+			run: async (sql: string) =>
+				(
+					await tool.execute(
+						"id",
+						{ kb: ["recipes"], sql },
+						undefined,
+						undefined,
+						ctx2("sess-query"),
+					)
+				).details as Record<string, unknown>,
+			kernelCalls,
+		};
+	}
+
+	it("happy path through the tool: scope splice, injected LIMIT, and the truncation marker on a saturated result", async () => {
+		const rows = Array.from({ length: RESULT_LIMIT }, (_, i) => ({
+			id: `b${i}`,
+			root_id: "d1",
+			box: "nb-r",
+		}));
+		const { run, kernelCalls } = await executeQuery(rows);
+		const envelope = await run("SELECT id, root_id FROM blocks");
+		expect(envelope.status).toBe("ok");
+		expect(envelope.count).toBe(RESULT_LIMIT);
+		expect(envelope.kb).toEqual(["recipes"]);
+		expect(envelope.boxes).toEqual(["nb-r"]);
+		expect(Array.isArray(envelope.rows)).toBe(true);
+		// kept + dropped reaches the injected limit → the marker fires even
+		// though every returned row was in scope.
+		expect(String(envelope.truncated)).toContain("full result in");
+		// One kernel call carrying the spliced scope and the injected LIMIT.
+		expect(kernelCalls).toHaveLength(1);
+		expect(kernelCalls[0]).toContain("IN ('nb-r')");
+		expect(kernelCalls[0]).toContain("LIMIT 64");
+	});
+
+	it("drops kernel-side contamination with post_filtered: true", async () => {
+		const { run } = await executeQuery([
+			{ id: "b1", root_id: "d1", box: "nb-r" },
+			{ id: "b2", root_id: "d2", box: "nb-foreign" },
+		]);
+		const envelope = await run("SELECT id FROM blocks");
+		expect(envelope.status).toBe("ok");
+		expect(envelope.post_filtered).toBe(true);
+		expect(envelope.count).toBe(1);
+	});
+});
+
 describe("read tool", () => {
 	it("the ownership query doubles as the scope check — a docId from another KB returns no rows", async () => {
 		const { runRead } = await import("../../tools.js");
@@ -906,6 +988,14 @@ describe("inline-cut preview", () => {
 		const result = inlineOrSpill("s", "kb_read", "short", "md");
 		expect(result.inline).toBe("short");
 		expect(result.spillPath).toBeUndefined();
+	});
+
+	it("falls back to a hard cut when the overflow has no newline within PREVIEW_CHARS", () => {
+		const content = "x".repeat(PREVIEW_CHARS + 10);
+		const { inline, spillPath } = inlineOrSpill("s", "kb_read", content, "md");
+		expect(inline).toBe(content.slice(0, PREVIEW_CHARS));
+		expect(inline).not.toContain("\n");
+		expect(spillPath).toMatch(/kb_read-[0-9a-f]{16}\.md$/);
 	});
 
 	it("cuts long content at a newline boundary within PREVIEW_CHARS and spills the full text", () => {

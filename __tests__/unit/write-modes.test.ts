@@ -979,7 +979,7 @@ describe("block-level move", () => {
 	};
 
 	/** move harness where `apply` mutates the children map kernel-side. */
-	function moveHarness(apply?: () => void) {
+	function moveHarness(apply?: () => void, stub?: Partial<StubConfig>) {
 		let registered: { execute: unknown } | undefined;
 		const pi = {
 			registerTool(tool: { name: string; execute: unknown }) {
@@ -997,6 +997,7 @@ describe("block-level move", () => {
 				"d-other": { content: "Other doc", hpath: "/Other doc" },
 			},
 			...(apply ? { onMove: apply } : {}),
+			...stub,
 		});
 		registerWriteTool(
 			pi as never,
@@ -1129,6 +1130,36 @@ describe("block-level move", () => {
 		});
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("own subtree");
+		expect(
+			harness.calls.filter((c) => c.method === "moveDocsByID"),
+		).toHaveLength(0);
+	});
+
+	it("doc-level: destination nested inside the source's subtree walks the parent chain and refuses", async () => {
+		const harness = moveHarness(undefined, {
+			docRoots: {
+				"d-doc": {
+					content: "Docker Networking",
+					hpath: "/Docker Networking",
+				},
+				"d-child": {
+					content: "Child",
+					hpath: "/Docker Networking/Child",
+				},
+			},
+			parentDocRows: [{ parent_id: "d-doc" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			doc: true,
+			toDocId: "d-child",
+		});
+		expect(result.status).toBe("refused");
+		// "silently filters" is unique to the descendant arm — the self-move
+		// branch (same-KB refusal) also says "own subtree".
+		expect(result.message).toContain("silently filters");
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
 		).toHaveLength(0);
