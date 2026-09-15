@@ -21,6 +21,7 @@ import {
 import { runCreateFlow } from "./writeCreate.js";
 import {
 	CONTENT_BEARING_MODES,
+	modeShapeProblem,
 	runWriteMode,
 	writeSchema,
 	type WriteParams,
@@ -79,6 +80,13 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						return errorEnvelope(
 							"kb tools are not ready — settings did not load",
 						);
+					}
+					// Uniform mode-target shape check before anything else —
+					// zero kernel calls, and the create branch shares it (its
+					// flow never reached runWriteMode's own re-check).
+					const shapeProblem = modeShapeProblem(p);
+					if (shapeProblem !== undefined) {
+						return refusedEnvelope(shapeProblem);
 					}
 					// Content-body shape: markdown XOR markdownFile. Resolved
 					// before the probe gate and before any guard query — the

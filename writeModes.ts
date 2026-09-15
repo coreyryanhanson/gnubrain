@@ -32,6 +32,7 @@ import {
 import {
 	assertFreshContent,
 	backlinkCheck,
+	establishBaselines,
 	idSet,
 	newBlockIdFrom,
 	rootEcho,
@@ -481,13 +482,14 @@ async function runReplaceSectionMode(
 		const gate = await confirmGate(input, confirmKey, summary);
 		if (gate !== null) return gate;
 	}
-	// Fresh-content precondition: approval establishes the baseline for
-	// never-served delete-set blocks; then re-check before any kernel call.
-	for (const block of deleteSet) {
-		if (baselines.servedHash(block.id) === undefined) {
-			baselines.remember(block.id, block.content);
-		}
-	}
+	// Fresh-content precondition: establish missing baselines from the same
+	// blocks.content read the post-approval re-check uses (representation-
+	// independent), then re-check before any kernel call.
+	await establishBaselines(
+		kernel,
+		baselines,
+		deleteSet.map((b) => b.id),
+	);
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,
@@ -779,6 +781,15 @@ async function runMoveMode(
 	}
 	// Anchor: tool-derived, never agent-supplied.
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
+	// Self-anchor no-op (mirrors the doc-level own-parent case): the block
+	// already ends the destination section — previousID === blockId makes
+	// the kernel no-op, which the walk-set check would misreport as a
+	// successful move. Refuse instead.
+	if (sameDoc && anchor.kind === "move" && anchor.previousID === blockId) {
+		return refusedEnvelope(
+			`block '${blockId}' is already the last member of the destination section — nothing to move`,
+		);
+	}
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	if (dialog) {
 		const gate = await confirmGate(input, confirmKey, summary);

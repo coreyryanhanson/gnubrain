@@ -101,6 +101,27 @@ function baselineContentsStmt(ids: string[]): string {
 	);
 }
 
+/** Establish missing baselines from the same source the re-check reads
+ * (blocks.content): baseline and re-check must hash the same
+ * representation, or any walk-vs-blocks rendering drift false-positives
+ * every precondition as stale_content. Never-served blocks only — the
+ * served-preference semantics are unchanged. */
+export async function establishBaselines(
+	kernel: WriteKernelClient,
+	baselines: ContentBaselines,
+	blockIds: string[],
+): Promise<void> {
+	const missing = blockIds.filter(
+		(id) => baselines.servedHash(id) === undefined,
+	);
+	if (missing.length === 0) return;
+	for (const row of rowsToBaselineView(
+		await kernel.query(baselineContentsStmt(missing)),
+	)) {
+		baselines.remember(row.blockId, row.content);
+	}
+}
+
 /**
  * precondition, re-checked after confirmation approval, before any kernel
  * write: the current content must still hash to the baseline. A mismatch →

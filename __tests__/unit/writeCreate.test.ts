@@ -78,6 +78,18 @@ describe("guard-stop staging", () => {
 	});
 });
 
+describe("mode-target shape (create leg)", () => {
+	it("stray mode-target params refuse before any kernel call", async () => {
+		const { execute, kernel } = setup();
+		const r = await execute({ ...base, docId: "d1", headingId: "h1" });
+		expect(r.details.status).toBe("refused");
+		expect(r.details.message).toContain(
+			"mode 'create' does not take: docId, headingId",
+		);
+		expect(kernel.calls).toHaveLength(0);
+	});
+});
+
 describe("verified-create", () => {
 	const createdRow = {
 		id: "d-new",

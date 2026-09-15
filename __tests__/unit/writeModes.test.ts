@@ -685,7 +685,20 @@ describe("replace-section", () => {
 	});
 
 	it("stale delete-set content → stale_content refusal before any kernel write", async () => {
-		const harness = setupWithReplaceMutation();
+		// Read 1 (baseline, pre-dialog) matches the walk; read 2 (the
+		// post-approval re-check) serves the concurrently rewritten p1 — the
+		// kernel-side change landed after approval.
+		const harness = replaceQueryHarness((read) =>
+			read === 1
+				? [
+						{ id: "p1", content: "old one" },
+						{ id: "p2", content: "old two" },
+					]
+				: [
+						{ id: "p1", content: "concurrently rewritten" },
+						{ id: "p2", content: "old two" },
+					],
+		);
 		const result = await harness.execute(replaceParams);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
@@ -699,13 +712,40 @@ describe("replace-section", () => {
 			),
 		).toHaveLength(0);
 	});
+
+	it("walk/blocks representation drift does not false-positive stale_content", async () => {
+		// The walk serves a plain form, blocks.content a rendered form —
+		// baseline and re-check both ride blocks.content, so the replace
+		// proceeds (the precondition stays representation-independent).
+		const harness = replaceQueryHarness(
+			() => [
+				{ id: "p1", content: "old **one**" },
+				{ id: "p2", content: "old **two**" },
+			],
+			(children) => {
+				children["d-doc"] = [
+					...REPLACE_DOC["d-doc"].slice(0, 3),
+					walkBlock("b-new", "p", "", "rewritten section"),
+					...REPLACE_DOC["d-doc"].slice(3),
+				];
+			},
+		);
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("ok");
+		expect(result.reason).toBeUndefined();
+	});
 });
 
-/** replace-section harness whose kernel-side delete-set content flips
- * between the walk-served baseline and the post-approval re-check. */
-function setupWithReplaceMutation(): {
+/** replace-section harness with scripted `WHERE id IN` content reads —
+ * read 1 is the pre-dialog baseline read, read 2 the post-approval
+ * re-check (the two representation-matched reads the precondition rides). */
+function replaceQueryHarness(
+	respondIdIn: (read: number) => Record<string, unknown>[],
+	applyInsert?: (children: Record<string, unknown[]>) => void,
+): {
 	execute: Exec;
 	calls: { method: string; args: unknown }[];
+	childrenFor: Record<string, unknown[]>;
 } {
 	let registered: { execute: unknown } | undefined;
 	const pi = {
@@ -713,7 +753,16 @@ function setupWithReplaceMutation(): {
 			registered = tool;
 		},
 	};
-	const kernel = writeKernelStub({ childrenFor: REPLACE_DOC });
+	const kernel = writeKernelStub({
+		childrenFor: REPLACE_DOC,
+		...(applyInsert
+			? {
+					onInsert: () => {
+						applyInsert(kernel.childrenFor);
+					},
+				}
+			: {}),
+	});
 	registerWriteTool(
 		pi as never,
 		{
@@ -725,16 +774,12 @@ function setupWithReplaceMutation(): {
 			confirm: async () => true,
 		} as WriteToolHooks,
 	);
-	// Every content read (`WHERE id IN` — the post-approval re-check; no
-	// id-IN reads happen before the dialog in this flow) serves the
-	// rewritten p1.
 	const baseQuery = kernel.client.query.bind(kernel.client);
+	let idInReads = 0;
 	kernel.client.query = async (stmt: string) => {
 		if (stmt.includes("WHERE id IN")) {
-			return [
-				{ id: "p1", content: "concurrently rewritten" },
-				{ id: "p2", content: "old two" },
-			];
+			idInReads += 1;
+			return respondIdIn(idInReads);
 		}
 		return baseQuery(stmt);
 	};
@@ -749,7 +794,7 @@ function setupWithReplaceMutation(): {
 	const execute: Exec = async (params) =>
 		(await tool.execute("id", params as WriteParams, undefined, undefined, ctx))
 			.details;
-	return { execute, calls: kernel.calls };
+	return { execute, calls: kernel.calls, childrenFor: kernel.childrenFor };
 }
 
 // ---------------------------------------------------------------------------
@@ -965,6 +1010,28 @@ describe("block-level move", () => {
 		const move = harness.calls.find((c) => c.method === "moveBlock");
 		// The dest section of oh1 is empty → the heading itself is the anchor.
 		expect(move?.args).toEqual({ id: "p1", previousID: "oh1" });
+	});
+
+	it("same-doc self-anchor: the block already ends the destination section → refusal, zero kernel moves", async () => {
+		// MOVE_DOC's h1 section is [p1, p2] — moving p2 to its end would
+		// issue moveBlock({previousID: p2}); the kernel no-ops and the walk
+		// check would misreport a successful move.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "p2", content: "stay" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p2",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("already the last member");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
 	});
 
 	it("doc-level: moveDocsByID with the notebook id on un-nest; pinned result shape", async () => {
