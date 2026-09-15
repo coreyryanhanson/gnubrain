@@ -18,490 +18,63 @@ all shipped in 0.2.0–0.3.0 and gating Sprint 5b (its raw-helper list shrinks
 accordingly). Any further gap is a deliberate, recorded change to that repo.
 (Naming note: the client method is `exportMarkdown`, wrapping the kernel's
 `exportMdContent` endpoint; likewise `createDocWithMarkdown` wraps the kernel's
-`createDocWithMd` endpoint — both names appear below. The method list above is
-verified against the client's installed exported types before Sprint 3, the
-same way Sprint 3's preamble smoke-verifies pi-tool-masking. Reference checkouts
-for both dependencies live locally: `~/pi-tool-masking/` (S3/S5's toolset API
-surface) and `~/siyuan-kernel-api/` (every kernel method named above).)
+`createDocWithMd` endpoint — both names appear below. The method list was
+verified against the client's installed exported types before Sprint 3 landed,
+the same way Sprint 3's preamble smoke-verified pi-tool-masking. Reference
+checkouts for both dependencies live locally: `~/pi-tool-masking/` (S3/S5's
+toolset API surface) and `~/siyuan-kernel-api/` (every kernel method named
+above).)
 
 Design references below are §-sections of DESIGN_v2.md. Every sprint ends green:
 `npm test`, `npm run typecheck`, `npm run lint`.
 
 ---
 
-## Sprint 1 — Session chassis (validation, scope resolution, resilience, envelope)
+## Landed — Sprints 1–3
 
-The machinery every tool call routes through. No tools registered yet.
-Also lands the single registration/dispatch seam in `index.ts` — one
-`register(pi, deps)` entry that Sprint 2's `/kb` command and Sprint 3's
-toolset registration both extend — so the parallel S2/S3 work never
-rewrites the entry module concurrently (S3-item-6's `/kb`-command additions —
-the bare-`/kb` toolset-state line and the `/kb tools` dispatcher — stay
-explicitly gated on Sprint 2).
+Sprints 1–3 are complete (all unit ACs green: `npm test`, `npm run typecheck`,
+`npm run lint`; S3's final live-session AC executed successfully against the
+live kernel). This section records what landed and the deviations from the
+original plan; the sprints below reference these deliverables by their
+original item numbers.
 
-1. **Startup validation pipeline (§5 validation order)** — steps 2–3; the
-   core step-1 shape check incl. the global-file `defaultKBs`-against-`kbs`
-   check already lives in `settings.ts` (M1 tests cover it); Sprint 1 adds
-   only the project-file `defaultKBs`-vs-global-`kbs` composition named in
-   item 4. Per §5 step 1, a shape-check failure **degrades** the session —
-   every tool call is rejected with the problem named, not a crash (the
-   tools-stay-registered half of the behavior is asserted in Sprint 3, the
-   first sprint that registers tools; S1 asserts the degrade flag + rejection
-   gate itself):
-   - Kernel probe at `session_start` via `getVersion()`; extension-owned
-     `PINNED_SIYUAN_VERSION = "3.8.3"` — the validation/probe pipeline takes
-     the expected version as a parameter defaulting to it (Sprint 5b item 4's
-     per-test override rides this seam, §10), strict full-version match; writes
-     fail-closed on drift, reads warn-and-proceed; verdict cached for the session.
-     Version-refusal message content pinned per §5 (static text naming the
-     kernel version, the pinned version, and the fix — run the §10 upgrade
-     checklist against the new kernel, re-pin, then start a new session); the
-     429-refusal message pin in item 5 is the precedent for how it's tested.
-   - `listNotebooks()`: stale notebook ID → warn + drop from valid set;
-     `encrypted: true` → reject the KB at startup, one branch for both lock
-     states. A call-level failure (auth 401/403 or network drop after a
-     successful probe) → the valid set stays empty — fail-closed, every tool
-     call's `kb` name is rejected as not-in-scope until a `/kb` recovery
-     re-runs validation; an auth failure feeds the breaker (below), a network
-     drop never counts toward it (§5's counting rule counts 401/403 only).
-   - Unreachable kernel → degraded session: tools (once they exist) register,
-     reads error per-call, every write first retries the probe per write
-     attempt, still-failed → `refused`. Reads never gate on the cached
-     unreachable verdict — each read attempts the kernel call and errors on
-     failure — so once the kernel is reachable again the next read succeeds
-     with no recovery step (§5's reads-recover-per-call rule; only `/kb`
-     recovery clears the degraded flag, reads just stop erroring).
-2. **Error envelope (§5)** — one shared helper:
-   `{status: ok | near_matches | duplicate | error | refused, message, ...payload}`,
-   with `truncated`/`post_filtered` as payload markers, never statuses; per
-   §5's success-echo contract, every success result echoes the resolved KB
-   name (single-KB calls) or names (multi-KB calls) — spelled out per tool in
-   S3 items 2–3 here, and part of the S5 write-result contract.
-3. **`kb` param contract (§5)** — required on every call; array on `query` and
-   `search` (the multi-scope sweep tools), exactly one name on `read` and every
-   write; unknown / not-in-scope / empty-array rejections with the pinned
-   messages (empty array refused locally, no kernel call).
-4. **Scope resolution (§5)** — latest `kb-scope` `appendEntry` wins, else
-   `defaultKBs`; project file wins over global for `defaultKBs`; `kbs` +
-   connection keys read from the global settings file only. Absent key = empty
-   set, never activate-all. Settings load is a seam: the loader takes an
-   injectable file read (S1's unit tests mock it; Sprint 5b's integration
-   suite injects fixture settings in memory through the same seam).
-   Composition with the existing single-object validator: the full
-   `validateGnubrainSettings` run applies to the global file
-   (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file supplies
-   `defaultKBs` names only, checked against the global `kbs` set, with two
-   failure classes matching §5's existing precedents (the project file is never
-   run through the full validator):
-   - **Shape failure → degrade**: `defaultKBs` present but not an array of
-     strings → session degrades (§5 step 1's rule; identical to how the global
-     file behaves), reusing the existing message verbatim
-     ("defaultKBs must be an array of KB name strings"). Same class for a
-     project `gnubrain` object containing any key other than `defaultKBs` —
-     a stray `kbs`/`baseUrl` in a project file is rejected loudly, never
-     silently ignored (message names the unexpected key). (`allowUnattendedWrites`
-     and `writeConfirmTimeout` are also global-only, §5 — user-owned attention
-     dials, not per-project defaults a project file may lower.)
-   - **Unknown name → warn loudly, drop, keep the valid rest** (§5's
-     stale-notebook precedent: warn and drop, never a crash): a project
-     `defaultKBs` naming a KB absent from the global `kbs` set warns at
-     startup and removes that name from the resolved set, keeping any valid
-     siblings; it never falls back to the global `defaultKBs` — dropping
-     names can only shrink scope, a fallback could silently expand it.
-   The global file's own unknown-name `defaultKBs` case is not touched here:
-   the M1 validator already degrades on it (`defaultKBs` names must exist in
-   `kbs`), and that behavior stands — warn-and-drop is a project-file-only
-   class. (§5 is internally ambiguous here: step 1 classifies the
-   `defaultKBs`-names-exist check as shape validation — failure degrades —
-   while its fresh-session bullet says an unknown `defaultKBs` name "warns
-   loudly at startup". This plan resolves the conflict deliberately: the
-   warn-loudly wording covers the project-file class only, and the global
-   file follows step 1's degrade per the shipped M1 validator, whose behavior
-   is unchanged.)
-5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
-   fail-fast, zero kernel calls from tool calls; 429 never counted, never
-   retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
-   message content pinned per §5: the 429 refusal names the lockout, its cause
-   (IP-keyed lock, possibly tripped by another client), and its self-healing
-   expiry (quoting the served `Retry-After`), and tells the model the token is
-   probably correct — do not change the token or settings, do not retry, report
-   the lockout to the user and pause kb work until the stated window passes;
-   the degraded-state message says **wait out the lock first, then `/kb`**;
-   recovery via the `/kb` re-check hook applies to the breaker only — the 429
-   cooldown self-heals on expiry, §5 pins no `/kb` recovery for it
-   (dispatch point in place now, subcommands land in Sprint 2).
-6. **Status bar slot (§5)** — `ctx.ui.setStatus`, try/catch-guarded; severity-first
-   precedence: unreachable → red, never-probed → grey, degraded config → yellow, healthy →
-   dot color carries the tool capability (§5: writes on → success/green, else reads on →
-   accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
-   with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
-   renders hollow — no toolsets registered yet (`pi-tool-masking@1.3.0` is
-   already a runtime dependency as of M1, so the live read simply sees none); Sprint 3's read toolset brings the blue
-   branch, Sprint 5's write toolset the green branch + repaint on
-   `TOOLSET_EVENTS.changed`/`restored` (and after `session_tree` restore, §5). Glyph state reads live toolset state, so any
-   disabler (our toggle, `toolsetDefaults` settings pins, allowlist mode, external
-   managers) is reflected (§5). Cleared on `session_shutdown`. Degraded-config causes
-   share the yellow glyph and branch a two-word cause tag in the slot text, first match
-   wins in severity order: shape failure → `● kb: config`, tripped breaker →
-   `● kb: breaker`, version drift → `● kb: version`; `/kb` names the full problem (§5).
+| Item | Delivered |
+|---|---|
+| S1.1 Startup validation pipeline | Shape check → `getVersion()` probe (pinned `3.8.3`, strict match, per-test override seam) → `listNotebooks()`; shape failure degrades the session (rejection gate, not a crash); stale notebook warn-and-drop; encrypted-KB rejection (one branch, both lock states); call-level auth failure → empty valid set + breaker, network drop never counts; unreachable kernel → reads error per-call (bypass the cached verdict), writes probe-retry per attempt |
+| S1.2 Error envelope | Shared helper `{status: ok \| near_matches \| duplicate \| error \| refused, message, ...payload}`; `truncated`/`post_filtered` payload markers; success results echo resolved KB name(s) |
+| S1.3 `kb` param contract | Required everywhere; arrays on `kb_query`/`kb_search`, single name on `kb_read`/writes; unknown/not-in-scope/empty-array rejections with pinned messages |
+| S1.4 Scope resolution | Latest `kb-scope` `appendEntry` wins, else `defaultKBs` (project over global); absent key = empty set; full validator on global file, project file supplies `defaultKBs` only (stray key or non-array → degrade; unknown name → warn-and-drop, no fallback to global `defaultKBs`); injectable settings-load seam |
+| S1.5 Circuit breaker + 429 cooldown | 3 consecutive 401/403 → degraded fail-fast (zero kernel calls); 429 never counted/retried, local cooldown (`Retry-After`, 60 s floor) with pinned message content; `/kb` recovery for the breaker only, cooldown self-heals |
+| S1.6 Status bar slot | Severity-first: unreachable red → never-probed grey → degraded yellow (`config`/`breaker`/`version` cause tags) → healthy capability dot (hollow/blue/green); cleared on `session_shutdown` |
+| S1 seam | Single `register(pi, deps)` entry in `index.ts` |
+| S2.1 Scope persistence | `pi.appendEntry("kb-scope", ...)` full post-toggle snapshot |
+| S2.2 `/kb` command | Bare prints scope; `<name> on\|off` idempotent; `all on\|off`; reserved `all` + `tools` (`writes` deliberately un-reserved — see deviations); verbless prints usage |
+| S2.3 Recovery hook | Every `/kb` dispatch re-runs full validation (both settings files, shape, probe, `lsNotebooks`) before dispatch; success clears degradation + breaker; failed re-check re-engages |
+| S3.1 Spill/budget helper | `SPILL_DIR`/`PREVIEW_CHARS` 8000/`OUTLINE_HEADINGS` 200/`RESULT_LIMIT` 64; per-session temp dir, `{tool}-{sha256-16hex}` file template, JSONL vs `.md`, newline-boundary preview + pointer |
+| S3.2 `kb_query` | Parser certification (DML/multi-statement/FROM-allowlist/CTE/subquery/UNION/JOIN/bare-`HAVING` rejected); AST `box IN (...)` splice with parenthesization (OR precedence), LIMIT 64 injection iff absent, re-parse-and-verify, readonly client `query()`; agent LIMIT passthrough; post-filter backstop (aggregate-exempt) |
+| S3.3 `kb_search` | Per-KB fan-out (`pageSize = RESULT_LIMIT`), merged in per-KB kernel order, post-filter backstop, `method: 0` tool-owned with aux params schema-rejected, row echo contract (`root_id`/`hpath` renamed from client) |
+| S3.4 Tool descriptions | Query description carries pinned `refs`/`blocks` schemas + semantics notes + include-`hpath` discovery pattern |
+| S3.5 `kb_read` | `exportMarkdown` (GFM only), ownership query doubles as scope check, `getChildBlocks` outline walk (depth-bounded, `OUTLINE_HEADINGS` cap with spill) |
+| S3.6 Read toolset + `/kb tools` | `defineToolset` with `persistKey: "toolset-state:gnubrain.read"`, default-enabled; `/kb tools` dispatcher (state-setter semantics: bare prints, `read` sets read-only, `off` disables; `write` verb falls through to usage until S5); bare `/kb` output carries the toolset-state line; status bar turns accent/blue |
+| S3.7 `kbs` discovery name | `RESERVED_KB_NAMES` = `all` + `tools` + `kbs`, name-agnostic reservation message; `kb_read` with `kb: "kbs"` returns the active set with zero kernel calls (short-circuit ahead of breaker/cooldown, shape-refusal still applies); `docId` optional in `kb_read` schema, valid-`kb`/missing-`docId` refused with three-exit guidance; only `kb_read` carries the discovery form — `kb_query`/`kb_search` reject `kb: ["kbs"]` via the unknown-KB rejection |
 
-### Acceptance criteria
+**Deviations from the plan as originally written** (all recorded, design +
+plan updated in the same changes):
 
-- [ ] Unit: validation order shape → probe → notebooks, incl. encrypted-notebook
-      rejection for both lock states (mocked `listNotebooks`; kernel endpoint
-      `lsNotebooks`), stale-notebook drop, project/global read path, token-failure
-      branch (call-level failure → empty valid set, fail-closed; auth failure
-      feeds the breaker, network drop never counts — §5's counting rule), shape-check failure degrading the session (degrade flag set, calls
-      rejected with the problem named — not a crash; the tools-stay-registered
-      clause is asserted in Sprint 3, S1 registers no tools),
-      project-file validation — non-array `defaultKBs` and a stray non-`defaultKBs`
-      key both degrade the session with the message naming the problem
-      (pinned message reused verbatim for the shape case; unexpected key named
-      for the key case), the global file's own unknown-name `defaultKBs`
-      degrading (M1 validator, unchanged), `writeConfirmTimeout` read from the
-      global file only (classified global-only per item 4; §10 pins the
-      validation order).
-- [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
-      retry; degraded-session read errors; post-recovery read succeeds with no
-      recovery step (reads bypass the cached unreachable verdict, §5).
-- [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
-      zero further kernel calls; recovery clears it; a successful
-      authenticated call between failures resets the consecutive count
-      (2 fail → success → 2 fail does not trip — §5's reset-on-success rule);
-      429 → no breaker increment,
-      no retry, local cooldown refusal with zero kernel round-trips carrying
-      the §5-pinned message content (lockout, cause, self-healing expiry with
-      the served `Retry-After`, do-not-change-token / do-not-retry guidance),
-      post-expiry call succeeds; the degraded-state message carries the
-      "wait out the lock first, then `/kb`" guidance (§5). The 429 branch is
-      exercised with a genuine
-      `SiYuanRateLimitError` instance, not a synthetic 429 shape; the 429
-      never increments the consecutive count (§5's pin) and never resets it —
-      an inferred consequence of §5's "any successful authenticated call resets
-      the counter" rule, not a separately pinned property — both unit-only;
-      Sprint 6's live checklist deliberately does not stage it (§10).
-- [ ] Unit: `kb`-param rejections incl. empty array (no kernel call, activation
-      path named); envelope shape (§10).
-- [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
-      set, and the project/global validator composition above — incl. project
-      `defaultKBs` naming an unknown KB: loud startup warning, name dropped,
-      valid siblings kept, no fallback to the global `defaultKBs` (the global
-      file's own unknown-name `defaultKBs` degrades instead — M1 validator);
-      status-slot
-      rendering headless-safe, incl. the degraded-config glyph and the
-      per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
-      `version`, first match in that order) and the healthy-state capability
-      ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
-      Sprints 3 and 5) with degraded/breaker precedence over the healthy colors
-      (§5), the post-`session_tree`-restore re-render of the hollow slot
-      (the capability-colored repaint after restore is Sprint 5's AC — S1
-      registers no toolsets), and the slot cleared on `session_shutdown`
-      (§5, item 6).
-
----
-
-## Sprint 2 — Scope state + `/kb` command
-
-Scope persistence and the mid-session activation vehicle.
-
-1. **Scope persistence (§5)** — `pi.appendEntry("kb-scope", ...)` writes a full
-   snapshot of the active set. Write side only — the reader (latest entry wins,
-   else `defaultKBs`) landed in Sprint 1 item 4 and its tests stand.
-2. **`/kb` command (§5)** — bare `/kb` prints scope; `/kb <name> on|off`
-   single-name idempotent toggle; `/kb all on|off` set-wide form (empty set on
-   `all off`; zero-valid-KB no-op reported); reserved keywords `all` + `tools`
-   — `settings.ts`'s `RESERVED_KB_NAMES` gains `tools` here (M1 validator +
-   test updated: a KB named `tools` becomes unconfigurable from the day `/kb`
-   ships, not when its dispatcher lands in Sprint 3). All tool toggling lives under the
-   `/kb tools` command (dispatcher verbs land with the toolsets themselves:
-   S3 item 6 for reads, S5 item 5 for writes) — there is deliberately no
-   top-level tool-toggle verb, so KB names never collide with toolset verbs.
-   (`writes` is deliberately un-reserved: the toolset verb it once kept open
-   now lives under `tools`, so a KB named `writes` is configurable again; the
-   shipped S2 reservation is reverted shortly after this plan lands. The
-   `kbs` keyword follows in Sprint 3 item 7.) The `all`
-   name-level rejection is asserted at the settings layer — already covered by
-   the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
-   so the S2 test exercises the `/kb` subcommand dispatch of `all` only);
-   verbless `/kb <name>` prints usage.
-3. **Recovery hook (§5)** — every `/kb` dispatch re-runs the full validation pass
-   (settings re-read — both the global and project files, so corrected
-   credentials and `defaultKBs` edits take effect mid-session — shape, probe,
-   `lsNotebooks`) before subcommand dispatch;
-   success clears degradation + breaker counter; failure re-engages
-   all-or-nothing.
-4. **Headless dispatch** — verified for real in Sprint 5b (`/kb all off` from
-   `pi -p`); no handler-side headless check (§5 headless bound).
-
-### Acceptance criteria
-
-- [ ] Unit: toggle writes — bare `/kb`, verbless usage output, idempotent
-      re-toggle, `/kb all on` activates the full valid set, `/kb all off`
-      empty-scope write, zero-valid-KB no-op, `/kb all`
-      subcommand dispatch, unknown-name toggle rejection (validates against
-      the config array with the same rejection message as the tool param,
-      §5). The settings-level `all`-name and name-grammar rejections are
-      already covered by the pre-existing M1 tests in `settings.test.ts` —
-      deliberate relocations: a KB whose name violates the grammar can never
-      be configured, so no toggle-path leg exists for either (§10's literal
-      `/kb`-toggle unit list is superseded by these relocations; §5 makes both
-      rejections shape-validation-time, and the shipped M1 tests already pin
-      them). The new
-      `tools` reservation: a KB named `tools` is rejected by the M1
-      validator (settings test updated in this sprint). The obsoleted
-      `writes` reservation is removed (settings test updated: a KB named
-      `writes` is configurable again).
-
-- [ ] Unit: scope entry is a complete post-toggle snapshot; resume/fork read
-      rule unchanged.
-- [ ] Unit: recovery — corrected token + `/kb` dispatch re-runs validation,
-      clears degraded flag; failed re-check re-engages degradation without
-      looping (§10).
-- [ ] Unit: the S1 `kb`-param validator reads the live post-toggle scope at
-      call time (asserted against a stub tool here; tool-level composition
-      deferred to Sprint 3, asserted with the real read tools).
-
----
-
-## Sprint 3 — Result budgets + read tools (query / search / read)
-
-Registered tool names per §2/§3 of DESIGN_v2: `kb_query`, `kb_search`, `kb_read`
-(the flat pi tool namespace collides with the builtins `read`/`write` — a same-name
-registration silently overrides the builtin — so every tool carries the `kb_` prefix;
-short names below are internal labels). The write tool's registered name (`kb_write`)
-lands with Sprint 4.
-
-The discovery half of the loop. Adds the new runtime dependency
-`node-sql-parser@5.4.0` (exact-pinned; `pi-tool-masking@1.3.0` is already
-exact-pinned as of M1). First task on landing: smoke-verify
-pi-tool-masking's actual API surface
-(`defineToolset`, `ToolsetSpec.names` as `Set<string>`, `requires` cascade,
-`TOOLSET_EVENTS.changed`/`restored`, the `toolsetDefaults` settings tier)
-against its installed types — items 6 below and Sprint 5 item 5 assert this
-surface, and it is not backed by the design's spike the way the kernel client
-surface is.
-
-1. **Spill/budget helper (§3)** — the four constants (`SPILL_DIR`,
-   `PREVIEW_CHARS` 8000, `OUTLINE_HEADINGS` 200, `RESULT_LIMIT` 64) and one
-   helper: per-session temp dir `os.tmpdir()/gnubrain/<session-id>/`, file names
-   per §3's template `{tool}-{sha256-16hex}.jsonl|.md` (the `tool` prefix keeps
-   spill files attributable in the grep-side-by-side workflow), JSONL vs `.md`
-   spill formats, newline-boundary preview +
-   `… N more — full result in <path>`, no cleanup machinery.
-2. **query tool (`kb_query`, §3)** — parser certification (single top-level SELECT, DML /
-   multi-statement / FROM-allowlist / JOIN / subquery / CTE / UNION / bare
-   `HAVING` rejection — §3 pins the bare-`HAVING` rule even though §10's unit
-   list omits it; keyed on the executed spike findings: `Array.isArray` for
-   multi-statement, `_next`/`set_op` for UNION); AST rebuild: splice `box IN (...)`, inject LIMIT
-   64 iff AST shows none, serialize, **re-parse and verify**, execute the
-   re-parsed statement through the client's readonly-only `query()` (the
-   client hardcodes `mode: "readonly"` on the wire — 0.3.0 dropped the
-   parameter, readonly is the contract); agent-supplied LIMIT passes
-   through uncapped; post-filter backstop (box-less aggregate rows exempt);
-   truncation marker counts post-filter rows; results echo resolved KB names +
-   injected box IDs.
-3. **search tool (`kb_search`, §3)** — per-KB fan-out (one kernel call per resolved KB,
-   `paths: [<boxId>]`, `pageSize = RESULT_LIMIT`), merged results in per-KB
-   kernel order, aggregated truncation marker; same post-filter backstop as
-   query — merged rows dropped unless `box` ∈ resolved set → `post_filtered:
-   true`, truncation marker counts post-filter rows (search rows always carry
-   `box`, so no aggregate exemption; the drop path is unreachable against a
-   well-behaved kernel, hence mocked-only testing per §10); `method: 0`
-   tool-owned, agent
-   `method`/`types`/`orderBy`/`groupBy` rejected at the tool schema (the client
-   already hardcodes `method: 0` and exposes no aux params), aux params
-   omitted entirely; echo contract per row (`id`, `root_id`, `hpath`, `box` →
-   resolved KB name, `updated` — `root_id`/`hpath` are renamed from the
-   client's `rootID`/`hPath` (client `SearchBlock`), never echoed raw).
-4. **Tool descriptions (§5, §3)** — the **query** tool description carries the
-   pinned content (§5 pins it there specifically): `refs`/`blocks` table schemas
-   with the two semantics notes (`sort` is a type weight, `hpath` is
-   display-only) and the include-`hpath` discovery pattern; the other read
-   tools may carry a shorter pointer. Write-tool doctrine lines ("mint by title… consume by
-   ID", search ownership constraints) are authored with the write tools in
-   Sprints 4–5, not deferred. That placement is deliberate — §4 pins the
-   doctrine lines in "the tool descriptions" without saying which; they live on
-   the write tools because they govern the mint/consume decisions, so nobody
-   relocates them mid-build.
-5. **read tool (`kb_read`, §3)** — `exportMarkdown` (GFM only, never `getDoc`; kernel
-   endpoint `exportMdContent`); ownership
-   query doubles as scope check (`SELECT root_id FROM blocks WHERE id = ? AND
-   box = ?`); outline ride-along via the documented `getChildBlocks` walk
-   (heading filter for rendering only, full unfiltered ID set retained for write
-   verification; extension-owned recursion depth bound); `OUTLINE_HEADINGS` cap
-   with spill of the full outline. The `kb`/`docId` schema itself (with `docId`
-   optional for the discovery form) is item 7's amendment, not restated here.
-6. **Read toolset + `/kb tools` dispatcher (§5 tool-masking record)** —
-   `defineToolset(pi, { id:
-   "gnubrain.read", names: new Set(["kb_query", "kb_search", "kb_read"]),
-   persistKey: "toolset-state:gnubrain.read", defaultEnabled: true })`
-   (pi-tool-masking's `ToolsetSpec.names` is a `Set<string>`, not an array).
-   The `/kb tools` dispatcher lands here (the read toolset is the first
-   toggleable surface), following the state-setter pattern of
-   pi-lean-portal's `/web on|learn|off` — each verb sets an absolute end
-   state rather than flipping, so no state → exactly one command and
-   re-issuing a verb is naturally idempotent:
-   bare `/kb tools` prints toolset state; `/kb tools read` sets the
-   read-only state (enable read; its write-disable leg becomes meaningful
-   when Sprint 5's write toolset exists); `/kb tools off` disables the read
-   toolset (cascades write off once it exists); `/kb tools write` falls
-   through to usage until Sprint 5 adds the verb. Bare `/kb`
-   output gains the toolset-state line here, covering the read toolset (§5's
-   tool-masking record: a settings-pinned mask must never be mysterious — the
-   absence is printed, not silent); Sprint 5 extends the line to the write
-   toolset. Status bar:
-   healthy dot turns accent/blue once this toolset is active (hollow before).
-7. **`kbs` discovery name (§5 amendment)** — `RESERVED_KB_NAMES` gains
-   `kbs` (settings test updated here, same relocation pattern as S2's
-   `tools`). The reservation error becomes name-agnostic at the same time —
-   `KB name '<name>' is reserved`, replacing "reserved for the /kb command"
-   in the error string (the settings.ts comment is rewritten in the same
-   change to cover the enlarged set — `kbs` is a tool-param discovery name,
-   not a `/kb` subcommand) — because the user's
-   action is identical for every reserved name (pick another), and per-name
-   rationale in the message would re-touch message + tests on each future
-   reservation; the why stays in DESIGN_v2's reserved-set record and the
-   code comment. The two existing assertions pinning the old wording (the
-   `all`/`tools` reservation cases in `settings.test.ts`) are updated to the
-   new wording in the same change. Discovery is a `kb_read`-only form:
-   `kb_read` with `kb: "kbs"` returns the active KB set without touching
-   the kernel — empty set included, with the activation hint (gate.ts's
-   `EMPTY_SCOPE_MESSAGE`, exported and reused verbatim). **Schema
-   change:** `docId` becomes `Type.Optional` — as written it is
-   required, and a discovery call would be rejected by tool-schema
-   validation before `execute` ever runs. Discovery is the only
-   pre-gate branch: after the session-validation guard, the handler
-   re-runs the shape check inline (`validation.shapeErrors.length > 0`
-   → `configRefusalEnvelope`, newly imported into tools.ts — a
-   shape-degraded session still rejects every call, S1's rule) — a
-   deliberate duplicate of `guardCall`'s first check, unavoidable while
-   the short-circuit bypasses the gate; keep it a one-liner (or a shared
-   helper) so the two copies cannot drift — then short-circuits
-   `kb: "kbs"`. It cannot route through
-   `guardCall`/`runKbCall`: `guardCall`'s pinned order fuses shape →
-   breaker → cooldown and cannot stop between them, and `runKbCall`'s
-   success path would reset the breaker counter — the short-circuit
-   sits ahead of breaker/429 cooldown, so discovery succeeds while the
-   breaker is tripped or a lockout is armed (a discovery call carrying
-   a real `docId` still returns the scope branch; `docId` is ignored
-   there). The missing-`docId` refusal is not a handler branch — it
-   lives inside the gated op, after `runKbCall`'s gate has resolved a
-   valid `kb`: kb validity must come first (a typo'd `kb` with no
-   `docId` must get the unknown-KB rejection, not the guidance), and
-   only inside the op does the guard narrow `params.docId` for the
-   `runRead(docId: string)` call — a handler-level guard would not
-   narrow across the op-closure boundary, so the op aliases `const
-   docId = params.docId` first. Because the refusal returns a refused
-   envelope instead of throwing, `runKbCall` treats it as a successful
-   call and resets the breaker's consecutive-failure count
-   (`recordSuccess`) — the pre-existing gate pattern for every
-   op-internal refusal (parser certification, the no-doc ownership
-   refusal); this amendment inherits it, zero kernel calls included,
-   and does not change it. `kb` valid but `docId` absent or empty
-   (`""` counts as missing) is refused with guidance, never answered
-   with a doc listing or KB metrics (doc listing —
-   `SELECT root_id, hpath, updated FROM blocks WHERE type = 'd'` — and
-   aggregates already live on `kb_query`, and a success-shaped payload
-   would mask the lost-docId mistake the call almost always is), with
-   the message naming all three exits: list docs via `kb_query`, KB
-   stats via a `kb_query` aggregate, list active KBs via `kb: "kbs"`.
-   Envelope: `{status: "ok", kb: "kbs", message:
-   validation.scope.join(", "), names: validation.scope}` — the echoed
-   `kb: "kbs"` is a reserved marker, not a real KB, a deliberate
-   exception to the success-echo contract (the payload rides in
-   `names`); empty scope → the same form with `message:
-   EMPTY_SCOPE_MESSAGE, names: []` — the `kb: "kbs"` marker is
-   identical in both forms, so a consumer branching on the marker never
-   sees a shape it didn't expect. It must not live in the
-   shared `resolveKbParam`: `kb_write` takes the same single-name
-   validator, and a shared short-circuit would turn its mandated
-   rejection into a read listing. `kb_query`/`kb_search`/`kb_write` get
-   no special case — `kb: ["kbs"]` there falls through to the existing
-   `unknown KB 'kbs'. Active: …` rejection, which already names the
-   active set and is §5's rejection-message discovery path (the
-   fallback; a bare string `kb: "kbs"` never reaches `execute` on the
-   array-arity tools — their `Type.Array` schema rejects it first, so
-   `resolveKbParam`'s array-shape refusal is unit-test-only for this
-   case); a KB named `kbs` can never exist
-   in settings. `/kb kbs on|off` needs no change either — it routes
-   through the same `kbNameProblem` check and lands on the accurate
-   `unknown KB 'kbs'. Active: …` rejection. Only the
-   `kb_read` description carries the discovery line ("call with
-   `kb: "kbs"` to list active KBs").
-
-### Acceptance criteria
-
-- [ ] Unit: parser certification matrix — DML, multi-statement, FROM-allowlist
-      violation (plain wrong table incl. comma cross-join), CTE shadow
-      (`WITH blocks AS …`), subquery, UNION, JOIN, bare
-      `HAVING` (§10; the `HAVING` leg per §3's policy, which §10's list omits).
-- [ ] Unit: injected-predicate re-parse — OR precedence, round-trip parity for
-      escaped quotes / LIKE backslash escapes / clause keywords in strings /
-      non-ASCII literals; LIMIT presence off the AST; `||`-containing statement
-      keeps the injected LIMIT; agent LIMIT passthrough (§10).
-- [ ] Unit: post-filter — box-less aggregate rows skip the backstop; truncation
-      fires when `kept + dropped` reaches the limit (§10).
-- [ ] Unit: search post-filter — out-of-scope rows dropped, `post_filtered:
-      true`, truncation marker counts post-filter rows (§10: contaminated input
-      is only constructible in the mocked suite; live integration pins the
-      shape only — zero out-of-scope boxes, no flag).
-- [ ] Unit: search rejects agent-supplied `method`/aux params (tool-schema
-      assertion); fan-out issues N calls with per-call `pageSize`; single-KB
-      degenerates to the single-call shape (the fan-out/degeneration policy is
-      §3's record — §10's unit list only pins the method/aux rejection; §10's
-      two-KB saturation case is the live pin for the fan-out only, degeneration
-      stays unit-only).
-- [ ] The query tool description contains the §5-pinned table schemas +
-      semantics notes and the include-`hpath` discovery pattern.
-- [ ] Unit: spill — inline-cut/preview/per-session-dir/no-cleanup; outline cap
-      inlines first N lines + pointer while verification runs on the full walk
-      set (§10).
-- [ ] Unit: `read` on a `docId` from another KB returns no rows — the ownership
-      query doubles as the scope check (§4; §5 tool shape).
-- [ ] Unit: read toolset registered with the three `kb_` read tools as members,
-      default-enabled, persist key `toolset-state:gnubrain.read` (§5).
-- [ ] Unit: `/kb tools` dispatch — bare prints state; `tools read` sets the
-      read-only state (no-op reported when already there); `tools off`
-      disables; `tools write` falls through to usage until Sprint 5
-      (state-setter semantics per item 6, portal `/web` precedent).
-- [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
-      active, hollow before it (S3-localized leg of the §5 capability ladder;
-      the green/masked branches and the repaint events are Sprint 5's AC).
-- [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set
-      (`{status: "ok", kb: "kbs", message: <scope joined ", ">, names:
-      <scope>}`) incl. the empty-scope form (`{status: "ok", kb: "kbs",
-      message: EMPTY_SCOPE_MESSAGE, names: []}`), with zero kernel calls on the
-      request log and the short-circuit placed after the shape-error
-      refusal (a shape-degraded session still refuses it) and ahead of
-      breaker/cooldown (discovery succeeds while the breaker is tripped
-      and while a cooldown is armed, leaving the breaker state untouched —
-      no `recordSuccess`/`recordAuthFailure` on a discovery call); `docId` is optional in the `kb_read`
-      schema and a valid-`kb` call with `docId` absent or empty is refused
-      with the three-exit guidance message (never a doc listing or metrics
-      payload; the refusal sits inside the gated op after kb resolution —
-      a typo'd `kb` with no `docId` gets the unknown-KB rejection instead),
-      and a discovery call with a `docId` present still returns the scope
-      branch; a KB named `kbs` rejected by the M1 validator with the
-      name-agnostic reservation message (`KB name 'kbs' is reserved`), and
-      the `all`/`tools` reservation assertions reworded to match;
-      `kb_query`/`kb_search` reject
-      `kb: ["kbs"]` via the existing unknown-KB rejection (no special
-      case; the `kb_write` leg is Sprint 4's, landing with that tool),
-      while a bare string `kb: "kbs"` there is rejected by the
-      `Type.Array` schema before `execute`;
-      the `kb_read` description carries the discovery line.
-- [ ] Read tools callable from a real pi session against the live kernel
-      (manual smoke); tool `kb` validation composes with the live post-toggle
-      scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
-      scope, now asserted through real tools). Two separately-scoped
-      assertions: (a) the S1 shape-check degradation clause deferred from
-      Sprint 1 (degraded session → tools stay registered, calls rejected with
-      the problem named) — needs only S3's own registered tools, runs with S3;
-      (b) the live post-toggle-scope composition — **gated on Sprint 2**, it
-      consumes S2's persisted scope and runs after S2 lands; the rest of
-      Sprint 3 stays parallel with S2.
-
----
+1. `/kb writes` (S5 item 5's planned top-level toggle verb) was replaced by
+   the `/kb tools` dispatcher (S3 item 6), following pi-lean-portal's `/web`
+   state-setter pattern. Consequence: `RESERVED_KB_NAMES` = `all` + `tools`
+   + `kbs`; `writes` is a legal KB name again.
+2. The `kbs` discovery name (S3 item 7) was added post-S3: `kb_read` with
+   `kb: "kbs"` lists active KBs without touching the kernel, so the model
+   never has to guess KB names. The reservation error became name-agnostic.
+3. Implementation decisions worth keeping: `never-probed` is distinct from
+   `unreachable` in probe-verdict caching; `/kb` dispatch logic is a pure
+   function (`kbCommand.ts`) with side effects in the `index.ts` handler;
+   idempotent toggles report no-op and skip the `appendEntry` write;
+   `siyuan-kernel-api/errors.ts` optional-property widening (compat with
+   `exactOptionalPropertyTypes`) — recorded as a deliberate change to that
+   repo.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 
@@ -561,39 +134,39 @@ confirmation gate and the `create` flow end to end. Registered name
 
 ### Acceptance criteria
 
-- [ ] Unit: guard — exact leg matches ASCII-cased variants and HTML-special
++ [ ] Unit: guard — exact leg matches ASCII-cased variants and HTML-special
       titles via escape parity; near-match legs incl. the underscore leg; 20-row
       cap + marker; `confirmNew` skip path; the unified exact-leg stop
       (single-row and multi-row both return all rows + per-row spill paths;
       single row adds the block-ID echo); param absent from the declared tool
       schema (assert on the schema object) (§10).
-- [ ] Unit: `kb_write` rejects `kbs` via the existing unknown-KB rejection
++ [ ] Unit: `kb_write` rejects `kbs` via the existing unknown-KB rejection
       (no special case in the write path — the discovery name is never a
       write target).
-- [ ] Unit: mint-policy rejections — each with its message; verified-create
++ [ ] Unit: mint-policy rejections — each with its message; verified-create
       asserts incl. simulated stale parent failing loud (§10; §10's
       guard→create race leg is deliberately folded here rather than given its
       own case — it is only reachable in the mocked suite and its duplicate
       lands in the accepted reconcilable class, §4 R3/R4, so verified-create's
       by-ID asserts are all that observes it).
-- [ ] Unit: write-confirmation branches — allow/refuse; cancelled and timed-out
++ [ ] Unit: write-confirmation branches — allow/refuse; cancelled and timed-out
       confirms both refuse; `confirm_timeout` terminal (confirm mock fires
       exactly once across both calls); explicit decline recoverable; timeout 0
       issues an untimed confirm (§10).
-- [ ] Unit: headless write default-deny (§5) — no-UI session with
++ [ ] Unit: headless write default-deny (§5) — no-UI session with
       `allowUnattendedWrites` absent or false → `refused` naming the enabling
       setting, zero confirm calls and zero kernel calls on the request log;
       `allowUnattendedWrites: true` → the write proceeds unattended (dialog
       skipped per item 1).
-- [ ] Unit: file-path input — missing file → error, zero kernel calls (request
++ [ ] Unit: file-path input — missing file → error, zero kernel calls (request
       log); read-once capture under mid-flow file mutation; XOR shape
       validation on a content-bearing mode (create here; the
       edit/replace-section/append legs land with Sprint 5's modes —
       body-less `delete`/`move` carry neither and are valid) (§10).
-- [ ] Unit: create-success echo — doc-level create results carry root `docId`,
++ [ ] Unit: create-success echo — doc-level create results carry root `docId`,
       stored title, real `hpath`, fresh `outline` (§4 R3 step 5; the full
       write-result contract generalizes this in Sprint 5 item 2).
-- [ ] Unit: guard-stop staging — `stagedPath` in the session spill dir,
++ [ ] Unit: guard-stop staging — `stagedPath` in the session spill dir,
       byte-equal content, `markdownFile` retry message; exact-leg stop spills
       each matching doc's markdown with per-row paths; near-match candidates
       stay excerpt-only (no candidate spill); no staging when the
@@ -670,48 +243,48 @@ confirmation gate and the `create` flow end to end. Registered name
 
 ### Acceptance criteria
 
-- [ ] Unit: move-anchor derivation — end-of-section anchor on a plain section,
++ [ ] Unit: move-anchor derivation — end-of-section anchor on a plain section,
       nested-heading recursion (section ending in a subheading → after the subsection,
       not inside it), trailing list/quote container anchor (placement at section level,
       never nested into the container); fold-state independence (folded destination
       heading does not change the anchor); same-doc move derives the anchor from the
       already-in-hand outline (no extra kernel call) (§4).
-- [ ] Unit: replace-section call order — mocked suite asserts insert precedes
++ [ ] Unit: replace-section call order — mocked suite asserts insert precedes
       delete; failed delete after successful insert leaves duplication, never
       loss (§10).
-- [ ] Unit: stale-target verification — insert with `newBlockId` absent from the
++ [ ] Unit: stale-target verification — insert with `newBlockId` absent from the
       post-write walk set → `error`; edit kernel error verbatim; delete no-op
       success with walk-set evidence; cross-doc move missing from destination
       walk set → `error` (§10).
-- [ ] Unit: fresh-content precondition — baseline from served content;
++ [ ] Unit: fresh-content precondition — baseline from served content;
       no-baseline fallback reads + displays current content and approval
       establishes the baseline; post-approval change → `stale_content` refusal,
       zero kernel write calls on the request log; matching re-check proceeds;
       replace-section baselines the delete set and the confirmation displays
       it (§10).
-- [ ] Unit: confirmation for a final-section replace displays the enumerated
++ [ ] Unit: confirmation for a final-section replace displays the enumerated
       delete set's block count + the trailing blocks' current content + inbound-ref
       count and referring hpaths;
       delete-bearing results carry `invalidRefs` (§10).
-- [ ] Unit: write-result shapes — doc-level `delete` carries only
++ [ ] Unit: write-result shapes — doc-level `delete` carries only
       `invalidRefs`; doc-level `move` carries outline + title/hpath echo, no
       `anchor`/`newBlockId`/`destOutline`; same-doc move collapses to
       outline + anchor, with `movedBlockId` present (§10 pins it; §4 verifies
       every move via it).
-- [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
++ [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
       title… consume by ID", search ownership constraints), the §4
       replace-first preference (prefer `edit`/`replace-section` over `append`;
       append is for genuinely new facts), and the `kbs` mirror line ("the
       discovery name `kbs` is read-only; writes always target a real KB by
       name"), completing the description work started in Sprint 3 item 7.
-- [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
++ [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
       cascades reads on); `/kb tools read` from the read+write state lands
       read-only (explicit write disable, portal `/web on` precedent);
       `/kb tools off` disables both; each verb reports a no-op when already in
       the target state; bare `/kb` output's toolset-state line covers both
       toolsets (§10's `/kb`-toggle unit list, extended with the `tools` verbs
       per item 5).
-- [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — live-toggle
++ [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — live-toggle
       cascade legs: enabling writes cascades reads on; disabling reads cascades
       writes off. Settings-pin boundary (no cascade at restore, pinned
       behavior): a `toolsetDefaults` write-on pin with read unpinned leaves
@@ -719,7 +292,7 @@ confirmation gate and the `create` flow end to end. Registered name
       a write-on + read-off pin pair produces the reachable write-without-read
       state — asserted as the documented boundary, backstopped by
       confirmation + headless default-deny (§5).
-- [ ] Unit: status-bar capability colors — healthy + write toolset enabled →
++ [ ] Unit: status-bar capability colors — healthy + write toolset enabled →
       success/green, write masked + read active → accent/blue, both masked →
       `○ kb` hollow (incl. a masked read toolset — `toolsetDefaults` pin /
       allowlist mode — not only our toggle), text identical across healthy
@@ -865,14 +438,14 @@ raw-DELETE case like the rest.
 
 ### Acceptance criteria
 
-- [ ] Setup asserts kernel version exactly equals the pin (accidental upgrade →
++ [ ] Setup asserts kernel version exactly equals the pin (accidental upgrade →
       red suite).
-- [ ] All cases above green against live 3.8.3 under the fixture policy; the
++ [ ] All cases above green against live 3.8.3 under the fixture policy; the
       teardown itself is asserted (post-teardown notebook count back to
       baseline — zero strays).
-- [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
++ [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
       encrypted case runs before raw-DELETE, never inside the throttle lock).
-- [ ] Encrypted case: `lsNotebooks` on the shared kernel reports the encrypted
++ [ ] Encrypted case: `lsNotebooks` on the shared kernel reports the encrypted
       fixture `encrypted: true` in both lock states → startup rejection names
       the KB while the plain fixture validates clean, zero tool kernel calls
       (§5 one-rejection pin, pinned live); the case self-skips with
@@ -884,7 +457,7 @@ raw-DELETE case like the rest.
 
 Polish and the M3 gate (§11).
 
-- [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
++ [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
       `kb_write` — in a real session; assert none shadows a pi builtin —
       mechanically asserted, not eyeballed: enumerate `pi.getAllTools()` and
       assert the builtins `read` and `write` still appear unshadowed alongside
@@ -894,12 +467,12 @@ Polish and the M3 gate (§11).
       toolsets registered default-enabled; `/kb tools read` removes `kb_write`
       from the active tool list (masked ≠ refused — no envelope, tool absent),
       `/kb tools write` restores it; state survives session resume (§5).
-- [ ] Scope survives session restart (resume reads the persisted entry).
-- [ ] `/kb <name> on` and `/kb all off` land mid-session.
-- [ ] Write confirmation refuse/allow verified interactively (manual by design
++ [ ] Scope survives session restart (resume reads the persisted entry).
++ [ ] `/kb <name> on` and `/kb all off` land mid-session.
++ [ ] Write confirmation refuse/allow verified interactively (manual by design
       — §10's residual list; the live gate checks here are scripted procedures,
       the rest is automated or covered by the suites above).
-- [ ] Auth breaker degrades after 3 consecutive auth failures (live): set a
++ [ ] Auth breaker degrades after 3 consecutive auth failures (live): set a
       bogus token, issue 3 read calls (each errors), then a 4th — assert it
       returns `{status: refused}` with the breaker message, not an auth error
       (the observable signature of a local refusal vs a kernel round-trip; the
@@ -915,13 +488,13 @@ Polish and the M3 gate (§11).
       (never incremented — §5's pin; never reset by 429s — inferred from §5's
       successful-call-reset rule) stays pinned by Sprint 1's unit
       AC (§5 breaker rule).
-- [ ] Write-path integration suite green (Sprint 5b).
-- [ ] Manual residual checklist started: write-confirmation allow/refuse in a
++ [ ] Write-path integration suite green (Sprint 5b).
++ [ ] Manual residual checklist started: write-confirmation allow/refuse in a
       TTY, status-slot visibility, RPC confirm sub-protocol check at first real
       RPC use (§10 residual list).
-- [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
++ [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
-- [ ] If M3 code was split into new files: `package.json` `files` updated to
++ [ ] If M3 code was split into new files: `package.json` `files` updated to
       include them (currently only `index.ts` / `settings.ts`; npm publish's
       `files` allowlist itself drops anything absent — `scripts/release.mjs`
       only stages git changes, the enforcement is npm's). Also refresh
@@ -938,37 +511,24 @@ stale-target contract pin, and real headless `/kb` dispatch.
 ## Dependencies & ordering
 
 ```text
-Sprint 1 (chassis) ──► Sprint 2 (scope + /kb) ─────────────┐
-Sprint 1 (chassis) ──► Sprint 3 (read tools) ──────────────┼──► Sprint 5b (integration)
-Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
-Sprint 2 (scope + /kb) ──► Sprint 5b (item 11's headless `/kb` dispatch)
-Sprint 2 (scope + /kb) ┄┄► Sprint 3 (item 6 bare-`/kb` toolset-state line + final AC only: live post-toggle scope)
-Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb tools write` verb)
-Sprint 2 (scope + /kb) ──► Sprint 6 (gate: /kb mid-session, breaker recovery)
-Sprint 3 (spill + outline helpers) ──► Sprint 4
-Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
-Sprint 5 (write modes) ──► Sprint 5b (integration)
+Sprints 1–3 (LANDED) ──► Sprint 4 (confirm + create) ──► Sprint 5 (write modes)
+Sprints 1–3 (LANDED) ─────────────────────────────────────┼──► Sprint 5b (integration)
+Sprint 5 (write modes) ───────────────────────────────────┘
 Sprint 5b ──► Sprint 6 (gate)
 (siyuan-kernel-api 0.3.0 already exact-pinned as of M1; its notebook-lifecycle
 and encrypted-notebook methods are exercised first by Sprint 5b's suite)
 ```
 
-Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
-surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it, and both extend Sprint 1's single
-`register(pi, deps)` seam in `index.ts` rather than editing the entry module
-independently), with two exceptions gated on Sprint
-2: S3 item 6's `/kb`-command additions (the bare-`/kb` toolset-state line and
-the `/kb tools` dispatcher — neither exists until S2 lands the `/kb` command)
-and S3's final AC (tool `kb` validation composing with the live
-post-toggle scope mid-session — it consumes S2's persisted scope and runs
-after S2 lands); the parallel split covers S3's build work itself. Sprint 5b also requires Sprint 2
-(item 11's headless `/kb` dispatch) and Sprint 3 (items 9–10's read pins, on
-top of the transitive S3 → S4 → S5 path), and the Sprint 6 gate needs Sprint 2
-for the `/kb` mid-session and live-breaker-recovery checks. Sprint 4 needs Sprint 1's chassis
-plus the spill helper **and the outline walk helper** from Sprint 3 (the
-`duplicate` guard stop returns budgeted outlines per §4, and guard-stop draft
-staging writes into the session spill dir) — sequencing S3's helpers first
-keeps the parallel split clean. Sprint 5 is **not** parallel with Sprint 4:
-every mode rides Sprint 4's confirmation gate, `writeConfirmTimeout`, file-path
-read-once capture, and `confirmNew` handling.
+Sprints 1–3 landed in sequence: the chassis first (breaker/cooldown gate —
+everything else inherits it), then `/kb` + scope persistence and the read
+tools extending the single `register(pi, deps)` seam in `index.ts`, with S3
+item 6's `/kb`-command additions and S3's final live-scope AC gated on S2
+(both since run). Sprint 4 rides the landed chassis plus the spill helper
+**and the outline walk helper** from S3 (the `duplicate` guard stop returns
+budgeted outlines per §4, and guard-stop draft staging writes into the
+session spill dir). Sprint 5 is **not** parallel with Sprint 4: every mode
+rides Sprint 4's confirmation gate, `writeConfirmTimeout`, file-path
+read-once capture, and `confirmNew` handling. Sprint 5b additionally
+consumes S2's `/kb` dispatch (item 11's headless run) and S3's read pins
+(items 9–10), and Sprint 6's gate consumes the `/kb` mid-session and
+live-breaker-recovery paths.
