@@ -757,7 +757,20 @@ export async function renderOutline(
 	tool: string,
 	rootId: string,
 ): Promise<{ outline: string; fullOutlinePath?: string }> {
-	const walk = await walkBlockTree(kernel, rootId, 1);
+	return renderOutlineFromWalk(
+		sessionId,
+		tool,
+		await walkBlockTree(kernel, rootId, 1),
+	);
+}
+
+/** Outline rendering from a walk already in hand — write flows render the
+ * result outline from the verification walk without a second traversal. */
+export function renderOutlineFromWalk(
+	sessionId: string,
+	tool: string,
+	walk: WalkedBlock[],
+): { outline: string; fullOutlinePath?: string } {
 	const headings = walk.filter((b) => b.type === "h");
 	const lines = headings.map((h) => {
 		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
@@ -780,11 +793,49 @@ export async function renderOutline(
 	return { outline: lines.join("\n") };
 }
 
-interface WalkedBlock {
+export interface WalkedBlock {
 	id: string;
 	type: string;
 	subType: string;
 	content: string;
+	/** Container depth in the walk (root's direct children = 1). Headings
+	 * are leaf blocks, so their section content sits at the heading's own
+	 * depth — depth is what keeps move-anchor derivation at section level. */
+	depth: number;
+}
+
+export interface NestedBlock extends WalkedBlock {
+	children: NestedBlock[];
+}
+
+/** getChildBlocks walk preserving container structure (§3). Headings are
+ * leaves; only real containers (lists, blockquotes, superblocks) nest. */
+export async function walkBlockTreeNested(
+	kernel: KernelReadClient,
+	rootId: string,
+	depth: number,
+): Promise<NestedBlock[]> {
+	if (depth > MAX_WALK_DEPTH) return [];
+	let children: Record<string, unknown>[];
+	try {
+		children = await kernel.getChildBlocks(rootId);
+	} catch {
+		return []; // a vanished container mid-walk ends that branch, not the doc
+	}
+	const nodes: NestedBlock[] = [];
+	for (const child of children) {
+		const node: NestedBlock = {
+			id: String(child.id),
+			type: String(child.type ?? ""),
+			subType: String(child.subType ?? ""),
+			content: String(child.content ?? ""),
+			depth,
+			children: [],
+		};
+		node.children = await walkBlockTreeNested(kernel, node.id, depth + 1);
+		nodes.push(node);
+	}
+	return nodes;
 }
 
 /** Full unfiltered getChildBlocks walk in document order. The heading filter
@@ -795,28 +846,16 @@ export async function walkBlockTree(
 	rootId: string,
 	depth: number,
 ): Promise<WalkedBlock[]> {
-	const all: WalkedBlock[] = [];
-	async function visit(id: string, level: number): Promise<void> {
-		if (level > MAX_WALK_DEPTH) return;
-		let children: Record<string, unknown>[];
-		try {
-			children = await kernel.getChildBlocks(id);
-		} catch {
-			return; // a vanished container mid-walk ends that branch, not the doc
-		}
-		for (const child of children) {
-			const block: WalkedBlock = {
-				id: String(child.id),
-				type: String(child.type ?? ""),
-				subType: String(child.subType ?? ""),
-				content: String(child.content ?? ""),
-			};
-			all.push(block);
-			await visit(block.id, level + 1);
+	const flat: WalkedBlock[] = [];
+	function flatten(nodes: NestedBlock[]): void {
+		for (const node of nodes) {
+			const { children: _children, ...block } = node;
+			flat.push(block);
+			flatten(node.children);
 		}
 	}
-	await visit(rootId, depth);
-	return all;
+	flatten(await walkBlockTreeNested(kernel, rootId, depth));
+	return flat;
 }
 
 // ---------------------------------------------------------------------------

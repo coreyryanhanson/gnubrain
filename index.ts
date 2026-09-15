@@ -5,7 +5,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Toolset } from "pi-tool-masking";
+import { defineToolset, TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
@@ -19,9 +19,13 @@ import {
 	type SessionValidation,
 } from "./validation.js";
 import { registerReadToolsAndToolset, type KernelReadClient } from "./tools.js";
+import { READ_TOOLSET_ID } from "./tools.js";
 import {
+	createContentBaselines,
 	createWriteConfirmState,
 	registerWriteTool,
+	WRITE_TOOLSET_ID,
+	WRITE_TOOLSET_PERSIST_KEY,
 	type WriteKernelClient,
 } from "./write.js";
 
@@ -29,8 +33,10 @@ import {
 // validation, scope resolution, breaker/cooldown gate, status slot. Sprint 2
 // added the /kb command (scope toggles + recovery). Sprint 3 registers the
 // read tools (kb_query / kb_search / kb_read) and the read toolset on the
-// same register(pi, deps) seam; Sprint 4 registers kb_write (write
-// confirmation gate + create flow) on the same seam.
+// same register(pi, deps) seam; Sprint 4 registered kb_write (write
+// confirmation gate + create flow); Sprint 5 declares the write toolset
+// (requires the read toolset — live-toggle cascade, §5), adds the /kb tools
+// write verb, the fresh-content baselines, and the write-modes dispatch.
 
 const STATUS_KEY = "kb";
 
@@ -67,14 +73,33 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		breaker,
 	});
 
-	// Write tool: rides the same gate + probe verdict. The confirm
-	// state is session-scoped machinery, same lifecycle class as the breaker.
+	// Write tool: rides the same gate + probe verdict. The confirm state is
+	// session-scoped machinery, same lifecycle class as the breaker; the
+	// fresh-content baselines ride the same lifecycle (§4 decision record —
+	// empty after resume/fork, the no-baseline fallback applies).
 	const confirmState = createWriteConfirmState();
+	const baselines = createContentBaselines();
 	registerWriteTool(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernelClient as WriteKernelClient | undefined,
 		breaker,
 		confirmState,
+		baselines,
+	});
+
+	// Write toolset (§5 tool-masking record): one tool, all mutation modes;
+	// requires the read toolset — enabling writes cascades reads on,
+	// disabling reads cascades writes off (live toggles only; the settings
+	// tier applies pins per-toolset without the cascade — the documented
+	// write-without-read boundary, backstopped by confirmation + headless
+	// default-deny).
+	const writeToolset: Toolset = defineToolset(pi, {
+		id: WRITE_TOOLSET_ID,
+		label: "GNUbrain KB writes",
+		names: new Set(["kb_write"]),
+		persistKey: WRITE_TOOLSET_PERSIST_KEY,
+		defaultEnabled: true,
+		requires: [READ_TOOLSET_ID],
 	});
 
 	const statusInput = (
@@ -87,10 +112,15 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// Glyph state reads live toolset state — any disabler (our toggle,
 		// toolsetDefaults pins, allowlist mode) is reflected (§5).
 		readsEnabled: readToolset.isEnabled(pi),
-		writesEnabled: false, // the write toolset lands in Sprint 5
+		writesEnabled: writeToolset.isEnabled(pi),
 	});
 
+	// Last ctx seen by a render — TOOLSET_EVENTS carry no ctx, so the glyph
+	// repaints against it (§5: /kb tools verbs recolor mid-session).
+	let lastRenderCtx: ExtensionContext | undefined;
+
 	function renderStatus(ctx: ExtensionContext) {
+		lastRenderCtx = ctx;
 		try {
 			ctx.ui.setStatus(
 				STATUS_KEY,
@@ -99,6 +129,12 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		} catch {
 			// Headless / no UI — the slot is best-effort by design (§5).
 		}
+	}
+
+	for (const event of [TOOLSET_EVENTS.changed, TOOLSET_EVENTS.restored]) {
+		pi.events.on(event, () => {
+			if (lastRenderCtx !== undefined) renderStatus(lastRenderCtx);
+		});
 	}
 
 	/** The full validation pass — shared by session_start and /kb recovery
@@ -171,17 +207,22 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				args,
 				validation,
 				[
-					// Bare `/kb` toolset-state line (§5 tool-masking record): a masked
-					// toolset is printed, never silent. Sprint 5 adds the write toolset's
-					// line alongside this one.
+					// Bare `/kb` toolset-state lines (§5 tool-masking record): a masked
+					// toolset is printed, never silent.
 					`read toolset (kb_query, kb_search, kb_read): ${
 						readToolset.isEnabled(pi)
+							? "on"
+							: "off — masked (toggle, settings pin, or external manager)"
+					}`,
+					`write toolset (kb_write): ${
+						writeToolset.isEnabled(pi)
 							? "on"
 							: "off — masked (toggle, settings pin, or external manager)"
 					}`,
 				],
 				// The /kb tools verbs are state setters over the live toolset state.
 				readToolset.isEnabled(pi),
+				writeToolset.isEnabled(pi),
 			);
 			if (result.newScope !== undefined) {
 				// §5: a complete snapshot of the active set; latest entry wins.
@@ -191,10 +232,15 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			if (result.newReadsEnabled !== undefined) {
 				if (result.newReadsEnabled) {
 					readToolset.enable(pi);
-					// Sprint 5: the write toolset is explicitly disabled here too
-					// (the portal /web on leg) once it exists.
 				} else {
-					readToolset.disable(pi); // cascades write off once it exists
+					readToolset.disable(pi); // cascades write off (requires, §5)
+				}
+			}
+			if (result.newWritesEnabled !== undefined) {
+				if (result.newWritesEnabled) {
+					writeToolset.enable(pi); // cascades reads on (requires, §5)
+				} else {
+					writeToolset.disable(pi);
 				}
 			}
 			renderStatus(ctx);
@@ -216,6 +262,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		validation = undefined;
 		kernelClient = undefined;
 		confirmState.timedOut.clear();
+		baselines.clear();
 	});
 }
 

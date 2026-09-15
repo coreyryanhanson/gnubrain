@@ -123,32 +123,89 @@ describe("dispatchKbCommand", () => {
 		expect(result.newReadsEnabled).toBeUndefined();
 	});
 
+	// /kb tools verbs are state setters over BOTH toolsets (Sprint 5). The
+	// writesEnabled arg defaults to false (tests below pass it explicitly).
 	it("/kb tools read sets the read-only state; re-issuing it is a reported no-op", () => {
-		const on = dispatchKbCommand("tools read", validation(), [], true);
+		const on = dispatchKbCommand("tools read", validation(), [], true, false);
 		expect(on.message).toContain("already read-only");
 		expect(on.newReadsEnabled).toBeUndefined();
-		const off = dispatchKbCommand("tools read", validation(), [], false);
-		expect(off.message).toContain("read toolset on");
+		expect(on.newWritesEnabled).toBeUndefined();
+		// From read+write, `read` explicitly disables writes (portal /web on).
+		const fromWrite = dispatchKbCommand(
+			"tools read",
+			validation(),
+			[],
+			true,
+			true,
+		);
+		expect(fromWrite.message).toContain("read-only");
+		expect(fromWrite.newReadsEnabled).toBe(true);
+		expect(fromWrite.newWritesEnabled).toBe(false);
+		const off = dispatchKbCommand("tools read", validation(), [], false, false);
+		expect(off.message).toContain("read-only");
 		expect(off.newReadsEnabled).toBe(true);
+		expect(off.newWritesEnabled).toBe(false);
 	});
 
-	it("/kb tools off masks the read toolset; re-issuing it is a reported no-op", () => {
-		const on = dispatchKbCommand("tools off", validation(), [], true);
-		expect(on.message).toContain("read toolset masked");
+	it("/kb tools write targets read+write; enabling cascades reads on (§5)", () => {
+		const fromRead = dispatchKbCommand(
+			"tools write",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(fromRead.message).toContain("read+write");
+		expect(fromRead.newReadsEnabled).toBe(true);
+		expect(fromRead.newWritesEnabled).toBe(true);
+		const fromOff = dispatchKbCommand(
+			"tools write",
+			validation(),
+			[],
+			false,
+			false,
+		);
+		expect(fromOff.newReadsEnabled).toBe(true);
+		expect(fromOff.newWritesEnabled).toBe(true);
+		const noop = dispatchKbCommand("tools write", validation(), [], true, true);
+		expect(noop.message).toContain("already read+write");
+		expect(noop.newReadsEnabled).toBeUndefined();
+		expect(noop.newWritesEnabled).toBeUndefined();
+	});
+
+	it("/kb tools off masks both toolsets; re-issuing it is a reported no-op", () => {
+		const on = dispatchKbCommand("tools off", validation(), [], true, true);
+		expect(on.message).toContain("all kb toolsets masked");
 		expect(on.newReadsEnabled).toBe(false);
-		const off = dispatchKbCommand("tools off", validation(), [], false);
+		expect(on.newWritesEnabled).toBe(false);
+		const partial = dispatchKbCommand(
+			"tools off",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(partial.newReadsEnabled).toBe(false);
+		expect(partial.newWritesEnabled).toBe(false);
+		const off = dispatchKbCommand("tools off", validation(), [], false, false);
 		expect(off.message).toContain("already off");
 		expect(off.newReadsEnabled).toBeUndefined();
+		expect(off.newWritesEnabled).toBeUndefined();
 	});
 
 	it("/kb tools with an unknown verb prints tool usage", () => {
-		const write = dispatchKbCommand("tools write", validation(), [], false);
-		expect(write.severity).toBe("error");
-		expect(write.message).toContain("usage: /kb tools");
-		expect(write.newReadsEnabled).toBeUndefined();
-		const junk = dispatchKbCommand("tools read extra", validation(), [], true);
+		const junk = dispatchKbCommand("tools junk", validation(), [], true, false);
 		expect(junk.severity).toBe("error");
 		expect(junk.message).toContain("usage: /kb tools");
+		const extra = dispatchKbCommand(
+			"tools read extra",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(extra.severity).toBe("error");
+		expect(extra.message).toContain("usage: /kb tools");
 	});
 
 	it("a KB named 'writes' is no longer reserved and resolves as a KB name", () => {

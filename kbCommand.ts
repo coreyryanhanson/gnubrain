@@ -12,28 +12,33 @@ export interface KbCommandResult {
 	severity: "info" | "warning" | "error";
 	/** Defined only on an actual scope change — the full post-toggle snapshot. */
 	newScope: string[] | undefined;
-	/** Defined only on an actual toolset change — the read toolset's target
-	 * state (the /kb tools verbs are state setters, not toggles). */
+	/** Defined only on an actual toolset change — the target states (the
+	 * /kb tools verbs are state setters, not toggles). */
 	newReadsEnabled: boolean | undefined;
+	newWritesEnabled: boolean | undefined;
 }
 
 const USAGE =
-	"usage: /kb — print scope; /kb <name> on|off — toggle a KB; /kb all on|off — toggle the whole valid set; /kb tools [read|off] — set the tool state";
+	"usage: /kb — print scope; /kb <name> on|off — toggle a KB; /kb all on|off — toggle the whole valid set; /kb tools [read|write|off] — set the tool state";
 const TOOLS_USAGE =
-	"usage: /kb tools — print tool state; /kb tools read — read tools only; /kb tools off — all kb tools off";
+	"usage: /kb tools — print tool state; /kb tools read — read tools only; /kb tools write — read + write; /kb tools off — all kb tools off";
 
 // No scope or toolset change — every read-only / no-op return shares this.
-const NO_CHANGE = { newScope: undefined, newReadsEnabled: undefined } as const;
+const NO_CHANGE = {
+	newScope: undefined,
+	newReadsEnabled: undefined,
+	newWritesEnabled: undefined,
+} as const;
 
 export function dispatchKbCommand(
 	args: string,
 	validation: SessionValidation,
 	/** Bare `/kb` appends one toolset-state line per registered toolset
-	 * (§5 tool-masking record — a masked toolset is printed, never silent).
-	 * Sprint 3 passes the read toolset's line; Sprint 5 adds the write one. */
+	 * (§5 tool-masking record — a masked toolset is printed, never silent). */
 	toolsetLines: string[] = [],
-	/** Live read-toolset state — the /kb tools verbs are state setters over it. */
+	/** Live toolset state — the /kb tools verbs are state setters over it. */
 	readsEnabled = true,
+	writesEnabled = false,
 ): KbCommandResult {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) {
@@ -44,7 +49,12 @@ export function dispatchKbCommand(
 		};
 	}
 	if (parts[0] === "tools") {
-		return dispatchTools(parts.slice(1), readsEnabled, toolsetLines);
+		return dispatchTools(
+			parts.slice(1),
+			readsEnabled,
+			writesEnabled,
+			toolsetLines,
+		);
 	}
 	if (parts.length !== 2 || (parts[1] !== "on" && parts[1] !== "off")) {
 		return {
@@ -52,6 +62,7 @@ export function dispatchKbCommand(
 			severity: "error",
 			newScope: undefined,
 			newReadsEnabled: undefined,
+			newWritesEnabled: undefined,
 		};
 	}
 	const [name, verb] = parts as [string, "on" | "off"];
@@ -66,6 +77,7 @@ export function dispatchKbCommand(
 				severity: "warning",
 				newScope: undefined,
 				newReadsEnabled: undefined,
+				newWritesEnabled: undefined,
 			};
 		}
 		return applyScope(turningOn ? fullSet : [], validation);
@@ -78,6 +90,7 @@ export function dispatchKbCommand(
 			severity: "error",
 			newScope: undefined,
 			newReadsEnabled: undefined,
+			newWritesEnabled: undefined,
 		};
 	}
 	let target: string[];
@@ -93,47 +106,60 @@ export function dispatchKbCommand(
 
 // /kb tools — state-setter verbs per the portal /web precedent: each verb
 // targets an absolute end state, so re-issuing one is a reported no-op and
-// there is exactly one command per state. (The write-disable leg of `read`
-// and the `write` verb activate with the write toolset.)
+// there is exactly one command per state. `write` targets read+write (the
+// requires-cascade pulls reads on with it, §5); `read` targets read-only
+// (an explicit write disable — the portal /web on precedent); `off` masks
+// both.
 function dispatchTools(
 	verbs: string[],
 	readsEnabled: boolean,
+	writesEnabled: boolean,
 	toolsetLines: string[],
 ): KbCommandResult {
 	if (verbs.length === 0) {
 		const state =
 			toolsetLines.length > 0
 				? toolsetLines.join("\n")
-				: `kb tools: read toolset ${readsEnabled ? "on" : "off"}`; // ponytail: 2-level ternary, splits worse than it reads
+				: `kb tools: read toolset ${readsEnabled ? "on" : "off"}, write toolset ${writesEnabled ? "on" : "off"}`; // ponytail: 2-level ternary, splits worse than it reads
 		return { ...NO_CHANGE, message: state, severity: "info" };
 	}
 	const verb = verbs[0];
-	if (verbs.length > 1 || (verb !== "read" && verb !== "off")) {
+	if (
+		verbs.length > 1 ||
+		(verb !== "read" && verb !== "write" && verb !== "off")
+	) {
 		return { ...NO_CHANGE, message: TOOLS_USAGE, severity: "error" };
 	}
-	if (verb === "read") {
-		if (readsEnabled) {
-			return {
-				...NO_CHANGE,
-				message: "kb tools already read-only",
-				severity: "info",
-			};
-		}
+	const target =
+		verb === "write"
+			? { reads: true, writes: true }
+			: verb === "read"
+				? { reads: true, writes: false }
+				: { reads: false, writes: false }; // ponytail: 3-way ternary, splits worse than it reads
+	if (readsEnabled === target.reads && writesEnabled === target.writes) {
 		return {
-			message: "kb tools read-only — read toolset on (/kb tools off re-masks)",
+			...NO_CHANGE,
+			message:
+				verb === "write"
+					? "kb tools already read+write"
+					: verb === "read"
+						? "kb tools already read-only"
+						: "kb tools already off",
 			severity: "info",
-			newScope: undefined,
-			newReadsEnabled: true,
 		};
 	}
-	if (!readsEnabled) {
-		return { ...NO_CHANGE, message: "kb tools already off", severity: "info" };
-	}
+	const message =
+		verb === "write"
+			? "kb tools read+write — write toolset on (reads cascaded on)"
+			: verb === "read"
+				? "kb tools read-only — write toolset masked (/kb tools write re-enables)"
+				: "kb tools off — all kb toolsets masked (/kb tools read|write re-enables)";
 	return {
-		message: "kb tools off — read toolset masked (/kb tools read re-enables)",
+		message,
 		severity: "info",
 		newScope: undefined,
-		newReadsEnabled: false,
+		newReadsEnabled: target.reads,
+		newWritesEnabled: target.writes,
 	};
 }
 
@@ -154,6 +180,7 @@ function applyScope(
 		severity: "info",
 		newScope: target,
 		newReadsEnabled: undefined,
+		newWritesEnabled: undefined,
 	};
 }
 

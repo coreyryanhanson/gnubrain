@@ -38,7 +38,7 @@ function fakePi() {
 		setActiveTools(names: string[]) {
 			active = [...names];
 		},
-		events: { emit: () => {} },
+		events: { emit: () => {}, on: () => {} },
 		appendEntry(customType: string, data?: unknown) {
 			entries.push({ type: "custom", customType, data });
 		},
@@ -278,19 +278,19 @@ describe("index wiring", () => {
 	});
 });
 
-describe("read toolset wiring (Sprint 3)", () => {
-	it("registers the kb tools as active-by-default tools (read toolset + kb_write)", () => {
+describe("read + write toolset wiring (Sprint 3/5)", () => {
+	it("registers the kb tools as active-by-default tools (read + write toolsets)", () => {
 		const { pi, tools } = fakePi();
 		register(pi, deps());
 		expect(tools.map((t) => t.name)).toEqual([
 			"kb_query",
 			"kb_search",
 			"kb_read",
-			"kb_write", // unmased until Sprint 5's write toolset declares it
+			"kb_write",
 		]);
 	});
 
-	it("bare /kb prints the read toolset-state line", async () => {
+	it("bare /kb prints both toolset-state lines", async () => {
 		const { pi, fire, runCommand } = fakePi();
 		register(pi, deps());
 		const { ctx, notifications } = fakeCtx();
@@ -300,27 +300,39 @@ describe("read toolset wiring (Sprint 3)", () => {
 		expect(printed).toContain(
 			"read toolset (kb_query, kb_search, kb_read): on",
 		);
+		expect(printed).toContain("write toolset (kb_write): on");
 	});
 
-	it("/kb tools off masks the read toolset; kb_write stays (write toolset lands in Sprint 5)", async () => {
+	it("/kb tools write targets read+write (cascade); /kb tools read lands read-only; /kb tools off masks both", async () => {
 		const { pi, fire, runCommand } = fakePi();
 		register(pi, deps());
 		const { ctx, notifications, statuses } = fakeCtx();
 		await fire("session_start", ctx);
-		await runCommand("tools off", ctx);
-		expect(pi.getActiveTools()).toEqual(["kb_write"]);
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
-		await runCommand("tools read", ctx);
-		expect(pi.getActiveTools()).toEqual([
-			"kb_write",
+		await runCommand("tools write", ctx);
+		expect([...pi.getActiveTools()].sort()).toEqual([
 			"kb_query",
-			"kb_search",
 			"kb_read",
+			"kb_search",
+			"kb_write",
 		]);
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
-		// State-setter idempotence: re-issuing the verb is a reported no-op.
 		await runCommand("tools read", ctx);
-		expect(notifications.at(-1)?.[0]).toContain("already read-only");
+		expect([...pi.getActiveTools()].sort()).toEqual([
+			"kb_query",
+			"kb_read",
+			"kb_search",
+		]);
+		expect(notifications.at(-1)?.[0]).toContain("read-only");
+		await runCommand("tools off", ctx);
+		expect(pi.getActiveTools()).toEqual([]);
+		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		await runCommand("tools write", ctx);
+		expect([...pi.getActiveTools()].sort()).toEqual([
+			"kb_query",
+			"kb_read",
+			"kb_search",
+			"kb_write",
+		]);
 	});
 
 	it("a masked read toolset turns the healthy slot hollow and prints the absence", async () => {

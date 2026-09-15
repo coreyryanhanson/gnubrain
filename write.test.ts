@@ -45,23 +45,60 @@ interface StubConfig {
 	parentRows?: Record<string, unknown>[];
 	createdRows?: Record<string, unknown>[];
 	children?: Record<string, unknown>[];
+	/** Non-create modes: ownership + echo + block reads + refs. */
+	ownedRootRows?: Record<string, unknown>[];
+	rootRows?: Record<string, unknown>[];
+	blockRows?: Record<string, unknown>[];
+	contentRows?: Record<string, unknown>[];
+	refRows?: Record<string, unknown>[];
+	hpathRows?: Record<string, unknown>[];
+	parentDocRows?: Record<string, unknown>[];
+	/** docId → root row (ownership + echo routes discriminate by id). */
+	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
+	/** docId → child-block rows (walks discriminate by doc). */
+	childrenFor?: Record<string, Record<string, unknown>[] | undefined>;
 	onCreate?: () => void;
+	onInsert?: () => void;
 }
 
 /** Kernel stub with a SQL router: guard legs vs parent lookup vs the
- * verified-create read, plus a create-call log. */
+ * verified-create read, plus a create-call log. Sprint 5 adds the
+ * block-write methods and the mode-flow routes (ownership, root echo,
+ * block-in-doc, content re-check, refs). */
 /** Kernel stub with a SQL router: guard legs vs parent lookup vs the
  * verified-create read, plus a create-call log. Verified rows default to a
  * well-formed minted row unless the test pins the read (empty array =
  * missing row → fail-loud). */
 function writeKernelStub(config: StubConfig = {}) {
 	const calls: { method: string; args: unknown }[] = [];
+	const mintedId = "b-new";
+	const tx = [{ doOperations: [{ id: mintedId }] }];
+	const docRoots: StubConfig["docRoots"] = config.docRoots ?? {
+		"d-doc": { content: "Docker Networking", hpath: "/Docker Networking" },
+	};
+	const stmtDocId = (stmt: string): string | undefined =>
+		/id = '([^']+)'/.exec(stmt)?.[1];
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => "3.8.3",
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
+			if (stmt.includes("FROM refs")) return config.refRows ?? [];
+			if (stmt.includes("root_id IN")) return config.hpathRows ?? [];
+			if (stmt.includes("WHERE id IN")) return config.contentRows ?? [];
+			if (stmt.includes("AND root_id =")) return config.blockRows ?? [];
+			if (stmt.includes("SELECT parent_id")) return config.parentDocRows ?? [];
+			if (
+				stmt.includes("SELECT root_id, content, hpath") ||
+				stmt.includes("SELECT root_id FROM blocks")
+			) {
+				const docId = stmtDocId(stmt);
+				const root = docId === undefined ? undefined : docRoots[docId];
+				return root === undefined
+					? []
+					: [{ root_id: docId, content: root.content, hpath: root.hpath }];
+			}
 			if (stmt.includes(" OR content LIKE")) return config.nearRows ?? [];
 			if (stmt.includes("LIKE")) return config.exactRows ?? [];
 			if (stmt.includes("SELECT id, hpath, content FROM blocks")) {
@@ -91,6 +128,8 @@ function writeKernelStub(config: StubConfig = {}) {
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
+			const scoped = config.childrenFor?.[id];
+			if (scoped !== undefined) return scoped;
 			return (
 				config.children ?? [
 					{ id: "h1", type: "h", subType: "h1", content: "Heading" },
@@ -102,8 +141,38 @@ function writeKernelStub(config: StubConfig = {}) {
 			config.onCreate?.();
 			return "d-new";
 		},
+		async updateBlock(params) {
+			calls.push({ method: "updateBlock", args: params });
+			return tx;
+		},
+		async insertBlock(params) {
+			calls.push({ method: "insertBlock", args: params });
+			config.onInsert?.();
+			return tx;
+		},
+		async appendBlock(params) {
+			calls.push({ method: "appendBlock", args: params });
+			config.onInsert?.();
+			return tx;
+		},
+		async deleteBlock(id) {
+			calls.push({ method: "deleteBlock", args: id });
+			return tx;
+		},
+		async moveBlock(params) {
+			calls.push({ method: "moveBlock", args: params });
+			return null;
+		},
+		async removeDocByID(id) {
+			calls.push({ method: "removeDocByID", args: id });
+			return null;
+		},
+		async moveDocsByID(params) {
+			calls.push({ method: "moveDocsByID", args: params });
+			return null;
+		},
 	};
-	return { calls, client };
+	return { calls, client, mintedId };
 }
 
 type Exec = (params: Record<string, unknown>) => Promise<{
