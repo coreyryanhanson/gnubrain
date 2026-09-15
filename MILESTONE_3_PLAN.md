@@ -32,6 +32,11 @@ Design references below are §-sections of DESIGN_v2.md. Every sprint ends green
 ## Sprint 1 — Session chassis (validation, scope resolution, resilience, envelope)
 
 The machinery every tool call routes through. No tools registered yet.
+Also lands the single registration/dispatch seam in `index.ts` — one
+`register(pi, deps)` entry that Sprint 2's `/kb` command and Sprint 3's
+toolset registration both extend — so the parallel S2/S3 work never
+rewrites the entry module concurrently (the S3-item-6 bare-`/kb`
+toolset-state line stays explicitly gated on Sprint 2).
 
 1. **Startup validation pipeline (§5 validation order)** — steps 2–3; the
    core step-1 shape check incl. the global-file `defaultKBs`-against-`kbs`
@@ -159,7 +164,10 @@ The machinery every tool call routes through. No tools registered yet.
       retry; degraded-session read errors; post-recovery read succeeds with no
       recovery step (reads bypass the cached unreachable verdict, §5).
 - [ ] Unit: breaker — 3 consecutive auth failures → degraded, request log shows
-      zero further kernel calls; recovery clears it; 429 → no breaker increment,
+      zero further kernel calls; recovery clears it; a successful
+      authenticated call between failures resets the consecutive count
+      (2 fail → success → 2 fail does not trip — §5's reset-on-success rule);
+      429 → no breaker increment,
       no retry, local cooldown refusal with zero kernel round-trips carrying
       the §5-pinned message content (lockout, cause, self-healing expiry with
       the served `Retry-After`, do-not-change-token / do-not-retry guidance),
@@ -392,7 +400,10 @@ confirmation gate and the `create` flow end to end. Registered name
    `setTimeout(() => controller.abort(), writeConfirmTimeout * 1000)` (no timer when `0`),
    passed as `ctx.ui.confirm(title, msg, { signal: controller.signal })`; the native dialog
    auto-dismisses on abort, and `controller.signal.aborted` distinguishes a real timeout
-   from an explicit decline (pi's documented pattern — `examples/extensions/timed-confirm.ts`):
+   from an explicit decline (pi's documented pattern — `examples/extensions/timed-confirm.ts`);
+   that `signal` options-bag is load-bearing for the terminal-timeout rule, so
+   smoke-verify `ctx.ui.confirm`'s signature against the installed pi types
+   before Sprint 4 starts (same posture as S3's pi-tool-masking verification):
    `confirm_timeout` only when the signal fired, never inferring timeout from a `false`
    resolution.
 2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
@@ -452,7 +463,9 @@ confirmation gate and the `create` flow end to end. Registered name
       skipped per item 1).
 - [ ] Unit: file-path input — missing file → error, zero kernel calls (request
       log); read-once capture under mid-flow file mutation; XOR shape
-      validation (§10).
+      validation on a content-bearing mode (create here; the
+      edit/replace-section/append legs land with Sprint 5's modes —
+      body-less `delete`/`move` carry neither and are valid) (§10).
 - [ ] Unit: create-success echo — doc-level create results carry root `docId`,
       stored title, real `hpath`, fresh `outline` (§4 R3 step 5; the full
       write-result contract generalizes this in Sprint 5 item 2).
@@ -630,7 +643,9 @@ raw-DELETE case like the rest.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
-   titles store verbatim + expected hpath; kernel `renameDocByID` mid-test re-finds
+   titles — leading/trailing-space-trimmed, Unicode, and the exactly-512-rune
+   boundary — store verbatim + expected hpath (the live pin for §4's superset
+   claim); kernel `renameDocByID` mid-test re-finds
    by new stored title).
 2. **Nested-mint + duplicate-disambiguation cases** — nested create → echo →
    read → guard on re-create; stale-parent fail-loud; `duplicate` rows with
@@ -807,7 +822,9 @@ and encrypted-notebook methods are exercised first by Sprint 5b's suite)
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
 surfaces; both touch the dispatch point, so the breaker/cooldown gate lands in
-Sprint 1 and everything else inherits it), with two exceptions gated on Sprint
+Sprint 1 and everything else inherits it, and both extend Sprint 1's single
+`register(pi, deps)` seam in `index.ts` rather than editing the entry module
+independently), with two exceptions gated on Sprint
 2: S3 item 6's bare-`/kb` toolset-state line (bare `/kb` output doesn't exist
 until S2) and S3's final AC (tool `kb` validation composing with the live
 post-toggle scope mid-session — it consumes S2's persisted scope and runs
