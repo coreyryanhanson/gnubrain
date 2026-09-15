@@ -19,11 +19,15 @@ const USAGE =
 export function dispatchKbCommand(
 	args: string,
 	validation: SessionValidation,
+	/** Bare `/kb` appends one toolset-state line per registered toolset
+	 * (§5 tool-masking record — a masked toolset is printed, never silent).
+	 * Sprint 3 passes the read toolset's line; Sprint 5 adds the write one. */
+	toolsetLines: string[] = [],
 ): KbCommandResult {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) {
 		return {
-			message: scopeSummary(validation),
+			message: scopeSummary(validation, toolsetLines),
 			severity: "info",
 			newScope: undefined,
 		};
@@ -82,7 +86,10 @@ function applyScope(
 	};
 }
 
-function scopeSummary(validation: SessionValidation): string {
+function scopeSummary(
+	validation: SessionValidation,
+	toolsetLines: string[],
+): string {
 	const lines = [`scope: ${scopeList(validation)}`];
 	const available = (validation.settings?.kbs ?? [])
 		.map((kb) => kb.name)
@@ -90,6 +97,7 @@ function scopeSummary(validation: SessionValidation): string {
 	if (available.length > 0) {
 		lines.push(`available but off: ${available.join(", ")}`);
 	}
+	lines.push(...toolsetLines);
 	return lines.join("\n");
 }
 

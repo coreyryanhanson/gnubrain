@@ -5,15 +5,21 @@ import register, { type GnubrainDeps } from "./index.js";
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
 function fakePi() {
-	const handlers = new Map<string, Handler>();
+	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<
 		string,
 		{ handler: (args: string, ctx: unknown) => Promise<void> | void }
 	>();
 	const entries: { type: string; customType?: string; data?: unknown }[] = [];
+	const tools: { name: string }[] = [];
+	// pi semantics: registered tools are active by default; masking rewrites
+	// this set via setActiveTools.
+	let active: string[] = [];
 	const pi = {
 		on(event: string, handler: Handler) {
-			handlers.set(event, handler);
+			const list = handlers.get(event) ?? [];
+			list.push(handler);
+			handlers.set(event, list);
 		},
 		registerCommand(
 			name: string,
@@ -23,16 +29,28 @@ function fakePi() {
 		) {
 			commands.set(name, options);
 		},
+		registerTool(tool: { name: string }) {
+			tools.push({ name: tool.name });
+			active = [...active, tool.name];
+		},
+		getAllTools: () => tools as never,
+		getActiveTools: () => [...active],
+		setActiveTools(names: string[]) {
+			active = [...names];
+		},
+		events: { emit: () => {} },
 		appendEntry(customType: string, data?: unknown) {
 			entries.push({ type: "custom", customType, data });
 		},
 	};
 	return {
 		pi: pi as unknown as Parameters<typeof register>[0],
-		fire: (event: string, ctx: unknown) => handlers.get(event)?.(event, ctx),
+		fire: (event: string, ctx: unknown) =>
+			Promise.all((handlers.get(event) ?? []).map((h) => h(event, ctx))),
 		runCommand: async (args: string, ctx: unknown) =>
 			await commands.get("kb")?.handler(args, ctx),
 		entries,
+		tools,
 	};
 }
 
@@ -56,6 +74,8 @@ function fakeCtx(options?: {
 			cwd: options?.cwd ?? "/project",
 			sessionManager: {
 				getEntries: () => options?.entries ?? [],
+				getBranch: () => options?.entries ?? [],
+				getSessionId: () => "test-session",
 			},
 		},
 		statuses,
@@ -121,7 +141,7 @@ describe("index wiring", () => {
 		await fire("session_start", ctx);
 		expect(d.notebooks()).toBe(1);
 		expect(statuses.at(-1)?.[0]).toBe("kb");
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
 	});
 
 	it("session_start picks up the persisted kb-scope snapshot over defaultKBs", async () => {
@@ -133,7 +153,7 @@ describe("index wiring", () => {
 			],
 		});
 		await fire("session_start", ctx);
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: (none)");
+		expect(statuses.at(-1)?.[1]).toBe("● kb: (none)");
 	});
 
 	it("a shape failure degrades the session and the slot shows the config tag", async () => {
@@ -153,7 +173,7 @@ describe("index wiring", () => {
 		await fire("session_start", ctx);
 		statuses.length = 0;
 		await fire("session_tree", ctx);
-		expect(statuses).toEqual([["kb", "○ kb: dev"]]);
+		expect(statuses).toEqual([["kb", "● kb: dev"]]);
 		await fire("session_shutdown", ctx);
 		expect(statuses.at(-1)).toEqual(["kb", undefined]);
 	});
@@ -169,7 +189,7 @@ describe("index wiring", () => {
 			customType: "kb-scope",
 			data: { active: [] },
 		});
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: (none)");
+		expect(statuses.at(-1)?.[1]).toBe("● kb: (none)");
 		expect(notifications.at(-1)?.[0]).toContain("scope: (none)");
 	});
 
@@ -213,7 +233,7 @@ describe("index wiring", () => {
 		await runCommand("dev off", ctx);
 		// The re-check succeeded: toggle applied, snapshot persisted.
 		expect(entries.at(-1)?.data).toEqual({ active: [] });
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: (none)");
+		expect(statuses.at(-1)?.[1]).toBe("● kb: (none)");
 		expect(notifications.at(-1)?.[0]).toContain("scope: (none)");
 	});
 
@@ -227,7 +247,7 @@ describe("index wiring", () => {
 		await runCommand("all on", ctx);
 		expect(d.notebooks()).toBe(callsAfterStart + 1); // exactly one re-check
 		expect(notifications.at(-1)?.[1]).toBe("warning");
-		expect(statuses.at(-1)?.[1]).not.toBe("○ kb: dev");
+		expect(statuses.at(-1)?.[1]).not.toBe("● kb: dev");
 	});
 
 	it("a corrected apiToken takes effect on the next /kb dispatch", async () => {
@@ -254,6 +274,46 @@ describe("index wiring", () => {
 		authError = undefined; // the token is fixed
 		await runCommand("all on", ctx);
 		// The re-check cleared the breaker and the empty valid set.
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+	});
+});
+
+describe("read toolset wiring (Sprint 3)", () => {
+	it("registers the three kb_ read tools as active-by-default tools", () => {
+		const { pi, tools } = fakePi();
+		register(pi, deps());
+		expect(tools.map((t) => t.name)).toEqual([
+			"kb_query",
+			"kb_search",
+			"kb_read",
+		]);
+	});
+
+	it("bare /kb prints the read toolset-state line", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		register(pi, deps());
+		const { ctx, notifications } = fakeCtx();
+		await fire("session_start", ctx);
+		await runCommand("", ctx);
+		const printed = notifications.at(-1)?.[0] ?? "";
+		expect(printed).toContain(
+			"read toolset (kb_query, kb_search, kb_read): on",
+		);
+	});
+
+	it("a masked read toolset turns the healthy slot hollow and prints the absence", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		register(pi, deps());
+		const { ctx, statuses, notifications } = fakeCtx();
+		await fire("session_start", ctx);
+		// Any disabler (toolsetDefaults pin, allowlist mode, external manager)
+		// shows up as removed active tools (§5 glyph reads live state).
+		pi.setActiveTools([]);
+		await fire("session_tree", ctx);
 		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		await runCommand("", ctx);
+		expect(notifications.at(-1)?.[0]).toContain(
+			"read toolset (kb_query, kb_search, kb_read): off",
+		);
 	});
 });

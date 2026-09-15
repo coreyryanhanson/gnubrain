@@ -5,6 +5,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { Toolset } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
@@ -17,11 +18,13 @@ import {
 	type KernelProbeClient,
 	type SessionValidation,
 } from "./validation.js";
+import { registerReadToolsAndToolset, type KernelReadClient } from "./tools.js";
 
 // Sprint 1 chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot. Sprint 2
-// adds the /kb command (scope toggles + recovery) on the same register(pi,
-// deps) seam; tools arrive in Sprint 3.
+// added the /kb command (scope toggles + recovery). Sprint 3 registers the
+// read tools (kb_query / kb_search / kb_read) and the read toolset on the
+// same register(pi, deps) seam; the write tool arrives in Sprint 4.
 
 const STATUS_KEY = "kb";
 
@@ -46,6 +49,16 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// Session-scoped state; "never-probed" until session_start validation runs.
 	let validation: SessionValidation | undefined;
 	const breaker = new CircuitBreaker();
+	// Kernel client built from the freshest settings on every validation pass.
+	let kernelClient: KernelProbeClient | undefined;
+
+	// Read tools + toolset (Sprint 3): the hooks read the live closure state,
+	// so masking and post-toggle scope compose mid-session (§5).
+	const readToolset: Toolset = registerReadToolsAndToolset(pi, {
+		getValidation: () => validation,
+		getKernel: () => kernelClient as KernelReadClient | undefined,
+		breaker,
+	});
 
 	const statusInput = (
 		validation: SessionValidation | undefined,
@@ -54,10 +67,10 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		shapeErrors: validation?.shapeErrors ?? [],
 		breakerTripped: breaker.tripped,
 		scope: validation?.scope ?? [],
-		// Sprint 1: no toolsets registered yet — hollow. Sprints 3/5 wire the
-		// live read/write toolset state into these flags.
-		readsEnabled: false,
-		writesEnabled: false,
+		// Glyph state reads live toolset state — any disabler (our toggle,
+		// toolsetDefaults pins, allowlist mode) is reflected (§5).
+		readsEnabled: readToolset.isEnabled(pi),
+		writesEnabled: false, // the write toolset lands in Sprint 5
 	});
 
 	function renderStatus(ctx: ExtensionContext) {
@@ -87,6 +100,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 						loaded.global.settings.apiToken,
 					)
 				: undefined;
+		if (kernel !== undefined) kernelClient = kernel;
 		// A kernel stub is only needed past shape validation; when the shape
 		// failed the pipeline skips the network steps regardless.
 		const persisted = latestPersistedScope(ctx.sessionManager.getEntries());
@@ -136,7 +150,16 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				// The 429 cooldown is deliberately untouched — it self-heals.
 				breaker.reset();
 			}
-			const result = dispatchKbCommand(args, validation);
+			const result = dispatchKbCommand(args, validation, [
+				// Bare `/kb` toolset-state line (§5 tool-masking record): a masked
+				// toolset is printed, never silent. Sprint 5 adds the write toolset's
+				// line alongside this one.
+				`read toolset (kb_query, kb_search, kb_read): ${
+					readToolset.isEnabled(pi)
+						? "on"
+						: "off — masked (toggle, settings pin, or external manager)"
+				}`,
+			]);
 			if (result.newScope !== undefined) {
 				// §5: a complete snapshot of the active set; latest entry wins.
 				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
@@ -159,6 +182,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			// Headless — nothing to clear.
 		}
 		validation = undefined;
+		kernelClient = undefined;
 	});
 }
 
