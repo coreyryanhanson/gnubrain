@@ -501,7 +501,7 @@ describe("read tool", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Toolset + tool descriptions + degraded-session clause (item 6)
+// Toolset + tool descriptions + degraded-session clause
 // ---------------------------------------------------------------------------
 
 import {
@@ -644,7 +644,7 @@ function ctx2(sessionId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// `kbs` discovery name (item 7)
+// `kbs` discovery name
 // ---------------------------------------------------------------------------
 
 describe('kbs discovery (kb_read kb: "kbs")', () => {

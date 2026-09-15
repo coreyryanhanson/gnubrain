@@ -590,7 +590,7 @@ const MAX_WALK_DEPTH = 32;
 const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
 
 /**
- * The `kbs` discovery form (item 7): `kb_read` with `kb: "kbs"` returns
+ * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns
  * the active KB set without touching the kernel. The echoed `kb: "kbs"` is a
  * reserved marker, not a real KB — a deliberate exception to the
  * success-echo contract; the payload rides in `names`. The marker is
@@ -620,7 +620,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					"KB name the doc belongs to — must be in the active scope, or the reserved discovery name 'kbs' to list active KBs",
 			}),
 			// Optional so the kb: "kbs" discovery form passes schema validation;
-			// a real read with no docId is refused inside the gated op (item 7).
+			// a real read with no docId is refused inside the gated op.
 			docId: Type.Optional(
 				Type.String({
 					description:
@@ -644,7 +644,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// → breaker → cooldown and cannot stop between them, and
 			// runKbCall's success path would reset the breaker counter. The
 			// shape check is a deliberate duplicate of guardCall's first check —
-			// kept a one-liner so the two cannot drift (item 7).
+			// kept a one-liner so the two cannot drift.
 			if (params.kb === "kbs") {
 				if (validation.shapeErrors.length > 0) {
 					return textResult(configRefusalEnvelope(validation.shapeErrors));
