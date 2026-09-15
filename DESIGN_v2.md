@@ -155,7 +155,9 @@ Curated pi tools (one set, not per-KB):
    never used — the block-ID outline and spill design presuppose GFM. **Addressing
    (decision record, R2; full record §4): `read` takes `kb` (one name) + `docId`** — an
    echoed target, never invented by the agent; read-by-name does not exist, and the
-   ownership query doubles as the scoping check. On success the tool returns the doc
+   ownership query doubles as the scoping check. (`docId` is schema-optional solely for
+   the §5 `kbs` discovery form; a read without it is refused, not resolved by name.)
+   On success the tool returns the doc
    body (spill budget below) plus the outline ride-along (below); the recall loop is
    `search/query → read {kb, docId}` (§4).
 4. **write-back** — create/update/reconcile distilled knowledge in KB notebooks
@@ -1426,7 +1428,9 @@ writes; the opt-out is typed, in settings.
   flat regardless of KB count. **`read` takes exactly one KB name plus a `docId` (the §4
   doctrine — read consumes echoed docIds; the single ownership query doubles as the
   scoping check) — it fetches one doc, so the array form exists only for the multi-scope
-  sweep tools (query/search).**
+  sweep tools (query/search). `docId` is declared optional in the schema solely so the
+  `kbs` discovery form and the missing-docId refusal are reachable; any real read
+  still demands it (§5 discovery-name record).**
 - **`kb` param contract (decision record)**: `kb` is **required on every tool call**.
   Read tools (`query`/`search`) accept an **array of names** — one call covers multi-KB
   sweeps, and the extension deterministically builds the `box IN (...)` predicate from it
@@ -1438,10 +1442,14 @@ writes; the opt-out is typed, in settings.
   - **Discovery name (decision record)**: the reserved name `kbs` (settings-level
     reservation alongside `all`/`tools`) is the sanctioned discovery form — calling
     `kb_read` with `kb: "kbs"` returns the active KB set without touching the kernel
-    (empty set included, with the activation hint); the short-circuit lives in the
+    (empty set included, with the activation hint). `docId` is optional on `kb_read`;
+    a valid-`kb` call without it is refused with guidance — doc listing and KB
+    aggregates stay `kb_query`'s surface, and a lost-docId call must fail loud, never
+    masquerade as a successful read. The short-circuit lives in the
     `kb_read` handler after the session-validation guard and the shape-error refusal
     (a shape-degraded session still rejects every call), so breaker/429-cooldown state
-    never blocks it. Only `kb_read` carries the form: `kbs` passed to `kb_query`,
+    never blocks it; the echoed `kb: "kbs"` is a reserved marker, not a real KB (the
+    payload rides in `names`). Only `kb_read` carries the form: `kbs` passed to `kb_query`,
     `kb_search`, or `kb_write` gets the plain unknown-KB rejection below, which names
     the active set and is the rejection-message discovery path (the fallback) —
     a KB named `kbs` can never exist in settings.

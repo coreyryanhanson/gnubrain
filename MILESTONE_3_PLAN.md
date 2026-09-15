@@ -329,7 +329,8 @@ surface is.
    box = ?`); outline ride-along via the documented `getChildBlocks` walk
    (heading filter for rendering only, full unfiltered ID set retained for write
    verification; extension-owned recursion depth bound); `OUTLINE_HEADINGS` cap
-   with spill of the full outline.
+   with spill of the full outline. The `kb`/`docId` schema itself (with `docId`
+   optional for the discovery form) is item 7's amendment, not restated here.
 6. **Read toolset + `/kb tools` dispatcher (§5 tool-masking record)** —
    `defineToolset(pi, { id:
    "gnubrain.read", names: new Set(["kb_query", "kb_search", "kb_read"]),
@@ -355,25 +356,47 @@ surface is.
    `tools`; the reservation error and its settings.ts comment generalize
    from "reserved for the /kb command" — `kbs` is a tool-param discovery
    name, not a `/kb` subcommand). Discovery is a `kb_read`-only form:
-   `kb_read` with `kb: "kbs"` (its schema is a single string) returns the
-   active KB set without touching the kernel — empty set included, with
-   the activation hint (gate.ts's `EMPTY_SCOPE_MESSAGE`, exported and
-   reused verbatim). The short-circuit lives in the `kb_read` handler
-   after the session-validation guard and the shape-error refusal (a
-   shape-degraded session still rejects every call — S1's rule), and
-   ahead of breaker/429 cooldown: discovery succeeds while the breaker is
-   tripped or a lockout is armed, and it must not route through
+   `kb_read` with `kb: "kbs"` returns the active KB set without touching
+   the kernel — empty set included, with the activation hint (gate.ts's
+   `EMPTY_SCOPE_MESSAGE`, exported and reused verbatim). **Schema
+   change:** `docId` becomes `Type.Optional` — as written it is
+   required, and a discovery call would be rejected by tool-schema
+   validation before `execute` ever runs. The handler then orders three
+   branches: discovery (`kb: "kbs"`) first; then the missing-`docId`
+   refusal — `kb` valid but no `docId` is refused with guidance, never
+   answered with a doc listing or KB metrics (doc listing —
+   `SELECT root_id, hpath, updated FROM blocks WHERE type = 'd'` — and
+   aggregates already live on `kb_query`, and a success-shaped payload
+   would mask the lost-docId mistake the call almost always is), with
+   the message naming all three exits: list docs via `kb_query`, KB
+   stats via a `kb_query` aggregate, list active KBs via `kb: "kbs"`;
+   only then the normal read. The short-circuit lives in the `kb_read`
+   handler after the session-validation guard and the shape-error
+   refusal (a shape-degraded session still rejects every call — S1's
+   rule): the handler re-runs the shape check inline
+   (`validation.shapeErrors.length > 0` → `configRefusalEnvelope`,
+   newly imported into tools.ts), since `guardCall`'s pinned order fuses
+   shape → breaker → cooldown and cannot stop between them — and it sits
+   ahead of breaker/429 cooldown: discovery succeeds while the breaker
+   is tripped or a lockout is armed, and it must not route through
    `runKbCall`, whose success path would reset the breaker counter.
-   Envelope: `{status: "ok", kb: "kbs", names: validation.scope}` with
-   the scope list as the message; empty scope → `{status: "ok",
-   message: EMPTY_SCOPE_MESSAGE, names: []}`. It must not live in the
+   Envelope: `{status: "ok", kb: "kbs", message:
+   validation.scope.join(", "), names: validation.scope}` — the echoed
+   `kb: "kbs"` is a reserved marker, not a real KB, a deliberate
+   exception to the success-echo contract (the payload rides in
+   `names`); empty scope → `{status: "ok", message:
+   EMPTY_SCOPE_MESSAGE, names: []}`. It must not live in the
    shared `resolveKbParam`: `kb_write` takes the same single-name
    validator, and a shared short-circuit would turn its mandated
    rejection into a read listing. `kb_query`/`kb_search`/`kb_write` get
-   no special case — `kbs` there falls through to the existing
+   no special case — `kb: ["kbs"]` there falls through to the existing
    `unknown KB 'kbs'. Active: …` rejection, which already names the
    active set and is §5's rejection-message discovery path (the
-   fallback); a KB named `kbs` can never exist in settings. Only the
+   fallback; a bare string `kb: "kbs"` on the array-arity tools hits
+   the array-shape refusal instead); a KB named `kbs` can never exist
+   in settings. `/kb kbs on|off` needs no change either — it routes
+   through the same `kbNameProblem` check and lands on the accurate
+   `unknown KB 'kbs'. Active: …` rejection. Only the
    `kb_read` description carries the discovery line ("call with
    `kb: "kbs"` to list active KBs").
 
@@ -416,17 +439,20 @@ surface is.
       active, hollow before it (S3-localized leg of the §5 capability ladder;
       the green/masked branches and the repaint events are Sprint 5's AC).
 - [ ] Unit: `kb_read` with `kb: "kbs"` returns the live active set
-      (`{status: "ok", kb: "kbs", names: <scope>}`) incl. the empty-scope
-      form (`{status: "ok", message: EMPTY_SCOPE_MESSAGE, names: []}`), with
-      zero kernel calls on the request log and the short-circuit placed
-      after the shape-error refusal (a shape-degraded session still refuses
-      it) and ahead of breaker/cooldown (discovery succeeds while the
-      breaker is tripped and while a cooldown is armed); a KB named
-      `kbs` rejected by the M1 validator with the generalized reservation
-      message; `kb_query`/`kb_search` reject `kbs` via the existing
-      unknown-KB rejection (no special case; the `kb_write` leg is Sprint
-      4's, landing with that tool); the `kb_read` description carries the
-      discovery line.
+      (`{status: "ok", kb: "kbs", message: <scope joined ", ">, names:
+      <scope>}`) incl. the empty-scope form (`{status: "ok", message:
+      EMPTY_SCOPE_MESSAGE, names: []}`), with zero kernel calls on the
+      request log and the short-circuit placed after the shape-error
+      refusal (a shape-degraded session still refuses it) and ahead of
+      breaker/cooldown (discovery succeeds while the breaker is tripped
+      and while a cooldown is armed); `docId` is optional in the `kb_read`
+      schema and a valid-`kb`-missing-`docId` call is refused with the
+      three-exit guidance message (never a doc listing or metrics
+      payload); a KB named `kbs` rejected by the M1 validator with the
+      generalized reservation message; `kb_query`/`kb_search` reject
+      `kb: ["kbs"]` via the existing unknown-KB rejection (no special
+      case; the `kb_write` leg is Sprint 4's, landing with that tool);
+      the `kb_read` description carries the discovery line.
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -640,7 +666,7 @@ confirmation gate and the `create` flow end to end. Registered name
       replace-first preference (prefer `edit`/`replace-section` over `append`;
       append is for genuinely new facts), and the `kbs` mirror line ("the
       discovery name `kbs` is read-only; writes always target a real KB by
-      name"), completing the description work started in Sprint 3 item 4.
+      name"), completing the description work started in Sprint 3 item 7.
 - [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
       cascades reads on); `/kb tools read` from the read+write state lands
       read-only (explicit write disable, portal `/web on` precedent);
