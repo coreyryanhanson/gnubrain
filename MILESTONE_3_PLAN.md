@@ -53,7 +53,11 @@ The machinery every tool call routes through. No tools registered yet.
      429-refusal message pin in item 5 is the precedent for how it's tested.
    - `listNotebooks()`: stale notebook ID → warn + drop from valid set;
      `encrypted: true` → reject the KB at startup, one branch for both lock
-     states. Token failures here feed the breaker (below).
+     states. A call-level failure (auth 401/403 or network drop after a
+     successful probe) → the valid set stays empty — fail-closed, every tool
+     call's `kb` name is rejected as not-in-scope until a `/kb` recovery
+     re-runs validation; an auth failure feeds the breaker (below), a network
+     drop never counts toward it (§5's counting rule counts 401/403 only).
    - Unreachable kernel → degraded session: tools (once they exist) register,
      reads error per-call, every write first retries the probe per write
      attempt, still-failed → `refused`. Reads never gate on the cached
@@ -74,8 +78,11 @@ The machinery every tool call routes through. No tools registered yet.
 4. **Scope resolution (§5)** — latest `kb-scope` `appendEntry` wins, else
    `defaultKBs`; project file wins over global for `defaultKBs`; `kbs` +
    connection keys read from the global settings file only. Absent key = empty
-   set, never activate-all. Composition with the existing single-object
-   validator: the full `validateGnubrainSettings` run applies to the global file
+   set, never activate-all. Settings load is a seam: the loader takes an
+   injectable file read (S1's unit tests mock it; Sprint 5b's integration
+   suite injects fixture settings in memory through the same seam).
+   Composition with the existing single-object validator: the full
+   `validateGnubrainSettings` run applies to the global file
    (the only file carrying `baseUrl`/`apiToken`/`kbs`); the project file supplies
    `defaultKBs` names only, checked against the global `kbs` set, with two
    failure classes matching §5's existing precedents (the project file is never
@@ -98,7 +105,13 @@ The machinery every tool call routes through. No tools registered yet.
    The global file's own unknown-name `defaultKBs` case is not touched here:
    the M1 validator already degrades on it (`defaultKBs` names must exist in
    `kbs`), and that behavior stands — warn-and-drop is a project-file-only
-   class.
+   class. (§5 is internally ambiguous here: step 1 classifies the
+   `defaultKBs`-names-exist check as shape validation — failure degrades —
+   while its fresh-session bullet says an unknown `defaultKBs` name "warns
+   loudly at startup". This plan resolves the conflict deliberately: the
+   warn-loudly wording covers the project-file class only, and the global
+   file follows step 1's degrade per the shipped M1 validator, whose behavior
+   is unchanged.)
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -116,7 +129,8 @@ The machinery every tool call routes through. No tools registered yet.
    dot color carries the tool capability (§5: writes on → success/green, else reads on →
    accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
    with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
-   renders hollow — no toolsets registered yet; Sprint 3's read toolset brings the blue
+   renders hollow — no toolsets registered yet (`pi-tool-masking@1.3.0` is a
+   runtime dependency from Sprint 1 on, so the live read simply sees none); Sprint 3's read toolset brings the blue
    branch, Sprint 5's write toolset the green branch + repaint on
    `TOOLSET_EVENTS.changed`/`restored` (and after `session_tree` restore, §5). Glyph state reads live toolset state, so any
    disabler (our toggle, `toolsetDefaults` settings pins, allowlist mode, external
@@ -130,7 +144,8 @@ The machinery every tool call routes through. No tools registered yet.
 - [ ] Unit: validation order shape → probe → notebooks, incl. encrypted-notebook
       rejection for both lock states (mocked `listNotebooks`; kernel endpoint
       `lsNotebooks`), stale-notebook drop, project/global read path, token-failure
-      branch, shape-check failure degrading the session (degrade flag set, calls
+      branch (call-level failure → empty valid set, fail-closed; auth failure
+      feeds the breaker, network drop never counts — §5's counting rule), shape-check failure degrading the session (degrade flag set, calls
       rejected with the problem named — not a crash; the tools-stay-registered
       clause is asserted in Sprint 3, S1 registers no tools),
       project-file validation — non-array `defaultKBs` and a stray non-`defaultKBs`
@@ -169,7 +184,7 @@ The machinery every tool call routes through. No tools registered yet.
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
       Sprints 3 and 5) with degraded/breaker precedence over the healthy colors
-      (§10), the post-`session_tree`-restore re-render of the hollow slot
+      (§5), the post-`session_tree`-restore re-render of the hollow slot
       (the capability-colored repaint after restore is Sprint 5's AC — S1
       registers no toolsets), and the slot cleared on `session_shutdown`
       (§5, item 6).
@@ -189,7 +204,7 @@ Scope persistence and the mid-session activation vehicle.
    — `settings.ts`'s `RESERVED_KB_NAMES` gains `writes` here (M1 validator +
    test updated: a KB named `writes` becomes unconfigurable from the day `/kb`
    ships, not when its dispatcher lands in Sprint 5; the stale "The only /kb
-   reserved keyword" comment at `settings.ts:20–21` updated in the same change —
+   reserved keyword" comment at `settings.ts:22` updated in the same change —
    it already contradicts §5's `all` + `writes` reserved set). The `all`
    name-level rejection is asserted at the settings layer — already covered by
    the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
@@ -214,7 +229,10 @@ Scope persistence and the mid-session activation vehicle.
       §5). The settings-level `all`-name and name-grammar rejections are
       already covered by the pre-existing M1 tests in `settings.test.ts` —
       deliberate relocations: a KB whose name violates the grammar can never
-      be configured, so no toggle-path leg exists for either. The new
+      be configured, so no toggle-path leg exists for either (§10's literal
+      `/kb`-toggle unit list is superseded by these relocations; §5 makes both
+      rejections shape-validation-time, and the shipped M1 tests already pin
+      them). The new
       `writes` reservation: a KB named `writes` is rejected by the M1
       validator (settings test updated in this sprint).
 
@@ -237,9 +255,10 @@ registration silently overrides the builtin — so every tool carries the `kb_` 
 short names below are internal labels). The write tool's registered name (`kb_write`)
 lands with Sprint 4.
 
-The discovery half of the loop. Adds the new runtime dependencies:
-`node-sql-parser@5.4.0` and `pi-tool-masking@1.3.0` (both exact-pinned).
-First task on landing: smoke-verify pi-tool-masking's actual API surface
+The discovery half of the loop. Adds the new runtime dependency
+`node-sql-parser@5.4.0` (exact-pinned; `pi-tool-masking@1.3.0` is already
+installed as of Sprint 1). First task on landing: smoke-verify
+pi-tool-masking's actual API surface
 (`defineToolset`, `ToolsetSpec.names` as `Set<string>`, `requires` cascade,
 `TOOLSET_EVENTS.changed`/`restored`, the `toolsetDefaults` settings tier)
 against its installed types — items 6 below and Sprint 5 item 5 assert this
@@ -514,7 +533,7 @@ confirmation gate and the `create` flow end to end. Registered name
       not inside it), trailing list/quote container anchor (placement at section level,
       never nested into the container); fold-state independence (folded destination
       heading does not change the anchor); same-doc move derives the anchor from the
-      already-in-hand outline (no extra kernel call) (§10).
+      already-in-hand outline (no extra kernel call) (§4).
 - [ ] Unit: replace-section call order — mocked suite asserts insert precedes
       delete; failed delete after successful insert leaves duplication, never
       loss (§10).
@@ -569,7 +588,17 @@ confirmation gate and the `create` flow end to end. Registered name
 The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
 execution order: search-shape first, throttle after all kernel cases, raw-DELETE
-last). A test-only
+last). **Fixture→settings wiring**: the minted notebook IDs don't exist until
+setup runs, so the suite injects fixture settings in memory through S1's
+settings-load seam — `{baseUrl, apiToken, kbs: [{name: "fixture-a", notebook:
+<minted id>}, {name: "fixture-b", ...}], defaultKBs: [...]}` — with `defaultKBs`
+covering both fixtures wherever a case needs both active (items 9–10's
+saturation/recall pins); the user's settings files are never read or written.
+Item 11 is the exception: `pi -p` is a separate process that reads the pinned
+global path, so it runs under a temp `HOME` seeded with `.pi/agent/settings.json`
+carrying the same fixture settings — the extension runs unmodified, still
+reads its fixed path by construction (§5), and no product-side settings
+override mechanism is added. A test-only
 raw-kernel-call helper (direct `fetch`) provides raw DELETE / the kernel
 reindex trigger (raw-DELETE case) and the bogus-token arming requests. All
 notebook/doc lifecycle calls (`createNotebook`, `removeNotebook`,
@@ -710,7 +739,10 @@ Polish and the M3 gate (§11).
 - [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
       `kb_write` — in a real session; assert none shadows a pi builtin —
       mechanically asserted, not eyeballed: enumerate `pi.getAllTools()` and
-      check `sourceInfo.source !== "builtin"` for all four names). Both
+      assert the builtins `read` and `write` still appear unshadowed alongside
+      all four `kb_` names — the collision check is that the builtins survive,
+      not that the `kb_` names aren't builtins, which the prefix alone already
+      guarantees). Both
       toolsets registered default-enabled; `/kb writes off` removes `kb_write`
       from the active tool list (masked ≠ refused — no envelope, tool absent),
       `/kb writes on` restores it; state survives session resume (§5).
