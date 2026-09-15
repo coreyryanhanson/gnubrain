@@ -373,8 +373,11 @@ surface is.
    pre-gate branch: after the session-validation guard, the handler
    re-runs the shape check inline (`validation.shapeErrors.length > 0`
    → `configRefusalEnvelope`, newly imported into tools.ts — a
-   shape-degraded session still rejects every call, S1's rule), then
-   short-circuits `kb: "kbs"`. It cannot route through
+   shape-degraded session still rejects every call, S1's rule) — a
+   deliberate duplicate of `guardCall`'s first check, unavoidable while
+   the short-circuit bypasses the gate; keep it a one-liner (or a shared
+   helper) so the two copies cannot drift — then short-circuits
+   `kb: "kbs"`. It cannot route through
    `guardCall`/`runKbCall`: `guardCall`'s pinned order fuses shape →
    breaker → cooldown and cannot stop between them, and `runKbCall`'s
    success path would reset the breaker counter — the short-circuit
@@ -388,7 +391,13 @@ surface is.
    only inside the op does the guard narrow `params.docId` for the
    `runRead(docId: string)` call — a handler-level guard would not
    narrow across the op-closure boundary, so the op aliases `const
-   docId = params.docId` first. `kb` valid but `docId` absent or empty
+   docId = params.docId` first. Because the refusal returns a refused
+   envelope instead of throwing, `runKbCall` treats it as a successful
+   call and resets the breaker's consecutive-failure count
+   (`recordSuccess`) — the pre-existing gate pattern for every
+   op-internal refusal (parser certification, the no-doc ownership
+   refusal); this amendment inherits it, zero kernel calls included,
+   and does not change it. `kb` valid but `docId` absent or empty
    (`""` counts as missing) is refused with guidance, never answered
    with a doc listing or KB metrics (doc listing —
    `SELECT root_id, hpath, updated FROM blocks WHERE type = 'd'` — and
@@ -410,8 +419,10 @@ surface is.
    no special case — `kb: ["kbs"]` there falls through to the existing
    `unknown KB 'kbs'. Active: …` rejection, which already names the
    active set and is §5's rejection-message discovery path (the
-   fallback; a bare string `kb: "kbs"` on the array-arity tools hits
-   the array-shape refusal instead); a KB named `kbs` can never exist
+   fallback; a bare string `kb: "kbs"` never reaches `execute` on the
+   array-arity tools — their `Type.Array` schema rejects it first, so
+   `resolveKbParam`'s array-shape refusal is unit-test-only for this
+   case); a KB named `kbs` can never exist
    in settings. `/kb kbs on|off` needs no change either — it routes
    through the same `kbNameProblem` check and lands on the accurate
    `unknown KB 'kbs'. Active: …` rejection. Only the
@@ -463,7 +474,8 @@ surface is.
       request log and the short-circuit placed after the shape-error
       refusal (a shape-degraded session still refuses it) and ahead of
       breaker/cooldown (discovery succeeds while the breaker is tripped
-      and while a cooldown is armed); `docId` is optional in the `kb_read`
+      and while a cooldown is armed, leaving the breaker state untouched —
+      no `recordSuccess`/`recordAuthFailure` on a discovery call); `docId` is optional in the `kb_read`
       schema and a valid-`kb` call with `docId` absent or empty is refused
       with the three-exit guidance message (never a doc listing or metrics
       payload; the refusal sits inside the gated op after kb resolution —
@@ -474,7 +486,9 @@ surface is.
       the `all`/`tools` reservation assertions reworded to match;
       `kb_query`/`kb_search` reject
       `kb: ["kbs"]` via the existing unknown-KB rejection (no special
-      case; the `kb_write` leg is Sprint 4's, landing with that tool);
+      case; the `kb_write` leg is Sprint 4's, landing with that tool),
+      while a bare string `kb: "kbs"` there is rejected by the
+      `Type.Array` schema before `execute`;
       the `kb_read` description carries the discovery line.
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle

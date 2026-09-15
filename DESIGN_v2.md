@@ -156,7 +156,8 @@ Curated pi tools (one set, not per-KB):
    (decision record, R2; full record §4): `read` takes `kb` (one name) + `docId`** — an
    echoed target, never invented by the agent; read-by-name does not exist, and the
    ownership query doubles as the scoping check. (`docId` is schema-optional solely for
-   the §5 `kbs` discovery form; a read without it is refused, not resolved by name.)
+   the §5 `kbs` discovery form; a read with `docId` absent or empty is refused, not
+   resolved by name.)
    On success the tool returns the doc
    body (spill budget below) plus the outline ride-along (below); the recall loop is
    `search/query → read {kb, docId}` (§4).
@@ -1443,7 +1444,8 @@ writes; the opt-out is typed, in settings.
     reservation alongside `all`/`tools`) is the sanctioned discovery form — calling
     `kb_read` with `kb: "kbs"` returns the active KB set without touching the kernel
     (empty set included, with the activation hint). `docId` is optional on `kb_read`;
-    a valid-`kb` call without it is refused with guidance — doc listing and KB
+    a valid-`kb` call with `docId` absent or empty (`""` counts as missing) is
+    refused with guidance — doc listing and KB
     aggregates stay `kb_query`'s surface, and a lost-docId call must fail loud, never
     masquerade as a successful read. The short-circuit lives in the
     `kb_read` handler after the session-validation guard and the shape-error refusal
