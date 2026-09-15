@@ -4,7 +4,7 @@ Implements the M3 row of DESIGN_v2.md §11: *KB extension — tool set, `kb` par
 validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via
 `appendEntry`), interactive write confirmation.*
 
-Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api@0.3.0`,
+Everything here is extension-side (`gnubrain`). The client (`siyuan-kernel-api@0.3.1`,
 exact pin) exposes every kernel method M3's runtime paths need — `getVersion`,
 `listNotebooks`, `query` (readonly-only; the client hardcodes `mode:
 "readonly"` on the wire), `search`, `exportMarkdown`, `getChildBlocks`,
@@ -14,7 +14,7 @@ exact pin) exposes every kernel method M3's runtime paths need — `getVersion`,
 `closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`) and the encrypted-notebook family
 (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
 `unlockAndOpenNotebook`; locking an encrypted box is `closeNotebook`'s job),
-all shipped in 0.2.0–0.3.0 and gating Sprint 5b (its raw-helper list shrinks
+all shipped in 0.2.0–0.3.1 and gating Sprint 5b (its raw-helper list shrinks
 accordingly). Any further gap is a deliberate, recorded change to that repo.
 (Naming note: the client method is `exportMarkdown`, wrapping the kernel's
 `exportMdContent` endpoint; likewise `createDocWithMarkdown` wraps the kernel's
@@ -324,7 +324,7 @@ notebook/doc lifecycle calls (`createNotebook`, `removeNotebook`,
 `renameDocByID` fixtures, `listInvalidBlockRefs`) **and the encrypted-notebook
 machinery** (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
 `unlockAndOpenNotebook`, lock-via-`closeNotebook`) ride the typed client
-(`siyuan-kernel-api@0.3.0`, exact pin); the remaining helper calls — raw
+(`siyuan-kernel-api@0.3.1`, exact pin); the remaining helper calls — raw
 DELETE, reindex trigger, bogus-token arming — stay raw: §10 deliberately keeps
 those pins out of the client.
 
@@ -515,7 +515,7 @@ Sprints 1–3 (LANDED) ──► Sprint 4 (confirm + create) ──► Sprint 5 
 Sprints 1–3 (LANDED) ─────────────────────────────────────┼──► Sprint 5b (integration)
 Sprint 5 (write modes) ───────────────────────────────────┘
 Sprint 5b ──► Sprint 6 (gate)
-(siyuan-kernel-api 0.3.0 already exact-pinned as of M1; its notebook-lifecycle
+(siyuan-kernel-api 0.3.1 already exact-pinned as of M1; its notebook-lifecycle
 and encrypted-notebook methods are exercised first by Sprint 5b's suite)
 ```
 
