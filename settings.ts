@@ -1,6 +1,6 @@
-// §5 validation step 1 — offline shape validation of the `gnubrain` settings entry.
+// validation step 1 — offline shape validation of the `gnubrain` settings entry.
 // No network, no kernel calls (those are validation steps 2–3).
-// §5 project-vs-global split: `kbs` + connection keys + interaction dials are
+// project-vs-global split: `kbs` + connection keys + interaction dials are
 // global-only; the project file supplies `defaultKBs` names only.
 
 export interface KbEntry {
@@ -21,7 +21,7 @@ export type ValidationResult =
 	| { ok: true; settings: GnubrainSettings }
 	| { ok: false; errors: string[] };
 
-// §5 reserved KB names — `all` is the set-wide toggle form, `tools` is the
+// reserved KB names — `all` is the set-wide toggle form, `tools` is the
 // toolset dispatcher (/kb tools [read|write|off]), and `kbs` is the kb_read
 // discovery name (kb: "kbs" lists the active set). A KB can never take any
 // of these names. (`writes` was un-reserved when its verb moved under `tools`.)
@@ -54,7 +54,7 @@ function checkName(name: string, errors: string[]): void {
 // A project settings.json needs no `gnubrain` key at all (other extensions
 // share the file); when present, only `defaultKBs` may live under it.
 export interface ProjectValidation {
-	/** Non-empty = shape failure → the session degrades (§5 step 1). */
+	/** Non-empty = shape failure → the session degrades (step 1). */
 	errors: string[];
 	defaultKBs: string[] | undefined;
 }
@@ -105,7 +105,7 @@ export interface LoadedSettings {
 }
 
 /**
- * §5 read path — injectable file read (S1 unit tests mock it; the integration
+ * read path — injectable file read (unit tests mock it; the integration
  * suite injects fixture settings in memory through the same seam). The global
  * file carries everything; a missing global file is a shape failure. A missing
  * project file is simply "no project settings".

@@ -1,4 +1,4 @@
-// Live smoke for the read tools (§10 posture: opt-in, never in CI).
+// Live smoke for the read tools (posture: opt-in, never in CI).
 // Run with SIYUAN_INTEGRATION=1 against the pinned kernel; self-skips
 // otherwise. Exercises certification + rebuild + the typed client's readonly
 // query/search paths end to end.

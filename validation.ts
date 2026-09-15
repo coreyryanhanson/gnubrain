@@ -1,4 +1,4 @@
-// §5 validation steps 2–3 and the scope read rule.
+// validation steps 2–3 and the scope read rule.
 // Order is fixed: shape (settings.ts) → kernel probe → notebook existence.
 // A shape failure degrades the session and skips the network steps; every
 // later tool call is rejected with the problem named, never a crash.
@@ -8,7 +8,7 @@ import type { GnubrainSettings, LoadedSettings } from "./settings.js";
 
 export const PINNED_SIYUAN_VERSION = "3.8.3";
 
-/** §5 probe verdict, cached for the session. `never-probed` = the shape
+/** probe verdict, cached for the session. `never-probed` = the shape
  * check failed before the probe ran (a distinct state from unreachable). */
 export type ProbeVerdict = "ok" | "drift" | "unreachable" | "never-probed";
 
@@ -40,7 +40,7 @@ export interface SessionValidation {
 	lsNotebooksOk: boolean;
 }
 
-/** §5 scope persistence payload — a complete snapshot of the active set. */
+/** scope persistence payload — a complete snapshot of the active set. */
 export const KB_SCOPE_ENTRY_TYPE = "kb-scope";
 
 /** Latest `kb-scope` entry wins; none → undefined (caller falls back to defaultKBs). */
@@ -62,7 +62,7 @@ export function latestPersistedScope(
 }
 
 /**
- * The full startup validation pass (§5). Also the `/kb` recovery hook's body:
+ * The full startup validation pass. Also the `/kb` recovery hook's body:
  * re-running it re-reads settings and updates every cached verdict.
  */
 export async function runSessionValidation(input: {
@@ -77,7 +77,7 @@ export async function runSessionValidation(input: {
 	const warnings: string[] = [];
 	const { global, project } = input.loaded;
 
-	// Step 1 — shape. The global file runs the full M1 validator; the project
+	// Step 1 — shape. The global file runs the full validator; the project
 	// file supplies defaultKBs names only (settings.ts). Either failing degrades.
 	const shapeErrors = [...(global.ok ? [] : global.errors), ...project.errors];
 	const settings = global.ok ? global.settings : undefined;
@@ -122,7 +122,7 @@ export async function runSessionValidation(input: {
 				);
 			} else if (notebook.encrypted) {
 				// One rejection for both lock states: `encrypted` is always present
-				// in lsNotebooks output regardless of lock state (§5).
+				// in lsNotebooks output regardless of lock state.
 				warnings.push(
 					`KB '${kb.name}' uses an encrypted notebook — rejected at startup (the SQL surface cannot see encrypted boxes)`,
 				);
@@ -150,7 +150,7 @@ export async function runSessionValidation(input: {
 		};
 	}
 
-	// Scope resolution (§5): persisted scope wins, else defaultKBs — the project
+	// Scope resolution: persisted scope wins, else defaultKBs — the project
 	// file's value when present, else the global one. Absent = empty set.
 	const persisted = input.persistedScope;
 	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
@@ -159,7 +159,7 @@ export async function runSessionValidation(input: {
 	for (const name of requested) {
 		if (!settings.kbs.some((kb) => kb.name === name)) {
 			// Project-file unknown names: warn and drop, keep valid siblings;
-			// never fall back to the global default (§5 stale-notebook precedent).
+			// never fall back to the global default (stale-notebook precedent).
 			warnings.push(`KB '${name}' is not configured — dropped from scope`);
 		} else if (!validKBs.has(name)) {
 			warnings.push(

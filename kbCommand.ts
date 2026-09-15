@@ -1,4 +1,4 @@
-// §5 /kb command — scope print, single-name and set-wide toggles, and the
+// /kb command — scope print, single-name and set-wide toggles, and the
 // /kb tools toolset dispatcher. Pure dispatch: recovery (re-validation),
 // persistence, and the actual toolset enable/disable happen in index.ts
 // before/after this returns. Read verbs (tools read|off) land here; the
@@ -34,7 +34,7 @@ export function dispatchKbCommand(
 	args: string,
 	validation: SessionValidation,
 	/** Bare `/kb` appends one toolset-state line per registered toolset
-	 * (§5 tool-masking record — a masked toolset is printed, never silent). */
+	 * (tool-masking record — a masked toolset is printed, never silent). */
 	toolsetLines: string[] = [],
 	/** Live toolset state — the /kb tools verbs are state setters over it. */
 	readsEnabled = true,
@@ -107,7 +107,7 @@ export function dispatchKbCommand(
 // /kb tools — state-setter verbs per the portal /web precedent: each verb
 // targets an absolute end state, so re-issuing one is a reported no-op and
 // there is exactly one command per state. `write` targets read+write (the
-// requires-cascade pulls reads on with it, §5); `read` targets read-only
+// requires-cascade pulls reads on with it); `read` targets read-only
 // (an explicit write disable — the portal /web on precedent); `off` masks
 // both.
 function dispatchTools(

@@ -115,7 +115,7 @@ describe("validateGnubrainSettings", () => {
 			],
 		],
 		["kbs[0].name must be a non-empty string", [{ name: "", notebook: "a" }]],
-		["kbs[0].name must be a non-empty string", [{ name: "  ", notebook: "a" }]],
+		["kbs[0].name must be a non-empty string", [{ name: " ", notebook: "a" }]],
 		[
 			"kbs[0].name must be a non-empty string",
 			[{ name: " dev ", notebook: "a" }],
@@ -143,7 +143,7 @@ describe("validateGnubrainSettings", () => {
 		).toContain(expected);
 	});
 
-	it("accepts the §5 special values: writeConfirmTimeout 0 and allowUnattendedWrites true", () => {
+	it("accepts the special values: writeConfirmTimeout 0 and allowUnattendedWrites true", () => {
 		const result = validateGnubrainSettings(
 			validConfig({ writeConfirmTimeout: 0, allowUnattendedWrites: true }),
 		);
@@ -169,7 +169,7 @@ describe("validateGnubrainSettings", () => {
 	});
 });
 
-describe("project settings (§5 project-vs-global split)", () => {
+describe("project settings (project-vs-global split)", () => {
 	it("a project file with no gnubrain key is simply no project settings", () => {
 		const result = validateProjectSettings({ other: {} });
 		expect(result.errors).toEqual([]);
@@ -210,7 +210,7 @@ describe("project settings (§5 project-vs-global split)", () => {
 		}
 	});
 
-	it("a non-array project defaultKBs degrades with the M1 message verbatim", () => {
+	it("a non-array project defaultKBs degrades with the pinned message verbatim", () => {
 		expect(
 			validateProjectSettings({ gnubrain: { defaultKBs: "dev" } }).errors,
 		).toContain("defaultKBs must be an array of KB name strings");

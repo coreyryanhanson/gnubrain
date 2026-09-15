@@ -58,7 +58,7 @@ function fakePiWithTools() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 1 — parser certification (§3)
+// Layer 1 — parser certification
 // ---------------------------------------------------------------------------
 
 describe("parser certification", () => {
@@ -135,7 +135,7 @@ describe("parser certification", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer 1 — AST rebuild + re-parse verification (§3)
+// Layer 1 — AST rebuild + re-parse verification
 // ---------------------------------------------------------------------------
 
 describe("injected-predicate rebuild + re-parse", () => {
@@ -224,7 +224,7 @@ describe("injected-predicate rebuild + re-parse", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer 3 — post-filter backstop (§3)
+// Layer 3 — post-filter backstop
 // ---------------------------------------------------------------------------
 
 describe("post-filter backstop", () => {
@@ -248,7 +248,7 @@ describe("post-filter backstop", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Spill + budgets (§3)
+// Spill + budgets
 // ---------------------------------------------------------------------------
 
 describe("spill budgets", () => {
@@ -265,7 +265,7 @@ describe("spill budgets", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tool surface — executed through the registered definitions (§3)
+// Tool surface — executed through the registered definitions
 // ---------------------------------------------------------------------------
 
 function kernelStub() {
@@ -312,7 +312,7 @@ function kernelStub() {
 }
 
 describe("search tool", () => {
-	it("fans out one call per resolved KB with per-call pageSize (§3)", async () => {
+	it("fans out one call per resolved KB with per-call pageSize", async () => {
 		// registered via registerSearchTool — see the toolset test below for the
 		// wiring; here we exercise the fan-out through the same helper the tool
 		// uses.
@@ -356,7 +356,7 @@ describe("search tool", () => {
 		]);
 	});
 
-	it("drops out-of-scope rows with post_filtered: true (mocked-only contamination, §10)", async () => {
+	it("drops out-of-scope rows with post_filtered: true (mocked-only contamination)", async () => {
 		const { runSearchFanOut } = await import("../../tools.js");
 		const { client } = kernelStub();
 		const contaminated: KernelReadClient = {
@@ -441,7 +441,7 @@ describe("read tool", () => {
 		const result = await runRead(
 			"sess-1",
 			// The kernel answers the ownership query with zero rows for a doc
-			// from another KB — no second scope branch exists (§4).
+			// from another KB — no second scope branch exists.
 			{
 				...client,
 				async query() {
@@ -456,7 +456,7 @@ describe("read tool", () => {
 		expect(result.message).toContain("no doc 'foreign-doc'");
 	});
 
-	it("caps the outline at OUTLINE_HEADINGS inline lines with a spill pointer (§3)", async () => {
+	it("caps the outline at OUTLINE_HEADINGS inline lines with a spill pointer", async () => {
 		const { runRead } = await import("../../tools.js");
 		const headings = Array.from({ length: 250 }, (_, i) => ({
 			id: `h${i}`,
@@ -483,7 +483,7 @@ describe("read tool", () => {
 		expect(result.fullOutlinePath).toBeDefined();
 	});
 
-	it("verification runs on the full walk set, not the capped outline (§3)", async () => {
+	it("verification runs on the full walk set, not the capped outline", async () => {
 		// The walk helper itself — the heading filter is rendering-only.
 		const headings = [
 			{ id: "h1", type: "h", subType: "h1", content: "A" },
@@ -501,7 +501,7 @@ describe("read tool", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Toolset + tool descriptions + degraded-session clause (§5, §3 item 6)
+// Toolset + tool descriptions + degraded-session clause (item 6)
 // ---------------------------------------------------------------------------
 
 import {
@@ -560,7 +560,7 @@ describe("read toolset + descriptions", () => {
 		});
 		const description = registered.find((t) => t.name === "kb_query")
 			?.description as string;
-		// blocks schema + refs schema (§5 pin)
+		// blocks schema + refs schema (pin)
 		expect(description).toContain(
 			"blocks: id, parent_id, root_id, hpath, box, type, content, updated, sort",
 		);
@@ -577,7 +577,7 @@ describe("read toolset + descriptions", () => {
 	});
 });
 
-describe("degraded session (S1 shape clause, asserted with S3's registered tools)", () => {
+describe("degraded session (shape clause, asserted with the registered tools)", () => {
 	it("a shape failure keeps the tools registered and rejects calls with the problem named", async () => {
 		const registered: {
 			name: string;
@@ -644,7 +644,7 @@ function ctx2(sessionId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// `kbs` discovery name (§3 item 7)
+// `kbs` discovery name (item 7)
 // ---------------------------------------------------------------------------
 
 describe('kbs discovery (kb_read kb: "kbs")', () => {

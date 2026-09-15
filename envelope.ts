@@ -1,4 +1,4 @@
-// §5 error envelope — one shared helper. Every tool result carries
+// error envelope — one shared helper. Every tool result carries
 // {status, message, ...payload}. `truncated`/`post_filtered` are payload
 // markers, never statuses; success results carry
 // `status: "ok"` plus their payload.
@@ -30,12 +30,12 @@ export function refusedEnvelope(
 	return { status: "refused", message, ...payload };
 }
 
-/** §5: reads while the kernel is unreachable — `{status: error, message: SiYuan unreachable at <baseUrl>}`. */
+/** Unreachable-kernel error — reads while the kernel is unreachable — `{status: error, message: SiYuan unreachable at <baseUrl>}`. */
 export function kernelUnreachable(baseUrl: string): Envelope {
 	return errorEnvelope(`SiYuan unreachable at ${baseUrl}`);
 }
 
-/** §5 version refusal — static text naming the kernel version, the pinned
+/** version refusal — static text naming the kernel version, the pinned
  * version, and the fix. The one message that fires on any upgrade. */
 export function versionRefusalEnvelope(
 	kernelVersion: string,
@@ -43,13 +43,13 @@ export function versionRefusalEnvelope(
 ): Envelope {
 	return refusedEnvelope(
 		`SiYuan kernel version ${kernelVersion} does not match the pinned version ` +
-			`${pinnedVersion}. Writes are refused. Run the upgrade checklist ` +
-			`(DESIGN_v2.md §10) against the new kernel, re-pin ` +
+			`${pinnedVersion}. Writes are refused. Verify the new kernel against ` +
+			`the integration checklist, re-pin ` +
 			`PINNED_SIYUAN_VERSION, then start a new session.`,
 	);
 }
 
-/** §5 429 cooldown refusal — names the lockout, its cause, its self-healing
+/** 429 cooldown refusal — names the lockout, its cause, its self-healing
  * expiry (quoting the served Retry-After), and pins the do-not-retry guidance. */
 export function rateLimitRefusalEnvelope(
 	cooldownUntil: number,
@@ -72,7 +72,7 @@ export function rateLimitRefusalEnvelope(
 	);
 }
 
-/** §5 breaker refusal — fail-fast, names the token fix and the /kb recovery. */
+/** breaker refusal — fail-fast, names the token fix and the /kb recovery. */
 export function breakerRefusalEnvelope(): Envelope {
 	return refusedEnvelope(
 		`SiYuan auth circuit breaker tripped after 3 consecutive auth failures — ` +
@@ -81,7 +81,7 @@ export function breakerRefusalEnvelope(): Envelope {
 	);
 }
 
-/** §5 degraded-config rejection — every tool call names the config problem. */
+/** degraded-config rejection — every tool call names the config problem. */
 export function configRefusalEnvelope(errors: string[]): Envelope {
 	return refusedEnvelope(`gnubrain settings are invalid: ${errors.join("; ")}`);
 }

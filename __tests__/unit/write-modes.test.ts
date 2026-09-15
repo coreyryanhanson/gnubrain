@@ -1,8 +1,8 @@
-// Unit ACs — remaining write modes (edit/append/replace-section/
+// Write-mode tests — remaining write modes (edit/append/replace-section/
 // delete/move), the write-result contract, stale-target verification, the
 // fresh-content precondition, anchor derivation, and the description
 // doctrine lines — executed through the registered kb_write definition
-// (§10) on a fake-pi harness with a SQL-routed kernel stub.
+// on a fake-pi harness with a SQL-routed kernel stub.
 
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError } from "siyuan-kernel-api";
@@ -166,7 +166,7 @@ type Exec = (params: Record<string, unknown>) => Promise<Details>;
 /** Register kb_write on a fake pi and return an execute() bound to an
  * interactive ctx (confirm always true unless `confirm` overrides). The
  * optional `mutate` runs inside the confirm callback — the mid-flow
- * kernel-side change the fresh-content legs exercise (§4). */
+ * kernel-side change the fresh-content legs exercise. */
 function setup(
 	config: StubConfig = {},
 	confirm: WriteConfirmFn = async () => true,
@@ -272,10 +272,10 @@ const editBase = {
 };
 
 // ---------------------------------------------------------------------------
-// Mode-target shape (§4 schema table) — zero kernel calls
+// Mode-target shape (schema table) — zero kernel calls
 // ---------------------------------------------------------------------------
 
-describe("mode-target shape (§4 schema table)", () => {
+describe("mode-target shape (schema table)", () => {
 	const cases: [WriteParams, string][] = [
 		[{ kb: "r", mode: "junk" } as WriteParams, "mode 'junk' is not supported"],
 		[
@@ -333,7 +333,7 @@ describe("mode-target shape (§4 schema table)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// edit — fresh-content precondition (§4 decision record)
+// edit — fresh-content precondition (decision record)
 // ---------------------------------------------------------------------------
 
 describe("edit", () => {
@@ -397,7 +397,7 @@ describe("edit", () => {
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
 	});
 
-	it("the successful write result refreshes the served-content baseline (§4)", async () => {
+	it("the successful write result refreshes the served-content baseline", async () => {
 		const { execute, baselines } = setupWithBaselines({
 			blockRows: [{ id: "b-1", content: "stale paragraph" }],
 		});
@@ -409,7 +409,7 @@ describe("edit", () => {
 });
 
 /** edit harness whose kernel-side content flips between the baseline read
- * and the post-approval re-check (the §4 race the precondition exists for). */
+ * and the post-approval re-check (the race the precondition exists for). */
 function setupWithEditMutation(): {
 	execute: Exec;
 	calls: { method: string; args: unknown }[];
@@ -462,7 +462,7 @@ function setupWithEditMutation(): {
 }
 
 // ---------------------------------------------------------------------------
-// append — tool-derived nextID anchor + walk-set verification (§4)
+// append — tool-derived nextID anchor + walk-set verification
 // ---------------------------------------------------------------------------
 
 const SECTION_DOC = {
@@ -597,7 +597,7 @@ describe("replace-section", () => {
 		).toEqual(["p1", "p2"]);
 		expect(result.anchor).toBe("nextID=h2 (next heading)");
 		expect(result.newBlockId).toBe("b-new");
-		// Outline freshness (§4): the result outline reflects the post-write
+		// Outline freshness: the result outline reflects the post-write
 		// tree — the swept blocks are gone from it.
 		expect(result.outline).not.toContain("old one");
 		expect(result.outline).not.toContain("old two");
@@ -643,7 +643,7 @@ describe("replace-section", () => {
 		expect(message).toContain("the heading ID survives");
 	});
 
-	it("delete-bearing results carry invalidRefs (§4 write-result contract)", async () => {
+	it("delete-bearing results carry invalidRefs (write-result contract)", async () => {
 		const harness = setup({
 			childrenFor: REPLACE_DOC,
 			refRows: [{ root_id: "d-other" }],
@@ -759,7 +759,7 @@ function setupWithReplaceMutation(): {
 }
 
 // ---------------------------------------------------------------------------
-// delete — walk-set evidence + the doc-level pinned shape (§4)
+// delete — walk-set evidence + the doc-level pinned shape
 // ---------------------------------------------------------------------------
 
 describe("delete", () => {
@@ -787,7 +787,7 @@ describe("delete", () => {
 
 	it("a kernel success no-op still reports ok — with the walk-set evidence naming it", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
-		// nothing (ErrBlockNotFound → nil, §4 stale-target record).
+		// nothing (ErrBlockNotFound → nil, stale-target record).
 		const { execute } = setup({
 			blockRows: [{ id: "p1", content: "survivor" }],
 			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "survivor")] },
@@ -803,7 +803,7 @@ describe("delete", () => {
 		expect(result.message).toContain("STILL PRESENT");
 	});
 
-	it("doc-level: removeDocByID fires and the result carries only invalidRefs (§4 pinned shape)", async () => {
+	it("doc-level: removeDocByID fires and the result carries only invalidRefs (pinned shape)", async () => {
 		const { execute, calls } = setup({
 			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },
 			refRows: [{ root_id: "d-other" }],
@@ -830,10 +830,10 @@ describe("delete", () => {
 });
 
 // ---------------------------------------------------------------------------
-// move — anchor derivation (§4) + verification + doc-level record
+// move — anchor derivation + verification + doc-level record
 // ---------------------------------------------------------------------------
 
-describe("move-anchor derivation (§4)", () => {
+describe("move-anchor derivation", () => {
 	it("end-of-section anchor on a plain section", () => {
 		const walk = [
 			walkBlock("h1", "h", "h1", "A"),
@@ -903,7 +903,7 @@ describe("move-anchor derivation (§4)", () => {
 	});
 });
 
-describe("sectionDeleteSet (§4 boundary + final-section sweep)", () => {
+describe("sectionDeleteSet (boundary + final-section sweep)", () => {
 	const walk = [
 		walkBlock("h1", "h", "h1", "Top"),
 		walkBlock("p1", "p", "", "one"),
@@ -927,7 +927,7 @@ describe("sectionDeleteSet (§4 boundary + final-section sweep)", () => {
 	});
 });
 
-describe("deriveAppendAnchor (§4)", () => {
+describe("deriveAppendAnchor", () => {
 	it("nextID = the next heading in document order", () => {
 		expect(
 			deriveAppendAnchor(
@@ -1078,7 +1078,7 @@ describe("block-level move", () => {
 		expect(walks).toHaveLength(2);
 	});
 
-	it("a tree-level miss rolls back silently → verified-move error (§4)", async () => {
+	it("a tree-level miss rolls back silently → verified-move error", async () => {
 		const harness = moveHarness(); // the tree never changes
 		const result = await harness.execute(moveParams);
 		expect(result.status).toBe("error");
@@ -1151,10 +1151,10 @@ describe("block-level move", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Write-tool descriptions carry the pinned doctrine lines (§4/§10)
+// Write-tool descriptions carry the pinned doctrine lines
 // ---------------------------------------------------------------------------
 
-describe("write-tool doctrine lines (§4)", () => {
+describe("write-tool doctrine lines", () => {
 	function registeredDescription(): string {
 		let description: string | undefined;
 		const pi = {

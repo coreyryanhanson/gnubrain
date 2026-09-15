@@ -341,7 +341,7 @@ describe("read + write toolset wiring", () => {
 		const { ctx, statuses, notifications } = fakeCtx();
 		await fire("session_start", ctx);
 		// Any disabler (toolsetDefaults pin, allowlist mode, external manager)
-		// shows up as removed active tools (§5 glyph reads live state).
+		// shows up as removed active tools (glyph reads live state).
 		pi.setActiveTools([]);
 		await fire("session_tree", ctx);
 		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");

@@ -1,5 +1,5 @@
-// Unit ACs — the write toolset declares requires: ["gnubrain.read"]
-// (§5 tool-masking record): live-toggle cascade legs, and the settings-pin
+// The write toolset declares requires: ["gnubrain.read"]
+// (tool-masking record): live-toggle cascade legs, and the settings-pin
 // boundary (no cascade at restore — the documented reachable
 // write-without-read state, backstopped by confirmation + headless
 // default-deny).
@@ -88,7 +88,7 @@ function registerMembers(pi: {
 	pi.registerTool({ name: "tool-b" });
 }
 
-describe("write toolset requires-cascade (§5)", () => {
+describe("write toolset requires-cascade", () => {
 	it("declares requires: [gnubrain.read]-style cascade, default-enabled, pinned persist key", () => {
 		const { pi } = fakePi();
 		defineToolset(pi as never, READ_SPEC);
@@ -120,7 +120,7 @@ describe("write toolset requires-cascade (§5)", () => {
 	});
 });
 
-describe("settings-pin boundary (documented, §5)", () => {
+describe("settings-pin boundary (documented)", () => {
 	// pi-tool-masking's settings tier applies each toolsetDefaults pin
 	// per-toolset at restore WITHOUT re-running the requires cascade — the
 	// reachable write-without-read state. That restore behavior is pinned by
@@ -148,7 +148,7 @@ describe("settings-pin boundary (documented, §5)", () => {
 	});
 });
 
-describe("status glyph repaint handlers (§5 status-bar record)", () => {
+describe("status glyph repaint handlers (status-bar record)", () => {
 	it("receives TOOLSET_EVENTS.changed/restored", () => {
 		const { pi, emitEvent } = fakePi();
 		const received: { event: string; enabled: boolean }[] = [];

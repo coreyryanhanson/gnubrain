@@ -1,5 +1,5 @@
-// §3 read tools — kb_query / kb_search / kb_read — and the read toolset.
-// Every call routes through the S1 gate (shape → breaker → cooldown → kb
+// read tools — kb_query / kb_search / kb_read — and the read toolset.
+// Every call routes through the shared gate (shape → breaker → cooldown → kb
 // param); kernel errors classify in runKbCall. Scoping is tool-owned: the
 // agent never writes box IDs or notebook IDs, and search's aux params are
 // rejected at the schema.
@@ -66,13 +66,13 @@ export function sqlString(value: string): string {
 	return `'${value.replaceAll("'", "''")}'`;
 }
 
-/** Serialize kept rows as JSONL (§3 spill format for query/search rows). */
+/** Serialize kept rows as JSONL (spill format for query/search rows). */
 function jsonl(rows: unknown[]): string {
 	return rows.map((r) => JSON.stringify(r)).join("\n");
 }
 
 /**
- * Row payload (§3): within the inline budget the rows ride the envelope;
+ * Row payload: within the inline budget the rows ride the envelope;
  * overflow spills the full JSONL and the envelope keeps a newline-boundary
  * preview plus the pointer.
  */
@@ -92,7 +92,7 @@ export function rowPayload(
 }
 
 // ---------------------------------------------------------------------------
-// kb_query — parser certification + AST rebuild (§3)
+// kb_query — parser certification + AST rebuild
 // ---------------------------------------------------------------------------
 
 const CERT_TABLES = new Set(["blocks", "refs"]);
@@ -115,7 +115,7 @@ export type CertResult =
 	| { ok: true; ast: Select }
 	| { ok: false; reason: string };
 
-/** §3 layer 1 — parser-based certification, never a token scan. Worst case
+/** layer 1 — parser-based certification, never a token scan. Worst case
  * at every rung is a rejection with the reason named, never a guess. */
 export function certifySelect(stmt: string): CertResult {
 	let ast: unknown;
@@ -128,7 +128,7 @@ export function certifySelect(stmt: string): CertResult {
 		};
 	}
 	// Spike finding: multi-statement input does not throw — astify returns an
-	// array, so the cert rejects on Array.isArray (§10).
+	// array, so the cert rejects on Array.isArray.
 	if (Array.isArray(ast)) {
 		return {
 			ok: false,
@@ -141,11 +141,11 @@ export function certifySelect(stmt: string): CertResult {
 		return { ok: false, reason: `only SELECT is allowed (got ${node.type})` };
 	}
 	// The kernel's readonly layer permits WITH — layer 1 is the only line of
-	// defense against a CTE shadowing an allowlisted table (§3).
+	// defense against a CTE shadowing an allowlisted table.
 	if (node.with !== undefined && node.with !== null) {
 		return { ok: false, reason: "CTEs (WITH) are not allowed" };
 	}
-	// UNION parses as type 'select' with the second arm in _next/set_op (§10),
+	// UNION parses as type 'select' with the second arm in _next/set_op,
 	// so rejection keys on those fields, not the type string.
 	if (node._next !== undefined || node.set_op !== undefined) {
 		return { ok: false, reason: "UNION / compound queries are not allowed" };
@@ -213,7 +213,7 @@ export interface RebuiltStatement {
 }
 
 /**
- * §3 layer 1 rebuild: splice `(existing) AND box IN (...)` into the top-level
+ * layer 1 rebuild: splice `(existing) AND box IN (...)` into the top-level
  * WHERE (fresh WHERE when none — never a bare concatenation, which would turn
  * `a OR b` into `a OR (b AND box IN ...)`), inject LIMIT iff the AST shows
  * none, serialize, and re-parse for verification.
@@ -253,7 +253,7 @@ export function rebuildWithScope(
 const norm = (x: unknown): string => JSON.stringify(x);
 
 /**
- * §3 layer 1 verification: the executed statement is the re-parsed one, and
+ * layer 1 verification: the executed statement is the re-parsed one, and
  * the re-parse must still be a single certified SELECT whose WHERE is the
  * original expression ANDed with the injected predicate.
  */
@@ -324,7 +324,7 @@ function checkBoxIn(
 	return undefined;
 }
 
-/** §3 layer 3 — post-filter backstop. Rows that carry a `box` field are
+/** layer 3 — post-filter backstop. Rows that carry a `box` field are
  * dropped unless `box` is in the resolved set; aggregate rows (no `box`)
  * are exempt — layer 1 guarantees the injected predicate on the executed
  * statement. */
@@ -395,7 +395,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						return { status: "refused", message: certified.reason };
 					}
 					// Capture the original WHERE before the rebuild splices it —
-					// verification compares the re-parse against it (§3).
+					// verification compares the re-parse against it.
 					const originalWhere = certified.ast.where;
 					const rebuilt = rebuildWithScope(certified.ast, boxes);
 					const reparsed = parser.astify(rebuilt.stmt, SQL_DIALECT) as AST;
@@ -439,7 +439,7 @@ function buildQueryEnvelope(
 		count: kept.length,
 	};
 	if (dropped > 0) envelope.post_filtered = true;
-	// Truncation fires when kept + dropped reaches the limit (§3) — a window
+	// Truncation fires when kept + dropped reaches the limit — a window
 	// filled with out-of-scope rows must still signal in-scope rows beyond it.
 	// The marker counts post-filter rows, never pre-filter ones.
 	if (kept.length + dropped >= limit) {
@@ -457,7 +457,7 @@ function buildQueryEnvelope(
 }
 
 // ---------------------------------------------------------------------------
-// kb_search — per-KB fan-out (§3)
+// kb_search — per-KB fan-out
 // ---------------------------------------------------------------------------
 
 const SEARCH_DESCRIPTION = `Full-text search across GNUbrain knowledge bases. Pass kb as an array of KB names; the tool fans out one scoped kernel call per KB and merges results. Every row echoes id, root_id (the docId kb_read consumes), hpath, box (the resolved KB name), and updated. Search is the discovery step: a hit is directly consumable as kb_read { kb, docId: root_id }.`;
@@ -475,7 +475,7 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				query: Type.String({ description: "Full-text search query" }),
 			},
 			// The route's method/types/orderBy/groupBy are tool-owned — one
-			// schema constraint closes the SQL-smuggling bypass (§3).
+			// schema constraint closes the SQL-smuggling bypass.
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -517,7 +517,7 @@ export async function runSearchFanOut(
 	names: string[],
 	query: string,
 ): Promise<Envelope> {
-	// One kernel call per resolved KB (paths: [<boxId>], §3) — never one call
+	// One kernel call per resolved KB (paths: [<boxId>]) — never one call
 	// with multiple paths under a single pageSize, which lets a hit-rich KB
 	// fill the pre-filter window and silently drop the other KBs' matches.
 	const nameBoxPairs = names.map((name) => ({
@@ -537,13 +537,13 @@ export async function runSearchFanOut(
 		for (const block of result.blocks) {
 			// Post-filter backstop: merged rows dropped unless box ∈ resolved
 			// set. Unreachable against a well-behaved kernel (each call was
-			// scoped to one box); the drop path exists for contamination (§3).
+			// scoped to one box); the drop path exists for contamination.
 			if (block.box !== boxId) {
 				dropped++;
 				continue;
 			}
 			// Echo contract: id, root_id (renamed from rootID), hpath (renamed
-			// from hPath), box → resolved KB name, updated — never raw (§3).
+			// from hPath), box → resolved KB name, updated — never raw.
 			merged.push({
 				id: block.id,
 				root_id: block.rootID,
@@ -579,18 +579,18 @@ export async function runSearchFanOut(
 }
 
 // ---------------------------------------------------------------------------
-// kb_read — exportMarkdown + outline ride-along (§3)
+// kb_read — exportMarkdown + outline ride-along
 // ---------------------------------------------------------------------------
 
 /** Extension-owned recursion bound for the getChildBlocks walk — the kernel
  * imposes no cap on block-container nesting, so this keeps the walk finite
- * (§3; the §4 7-level cap counts hpath separators, a different axis). */
+ * the 7-level cap counts hpath separators, a different axis). */
 const MAX_WALK_DEPTH = 32;
 
 const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
 
 /**
- * The `kbs` discovery form (§3 item 7): `kb_read` with `kb: "kbs"` returns
+ * The `kbs` discovery form (item 7): `kb_read` with `kb: "kbs"` returns
  * the active KB set without touching the kernel. The echoed `kb: "kbs"` is a
  * reserved marker, not a real KB — a deliberate exception to the
  * success-echo contract; the payload rides in `names`. The marker is
@@ -644,7 +644,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// → breaker → cooldown and cannot stop between them, and
 			// runKbCall's success path would reset the breaker counter. The
 			// shape check is a deliberate duplicate of guardCall's first check —
-			// kept a one-liner so the two cannot drift (§3 item 7).
+			// kept a one-liner so the two cannot drift (item 7).
 			if (params.kb === "kbs") {
 				if (validation.shapeErrors.length > 0) {
 					return textResult(configRefusalEnvelope(validation.shapeErrors));
@@ -702,9 +702,9 @@ export async function runRead(
 	if (boxId === undefined) {
 		return errorEnvelope(`KB '${name}' is not in the valid set`);
 	}
-	// GFM only, never getDoc (§3). The ownership query doubles as the scope
+	// GFM only, never getDoc. The ownership query doubles as the scope
 	// check: a docId from another KB matches no row. The kernel route takes a
-	// bare stmt (no bind params), so trusted ids ride escaped literals (§4).
+	// bare stmt (no bind params), so trusted ids ride escaped literals.
 	const ownershipStmt =
 		`SELECT root_id FROM blocks WHERE id = ${sqlString(docId)}` +
 		` AND box = ${sqlString(boxId)}`;
@@ -730,7 +730,7 @@ export async function runRead(
 		envelope.fullOutlinePath = outline.fullOutlinePath;
 	}
 
-	// §3 read budget: the spill mechanism is the only limit — large docs spill
+	// read budget: the spill mechanism is the only limit — large docs spill
 	// in full while the inline result keeps the newline-boundary preview.
 	const { inline, spillPath } = inlineOrSpill(
 		sessionId,
@@ -747,7 +747,7 @@ export async function runRead(
 }
 
 /**
- * Outline ride-along (§3/§4): getChildBlocks walk in document order — never
+ * Outline ride-along: getChildBlocks walk in document order — never
  * SQL enumeration (the `sort` column is a type weight, not document order).
  * Shared by kb_read and the write flow (duplicate-stop rows, create echo).
  */
@@ -808,7 +808,7 @@ export interface NestedBlock extends WalkedBlock {
 	children: NestedBlock[];
 }
 
-/** getChildBlocks walk preserving container structure (§3). Headings are
+/** getChildBlocks walk preserving container structure. Headings are
  * leaves; only real containers (lists, blockquotes, superblocks) nest. */
 export async function walkBlockTreeNested(
 	kernel: KernelReadClient,
@@ -840,7 +840,7 @@ export async function walkBlockTreeNested(
 
 /** Full unfiltered getChildBlocks walk in document order. The heading filter
  * is rendering-only — callers keep the full set as write-verification
- * evidence (§3). */
+ * evidence. */
 export async function walkBlockTree(
 	kernel: KernelReadClient,
 	rootId: string,
@@ -859,13 +859,13 @@ export async function walkBlockTree(
 }
 
 // ---------------------------------------------------------------------------
-// Toolset (§5 tool-masking record)
+// Toolset (tool-masking record)
 // ---------------------------------------------------------------------------
 
 export const READ_TOOLSET_ID = "gnubrain.read";
 export const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
-/** Register the three read tools and declare the read toolset (§5): the
+/** Register the three read tools and declare the read toolset: the
  * toolset exists so the surface is maskable from day one — default behavior
  * unchanged, no toggle subcommand (nothing asks to hide reads yet). */
 export function registerReadToolsAndToolset(

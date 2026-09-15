@@ -1,6 +1,6 @@
-// Unit ACs — write confirmation, file-path input, title guard,
+// kb_write tests — write confirmation, file-path input, title guard,
 // mint policy, verified-create, guard-stop staging — executed through the
-// registered kb_write definition on a fake pi (§10).
+// registered kb_write definition on a fake pi.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -250,7 +250,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("kb_write schema", () => {
-	it("does not declare confirmNew (learned only from rejections, §4)", () => {
+	it("does not declare confirmNew (learned only from rejections)", () => {
 		const { tool } = setup() as unknown as { tool: { parameters: unknown } };
 		const props = Object.keys(
 			(tool.parameters as { properties: Record<string, unknown> }).properties,
@@ -270,13 +270,13 @@ describe("kb_write schema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Mint policy (§4)
+// Mint policy
 // ---------------------------------------------------------------------------
 
 describe("mint policy", () => {
 	it("rejects each mint violation with its message and zero kernel calls", async () => {
 		const cases: [string, string][] = [
-			["   ", "empty after trim"],
+			[" ", "empty after trim"],
 			["a/b", "contains '/'"],
 			["x".repeat(513), "512 runes"],
 			["has\ttab", "tab/newline/control"],
@@ -298,13 +298,13 @@ describe("mint policy", () => {
 	});
 
 	it("trims before validating", () => {
-		const mint = validateMintTitle("  Docker Networking  ");
+		const mint = validateMintTitle(" Docker Networking ");
 		expect(mint.ok && mint.title).toBe("Docker Networking");
 	});
 });
 
 // ---------------------------------------------------------------------------
-// File-path input (§4)
+// File-path input
 // ---------------------------------------------------------------------------
 
 describe("markdownFile input", () => {
@@ -393,7 +393,7 @@ describe("markdownFile input", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Write confirmation (§5)
+// Write confirmation
 // ---------------------------------------------------------------------------
 
 describe("write confirmation", () => {
@@ -407,13 +407,13 @@ describe("write confirmation", () => {
 		expect(declined.details.status).toBe("refused");
 		expect(confirm).toHaveBeenCalledTimes(1);
 		// The decline answered nothing about the write itself — a re-ask is
-		// legitimate (§5), so the second call runs a fresh dialog.
+		// legitimate, so the second call runs a fresh dialog.
 		const allowed = await execute({ ...base });
 		expect(allowed.details.status).toBe("ok");
 		expect(confirm).toHaveBeenCalledTimes(2);
 	});
 
-	it("cancelled and timed-out confirms both refuse; timeout is terminal (§10)", async () => {
+	it("cancelled and timed-out confirms both refuse; timeout is terminal", async () => {
 		vi.useFakeTimers();
 		// A dialog the user never answers: resolves false on abort.
 		const confirm = vi.fn(
@@ -473,7 +473,7 @@ describe("write confirmation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Headless write default-deny (§5)
+// Headless write default-deny
 // ---------------------------------------------------------------------------
 
 describe("headless default-deny", () => {
@@ -512,7 +512,7 @@ describe("headless default-deny", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Title guard (§4)
+// Title guard
 // ---------------------------------------------------------------------------
 
 describe("title guard", () => {
@@ -679,7 +679,7 @@ describe("title guard", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Guard-stop staging (§4)
+// Guard-stop staging
 // ---------------------------------------------------------------------------
 
 describe("guard-stop staging", () => {
@@ -751,7 +751,7 @@ describe("guard-stop staging", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Verified-create + echo (§4)
+// Verified-create + echo
 // ---------------------------------------------------------------------------
 
 describe("verified-create", () => {
@@ -767,7 +767,7 @@ describe("verified-create", () => {
 		const { execute, kernel } = setup({
 			__config: { createdRows: [createdRow] },
 		});
-		const r = await execute({ ...base, topic: "  Docker Networking  " });
+		const r = await execute({ ...base, topic: " Docker Networking " });
 		expect(r.details.status).toBe("ok");
 		const create = kernel.calls.find(
 			(c) => c.method === "createDocWithMarkdown",

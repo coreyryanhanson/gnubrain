@@ -1,7 +1,7 @@
-// §4 write tool — kb_write: the confirmation gate and the
-// `create` flow end to end (title guard, mint policy, verified-create,
-// guard-stop staging). Every kernel-touching step rides the S1 gate
-// (runKbCall) and the write-path probe gate (gateWriteAttempt).
+// kb_write — the confirmation gate and the `create` flow end to end
+// (title guard, mint policy, verified-create, guard-stop staging). Every
+// kernel-touching step rides the shared gate (runKbCall) and the write-path
+// probe gate (gateWriteAttempt).
 
 import { createHash } from "node:crypto";
 import { stat as fsStat, readFile as fsReadFile } from "node:fs/promises";
@@ -70,7 +70,7 @@ export interface WriteToolHooks {
 	breaker: CircuitBreaker;
 	/** Session-scoped confirm_timeout state — same lifecycle class as the breaker. */
 	confirmState: WriteConfirmState;
-	/** Session-scoped fresh-content baselines (§4 decision record) — same
+	/** Session-scoped fresh-content baselines (decision record) — same
 	 * lifecycle class as the breaker/confirm state. */
 	baselines: ContentBaselines;
 	/** Injectable seams (unit tests); defaults wire to ctx at execute time. */
@@ -80,7 +80,7 @@ export interface WriteToolHooks {
 }
 
 // ---------------------------------------------------------------------------
-// Write confirmation (§5)
+// Write confirmation
 // ---------------------------------------------------------------------------
 
 export type WriteConfirmFn = (
@@ -90,7 +90,7 @@ export type WriteConfirmFn = (
 ) => Promise<boolean>;
 
 export interface WriteConfirmState {
-	/** Keys of writes that hit confirm_timeout — terminal for that write in this session (§5). */
+	/** Keys of writes that hit confirm_timeout — terminal for that write in this session. */
 	timedOut: Set<string>;
 }
 
@@ -98,7 +98,7 @@ export function createWriteConfirmState(): WriteConfirmState {
 	return { timedOut: new Set() };
 }
 
-/** Identifies "that write" for the terminal-timeout rule (§5). */
+/** Identifies "that write" for the terminal-timeout rule. */
 export function writeConfirmKey(parts: (string | undefined)[]): string {
 	return parts.map((p) => p ?? "-").join("|");
 }
@@ -106,11 +106,11 @@ export function writeConfirmKey(parts: (string | undefined)[]): string {
 export const DEFAULT_WRITE_CONFIRM_TIMEOUT = 60;
 
 /**
- * Pre-dialog permission check (§5): headless default-deny and the terminal
+ * Pre-dialog permission check: headless default-deny and the terminal
  * confirm_timeout rule — both zero-kernel-call checks that run before the
  * guard so a denied write costs no kernel round-trips. Returns `dialog:
  * true` when the interactive dialog must run after the guard, `dialog:
- * false` for an approved unattended write (dialog skipped, §5).
+ * false` for an approved unattended write (dialog skipped)..
  */
 export function preflightWrite(input: {
 	hasUI: boolean;
@@ -130,7 +130,7 @@ export function preflightWrite(input: {
 	}
 	if (!input.hasUI) {
 		if (input.allowUnattendedWrites === true) {
-			// Dialog skipped; the write proceeds unattended (§5).
+			// Dialog skipped; the write proceeds unattended.
 			return { ok: true, dialog: false };
 		}
 		return {
@@ -144,7 +144,7 @@ export function preflightWrite(input: {
 }
 
 /**
- * The dialog half of the write-confirmation gate (§5). Runs only after
+ * The dialog half of the write-confirmation gate. Runs only after
  * preflightWrite passed. Returns null to proceed with the write; otherwise
  * a `refused` envelope. Fail-closed by construction: every non-answer —
  * dismissal, thrown dialog call, timeout expiry — resolves to refused. The
@@ -184,7 +184,7 @@ export async function confirmWrite(input: {
 	}
 	if (confirmed) return null;
 	if (controller.signal.aborted) {
-		// Terminal for this write in this session (§5): a re-request refuses
+		// Terminal for this write in this session: a re-request refuses
 		// immediately without a new dialog — no confirm/timeout/refuse loop.
 		input.state.timedOut.add(key);
 		return refusedEnvelope(
@@ -192,21 +192,21 @@ export async function confirmWrite(input: {
 			{ reason: "confirm_timeout" },
 		);
 	}
-	// Explicit decline stays ordinary recoverable refused (§5).
+	// Explicit decline stays ordinary recoverable refused.
 	return refusedEnvelope(
 		`write declined by the user — a re-ask with a rephrased variant is legitimate.`,
 	);
 }
 
 // ---------------------------------------------------------------------------
-// File-path input (§4) — markdown XOR markdownFile, read once at call start
+// File-path input — markdown XOR markdownFile, read once at call start
 // ---------------------------------------------------------------------------
 
 /** Structured error for file-path input failures (missing / not a regular
- * file / unreadable) — always resolved before any kernel call (§4). */
+ * file / unreadable) — always resolved before any kernel call. */
 export class BodyFileError extends Error {}
 
-/** The §4 trust posture: "must exist, must be a regular file" — no path
+/** The trust posture: "must exist, must be a regular file" — no path
  * allowlisting (single-user VM holding an admin token). */
 export async function readBodyFile(path: string): Promise<string> {
 	let stat;
@@ -230,11 +230,11 @@ export async function readBodyFile(path: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Mint policy (§4) + guard patterns
+// Mint policy + guard patterns
 // ---------------------------------------------------------------------------
 
 /** The kernel stores title IALs entity-escaped in blocks.content; the guard
- * computes the stored form rather than being blind to it (§4). The double
+ * computes the stored form rather than being blind to it. The double
  * quote maps to `&#30;` — the kernel's own encoding. */
 export function htmlEscape(title: string): string {
 	return title
@@ -245,7 +245,7 @@ export function htmlEscape(title: string): string {
 		.replaceAll("'", "&#39;");
 }
 
-/** LIKE-wildcard escaping for the guard patterns (ESCAPE '\', §4): the
+/** LIKE-wildcard escaping for the guard patterns (ESCAPE '\'): the
  * HTML-escaped form contains no % or _, so this composes trivially. */
 export function likeEscape(fragment: string): string {
 	return fragment
@@ -259,7 +259,7 @@ export function guardExactPattern(title: string): string {
 	return likeEscape(htmlEscape(title));
 }
 
-/** Near-match prefix variants (§4): the title's separator runs canonicalized
+/** Near-match prefix variants: the title's separator runs canonicalized
  * to space / hyphen / underscore — built from the HTML-escaped title (same
  * parity as the exact leg); the intentional `_` is LIKE-escaped like any
  * other wildcard (`docker\_networking%`). */
@@ -275,8 +275,8 @@ export function guardNearPatterns(title: string): string[] {
 }
 
 /**
- * §4 mint policy — the rejection set covers every transform the kernel's
- * `normalizeDocTitle` applies (superset claim, pinned live by the §10 title
+ * mint policy — the rejection set covers every transform the kernel's
+ * `normalizeDocTitle` applies (superset claim, pinned live by the title
  * round-trip): any title that survives stores verbatim.
  */
 export function validateMintTitle(
@@ -312,7 +312,7 @@ export function validateMintTitle(
 	return { ok: true, title };
 }
 
-/** Rows at a guard stop are few; the near-match scan is capped at 20 (§4). */
+/** Rows at a guard stop are few; the near-match scan is capped at 20. */
 export const GUARD_NEAR_CAP = 20;
 
 interface GuardRow {
@@ -343,7 +343,7 @@ export function guardNearStmt(boxId: string, title: string): string {
 	const legs = guardNearPatterns(title)
 		.map((p) => `content LIKE ${sqlString(p)} ESCAPE ${sqlString("\\")}`)
 		.join(" OR ");
-	// LIMIT caps returned rows, not scan work (content has no index — §4);
+	// LIMIT caps returned rows, not scan work (content has no index —);
 	// +1 so the caller can distinguish "exactly 20" from "20+".
 	return (
 		`SELECT id, root_id, content, updated FROM blocks ` +
@@ -353,7 +353,7 @@ export function guardNearStmt(boxId: string, title: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Content baselines (§4 fresh-content precondition)
+// Content baselines (fresh-content precondition)
 // ---------------------------------------------------------------------------
 
 /** sha256-16hex of one block's content — the fresh-content baseline key. */
@@ -361,7 +361,7 @@ export function contentHash(content: string): string {
 	return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
-/** Session-scoped served-content baselines (§4 fresh-content precondition,
+/** Session-scoped served-content baselines (fresh-content precondition,
  * decision record): hash of each block's content as the tool last SERVED it
  * this session — never persisted, never seeded from submitted markdown
  * (the kernel re-parses it, so the stored form is unknowable at submit
@@ -406,7 +406,7 @@ function baselineContentsStmt(ids: string[]): string {
 	);
 }
 /**
- * §4 precondition, re-checked after confirmation approval, before any kernel
+ * precondition, re-checked after confirmation approval, before any kernel
  * write: the current content must still hash to the baseline. A mismatch →
  * `stale_content` refusal with the current content and fresh outline, no
  * kernel write fired (the message names the re-read path, never a retry).
@@ -463,10 +463,10 @@ async function assertFreshContent(
 }
 
 // ---------------------------------------------------------------------------
-// Write-result contract (§4) — echoes + verification evidence
+// Write-result contract — echoes + verification evidence
 // ---------------------------------------------------------------------------
 
-/** `data[0].doOperations[0].id` — the pinned response shape (§4 write-result
+/** `data[0].doOperations[0].id` — the pinned response shape (write-result
  * contract; the minted ID serializes as the first insert operation's id). */
 export function newBlockIdFrom(tx: BlockTransaction[]): string | undefined {
 	return tx[0]?.doOperations[0]?.id;
@@ -493,9 +493,9 @@ function referringHpathsStmt(rootIds: string[]): string {
 	);
 }
 
-/** Inbound block-refs over the delete set (§4 delete mode) — same documented
+/** Inbound block-refs over the delete set (delete mode) — same documented
  * SQL surface as every read; the count is advisory (the derived refs index
- * can lag, §9). */
+ * can lag). */
 async function backlinkCheck(
 	kernel: WriteKernelClient,
 	ids: string[],
@@ -511,7 +511,7 @@ async function backlinkCheck(
 	};
 }
 
-/** Root row echo (§4 write-result contract): root docId + stored title +
+/** Root row echo (write-result contract): root docId + stored title +
  * real hpath — display plus the echoed target R1 requires. */
 async function rootEcho(
 	kernel: WriteKernelClient,
@@ -536,7 +536,7 @@ function rootEchoStmt(boxId: string, docId: string): string {
 	);
 }
 
-/** Ownership query (§4): resolves the docId's root within the KB — doubles
+/** Ownership query: resolves the docId's root within the KB — doubles
  * as the scope check (an id from another KB matches no row). */
 function ownershipStmt(boxId: string, docId: string): string {
 	return (
@@ -545,7 +545,7 @@ function ownershipStmt(boxId: string, docId: string): string {
 	);
 }
 
-/** The unfiltered post-write walk (§4 stale-target record) — evidence for
+/** The unfiltered post-write walk (stale-target record) — evidence for
  * insert/move/delete verification. */
 async function walkIdSet(
 	kernel: WriteKernelClient,
@@ -559,7 +559,7 @@ function idSet(walk: WalkedBlock[]): Set<string> {
 }
 
 /** Fresh outline + root echo + content-baseline refresh — the tail every
- * doc-targeting result shares (§4 write-result contract). One full
+ * doc-targeting result shares (write-result contract). One full
  * unfiltered walk; a pre-fetched walk (the verification evidence the flow
  * already holds) is reused instead of re-traversing. */
 async function writeEchoTail(input: {
@@ -586,7 +586,7 @@ async function writeEchoTail(input: {
 		envelope.title = root.title;
 		envelope.hpath = root.hpath;
 	}
-	// Refresh baselines for the target doc's blocks (§4: write results
+	// Refresh baselines for the target doc's blocks (write results
 	// refresh the map for blocks whose content the result carried).
 	for (const block of walk) {
 		baselines.remember(block.id, block.content);
@@ -595,16 +595,16 @@ async function writeEchoTail(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Anchors + section slicing (§4) — always tool-derived, never agent-supplied
+// Anchors + section slicing — always tool-derived, never agent-supplied
 // ---------------------------------------------------------------------------
 
-/** `appendBlock` on the doc root — the doc-end fallback (§4 anchor echo). */
+/** `appendBlock` on the doc root — the doc-end fallback (anchor echo). */
 const DOC_END_ANCHOR = "appendBlock(root) — no next heading";
 
 /**
- * `append`/replace-section anchor (§4, pinned): `nextID` = the NEXT heading
+ * `append`/replace-section anchor (pinned): `nextID` = the NEXT heading
  * in document order — never a last-block or heading anchor (the list/quote
- * nesting trap, §4). The heading-only outline IS the anchor data; a walk
+ * nesting trap). The heading-only outline IS the anchor data; a walk
  * node's position decides. No next heading (target IS the last heading, or
  * no heading given) → `appendBlock` on the doc root.
  */
@@ -631,13 +631,13 @@ export function deriveAppendAnchor(
 }
 
 /**
- * §4 delete-set enumeration — the getChildBlocks document-order walk, never
- * SQL (§3's superseded-outline record). The section slice runs from the
+ * delete-set enumeration — the getChildBlocks document-order walk, never
+ * SQL ('s superseded-outline record). The section slice runs from the
  * target heading to the next heading of same-or-shallower depth; the target
  * heading itself survives (the new body lands under it, preserving its ID
  * and every ref into it). Deeper headings inside the section belong to it.
  * Final section (no boundary): the slice runs to end of doc, sweeping
- * trailing non-heading content (§4's final-section pin).
+ * trailing non-heading content ('s final-section pin).
  */
 export function sectionDeleteSet(
 	walk: WalkedBlock[],
@@ -661,7 +661,7 @@ export function sectionDeleteSet(
 }
 
 /**
- * §4 move anchor: the last top-level node of the toHeadingId section,
+ * move anchor: the last top-level node of the toHeadingId section,
  * heading-recursed (a section ending in a subheading → after the
  * subsection, not inside it); list/quote containers end at section level —
  * the walk's depth axis never descends INTO a container for this choice.
@@ -704,7 +704,7 @@ export function deriveMoveAnchor(
 	// Last member at the heading's own container depth — recursing through a
 	// subheading's section (its content sits at the same walk depth), never
 	// into a list/quote container (deeper blocks are skipped by the depth
-	// test, so the anchor stays at section level, §4).
+	// test, so the anchor stays at section level)..
 	let anchor: WalkedBlock | undefined;
 	for (let i = members.length - 1; i >= 0; i--) {
 		const member = members[i];
@@ -725,7 +725,7 @@ export function deriveMoveAnchor(
 	}
 	if (anchor.type === "h") {
 		// Section ends in a subheading: step into it — its section's last
-		// top-level node is the anchor (§4 heading-recursed rule).
+		// top-level node is the anchor (heading-recursed rule).
 		return deriveMoveAnchor(destWalk, anchor.id);
 	}
 	return {
@@ -736,7 +736,7 @@ export function deriveMoveAnchor(
 }
 
 // ---------------------------------------------------------------------------
-// Delete-set display (§4) — confirmation shows what a delete-bearing write
+// Delete-set display — confirmation shows what a delete-bearing write
 // orphans: block count, the trailing blocks' current content, inbound refs
 // ---------------------------------------------------------------------------
 
@@ -777,7 +777,7 @@ export interface CreateFlowInput {
 	title: string;
 	parentId?: string | undefined;
 	body: string;
-	/** True when the body came from markdownFile — staging is skipped (§4). */
+	/** True when the body came from markdownFile — staging is skipped. */
 	bodyFromFile: boolean;
 	confirmNew: boolean;
 	confirm: WriteConfirmFn;
@@ -820,7 +820,7 @@ async function duplicateStop(
 		rows: detailed,
 	};
 	// Single-row: block IDs with content so the agent can go straight to
-	// `edit` by blockId (§4 step 1).
+	// `edit` by blockId (step 1).
 	if (rows.length === 1) {
 		const docId = rows[0]!.root_id;
 		const blocks = (await walkBlockTree(kernel, docId, 1)).map((b) => ({
@@ -847,8 +847,8 @@ async function nearMatchStop(
 	const { kernel, name } = input;
 	const candidates: Record<string, unknown>[] = [];
 	for (const row of rows) {
-		// First paragraph of each candidate (§4): the first child block's
-		// content — cheap and excerpt-only by design (§4 near-match tier).
+		// First paragraph of each candidate: the first child block's
+		// content — cheap and excerpt-only by design (near-match tier).
 		let firstParagraph = "";
 		try {
 			const children = await kernel.getChildBlocks(row.root_id);
@@ -878,7 +878,7 @@ async function nearMatchStop(
 	return stagedEnvelope(envelope, input);
 }
 
-/** Guard-stop draft staging (§4): an inline body is staged so the retry
+/** Guard-stop draft staging: an inline body is staged so the retry
  * travels by path (~25 tokens) instead of re-transmitting the full draft.
  * Creates that already used markdownFile stage nothing. */
 function stagedEnvelope(envelope: Envelope, input: CreateFlowInput): Envelope {
@@ -904,7 +904,7 @@ function verifiedRootStmt(boxId: string, returnedId: string): string {
 }
 
 /**
- * The `create` flow (§4): title guard (exact leg, then near-match scan) →
+ * The `create` flow: title guard (exact leg, then near-match scan) →
  * write confirmation → submission path built from ground truth →
  * verified-create by-ID asserts → echo (root docId, stored title, real
  * hpath, fresh outline). `confirmNew: true` bypasses both guard legs; the
@@ -918,7 +918,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const confirmKey = writeConfirmKey([name, "create", title]);
 	const summary = `Create '${title}' in KB '${name}' (${input.body.length} chars)`;
 
-	// Pre-dialog permission (§5): headless default-deny + terminal
+	// Pre-dialog permission: headless default-deny + terminal
 	// confirm_timeout — both before the guard, so a denied write costs zero
 	// kernel calls.
 	const preflight = preflightWrite({
@@ -930,7 +930,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	});
 	if (!preflight.ok) return preflight.envelope;
 
-	// Guard (§4) — exact leg first; only an empty exact leg runs the scan.
+	// Guard — exact leg first; only an empty exact leg runs the scan.
 	if (!input.confirmNew) {
 		const exact = toGuardRows(await kernel.query(guardExactStmt(boxId, title)));
 		if (exact.length > 0) return duplicateStop(input, title, exact);
@@ -938,7 +938,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		if (near.length > 0) return nearMatchStop(input, title, near);
 	}
 
-	// Write confirmation (§5) — after the guard, so a stop costs no dialog.
+	// Write confirmation — after the guard, so a stop costs no dialog.
 	if (preflight.dialog) {
 		const gate = await confirmWrite({
 			confirm: input.confirm,
@@ -950,7 +950,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		if (gate !== null) return gate;
 	}
 
-	// Submission path from ground truth, never predicted (§4 step 3).
+	// Submission path from ground truth, never predicted (step 3).
 	let path: string;
 	let parentID: string | undefined;
 	let storedParentHpath: string | undefined;
@@ -978,7 +978,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		...(parentID !== undefined ? { parentID } : {}),
 	});
 
-	// Verified-create (§4 step 4): by-ID asserts on the kernel-returned root
+	// Verified-create (step 4): by-ID asserts on the kernel-returned root
 	// ID — fail-loud on shape, never a by-title re-lookup.
 	const rootRows = (
 		await kernel.query(verifiedRootStmt(boxId, returnedId))
@@ -1035,7 +1035,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 }
 
 // ---------------------------------------------------------------------------
-// Remaining write modes (§4) — edit / append / replace-section / delete /
+// Remaining write modes — edit / append / replace-section / delete /
 // move. Shared scaffolding: mode-target shape → preflight (zero kernel
 // calls when denied) → doc ownership → dialog (delete-set display where
 // delete-bearing) → fresh-content precondition → kernel op → verified (not
@@ -1064,7 +1064,7 @@ interface DocTarget {
 	hpath: string;
 }
 
-/** §4: every non-create mode takes docId — an echoed target, ownership-
+/** Every non-create mode takes docId — an echoed target, ownership-
  * checked by the same scoping query (an id from another KB reads as
  * nothing). */
 async function resolveDocTarget(
@@ -1089,9 +1089,9 @@ async function resolveDocTarget(
 	return { rootId: root.docId, title: root.title, hpath: root.hpath };
 }
 
-/** Mode-specific target params (§4 schema table) — anything else the agent
+/** Mode-specific target params (schema table) — anything else the agent
  * sends is rejected before any kernel call. `confirmNew` is never declared
- * in the tool schema but always accepted at runtime (§4 decision record). */
+ * in the tool schema but always accepted at runtime (decision record). */
 const MODE_PARAMS: Record<string, string[]> = {
 	create: ["topic", "parentId"],
 	edit: ["docId", "blockId"],
@@ -1103,7 +1103,7 @@ const MODE_PARAMS: Record<string, string[]> = {
 
 const WRITE_MODE_LIST = "create, edit, replace-section, append, delete, move";
 
-/** §4 schema-table shape validation — mode-specific targets, zero kernel
+/** schema-table shape validation — mode-specific targets, zero kernel
  * calls. */
 export function modeShapeProblem(p: WriteParams): string | undefined {
 	const mode = p.mode;
@@ -1122,7 +1122,7 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 	if (unexpected.length > 0) {
 		return `mode '${mode}' does not take: ${unexpected.join(", ")}`;
 	}
-	// §4 schema-table split: content-bearing modes take markdown XOR
+	// schema-table split: content-bearing modes take markdown XOR
 	// markdownFile; delete/move carry neither (a sent body is a mistake,
 	// never silently ignored).
 	if (!CONTENT_BEARING_MODES.has(mode)) {
@@ -1208,7 +1208,7 @@ export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 		input.params.toDocId,
 		input.params.toHeadingId,
 	]);
-	// Pre-dialog permission (§5) before ANY kernel call — a denied write
+	// Pre-dialog permission before ANY kernel call — a denied write
 	// costs zero round-trips, same posture as create.
 	const preflight = preflightWrite({
 		hasUI: input.hasUI,
@@ -1262,7 +1262,7 @@ function blockInDocStmt(docId: string, blockId: string): string {
 	);
 }
 
-// --- edit (§4: updateBlock on an agent-supplied blockId target) -----------
+// --- edit (updateBlock on an agent-supplied blockId target) -----------
 
 async function runEditMode(
 	input: WriteFlowInput,
@@ -1278,7 +1278,7 @@ async function runEditMode(
 			`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
 		);
 	}
-	// Fresh-content baseline (§4): served content where the session has seen
+	// Fresh-content baseline: served content where the session has seen
 	// this block, else the block's CURRENT content — displayed in the
 	// confirmation; approval establishes it.
 	const summary =
@@ -1291,7 +1291,7 @@ async function runEditMode(
 	if (baselines.servedHash(blockId) === undefined) {
 		baselines.remember(blockId, String(rows[0].content));
 	}
-	// Precondition: re-check after approval, before the kernel call (§4).
+	// Precondition: re-check after approval, before the kernel call.
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,
@@ -1302,7 +1302,7 @@ async function runEditMode(
 	try {
 		await kernel.updateBlock({ id: blockId, data: input.body });
 	} catch (err) {
-		// §4 stale-target record: updateBlock errors synchronously — surface
+		// stale-target record: updateBlock errors synchronously — surface
 		// verbatim with the fresh outline attached. Auth/rate-limit/network
 		// classes rethrow for runKbCall's classification.
 		if (!(err instanceof SiYuanApiError)) throw err;
@@ -1330,7 +1330,7 @@ async function runEditMode(
 	};
 }
 
-// --- append (§4: tool-derived nextID anchor; doc-end fallback) ------------
+// --- append (tool-derived nextID anchor; doc-end fallback) ------------
 
 async function runAppendMode(
 	input: WriteFlowInput,
@@ -1340,7 +1340,7 @@ async function runAppendMode(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId, params } = input;
 	// The walk doubles as anchor data AND the pre-write set for verification
-	// (§4 stale-target record: the same walk the anchor derivation fetches).
+	// (stale-target record: the same walk the anchor derivation fetches).
 	const walk = await walkBlockTree(kernel, doc.rootId, 1);
 	if (params.headingId !== undefined) {
 		const heading = walk.find(
@@ -1362,10 +1362,10 @@ async function runAppendMode(
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
 			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
-	// §4 verified, not trusted: the returned id must appear among the
+	// verified, not trusted: the returned id must appear among the
 	// post-write walk set's newly-present ids — a tree-level miss rolls back
 	// silently behind HTTP success. Multi-block: diff-based; single-block:
-	// exactly one id (pinned live, §10).
+	// exactly one id (pinned live)..
 	const newBlockId = newBlockIdFrom(tx);
 	const preIds = idSet(walk);
 	const postWalk = await walkIdSet(kernel, doc.rootId);
@@ -1406,7 +1406,7 @@ async function runAppendMode(
 	};
 }
 
-// --- replace-section (§4: enumerate → insert → delete, one call) ----------
+// --- replace-section (enumerate → insert → delete, one call) ----------
 
 async function runReplaceSectionMode(
 	input: WriteFlowInput,
@@ -1416,7 +1416,7 @@ async function runReplaceSectionMode(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId, baselines, params } = input;
 	const headingId = params.headingId as string;
-	// Delete-set enumeration rides the §3 document-order walk, never SQL.
+	// Delete-set enumeration rides the document-order walk, never SQL.
 	const walk = await walkBlockTree(kernel, doc.rootId, 1);
 	const heading = walk.find((b) => b.id === headingId && b.type === "h");
 	if (heading === undefined) {
@@ -1425,7 +1425,7 @@ async function runReplaceSectionMode(
 		);
 	}
 	const deleteSet = sectionDeleteSet(walk, headingId);
-	// §4: the confirmation displays the enumerated delete set — block count,
+	// The confirmation displays the enumerated delete set — block count,
 	// the trailing blocks' current content (spill budget applies), and the
 	// same backlink visibility `delete` carries.
 	const display = await deleteSetDisplay(kernel, sessionId, deleteSet);
@@ -1441,7 +1441,7 @@ async function runReplaceSectionMode(
 		const gate = await confirmGate(input, confirmKey, summary);
 		if (gate !== null) return gate;
 	}
-	// Fresh-content precondition (§4): approval establishes the baseline for
+	// Fresh-content precondition: approval establishes the baseline for
 	// never-served delete-set blocks; then re-check before any kernel call.
 	for (const block of deleteSet) {
 		if (baselines.servedHash(block.id) === undefined) {
@@ -1458,7 +1458,7 @@ async function runReplaceSectionMode(
 		{ sessionId, docId: doc.rootId },
 	);
 	if (stale !== null) return stale;
-	// insert-before-delete (§4): a mid-sequence failure must cost visible
+	// insert-before-delete: a mid-sequence failure must cost visible
 	// duplication, never loss. Same anchor rule as `append`.
 	const anchor = deriveAppendAnchor(walk, headingId);
 	const tx =
@@ -1467,7 +1467,7 @@ async function runReplaceSectionMode(
 			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
 	const newBlockId = newBlockIdFrom(tx);
 	// Verify the insert landed BEFORE any delete — a silent rollback must not
-	// sweep the old section away (§4 stale-target record).
+	// sweep the old section away (stale-target record).
 	const preIds = idSet(walk);
 	const afterInsertWalk = await walkIdSet(kernel, doc.rootId);
 	const landed =
@@ -1481,11 +1481,11 @@ async function runReplaceSectionMode(
 		);
 	}
 	// Deletes ride the pre-enumerated set — a post-insert re-enumeration
-	// would sweep the replacement into the delete set (§4).
+	// would sweep the replacement into the delete set.
 	for (const block of deleteSet) {
 		await kernel.deleteBlock(block.id);
 	}
-	// invalidRefs (§4 write-result contract): post-write echo over the
+	// invalidRefs (write-result contract): post-write echo over the
 	// enumerated delete set — what actually got orphaned, verified.
 	const invalidRefs = await backlinkCheck(
 		kernel,
@@ -1493,7 +1493,7 @@ async function runReplaceSectionMode(
 	);
 	// The echo tail re-walks AFTER the deletes: the post-insert walk still
 	// carries the swept blocks, and the outline-freshness contract requires
-	// the post-write tree (§4 write-result contract).
+	// the post-write tree (write-result contract).
 	const tail = await writeEchoTail({
 		kernel,
 		sessionId,
@@ -1512,7 +1512,7 @@ async function runReplaceSectionMode(
 	};
 }
 
-// --- delete (§4: block-level deleteBlock; doc-level removeDocByID) --------
+// --- delete (block-level deleteBlock; doc-level removeDocByID) --------
 
 async function runDeleteMode(
 	input: WriteFlowInput,
@@ -1522,8 +1522,8 @@ async function runDeleteMode(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId, params } = input;
 	if (params.doc === true) {
-		// Whole-doc delete: the delete set is the §4 walk set; backlink
-		// visibility rides the confirmation (§4 delete mode).
+		// Whole-doc delete: the delete set is the walk set; backlink
+		// visibility rides the confirmation (delete mode).
 		const walk = await walkBlockTree(kernel, doc.rootId, 1);
 		const display = await deleteSetDisplay(kernel, sessionId, walk);
 		const summary =
@@ -1539,12 +1539,12 @@ async function runDeleteMode(
 			if (gate !== null) return gate;
 		}
 		await kernel.removeDocByID(doc.rootId);
-		// invalidRefs rides the pre-delete walk set — the doc is gone (§4).
+		// invalidRefs rides the pre-delete walk set — the doc is gone.
 		const invalidRefs = await backlinkCheck(
 			kernel,
 			walk.map((b) => b.id),
 		);
-		// Pinned shape: only invalidRefs — no doc left to outline (§4).
+		// Pinned shape: only invalidRefs — no doc left to outline.
 		return {
 			status: "ok",
 			message: `deleted doc '${doc.title}' (${doc.rootId}) in KB ${name} — ${invalidRefs.count} orphaned ref(s)`,
@@ -1574,7 +1574,7 @@ async function runDeleteMode(
 		if (gate !== null) return gate;
 	}
 	await kernel.deleteBlock(blockId);
-	// Verified, not trusted (§4): a missing ID is a kernel success no-op —
+	// Verified, not trusted: a missing ID is a kernel success no-op —
 	// the walk-set evidence (target gone) is the report, never assumed.
 	const postWalk = await walkIdSet(kernel, doc.rootId);
 	const targetGone = !idSet(postWalk).has(blockId);
@@ -1598,10 +1598,10 @@ async function runDeleteMode(
 	};
 }
 
-// --- move (§4: block-level moveBlock with tool-derived anchors;
+// --- move (block-level moveBlock with tool-derived anchors;
 //        doc-level moveDocsByID) -------------------------------------------
 
-/** §4 doc-level self-descendant pre-check: walk the destination's ancestor
+/** doc-level self-descendant pre-check: walk the destination's ancestor
  * chain over type='d' rows; the source appearing means the destination is
  * the source or one of its nested descendants — the kernel silently filters
  * exactly that move (success, zero moves). Rejected here, never forwarded.
@@ -1628,7 +1628,7 @@ async function isOwnDescendant(
 	return false;
 }
 
-/** Cross-doc block move's `destOutline` (§4 write-result contract): fresh
+/** Cross-doc block move's `destOutline` (write-result contract): fresh
  * destination outline fetched after the move lands. */
 async function destOutlinePayload(
 	sessionId: string,
@@ -1651,7 +1651,7 @@ async function runMoveMode(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId, params } = input;
 	if (params.doc === true) {
-		// Doc-level move (§4): moveDocsByID — destination doc or the notebook
+		// Doc-level move: moveDocsByID — destination doc or the notebook
 		// id (un-nest). Intra-KB by construction (single-kb write contract).
 		let destId = boxId;
 		let destLabel = "the notebook root";
@@ -1680,7 +1680,7 @@ async function runMoveMode(
 			await kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId });
 		} catch (err) {
 			// The 7-level depth cap and other kernel rejections surface
-			// verbatim (§4 doc-level record).
+			// verbatim (doc-level record).
 			if (!(err instanceof SiYuanApiError)) throw err;
 			return errorEnvelope(err.message, { kb: name, docId: doc.rootId });
 		}
@@ -1692,7 +1692,7 @@ async function runMoveMode(
 			baselines: input.baselines,
 		});
 		// Pinned shape: outline + title/hpath echo, no anchor/newBlockId/
-		// destOutline (§4 doc-level record).
+		// destOutline (doc-level record).
 		return {
 			status: "ok",
 			message: `moved doc '${doc.title}' to ${destLabel} (KB ${name})`,
@@ -1715,7 +1715,7 @@ async function runMoveMode(
 	);
 	if ("status" in dest) return dest;
 	const sameDoc = dest.rootId === doc.rootId;
-	// Destination outline (§4): cross-doc fetches the destination walk;
+	// Destination outline: cross-doc fetches the destination walk;
 	// same-doc derives from the already-in-hand source walk — no extra call.
 	const sourceWalk = await walkBlockTree(kernel, doc.rootId, 1);
 	const destWalk = sameDoc
@@ -1731,7 +1731,7 @@ async function runMoveMode(
 			);
 		}
 	}
-	// Anchor (§4): tool-derived, never agent-supplied.
+	// Anchor: tool-derived, never agent-supplied.
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	if (dialog) {
@@ -1743,7 +1743,7 @@ async function runMoveMode(
 	} else {
 		await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
 	}
-	// Verified, not trusted (§4): a tree-level miss rolls back silently
+	// Verified, not trusted: a tree-level miss rolls back silently
 	// behind HTTP success — movedBlockId must appear in the destination's
 	// post-move walk set (and, cross-doc, be gone from the source's).
 	const postSourceWalk = await walkIdSet(kernel, doc.rootId);
@@ -1794,7 +1794,7 @@ async function runMoveMode(
 }
 
 // ---------------------------------------------------------------------------
-// Write toolset (§5 tool-masking record)
+// Write toolset (tool-masking record)
 // ---------------------------------------------------------------------------
 
 export const WRITE_TOOLSET_ID = "gnubrain.write";
@@ -1804,7 +1804,7 @@ export const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
 // Tool registration
 // ---------------------------------------------------------------------------
 
-/** Modes that carry a body (§4 schema table) — delete/move carry neither
+/** Modes that carry a body (schema table) — delete/move carry neither
  * markdown nor markdownFile and are valid without them. */
 const CONTENT_BEARING_MODES = new Set([
 	"create",
@@ -1822,7 +1822,7 @@ const writeSchema = Type.Object({
 		description: "KB name to write into — must be in the active scope",
 	}),
 	mode: Type.String({
-		description: 'write mode — currently "create"',
+		description: `write mode — one of ${WRITE_MODE_LIST}`,
 	}),
 	topic: Type.Optional(
 		Type.String({
@@ -1884,7 +1884,7 @@ const writeSchema = Type.Object({
 	),
 });
 export type WriteParams = Static<typeof writeSchema> & {
-	confirmNew?: unknown; // never declared in the schema (§4 decision record)
+	confirmNew?: unknown; // never declared in the schema (decision record)
 };
 
 export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
@@ -1912,7 +1912,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 							"kb tools are not ready — settings did not load",
 						);
 					}
-					// Write-path probe gate (§5): a successful probe (or a
+					// Write-path probe gate: a successful probe (or a
 					// per-attempt retry) must precede any write.
 					const probeEnv = await gateWriteAttempt({ validation, kernel });
 					if (probeEnv !== null) return probeEnv;
@@ -1921,7 +1921,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					if (boxId === undefined) {
 						return errorEnvelope(`KB '${name}' is not in the valid set`);
 					}
-					// Content-body shape: markdown XOR markdownFile (§4). The file
+					// Content-body shape: markdown XOR markdownFile. The file
 					// read is the call's first content step — before any guard
 					// query — so a bad path refuses with zero kernel calls.
 					let body: string | undefined = p.markdown;
@@ -1967,7 +1967,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						});
 					}
 					// Non-create modes: runWriteMode validates the mode-specific
-					// target shape (§4 schema table) before any kernel call.
+					// target shape (schema table) before any kernel call.
 					return runWriteMode({
 						...flowBase,
 						params: p,

@@ -1,4 +1,4 @@
-// §5 auth-lockout circuit breaker + 429 cooldown.
+// auth-lockout circuit breaker + 429 cooldown.
 // The breaker counts consecutive 401/403 failures per session and trips at 3.
 // A 429 is never counted toward the breaker and never resets it (it is not
 // evidence this session's token is wrong); it arms a local cooldown deadline
@@ -7,7 +7,7 @@
 import type { SiYuanRateLimitError } from "siyuan-kernel-api";
 
 export const BREAKER_THRESHOLD = 3;
-/** §5 floor: the verified first kernel lock is 60s; the served header can
+/** floor: the verified first kernel lock is 60s; the served header can
  * understate a lock extended since it was computed, so the deadline is advisory. */
 export const COOLDOWN_FLOOR_SECONDS = 60;
 
@@ -21,7 +21,7 @@ export class CircuitBreaker {
 		this.consecutive += 1;
 	}
 
-	/** §5 reset-on-success: any successful authenticated call clears the count. */
+	/** reset-on-success: any successful authenticated call clears the count. */
 	recordSuccess(): void {
 		this.consecutive = 0;
 	}
@@ -58,7 +58,7 @@ export class CircuitBreaker {
 	}
 
 	/** /kb recovery clears the breaker count only — an active 429 cooldown is
-	 * deliberately untouched and self-heals on expiry (§5 pins no /kb recovery
+	 * deliberately untouched and self-heals on expiry (pins no /kb recovery
 	 * for the cooldown; clearing it early would let a retry re-extend the lock). */
 	reset(): void {
 		this.consecutive = 0;

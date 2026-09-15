@@ -1,4 +1,4 @@
-// §5 status bar slot — a glance surface, two words max. The text never changes
+// status bar slot — a glance surface, two words max. The text never changes
 // with capability; the dot color carries it. Precedence is severity-first:
 // unreachable → red; degraded-config causes (yellow, first match wins) →
 // shape `config`, tripped breaker `breaker`, version drift `version`;
@@ -14,7 +14,7 @@ export interface KbStatusInput {
 	shapeErrors: string[];
 	breakerTripped: boolean;
 	scope: string[];
-	/** Live toolset state (S1: no toolsets registered → both false → hollow). */
+	/** Live toolset state (no toolsets registered → both false → hollow). */
 	readsEnabled: boolean;
 	writesEnabled: boolean;
 }

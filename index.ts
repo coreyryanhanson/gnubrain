@@ -34,7 +34,7 @@ import {
 // /kb command (scope toggles + recovery), the read tools (kb_query /
 // kb_search / kb_read) and read toolset, kb_write (write
 // confirmation gate + create flow), and the write toolset
-// (requires the read toolset — live-toggle cascade, §5), the /kb tools
+// (requires the read toolset — live-toggle cascade), the /kb tools
 // write verb, the fresh-content baselines, and the write-modes dispatch.
 // All of it hangs off the same register(pi, deps) seam.
 
@@ -66,7 +66,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	let kernelClient: KernelProbeClient | undefined;
 
 	// Read tools + toolset: the hooks read the live closure state,
-	// so masking and post-toggle scope compose mid-session (§5).
+	// so masking and post-toggle scope compose mid-session.
 	const readToolset: Toolset = registerReadToolsAndToolset(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernelClient as KernelReadClient | undefined,
@@ -75,7 +75,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 
 	// Write tool: rides the same gate + probe verdict. The confirm state is
 	// session-scoped machinery, same lifecycle class as the breaker; the
-	// fresh-content baselines ride the same lifecycle (§4 decision record —
+	// fresh-content baselines ride the same lifecycle (decision record —
 	// empty after resume/fork, the no-baseline fallback applies).
 	const confirmState = createWriteConfirmState();
 	const baselines = createContentBaselines();
@@ -87,7 +87,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		baselines,
 	});
 
-	// Write toolset (§5 tool-masking record): one tool, all mutation modes;
+	// Write toolset (tool-masking record): one tool, all mutation modes;
 	// requires the read toolset — enabling writes cascades reads on,
 	// disabling reads cascades writes off (live toggles only; the settings
 	// tier applies pins per-toolset without the cascade — the documented
@@ -110,13 +110,13 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		breakerTripped: breaker.tripped,
 		scope: validation?.scope ?? [],
 		// Glyph state reads live toolset state — any disabler (our toggle,
-		// toolsetDefaults pins, allowlist mode) is reflected (§5).
+		// toolsetDefaults pins, allowlist mode) is reflected.
 		readsEnabled: readToolset.isEnabled(pi),
 		writesEnabled: writeToolset.isEnabled(pi),
 	});
 
 	// Last ctx seen by a render — TOOLSET_EVENTS carry no ctx, so the glyph
-	// repaints against it (§5: /kb tools verbs recolor mid-session).
+	// repaints against it (/kb tools verbs recolor mid-session).
 	let lastRenderCtx: ExtensionContext | undefined;
 
 	function renderStatus(ctx: ExtensionContext) {
@@ -127,7 +127,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				renderKbStatus(statusInput(validation), ctx.ui.theme),
 			);
 		} catch {
-			// Headless / no UI — the slot is best-effort by design (§5).
+			// Headless / no UI — the slot is best-effort by design.
 		}
 	}
 
@@ -138,7 +138,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	}
 
 	/** The full validation pass — shared by session_start and /kb recovery
-	 * (§5: every /kb dispatch re-runs it; corrected credentials and
+	 * every /kb dispatch re-runs it; corrected credentials and
 	 * defaultKBs edits take effect mid-session). */
 	async function revalidate(ctx: ExtensionContext): Promise<SessionValidation> {
 		const loaded = await loadGnubrainSettings(
@@ -177,12 +177,12 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		renderStatus(ctx);
 	});
 
-	// §5 /kb command: every dispatch first re-runs the full
+	// /kb command: every dispatch first re-runs the full
 	// validation pass — success clears degradation + the breaker counter,
 	// failure re-engages all-or-nothing — before the subcommand runs.
 	pi.registerCommand("kb", {
 		description:
-			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|off])",
+			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|write|off])",
 		handler: async (args, ctx) => {
 			const ui = ctx.ui;
 			try {
@@ -196,7 +196,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				return;
 			}
 			if (validation.authFailed) {
-				// The re-check's own auth failure feeds the breaker (§5 counting).
+				// The re-check's own auth failure feeds the breaker (counting).
 				breaker.recordAuthFailure();
 			} else if (validation.lsNotebooksOk) {
 				// Recovery succeeded: clears degradation + the breaker counter.
@@ -207,7 +207,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				args,
 				validation,
 				[
-					// Bare `/kb` toolset-state lines (§5 tool-masking record): a masked
+					// Bare `/kb` toolset-state lines (tool-masking record): a masked
 					// toolset is printed, never silent.
 					`read toolset (kb_query, kb_search, kb_read): ${
 						readToolset.isEnabled(pi)
@@ -225,7 +225,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				writeToolset.isEnabled(pi),
 			);
 			if (result.newScope !== undefined) {
-				// §5: a complete snapshot of the active set; latest entry wins.
+				// A complete snapshot of the active set; latest entry wins.
 				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
 				validation.scope = result.newScope;
 			}
@@ -233,12 +233,12 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				if (result.newReadsEnabled) {
 					readToolset.enable(pi);
 				} else {
-					readToolset.disable(pi); // cascades write off (requires, §5)
+					readToolset.disable(pi); // cascades write off (requires)
 				}
 			}
 			if (result.newWritesEnabled !== undefined) {
 				if (result.newWritesEnabled) {
-					writeToolset.enable(pi); // cascades reads on (requires, §5)
+					writeToolset.enable(pi); // cascades reads on (requires)
 				} else {
 					writeToolset.disable(pi);
 				}
@@ -248,7 +248,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		},
 	});
 
-	// Post-restore re-render (§5): the slot reflects the restored scope.
+	// Post-restore re-render: the slot reflects the restored scope.
 	pi.on("session_tree", (_event, ctx) => {
 		renderStatus(ctx);
 	});

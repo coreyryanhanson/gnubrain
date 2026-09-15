@@ -21,7 +21,7 @@ describe("CircuitBreaker", () => {
 		breaker.recordSuccess();
 		breaker.recordAuthFailure();
 		breaker.recordAuthFailure();
-		// 2 fail → success → 2 fail does not trip (§5 reset-on-success rule).
+		// 2 fail → success → 2 fail does not trip (reset-on-success rule).
 		expect(breaker.tripped).toBe(false);
 	});
 
@@ -81,7 +81,7 @@ describe("CircuitBreaker", () => {
 		breaker.reset();
 		expect(breaker.tripped).toBe(false);
 		expect(breaker.failures).toBe(0);
-		// §5: the cooldown self-heals on expiry alone — no /kb recovery for it.
+		// The cooldown self-heals on expiry alone — no /kb recovery for it.
 		expect(breaker.inCooldown(NOW)).toBe(true);
 		expect(breaker.inCooldown(NOW + 300_000)).toBe(false);
 	});

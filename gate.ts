@@ -1,4 +1,4 @@
-// The single dispatch gate every kb tool call routes through (§5).
+// The single dispatch gate every kb tool call routes through.
 // Order is pinned: shape → breaker → 429 cooldown → `kb` param — all local
 // refusals with zero kernel calls. Only then does the kernel op run, and its
 // errors classify in one place (auth feeds the breaker, 429 arms the cooldown,
@@ -28,7 +28,7 @@ import { PINNED_SIYUAN_VERSION } from "./validation.js";
 /** `query`/`search` take an array of names; every other tool exactly one. */
 export type KbArity = "array" | "single";
 
-/** §5's empty-scope wording — shared by the gate and the `kbs` discovery
+/** Empty-scope wording — shared by the gate and the `kbs` discovery
  * form (kb_read), which reuses it verbatim for an empty active set. */
 export const EMPTY_SCOPE_MESSAGE =
 	"no KBs in scope — activate one with /kb <name> on, or set gnubrain.defaultKBs";
@@ -37,7 +37,7 @@ function activeList(validation: SessionValidation): string {
 	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
 }
 
-/** §5: one rejection vocabulary shared by the tool `kb` param and `/kb`
+/** One rejection vocabulary shared by the tool `kb` param and `/kb`
  * toggles — unknown name vs configured-but-invalid. */
 export function kbNameProblem(
 	name: string,
@@ -51,7 +51,7 @@ export function kbNameProblem(
 	return `KB '${name}' is not available (stale or encrypted notebook — see the session warnings). Active: ${activeList(validation)}`;
 }
 
-/** §5 `kb` param contract — messages are the model's discovery mechanism. */
+/** `kb` param contract — messages are the model's discovery mechanism. */
 export function resolveKbParam(
 	kb: unknown,
 	arity: KbArity,
@@ -74,7 +74,7 @@ export function resolveKbParam(
 		const names = kb as string[];
 		if (names.length === 0) {
 			// Refused locally, no kernel call: an empty resolved set must mean
-			// "nothing is in scope", never "search everything" (§5).
+			// "nothing is in scope", never "search everything".
 			return { ok: false, message: EMPTY_SCOPE_MESSAGE };
 		}
 	} else {
@@ -119,7 +119,7 @@ export type GateResult =
 	| { ok: false; envelope: Envelope };
 
 /**
- * The dispatch point every kb tool call routes through (§5): local refusals
+ * The dispatch point every kb tool call routes through: local refusals
  * first — shape, breaker, cooldown, `kb` param — each with zero kernel calls.
  * Passes on success for the kernel op (reads call; writes first pass
  * `gateWriteAttempt`).
@@ -158,7 +158,7 @@ export function guardCall(input: {
 }
 
 /**
- * Write-path gate (§5): a successful probe must precede any write. Version
+ * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
  * attempt — a still-failed retry refuses only that write. Returns null to
  * proceed.
@@ -198,7 +198,7 @@ export async function gateWriteAttempt(input: {
 
 /**
  * Guard + run + classify. Reads never check the probe verdict: the kernel
- * attempt happens and its failure maps to the §5 error envelope, so reads
+ * attempt happens and its failure maps to the error envelope, so reads
  * recover per-call with no recovery step once the kernel returns.
  */
 export async function runKbCall(
@@ -244,7 +244,7 @@ export async function runKbCall(
 		}
 		return errorEnvelope(err instanceof Error ? err.message : String(err));
 	}
-	// A successful authenticated call resets the consecutive count (§5) —
+	// A successful authenticated call resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone.
 	input.breaker.recordSuccess();
 	return result;

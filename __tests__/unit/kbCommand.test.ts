@@ -147,7 +147,7 @@ describe("dispatchKbCommand", () => {
 		expect(off.newWritesEnabled).toBe(false);
 	});
 
-	it("/kb tools write targets read+write; enabling cascades reads on (§5)", () => {
+	it("/kb tools write targets read+write; enabling cascades reads on", () => {
 		const fromRead = dispatchKbCommand(
 			"tools write",
 			validation(),
