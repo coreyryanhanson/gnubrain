@@ -15,6 +15,7 @@ import { CircuitBreaker } from "./breaker.js";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { gateWriteAttempt, runKbCall } from "./gate.js";
 import {
+	ownershipStmt,
 	renderOutline,
 	renderOutlineFromWalk,
 	rowPayload,
@@ -533,15 +534,6 @@ function rootEchoStmt(boxId: string, docId: string): string {
 	return (
 		`SELECT root_id, content, hpath FROM blocks ` +
 		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(docId)} AND type = 'd'`
-	);
-}
-
-/** Ownership query: resolves the docId's root within the KB — doubles
- * as the scope check (an id from another KB matches no row). */
-function ownershipStmt(boxId: string, docId: string): string {
-	return (
-		`SELECT root_id FROM blocks WHERE id = ${sqlString(docId)}` +
-		` AND box = ${sqlString(boxId)}`
 	);
 }
 

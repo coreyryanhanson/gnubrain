@@ -66,6 +66,15 @@ export function sqlString(value: string): string {
 	return `'${value.replaceAll("'", "''")}'`;
 }
 
+/** Ownership query: resolves the docId's root within the KB — doubles
+ * as the scope check (an id from another KB matches no row). */
+export function ownershipStmt(boxId: string, docId: string): string {
+	return (
+		`SELECT root_id FROM blocks WHERE id = ${sqlString(docId)}` +
+		` AND box = ${sqlString(boxId)}`
+	);
+}
+
 /** Serialize kept rows as JSONL (spill format for query/search rows). */
 function jsonl(rows: unknown[]): string {
 	return rows.map((r) => JSON.stringify(r)).join("\n");
@@ -702,13 +711,9 @@ export async function runRead(
 	if (boxId === undefined) {
 		return errorEnvelope(`KB '${name}' is not in the valid set`);
 	}
-	// GFM only, never getDoc. The ownership query doubles as the scope
-	// check: a docId from another KB matches no row. The kernel route takes a
-	// bare stmt (no bind params), so trusted ids ride escaped literals.
-	const ownershipStmt =
-		`SELECT root_id FROM blocks WHERE id = ${sqlString(docId)}` +
-		` AND box = ${sqlString(boxId)}`;
-	const ownership = await kernel.query(ownershipStmt);
+	// GFM only, never getDoc. The kernel route takes a bare stmt (no bind
+	// params), so trusted ids ride escaped literals (ownershipStmt).
+	const ownership = await kernel.query(ownershipStmt(boxId, docId));
 	if (ownership.length === 0) {
 		return errorEnvelope(
 			`no doc '${docId}' in KB '${name}' — docIds are root_id values echoed by kb_query/kb_search; an ID from another KB reads as nothing`,
