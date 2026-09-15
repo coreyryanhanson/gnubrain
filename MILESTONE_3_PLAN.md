@@ -129,8 +129,8 @@ The machinery every tool call routes through. No tools registered yet.
    dot color carries the tool capability (§5: writes on → success/green, else reads on →
    accent/blue, else `○ kb` hollow; slot text stays `● kb: <scope names>`, never changes
    with capability — the portal `fg(learn ? "success" : "accent", "●")` pattern). Sprint 1
-   renders hollow — no toolsets registered yet (`pi-tool-masking@1.3.0` is a
-   runtime dependency from Sprint 1 on, so the live read simply sees none); Sprint 3's read toolset brings the blue
+   renders hollow — no toolsets registered yet (`pi-tool-masking@1.3.0` is
+   already a runtime dependency as of M1, so the live read simply sees none); Sprint 3's read toolset brings the blue
    branch, Sprint 5's write toolset the green branch + repaint on
    `TOOLSET_EVENTS.changed`/`restored` (and after `session_tree` restore, §5). Glyph state reads live toolset state, so any
    disabler (our toggle, `toolsetDefaults` settings pins, allowlist mode, external
@@ -257,7 +257,7 @@ lands with Sprint 4.
 
 The discovery half of the loop. Adds the new runtime dependency
 `node-sql-parser@5.4.0` (exact-pinned; `pi-tool-masking@1.3.0` is already
-installed as of Sprint 1). First task on landing: smoke-verify
+exact-pinned as of M1). First task on landing: smoke-verify
 pi-tool-masking's actual API surface
 (`defineToolset`, `ToolsetSpec.names` as `Set<string>`, `requires` cascade,
 `TOOLSET_EVENTS.changed`/`restored`, the `toolsetDefaults` settings tier)
@@ -776,7 +776,10 @@ Polish and the M3 gate (§11).
 - [ ] If M3 code was split into new files: `package.json` `files` updated to
       include them (currently only `index.ts` / `settings.ts`; npm publish's
       `files` allowlist itself drops anything absent — `scripts/release.mjs`
-      only stages git changes, the enforcement is npm's).
+      only stages git changes, the enforcement is npm's). Also refresh
+      `index.ts`'s scaffold comments ("M2: settings load + validation, eager
+      version probe, verdict caching." and "Kernel probe, version gate, tools,
+      and /kb all arrive in M2+."), which S1–S5 make stale.
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the
@@ -793,12 +796,13 @@ Sprint 1 (chassis) ──► Sprint 4 (confirm + create)
 Sprint 2 (scope + /kb) ──► Sprint 5b (item 11's headless `/kb` dispatch)
 Sprint 2 (scope + /kb) ┄┄► Sprint 3 (item 6 bare-`/kb` toolset-state line + final AC only: live post-toggle scope)
 Sprint 2 (scope + /kb) ┄┄► Sprint 5 (item 5: `/kb writes` dispatcher extension)
-Sprint 2 (scope + /kb) ┄┄► Sprint 6 (gate: /kb mid-session, breaker recovery)
+Sprint 2 (scope + /kb) ──► Sprint 6 (gate: /kb mid-session, breaker recovery)
 Sprint 3 (spill + outline helpers) ──► Sprint 4
 Sprint 4 (confirmation gate, timeouts, file capture, confirmNew) ──► Sprint 5 (write modes)
 Sprint 5 (write modes) ──► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
-siyuan-kernel-api 0.3.0 (notebook lifecycle + encrypted family) ──► Sprint 5b
+(siyuan-kernel-api 0.3.0 already exact-pinned as of M1; its notebook-lifecycle
+and encrypted-notebook methods are exercised first by Sprint 5b's suite)
 ```
 
 Sprints 2 and 3 can proceed in parallel once Sprint 1 lands (independent
