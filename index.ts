@@ -129,7 +129,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// failure re-engages all-or-nothing — before the subcommand runs.
 	pi.registerCommand("kb", {
 		description:
-			"Show or toggle active KBs (usage: /kb | /kb <name> on|off | /kb all on|off)",
+			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|off])",
 		handler: async (args, ctx) => {
 			const ui = ctx.ui;
 			try {
@@ -150,20 +150,35 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				// The 429 cooldown is deliberately untouched — it self-heals.
 				breaker.reset();
 			}
-			const result = dispatchKbCommand(args, validation, [
-				// Bare `/kb` toolset-state line (§5 tool-masking record): a masked
-				// toolset is printed, never silent. Sprint 5 adds the write toolset's
-				// line alongside this one.
-				`read toolset (kb_query, kb_search, kb_read): ${
-					readToolset.isEnabled(pi)
-						? "on"
-						: "off — masked (toggle, settings pin, or external manager)"
-				}`,
-			]);
+			const result = dispatchKbCommand(
+				args,
+				validation,
+				[
+					// Bare `/kb` toolset-state line (§5 tool-masking record): a masked
+					// toolset is printed, never silent. Sprint 5 adds the write toolset's
+					// line alongside this one.
+					`read toolset (kb_query, kb_search, kb_read): ${
+						readToolset.isEnabled(pi)
+							? "on"
+							: "off — masked (toggle, settings pin, or external manager)"
+					}`,
+				],
+				// The /kb tools verbs are state setters over the live toolset state.
+				readToolset.isEnabled(pi),
+			);
 			if (result.newScope !== undefined) {
 				// §5: a complete snapshot of the active set; latest entry wins.
 				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
 				validation.scope = result.newScope;
+			}
+			if (result.newReadsEnabled !== undefined) {
+				if (result.newReadsEnabled) {
+					readToolset.enable(pi);
+					// Sprint 5: the write toolset is explicitly disabled here too
+					// (the portal /web on leg) once it exists.
+				} else {
+					readToolset.disable(pi); // cascades write off once it exists
+				}
 			}
 			renderStatus(ctx);
 			ui.notify(result.message, result.severity);

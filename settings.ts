@@ -21,9 +21,10 @@ export type ValidationResult =
 	| { ok: true; settings: GnubrainSettings }
 	| { ok: false; errors: string[] };
 
-// §5 /kb reserved keywords — `all` is the set-wide toggle form, `writes`
-// toggles the write toolset (Sprint 5); a KB can never take either name.
-const RESERVED_KB_NAMES = new Set(["all", "writes"]);
+// §5 /kb reserved keywords — `all` is the set-wide toggle form, `tools` is
+// the toolset dispatcher (/kb tools [read|write|off]); a KB can never take
+// either name. (`writes` was un-reserved when its verb moved under `tools`.)
+const RESERVED_KB_NAMES = new Set(["all", "tools"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);

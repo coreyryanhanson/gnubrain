@@ -108,9 +108,54 @@ describe("dispatchKbCommand", () => {
 		);
 	});
 
-	it("the reserved 'writes' keyword is rejected until Sprint 5 wires the toolset toggle", () => {
-		const result = dispatchKbCommand("writes on", validation());
-		expect(result.severity).toBe("error");
-		expect(result.message).toContain("unknown KB 'writes'");
+	it("bare /kb tools prints the toolset-state lines", () => {
+		const result = dispatchKbCommand(
+			"tools",
+			validation(),
+			["read toolset (kb_query, kb_search, kb_read): on"],
+			true,
+		);
+		expect(result.severity).toBe("info");
+		expect(result.message).toBe(
+			"read toolset (kb_query, kb_search, kb_read): on",
+		);
+		expect(result.newScope).toBeUndefined();
+		expect(result.newReadsEnabled).toBeUndefined();
+	});
+
+	it("/kb tools read sets the read-only state; re-issuing it is a reported no-op", () => {
+		const on = dispatchKbCommand("tools read", validation(), [], true);
+		expect(on.message).toContain("already read-only");
+		expect(on.newReadsEnabled).toBeUndefined();
+		const off = dispatchKbCommand("tools read", validation(), [], false);
+		expect(off.message).toContain("read toolset on");
+		expect(off.newReadsEnabled).toBe(true);
+	});
+
+	it("/kb tools off masks the read toolset; re-issuing it is a reported no-op", () => {
+		const on = dispatchKbCommand("tools off", validation(), [], true);
+		expect(on.message).toContain("read toolset masked");
+		expect(on.newReadsEnabled).toBe(false);
+		const off = dispatchKbCommand("tools off", validation(), [], false);
+		expect(off.message).toContain("already off");
+		expect(off.newReadsEnabled).toBeUndefined();
+	});
+
+	it("/kb tools with an unknown verb prints tool usage", () => {
+		const write = dispatchKbCommand("tools write", validation(), [], false);
+		expect(write.severity).toBe("error");
+		expect(write.message).toContain("usage: /kb tools");
+		expect(write.newReadsEnabled).toBeUndefined();
+		const junk = dispatchKbCommand("tools read extra", validation(), [], true);
+		expect(junk.severity).toBe("error");
+		expect(junk.message).toContain("usage: /kb tools");
+	});
+
+	it("a KB named 'writes' is no longer reserved and resolves as a KB name", () => {
+		const result = dispatchKbCommand(
+			"writes on",
+			validation({ validKBs: [["writes", "nb-w"]] }),
+		);
+		expect(result.newScope).toEqual(["recipes", "writes"]);
 	});
 });

@@ -139,8 +139,8 @@ describe("validateGnubrainSettings", () => {
 			[{ name: "all", notebook: "a" }],
 		],
 		[
-			"KB name 'writes' is reserved for the /kb command",
-			[{ name: "writes", notebook: "a" }],
+			"KB name 'tools' is reserved for the /kb command",
+			[{ name: "tools", notebook: "a" }],
 		],
 	])("rejects %s", (expected, kbs) => {
 		expect(

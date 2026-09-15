@@ -301,6 +301,22 @@ describe("read toolset wiring (Sprint 3)", () => {
 		);
 	});
 
+	it("/kb tools off masks the kb tools and /kb tools read restores them", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		register(pi, deps());
+		const { ctx, notifications, statuses } = fakeCtx();
+		await fire("session_start", ctx);
+		await runCommand("tools off", ctx);
+		expect(pi.getActiveTools()).toEqual([]);
+		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		await runCommand("tools read", ctx);
+		expect(pi.getActiveTools()).toEqual(["kb_query", "kb_search", "kb_read"]);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+		// State-setter idempotence: re-issuing the verb is a reported no-op.
+		await runCommand("tools read", ctx);
+		expect(notifications.at(-1)?.[0]).toContain("already read-only");
+	});
+
 	it("a masked read toolset turns the healthy slot hollow and prints the absence", async () => {
 		const { pi, fire, runCommand } = fakePi();
 		register(pi, deps());
