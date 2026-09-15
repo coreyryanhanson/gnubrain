@@ -35,6 +35,20 @@ function activeList(validation: SessionValidation): string {
 	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
 }
 
+/** §5: one rejection vocabulary shared by the tool `kb` param and `/kb`
+ * toggles — unknown name vs configured-but-invalid. */
+export function kbNameProblem(
+	name: string,
+	validation: SessionValidation,
+): string | undefined {
+	if (validation.validKBs.has(name)) return undefined;
+	if (!validation.settings?.kbs.some((entry) => entry.name === name)) {
+		return `unknown KB '${name}'. Active: ${activeList(validation)}`;
+	}
+	// Configured but dropped from the valid set (stale/encrypted).
+	return `KB '${name}' is not available (stale or encrypted notebook — see the session warnings). Active: ${activeList(validation)}`;
+}
+
 /** §5 `kb` param contract — messages are the model's discovery mechanism. */
 export function resolveKbParam(
 	kb: unknown,
@@ -84,18 +98,9 @@ export function resolveKbParam(
 	const requested: string[] =
 		arity === "array" ? (kb as string[]) : [kb as string];
 	for (const name of requested) {
-		if (!validation.validKBs.has(name)) {
-			if (!validation.settings?.kbs.some((entry) => entry.name === name)) {
-				return {
-					ok: false,
-					message: `unknown KB '${name}'. Active: ${activeList(validation)}`,
-				};
-			}
-			// Configured but dropped from the valid set (stale/encrypted).
-			return {
-				ok: false,
-				message: `KB '${name}' is not available (stale or encrypted notebook — see the session warnings). Active: ${activeList(validation)}`,
-			};
+		const problem = kbNameProblem(name, validation);
+		if (problem !== undefined) {
+			return { ok: false, message: problem };
 		}
 		if (!validation.scope.includes(name)) {
 			return {

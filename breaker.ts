@@ -57,9 +57,10 @@ export class CircuitBreaker {
 		return this.consecutive;
 	}
 
-	/** /kb recovery clears both the count and an expired-or-not cooldown. */
+	/** /kb recovery clears the breaker count only — an active 429 cooldown is
+	 * deliberately untouched and self-heals on expiry (§5 pins no /kb recovery
+	 * for the cooldown; clearing it early would let a retry re-extend the lock). */
 	reset(): void {
 		this.consecutive = 0;
-		this.cooldownDeadline = 0;
 	}
 }

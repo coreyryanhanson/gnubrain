@@ -21,8 +21,9 @@ export type ValidationResult =
 	| { ok: true; settings: GnubrainSettings }
 	| { ok: false; errors: string[] };
 
-// The only /kb reserved keyword (§5: no other subcommand surface exists in v1).
-const RESERVED_KB_NAMES = new Set(["all"]);
+// §5 /kb reserved keywords — `all` is the set-wide toggle form, `writes`
+// toggles the write toolset (Sprint 5); a KB can never take either name.
+const RESERVED_KB_NAMES = new Set(["all", "writes"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);

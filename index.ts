@@ -7,9 +7,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import { CircuitBreaker } from "./breaker.js";
+import { dispatchKbCommand } from "./kbCommand.js";
 import { loadGnubrainSettings } from "./settings.js";
 import { renderKbStatus, type KbStatusInput } from "./status.js";
 import {
+	KB_SCOPE_ENTRY_TYPE,
 	latestPersistedScope,
 	runSessionValidation,
 	type KernelProbeClient,
@@ -17,9 +19,9 @@ import {
 } from "./validation.js";
 
 // Sprint 1 chassis: the machinery every kb tool call routes through —
-// validation, scope resolution, breaker/cooldown gate, status slot. No tools
-// are registered yet (Sprint 3) and no /kb command (Sprint 2); both extend
-// this single register(pi, deps) seam.
+// validation, scope resolution, breaker/cooldown gate, status slot. Sprint 2
+// adds the /kb command (scope toggles + recovery) on the same register(pi,
+// deps) seam; tools arrive in Sprint 3.
 
 const STATUS_KEY = "kb";
 
@@ -69,7 +71,10 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		}
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	/** The full validation pass — shared by session_start and /kb recovery
+	 * (§5: every /kb dispatch re-runs it; corrected credentials and
+	 * defaultKBs edits take effect mid-session). */
+	async function revalidate(ctx: ExtensionContext): Promise<SessionValidation> {
 		const loaded = await loadGnubrainSettings(
 			readFile,
 			join(deps.homeDir ?? homedir(), ".pi", "agent", "settings.json"),
@@ -85,7 +90,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// A kernel stub is only needed past shape validation; when the shape
 		// failed the pipeline skips the network steps regardless.
 		const persisted = latestPersistedScope(ctx.sessionManager.getEntries());
-		validation = await runSessionValidation({
+		return runSessionValidation({
 			loaded,
 			kernel:
 				kernel ??
@@ -96,9 +101,50 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				} satisfies KernelProbeClient),
 			persistedScope: persisted,
 		});
+	}
+
+	pi.on("session_start", async (_event, ctx) => {
+		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
 		if (validation.authFailed) breaker.recordAuthFailure();
 		renderStatus(ctx);
+	});
+
+	// §5 /kb command (Sprint 2): every dispatch first re-runs the full
+	// validation pass — success clears degradation + the breaker counter,
+	// failure re-engages all-or-nothing — before the subcommand runs.
+	pi.registerCommand("kb", {
+		description:
+			"Show or toggle active KBs (usage: /kb | /kb <name> on|off | /kb all on|off)",
+		handler: async (args, ctx) => {
+			const ui = ctx.ui;
+			try {
+				validation = await revalidate(ctx);
+			} catch (err) {
+				ui.notify(
+					`/kb re-validation failed: ${err instanceof Error ? err.message : String(err)}`,
+					"error",
+				);
+				renderStatus(ctx);
+				return;
+			}
+			if (validation.authFailed) {
+				// The re-check's own auth failure feeds the breaker (§5 counting).
+				breaker.recordAuthFailure();
+			} else if (validation.lsNotebooksOk) {
+				// Recovery succeeded: clears degradation + the breaker counter.
+				// The 429 cooldown is deliberately untouched — it self-heals.
+				breaker.reset();
+			}
+			const result = dispatchKbCommand(args, validation);
+			if (result.newScope !== undefined) {
+				// §5: a complete snapshot of the active set; latest entry wins.
+				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
+				validation.scope = result.newScope;
+			}
+			renderStatus(ctx);
+			ui.notify(result.message, result.severity);
+		},
 	});
 
 	// Post-restore re-render (§5): the slot reflects the restored scope.

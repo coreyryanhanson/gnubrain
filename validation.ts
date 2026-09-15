@@ -34,6 +34,10 @@ export interface SessionValidation {
 	warnings: string[];
 	/** A call-level auth failure on `lsNotebooks` — feeds the breaker. Network drops never set it. */
 	authFailed: boolean;
+	/** Whether the authenticated notebook listing itself succeeded — /kb
+	 * recovery resets the breaker only on this (a successful authenticated
+	 * call), not on a network-failed pass. */
+	lsNotebooksOk: boolean;
 }
 
 /** §5 scope persistence payload — a complete snapshot of the active set. */
@@ -44,7 +48,8 @@ export function latestPersistedScope(
 	entries: { type: string; customType?: string; data?: unknown }[],
 ): string[] | undefined {
 	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i]!;
+		const entry = entries[i];
+		if (entry === undefined) continue;
 		if (entry.type === "custom" && entry.customType === KB_SCOPE_ENTRY_TYPE) {
 			const data = entry.data as { active?: unknown } | undefined;
 			if (Array.isArray(data?.active)) {
@@ -88,6 +93,7 @@ export async function runSessionValidation(input: {
 			scope: [],
 			warnings,
 			authFailed: false,
+			lsNotebooksOk: false,
 		};
 	}
 
@@ -140,6 +146,7 @@ export async function runSessionValidation(input: {
 			scope: [],
 			warnings,
 			authFailed: err instanceof SiYuanAuthError,
+			lsNotebooksOk: false,
 		};
 	}
 
@@ -172,5 +179,6 @@ export async function runSessionValidation(input: {
 		scope,
 		warnings,
 		authFailed: false,
+		lsNotebooksOk: true,
 	};
 }

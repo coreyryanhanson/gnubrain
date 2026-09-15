@@ -138,6 +138,10 @@ describe("validateGnubrainSettings", () => {
 			"KB name 'all' is reserved for the /kb command",
 			[{ name: "all", notebook: "a" }],
 		],
+		[
+			"KB name 'writes' is reserved for the /kb command",
+			[{ name: "writes", notebook: "a" }],
+		],
 	])("rejects %s", (expected, kbs) => {
 		expect(
 			expectErrors(validateGnubrainSettings(validConfig({ kbs }))),

@@ -43,6 +43,7 @@ function validation(overrides?: {
 		scope: overrides?.scope ?? ["recipes"],
 		warnings: [],
 		authFailed: false,
+		lsNotebooksOk: true,
 	};
 }
 

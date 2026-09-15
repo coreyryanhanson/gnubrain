@@ -74,13 +74,15 @@ describe("CircuitBreaker", () => {
 		expect(breaker.inCooldown(NOW + 60_000)).toBe(false);
 	});
 
-	it("/kb recovery resets both the count and the cooldown", () => {
+	it("/kb recovery resets the count but never an active 429 cooldown", () => {
 		const breaker = new CircuitBreaker();
 		breaker.recordAuthFailure();
 		breaker.recordRateLimit(new SiYuanRateLimitError(429, 300), NOW);
 		breaker.reset();
 		expect(breaker.tripped).toBe(false);
-		expect(breaker.inCooldown(NOW)).toBe(false);
 		expect(breaker.failures).toBe(0);
+		// §5: the cooldown self-heals on expiry alone — no /kb recovery for it.
+		expect(breaker.inCooldown(NOW)).toBe(true);
+		expect(breaker.inCooldown(NOW + 300_000)).toBe(false);
 	});
 });
