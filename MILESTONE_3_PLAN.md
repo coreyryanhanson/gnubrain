@@ -17,7 +17,12 @@ exact pin) exposes every kernel method M3's runtime paths need — `getVersion`,
 all shipped in 0.2.0–0.3.0 and gating Sprint 5b (its raw-helper list shrinks
 accordingly). Any further gap is a deliberate, recorded change to that repo.
 (Naming note: the client method is `exportMarkdown`, wrapping the kernel's
-`exportMdContent` endpoint — both names appear below.)
+`exportMdContent` endpoint; likewise `createDocWithMarkdown` wraps the kernel's
+`createDocWithMd` endpoint — both names appear below. The method list above is
+verified against the client's installed exported types before Sprint 3, the
+same way Sprint 3's preamble smoke-verifies pi-tool-masking. Reference checkouts
+for both dependencies live locally: `~/pi-tool-masking/` (S3/S5's toolset API
+surface) and `~/siyuan-kernel-api/` (every kernel method named above).)
 
 Design references below are §-sections of DESIGN_v2.md. Every sprint ends green:
 `npm test`, `npm run typecheck`, `npm run lint`.
@@ -90,6 +95,10 @@ The machinery every tool call routes through. No tools registered yet.
      startup and removes that name from the resolved set, keeping any valid
      siblings; it never falls back to the global `defaultKBs` — dropping
      names can only shrink scope, a fallback could silently expand it.
+   The global file's own unknown-name `defaultKBs` case is not touched here:
+   the M1 validator already degrades on it (`defaultKBs` names must exist in
+   `kbs`), and that behavior stands — warn-and-drop is a project-file-only
+   class.
 5. **Circuit breaker + 429 cooldown (§5)** — 3 consecutive 401/403 → degraded
    fail-fast, zero kernel calls from tool calls; 429 never counted, never
    retried, arms a local cooldown deadline (`now + Retry-After`, floor 60 s);
@@ -127,8 +136,10 @@ The machinery every tool call routes through. No tools registered yet.
       project-file validation — non-array `defaultKBs` and a stray non-`defaultKBs`
       key both degrade the session with the message naming the problem
       (pinned message reused verbatim for the shape case; unexpected key named
-      for the key case), `writeConfirmTimeout` read from the global file only
-      (classified global-only per item 4; §10 pins the validation order).
+      for the key case), the global file's own unknown-name `defaultKBs`
+      degrading (M1 validator, unchanged), `writeConfirmTimeout` read from the
+      global file only (classified global-only per item 4; §10 pins the
+      validation order).
 - [ ] Unit: version-gated write refusal fails closed; per-write-attempt probe
       retry; degraded-session read errors; post-recovery read succeeds with no
       recovery step (reads bypass the cached unreachable verdict, §5).
@@ -150,14 +161,18 @@ The machinery every tool call routes through. No tools registered yet.
 - [ ] Unit: scope resolution `persisted → defaultKBs`, incl. absent-key → empty
       set, and the project/global validator composition above — incl. project
       `defaultKBs` naming an unknown KB: loud startup warning, name dropped,
-      valid siblings kept, no fallback to the global `defaultKBs`; status-slot
+      valid siblings kept, no fallback to the global `defaultKBs` (the global
+      file's own unknown-name `defaultKBs` degrades instead — M1 validator);
+      status-slot
       rendering headless-safe, incl. the degraded-config glyph and the
       per-cause tag branch (shape → `config`, breaker → `breaker`, drift →
       `version`, first match in that order) and the healthy-state capability
       ladder (hollow in S1 — no toolsets yet; the blue/green branches land in
       Sprints 3 and 5) with degraded/breaker precedence over the healthy colors
-      (§10), the post-`session_tree`-restore repaint (§5, named in item 6),
-      and the slot cleared on `session_shutdown` (§5, item 6).
+      (§10), the post-`session_tree`-restore re-render of the hollow slot
+      (the capability-colored repaint after restore is Sprint 5's AC — S1
+      registers no toolsets), and the slot cleared on `session_shutdown`
+      (§5, item 6).
 
 ---
 
@@ -324,6 +339,9 @@ surface is.
       query doubles as the scope check (§4; §5 tool shape).
 - [ ] Unit: read toolset registered with the three `kb_` read tools as members,
       default-enabled, persist key `toolset-state:gnubrain.read` (§5).
+- [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
+      active, hollow before it (S3-localized leg of the §5 capability ladder;
+      the green/masked branches and the repaint events are Sprint 5's AC).
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -477,8 +495,9 @@ confirmation gate and the `create` flow end to end. Registered name
    healthy dot turns success/green when the write toolset is enabled and back
    to accent/blue (or hollow if the read toolset is also masked — e.g. a
    `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
-   `restored` so `/kb writes on|off` recolors mid-session (§5 status-bar
-   record; text unchanged — `● kb: <scope names>`).
+   `restored` so `/kb writes on|off` recolors mid-session, and repainting
+   again after `session_tree` restore (§5 status-bar record; text unchanged —
+   `● kb: <scope names>`).
 
 ### Acceptance criteria
 
@@ -529,7 +548,7 @@ confirmation gate and the `create` flow end to end. Registered name
       allowlist mode — not only our toggle), text identical across healthy
       states; degraded (yellow) and unreachable (red) beat the healthy colors
       in the precedence ladder; glyph repaints on `TOOLSET_EVENTS.changed`/
-      `restored` (§5).
+      `restored` and after `session_tree` restore (§5).
 
 ---
 
@@ -677,13 +696,17 @@ raw-DELETE case like the rest.
 Polish and the M3 gate (§11).
 
 - [ ] Tools callable from pi (all four — `kb_query` / `kb_search` / `kb_read` /
-      `kb_write` — in a real session; assert none shadows a pi builtin). Both
+      `kb_write` — in a real session; assert none shadows a pi builtin —
+      mechanically asserted, not eyeballed: enumerate `pi.getAllTools()` and
+      check `sourceInfo.source !== "builtin"` for all four names). Both
       toolsets registered default-enabled; `/kb writes off` removes `kb_write`
       from the active tool list (masked ≠ refused — no envelope, tool absent),
       `/kb writes on` restores it; state survives session resume (§5).
 - [ ] Scope survives session restart (resume reads the persisted entry).
 - [ ] `/kb <name> on` and `/kb all off` land mid-session.
-- [ ] Write confirmation refuse/allow verified interactively.
+- [ ] Write confirmation refuse/allow verified interactively (manual by design
+      — §10's residual list; the live gate checks here are scripted procedures,
+      the rest is automated or covered by the suites above).
 - [ ] Auth breaker degrades after 3 consecutive auth failures (live): set a
       bogus token, issue 3 read calls (each errors), then a 4th — assert it
       returns `{status: refused}` with the breaker message, not an auth error
