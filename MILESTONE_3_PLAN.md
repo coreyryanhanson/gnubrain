@@ -218,7 +218,8 @@ Scope persistence and the mid-session activation vehicle.
    top-level tool-toggle verb, so KB names never collide with toolset verbs.
    (`writes` is deliberately un-reserved: the toolset verb it once kept open
    now lives under `tools`, so a KB named `writes` is configurable again; the
-   shipped S2 reservation is reverted shortly after this plan lands.) The `all`
+   shipped S2 reservation is reverted shortly after this plan lands. The
+   `kbs` keyword follows in Sprint 3 item 7.) The `all`
    name-level rejection is asserted at the settings layer — already covered by
    the pre-existing M1 tests in `settings.test.ts`, a deliberate relocation —
    so the S2 test exercises the `/kb` subcommand dispatch of `all` only);
@@ -349,6 +350,21 @@ surface is.
    absence is printed, not silent); Sprint 5 extends the line to the write
    toolset. Status bar:
    healthy dot turns accent/blue once this toolset is active (hollow before).
+7. **`kbs` discovery name (§5 amendment)** — `RESERVED_KB_NAMES` gains
+   `kbs` (settings test updated here, same relocation pattern as S2's
+   `tools`); calling any read tool with `kb: ["kbs"]` returns the active
+   KB set without touching the kernel — empty set included, with the
+   activation hint (`no KBs in scope — activate one with /kb <name> on…`);
+   `kbs` mixed with real names is rejected loudly, never silently
+   filtered. The shared `kb`-param rejection vocabulary names `kbs` as a
+   read-side discovery keyword when it reaches the write path (`kb_write`
+   takes exactly one name and a KB named `kbs` can never exist in
+   settings, so the existing rejection covers it; the special-cased
+   message turns a confusing dead end into a self-explaining one — S4
+   inherits this via `kbNameProblem`). Read-tool descriptions gain the
+   discovery line ("call with `kb: ["kbs"]` to list active KBs"), making
+   the §5 rejection-message discovery path the fallback, not the only
+   path.
 
 ### Acceptance criteria
 
@@ -388,6 +404,11 @@ surface is.
 - [ ] Unit: status-bar healthy dot turns accent/blue once the read toolset is
       active, hollow before it (S3-localized leg of the §5 capability ladder;
       the green/masked branches and the repaint events are Sprint 5's AC).
+- [ ] Unit: `kb: ["kbs"]` listing returns the live active set incl. the
+      empty-scope hint form; `["recipes", "kbs"]` rejected; a KB named
+      `kbs` rejected by the M1 validator; write-path rejection (via
+      `kbNameProblem`) names `kbs` as a read-side discovery keyword;
+      read-tool descriptions carry the discovery line.
 - [ ] Read tools callable from a real pi session against the live kernel
       (manual smoke); tool `kb` validation composes with the live post-toggle
       scope mid-session (Sprint 1's `kb`-param validator fed by Sprint 2's
@@ -594,10 +615,11 @@ confirmation gate and the `create` flow end to end. Registered name
       outline + anchor, with `movedBlockId` present (§10 pins it; §4 verifies
       every move via it).
 - [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
-      title… consume by ID", search ownership constraints) and the §4
+      title… consume by ID", search ownership constraints), the §4
       replace-first preference (prefer `edit`/`replace-section` over `append`;
-      append is for genuinely new facts), completing the
-      description work started in Sprint 3 item 4.
+      append is for genuinely new facts), and the `kbs` mirror line ("the
+      discovery name `kbs` is read-only; writes always target a real KB by
+      name"), completing the description work started in Sprint 3 item 4.
 - [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
       cascades reads on); `/kb tools read` from the read+write state lands
       read-only (explicit write disable, portal `/web on` precedent);

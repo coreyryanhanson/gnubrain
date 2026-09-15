@@ -1047,8 +1047,9 @@ duplicate doc, never a silent clobber.
   extension is the only layer that reads settings.json and injects them.
 - **Validation order (decision record)**: at `session_start`, three steps in fixed order:
   1. **Shape/sync validation** (no network): required keys, types, unique `kbs` names,
-     `defaultKBs` names exist in `kbs`, and KB names checked against the `/kb` reserved
-     set (subcommand surface below — a KB named `all` is rejected here). KB names are
+     `defaultKBs` names exist in `kbs`, and KB names checked against the reserved
+     set (the `/kb` subcommand surface below — a KB named `all` is rejected here —
+     plus the `kbs` tool-param discovery name, §5 `kb`-param contract). KB names are
      also rejected at this pass when they contain whitespace or `/` — the toggle grammar
      is `/kb <name> on|off` split on whitespace, so `my projects` or `projects on` is
      unparseable at toggle time (`projects on` collides with the verb itself); the
@@ -1432,6 +1433,14 @@ writes; the opt-out is typed, in settings.
   unambiguous. Explicit beats implicit for model behavior — no "which default was in effect" debugging,
   and the model can never silently write to the wrong KB. Rejection messages are the
   model's discovery mechanism, so they always list the currently active KBs:
+  - **Discovery name (decision record)**: the reserved name `kbs` (settings-level
+    reservation alongside `all`/`tools`) is the sanctioned discovery form — calling any
+    read tool with `kb: ["kbs"]` returns the active KB set without touching the kernel
+    (empty set included, with the activation hint); `kbs` mixed with real names is
+    rejected loudly, never silently filtered; the write path rejects it with a message
+    naming it as a read-side discovery keyword (a KB named `kbs` can never exist in
+    settings). The rejection-message discovery path below remains the fallback, not
+    the only path.
   - Unknown KB (typo) → reject with `unknown KB 'recipies'. Active: recipes, projects`.
   - Valid but not in active scope → reject with the activation path named:
     `'projects' exists but is not in the active scope — activate it with /kb
@@ -2029,7 +2038,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Scope state | `pi.appendEntry("kb-scope")` | pi-tool-masking reuse; per-KB toolsets | §5 |
 | Scope mechanism | Required `kb` param — array on read tools, single name on write-back | Hidden/optional scope defaulting to active set | §5 |
 | Scope activation | `/kb <name> on\|off` single-name idempotent toggle + `/kb all on\|off` | Multi-name set-replacement; agent-invocable activation tool | §5 |
-| `/kb` subcommands | Reserved set is `all` + `writes` (R5); bare `/kb` prints scope + toolset state | `/kb repair`; separate top-level commands | §5 |
+| `/kb` subcommands | Reserved set is `all` + `tools` (R5, M3 amendment — `writes` un-reserved when its verb moved under `tools`); bare `/kb` prints scope + toolset state | `/kb repair`; separate top-level commands | §5 |
 | Write gating | `pi-tool-masking` toolsets — `gnubrain.write` masked = `kb_write` absent from the tool list | per-mode allowlist param on `kb_write`; hand-rolled `setActiveTools` bookkeeping | §5 |
 | Version gate | Eager `session_start` probe, cached verdict; strict full-version write gate, reads warn-and-proceed; ownership split — `siyuan-kernel-api.getVersion()` fetches only, the extension owns `PINNED_SIYUAN_VERSION` + strict-match policy + refusal message | Major-only refusal; per-write probe; staleness re-probe; version pin inside the core | §2, §8, §10 |
 | Doc addressing & discovery (R1/R2/R6, **supersedes the v1 title-as-primary-key doctrine**) | Echoed docId is identity; mint by title, discover by query/search, consume by ID | Name/hpath resolution; read-by-topic with docId fallback | §4 |
