@@ -34,10 +34,10 @@ import {
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
 // /kb command (scope toggles + recovery), the read tools (kb_query /
-// kb_search / kb_read) and read toolset, kb_write (write
-// confirmation gate + create flow), and the write toolset
-// (requires the read toolset — live-toggle cascade), the /kb tools
-// write verb, the fresh-content baselines, and the write-modes dispatch.
+// kb_search / kb_read) and read toolset, kb_write (write confirmation
+// gate + create flow), and the write toolset (requires the read toolset —
+// live-toggle cascade), the /kb tools write verb, the fresh-content
+// baselines, and the write-mode dispatch (writeModes.ts).
 // All of it hangs off the same register(pi, deps) seam.
 
 const STATUS_KEY = "kb";
