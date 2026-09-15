@@ -353,9 +353,15 @@ surface is.
    healthy dot turns accent/blue once this toolset is active (hollow before).
 7. **`kbs` discovery name (§5 amendment)** — `RESERVED_KB_NAMES` gains
    `kbs` (settings test updated here, same relocation pattern as S2's
-   `tools`; the reservation error and its settings.ts comment generalize
-   from "reserved for the /kb command" — `kbs` is a tool-param discovery
-   name, not a `/kb` subcommand). Discovery is a `kb_read`-only form:
+   `tools`). The reservation error becomes name-agnostic at the same time —
+   `KB name '<name>' is reserved`, replacing "reserved for the /kb command"
+   in both the error string and the settings.ts comment — because the user's
+   action is identical for every reserved name (pick another), and per-name
+   rationale in the message would re-touch message + tests on each future
+   reservation; the why stays in DESIGN_v2's reserved-set record and the
+   code comment. The two existing assertions pinning the old wording (the
+   `all`/`tools` reservation cases in `settings.test.ts`) are updated to the
+   new wording in the same change. Discovery is a `kb_read`-only form:
    `kb_read` with `kb: "kbs"` returns the active KB set without touching
    the kernel — empty set included, with the activation hint (gate.ts's
    `EMPTY_SCOPE_MESSAGE`, exported and reused verbatim). **Schema
@@ -449,7 +455,9 @@ surface is.
       schema and a valid-`kb`-missing-`docId` call is refused with the
       three-exit guidance message (never a doc listing or metrics
       payload); a KB named `kbs` rejected by the M1 validator with the
-      generalized reservation message; `kb_query`/`kb_search` reject
+      name-agnostic reservation message (`KB name 'kbs' is reserved`), and
+      the `all`/`tools` reservation assertions reworded to match;
+      `kb_query`/`kb_search` reject
       `kb: ["kbs"]` via the existing unknown-KB rejection (no special
       case; the `kb_write` leg is Sprint 4's, landing with that tool);
       the `kb_read` description carries the discovery line.
