@@ -38,12 +38,12 @@ export function deriveAppendAnchor(
 
 /**
  * delete-set enumeration — the getChildBlocks document-order walk, never
- * SQL ('s superseded-outline record). The section slice runs from the
+ * SQL. The section slice runs from the
  * target heading to the next heading of same-or-shallower depth; the target
  * heading itself survives (the new body lands under it, preserving its ID
  * and every ref into it). Deeper headings inside the section belong to it.
  * Final section (no boundary): the slice runs to end of doc, sweeping
- * trailing non-heading content ('s final-section pin).
+ * trailing non-heading content.
  */
 export function sectionDeleteSet(
 	walk: WalkedBlock[],

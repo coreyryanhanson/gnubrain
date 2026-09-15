@@ -1034,6 +1034,27 @@ describe("block-level move", () => {
 		);
 	});
 
+	it("same-doc doc-end self-anchor: block already last top-level of its own doc → refusal, zero kernel moves", async () => {
+		// p2 is MOVE_DOC's last block; a move to doc end (toHeadingId
+		// omitted → appendBlock-on-root anchor) would no-op on the kernel
+		// and pass the walk-set checks as a successful move.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "p2", content: "stay" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p2",
+			toDocId: "d-doc",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("already the last member");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
 	it("doc-level: moveDocsByID with the notebook id on un-nest; pinned result shape", async () => {
 		const harness = moveHarness();
 		const result = await harness.execute({

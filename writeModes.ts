@@ -202,10 +202,9 @@ function writeModeSummary(p: WriteParams): string {
 	}
 }
 
-/** Dispatch point for the non-create modes. */
+/** Dispatch point for the non-create modes; mode-target shape is checked
+ * once at the kb_write entry (write.ts) — create never reaches here. */
 export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
-	const problem = modeShapeProblem(input.params);
-	if (problem !== undefined) return refusedEnvelope(problem);
 	const mode = input.params.mode;
 	const confirmKey = writeConfirmKey([
 		input.name,
@@ -781,11 +780,18 @@ async function runMoveMode(
 	}
 	// Anchor: tool-derived, never agent-supplied.
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
-	// Self-anchor no-op (mirrors the doc-level own-parent case): the block
-	// already ends the destination section — previousID === blockId makes
-	// the kernel no-op, which the walk-set check would misreport as a
-	// successful move. Refuse instead.
-	if (sameDoc && anchor.kind === "move" && anchor.previousID === blockId) {
+	// Self-anchor no-op (mirrors the doc-level own-parent case): a block
+	// that already ends the destination refuses — the kernel no-ops (or
+	// re-parents nothing) while the walk-set check would misreport a
+	// successful move. Covers both anchors: section-end (previousID ===
+	// blockId) and the doc-end fallback when the block is the doc's last
+	// top-level block. Refuse instead.
+	const alreadyAtDest =
+		anchor.kind === "move"
+			? anchor.previousID === blockId
+			: destWalk[destWalk.length - 1]?.id === blockId &&
+				destWalk[destWalk.length - 1]?.depth === 1;
+	if (sameDoc && alreadyAtDest) {
 		return refusedEnvelope(
 			`block '${blockId}' is already the last member of the destination section — nothing to move`,
 		);

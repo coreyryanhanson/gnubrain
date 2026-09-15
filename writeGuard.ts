@@ -117,7 +117,7 @@ export function guardNearStmt(boxId: string, title: string): string {
 	const legs = guardNearPatterns(title)
 		.map((p) => `content LIKE ${sqlString(p)} ESCAPE ${sqlString("\\")}`)
 		.join(" OR ");
-	// LIMIT caps returned rows, not scan work (content has no index —);
+	// LIMIT caps returned rows, not scan work (content has no index);
 	// +1 so the caller can distinguish "exactly 20" from "20+".
 	return (
 		`SELECT id, root_id, content, updated FROM blocks ` +

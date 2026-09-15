@@ -82,8 +82,9 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						);
 					}
 					// Uniform mode-target shape check before anything else —
-					// zero kernel calls, and the create branch shares it (its
-					// flow never reached runWriteMode's own re-check).
+					// zero kernel calls, and it covers create too (create's
+					// flow never reaches runWriteMode, so this is the only
+					// check point).
 					const shapeProblem = modeShapeProblem(p);
 					if (shapeProblem !== undefined) {
 						return refusedEnvelope(shapeProblem);

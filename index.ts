@@ -18,8 +18,11 @@ import {
 	type KernelProbeClient,
 	type SessionValidation,
 } from "./validation.js";
-import { registerReadToolsAndToolset, type KernelReadClient } from "./tools.js";
-import { READ_TOOLSET_ID } from "./tools.js";
+import {
+	READ_TOOLSET_ID,
+	registerReadToolsAndToolset,
+	type KernelReadClient,
+} from "./tools.js";
 import { createWriteConfirmState } from "./writeConfirm.js";
 import {
 	createContentBaselines,

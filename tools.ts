@@ -593,7 +593,7 @@ export async function runSearchFanOut(
 
 /** Extension-owned recursion bound for the getChildBlocks walk — the kernel
  * imposes no cap on block-container nesting, so this keeps the walk finite
- * the 7-level cap counts hpath separators, a different axis). */
+ * (the 7-level cap counts hpath separators, a different axis). */
 const MAX_WALK_DEPTH = 32;
 
 const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
@@ -809,13 +809,13 @@ export interface WalkedBlock {
 	depth: number;
 }
 
-export interface NestedBlock extends WalkedBlock {
+interface NestedBlock extends WalkedBlock {
 	children: NestedBlock[];
 }
 
 /** getChildBlocks walk preserving container structure. Headings are
  * leaves; only real containers (lists, blockquotes, superblocks) nest. */
-export async function walkBlockTreeNested(
+async function walkBlockTreeNested(
 	kernel: KernelReadClient,
 	rootId: string,
 	depth: number,
