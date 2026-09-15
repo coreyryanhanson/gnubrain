@@ -1,6 +1,6 @@
 # GNUbrain
 
-**GNUbrain's Not gBrain.**
+**GNUbrain's Not Unopinionated gBrain.**
 
 Open-source agent memory for the [pi coding agent](https://pi.dev) — built on
 [SiYuan](https://siyuan.b3log.org) as the storage engine. Free as in freedom:
