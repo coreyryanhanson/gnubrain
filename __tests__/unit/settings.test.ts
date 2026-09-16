@@ -152,12 +152,12 @@ describe("validateGnubrainSettings", () => {
 		expect(result.ok && result.settings.allowUnattendedWrites).toBe(true);
 	});
 
-	it("rejects a defaultKBs entry naming an unknown KB", () => {
-		expect(
-			expectErrors(
-				validateGnubrainSettings(validConfig({ defaultKBs: ["missing"] })),
-			),
-		).toContain("defaultKBs entry 'missing' does not match any configured KB");
+	it("accepts a defaultKBs entry naming an unknown KB (scope resolution warns and drops it)", () => {
+		const result = validateGnubrainSettings(
+			validConfig({ defaultKBs: ["missing"] }),
+		);
+		expect(result.ok).toBe(true);
+		expect(result.ok && result.settings.defaultKBs).toEqual(["missing"]);
 	});
 
 	it("accepts defaultKBs naming a configured KB and preserves it", () => {

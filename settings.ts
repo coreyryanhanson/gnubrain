@@ -216,14 +216,10 @@ export function validateGnubrainSettings(raw: unknown): ValidationResult {
 		) {
 			errors.push("defaultKBs must be an array of KB name strings");
 		} else {
+			// Unknown names are not an error here: scope resolution
+			// (validation.ts) warns and drops them per the stale-notebook
+			// precedent, whether they came from the global or project file.
 			defaultKBs = config.defaultKBs;
-			for (const name of defaultKBs) {
-				if (!names.has(name)) {
-					errors.push(
-						`defaultKBs entry '${name}' does not match any configured KB`,
-					);
-				}
-			}
 		}
 	}
 

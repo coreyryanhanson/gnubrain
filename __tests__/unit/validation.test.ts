@@ -235,6 +235,17 @@ describe("scope resolution", () => {
 		expect(result.warnings.some((w) => w.includes("'phantom'"))).toBe(true);
 	});
 
+	it("global defaultKBs naming an unknown KB warns and drops it, keeping valid siblings", async () => {
+		const { kernel } = stubKernel();
+		const result = await runSessionValidation({
+			loaded: await loaded(globalSettings({ defaultKBs: ["dev", "missing"] })),
+			kernel,
+		});
+		expect(result.shapeErrors).toEqual([]);
+		expect(result.scope).toEqual(["dev"]);
+		expect(result.warnings.some((w) => w.includes("'missing'"))).toBe(true);
+	});
+
 	it("project defaultKBs naming an unknown KB warns, drops it, keeps valid siblings, never falls back to the global default", async () => {
 		const { kernel } = stubKernel();
 		const result = await runSessionValidation({
