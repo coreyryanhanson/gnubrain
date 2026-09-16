@@ -21,6 +21,7 @@ import {
 	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
+import { contentHash } from "../../baselines.js";
 
 /** writeSetup with the config-first call shape the mode tests use. */
 function setup(config: StubConfig = {}) {
@@ -543,12 +544,13 @@ describe("replace-section", () => {
 		expect(result.reason).toBeUndefined();
 	});
 
-	it("write results re-seed baselines from blocks.content — follow-up writes compare like-for-like", async () => {
+	it("write results re-seed outline baselines from blocks.content — follow-up writes compare like-for-like", async () => {
 		// The walk serves a plain form ("old two"), blocks.content the
-		// rendered form ("old **two**"). The first write's tail must seed
-		// outline baselines from blocks.content (the representation the
-		// re-check hashes); a walk-seeded baseline would refuse the
-		// follow-up write as stale_content on pure representation drift.
+		// rendered form ("old **two**"). The write result carries the
+		// outline, so its headings re-baseline from blocks.content (the
+		// representation the re-check hashes); a walk-seeded baseline would
+		// refuse the follow-up write as stale_content on pure representation
+		// drift.
 		const harness = await replaceQueryHarness(
 			() => [
 				{ id: "p1", content: "old **one**" },
@@ -573,6 +575,72 @@ describe("replace-section", () => {
 			markdown: "old two, corrected",
 		});
 		expect(second.status).toBe("ok");
+	});
+
+	it("an intervening write refreshes only blocks its result carried — a concurrently-changed unserved block still refuses", async () => {
+		// p1 was served earlier this session (baseline = "served body"); the
+		// kernel's stored copy has since been changed concurrently. The
+		// intervening append's tail refreshes only the blocks its result
+		// carried (the outline headings + the new block) — a whole-doc
+		// refresh would launder the concurrent change into p1's baseline and
+		// the follow-up edit would hash-match the laundered content and
+		// apply. The stub answers the baseline read with rows for exactly
+		// the requested IDs, so the assertion fails on any request that
+		// reaches for p1.
+		const stored: Record<string, string> = {
+			h1: "Goals",
+			p1: "changed body",
+			h2: "Details",
+			p2: "body two",
+			"b-new": "new fact",
+		};
+		const harness = writeSetup({
+			exposeBaselines: true,
+			config: {
+				blockRows: [{ id: "p1", content: "changed body" }],
+				childrenFor: SECTION_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...SECTION_DOC["d-doc"],
+						walkBlock("b-new", "p", "", stored["b-new"] as string),
+					];
+				},
+			},
+		});
+		const baseQuery = harness.client.query.bind(harness.client);
+		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+				// Real-kernel mirror: rows for exactly the requested IDs.
+				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+				return ids.flatMap((id) =>
+					id !== undefined && stored[id] !== undefined
+						? [{ id, content: stored[id] }]
+						: [],
+				);
+			}
+			return baseQuery(stmt);
+		};
+		harness.baselines?.remember("p1", "served body");
+		const intervention = await harness.execute({
+			kb: "recipes",
+			mode: "append",
+			docId: "d-doc",
+			markdown: "new fact",
+		});
+		expect(intervention.status).toBe("ok");
+		// p1 was not in the append's result — its served baseline survives.
+		expect(harness.baselines?.servedHash("p1")).toBe(
+			contentHash("served body"),
+		);
+		const edit = await harness.execute({
+			kb: "recipes",
+			mode: "edit",
+			docId: "d-doc",
+			blockId: "p1",
+			markdown: "overwrite",
+		});
+		expect(edit.status).toBe("refused");
+		expect(edit.reason).toBe("stale_content");
 	});
 });
 

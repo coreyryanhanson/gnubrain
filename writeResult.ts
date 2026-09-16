@@ -277,11 +277,15 @@ export async function writeEchoTail(input: {
 	docId: string;
 	baselines: ContentBaselines;
 	walk?: WalkedBlock[] | undefined;
+	/** Block IDs the write itself produced (the edited target, a
+	 * newBlockId, a movedBlockId) — baselined from stored form so a
+	 * follow-up edit compares like-for-like. */
+	refreshBlockIds?: readonly string[] | undefined;
 }): Promise<{
 	walk: WalkedBlock[];
 	envelope: Record<string, unknown>;
 }> {
-	const { kernel, sessionId, boxId, docId, baselines } = input;
+	const { kernel, sessionId, boxId, docId, baselines, refreshBlockIds } = input;
 	const walk = input.walk ?? (await walkBlockTree(kernel, docId, 1));
 	const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
 	const root = await rootEcho(kernel, boxId, docId);
@@ -294,17 +298,26 @@ export async function writeEchoTail(input: {
 		envelope.title = root.title;
 		envelope.hpath = root.hpath;
 	}
-	// Refresh baselines for the target doc's blocks (write results
-	// refresh the map for blocks whose content the result carried) —
-	// from blocks.content, the same representation the re-check hashes.
-	// The SQL read (not walk rows) keeps the map's single-source invariant
-	// explicit: the walk's content IS blocks.content (the kernel builds
-	// both via nodeStaticContent), but a walk taken mid-write races the
-	// index differently than the re-check's query path — same source,
-	// same read mechanism, no representation drift.
-	if (walk.length > 0) {
+	// Refresh baselines only for blocks whose content the result actually
+	// carried: the outline's heading rows, plus the write's own block IDs.
+	// Anything else keeps its read-served baseline — a broad refresh would
+	// launder a concurrent change to an unserved block past the
+	// fresh-content precondition (an intervening write would make the next
+	// edit on it hash-match the laundered content). The SQL read (not walk
+	// rows) keeps the map's single-source invariant explicit: the walk's
+	// content IS blocks.content (the kernel builds both via
+	// nodeStaticContent), but a walk taken mid-write races the index
+	// differently than the re-check's query path — same source, same read
+	// mechanism, no representation drift.
+	const refreshIds = [
+		...new Set([
+			...walk.filter((b) => b.type === "h").map((b) => b.id),
+			...(refreshBlockIds ?? []),
+		]),
+	];
+	if (refreshIds.length > 0) {
 		for (const row of rowsToBaselineView(
-			await kernel.query(baselineContentsStmt(walk.map((b) => b.id))),
+			await kernel.query(baselineContentsStmt(refreshIds)),
 		)) {
 			baselines.remember(row.blockId, row.content);
 		}

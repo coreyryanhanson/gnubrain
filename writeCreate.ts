@@ -4,6 +4,7 @@
 
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
+import type { ContentBaselines } from "./baselines.js";
 import {
 	renderOutline,
 	rowPayload,
@@ -47,6 +48,9 @@ export interface CreateFlowInput {
 	confirmInputs: { key: string; summary: string };
 	confirm: WriteConfirmFn;
 	confirmState: WriteConfirmState;
+	/** Session-scoped fresh-content baselines — the create result seeds
+	 * the new doc's outline headings (content the result carried). */
+	baselines: ContentBaselines;
 	/** Fires at the flow's first kernel call — kernel-free refusals
 	 * (preflight, mint) must not reset the breaker's consecutive count. */
 	contact: () => void;
@@ -326,6 +330,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 			sessionId,
 			"kb_write",
 			root.root_id,
+			input.baselines,
 		);
 		return {
 			status: "ok",

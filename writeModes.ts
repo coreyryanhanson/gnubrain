@@ -316,11 +316,14 @@ function headingInWalk(
 }
 
 /** writeEchoTail with the flow's fixed identity args bound — call sites
- * pass only an optional pre-fetched verification walk. */
+ * pass only an optional pre-fetched verification walk and the write's own
+ * block IDs (only on the success paths — a write that did not land
+ * refreshes nothing, or it would launder a concurrent change). */
 async function echoTail(
 	input: WriteFlowInput,
 	doc: DocTarget,
 	walk?: WalkedBlock[] | undefined,
+	refreshBlockIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
 	return (
 		await writeEchoTail({
@@ -330,6 +333,7 @@ async function echoTail(
 			docId: doc.rootId,
 			baselines: input.baselines,
 			walk,
+			refreshBlockIds,
 		})
 	).envelope;
 }
@@ -416,7 +420,7 @@ async function runEditMode(
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc).
 	return finishWrite(name, {}, async () => {
-		const tail = await echoTail(input, doc);
+		const tail = await echoTail(input, doc, undefined, [blockId]);
 		return {
 			status: "ok",
 			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,
@@ -474,7 +478,7 @@ async function runAppendMode(
 				{ kb: name, anchor: anchor.anchor, ...tail },
 			);
 		}
-		const tail = await echoTail(input, doc, postWalk);
+		const tail = await echoTail(input, doc, postWalk, [newBlockId]);
 		return {
 			status: "ok",
 			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
@@ -599,7 +603,7 @@ async function runReplaceSectionMode(
 		// The echo tail re-walks AFTER the deletes: the post-insert walk still
 		// carries the swept blocks, and the outline-freshness contract requires
 		// the post-write tree (write-result contract).
-		const tail = await echoTail(input, doc);
+		const tail = await echoTail(input, doc, undefined, [newBlockId]);
 		return {
 			status: "ok",
 			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
@@ -913,8 +917,10 @@ async function runMoveMode(
 		const destPayload = sameDoc
 			? {}
 			: await destOutlinePayload(sessionId, postDestWalk);
-		const srcTail = await echoTail(input, doc, postSourceWalk);
 		if (!movedInDest || !movedGoneFromSource) {
+			// The move did not land — refresh nothing (the failure tail must
+			// not launder a concurrent change past the precondition).
+			const srcTail = await echoTail(input, doc, postSourceWalk);
 			const postDestIds = idSet(postDestWalk);
 			let why = "still present in the source tree";
 			if (!postDestIds.has(blockId)) why = "absent from the destination tree";
@@ -930,6 +936,10 @@ async function runMoveMode(
 				},
 			);
 		}
+		// The move landed — movedBlockId is what the result carried, so its
+		// baseline refresh rides this path only (the failure path above
+		// refreshes nothing).
+		const srcTail = await echoTail(input, doc, postSourceWalk, [blockId]);
 		return {
 			status: "ok",
 			message: `moved block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})`,
