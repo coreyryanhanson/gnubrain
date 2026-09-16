@@ -825,19 +825,24 @@ async function runMoveMode(
 	// Anchor: tool-derived, never agent-supplied.
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
 	// Self-anchor no-op (mirrors the doc-level own-parent case): a block
-	// that already ends the destination refuses — the kernel no-ops (or
-	// re-parents nothing) while the walk-set check would misreport a
-	// successful move. Covers both anchors: section-end (previousID ===
-	// blockId) and the doc-end fallback when the block is the doc's last
-	// top-level block. Refuse instead.
+	// that already sits in the destination position refuses — the kernel
+	// no-ops (or re-parents nothing) while the walk-set check would
+	// misreport a successful move. The walk is flattened document order
+	// (a block's children trail it), so "the element right after the
+	// anchor" is exactly kernel placement — this generalizes section-end
+	// (previousID === blockId) to any no-op target, e.g. a nested block
+	// already following the section anchor. The doc-end fallback keeps its
+	// own shape: the block is the doc's last top-level block. Refuse instead.
 	const alreadyAtDest =
 		anchor.kind === "move"
-			? anchor.previousID === blockId
+			? anchor.previousID === blockId ||
+				destWalk[destWalk.findIndex((b) => b.id === anchor.previousID) + 1]
+					?.id === blockId
 			: destWalk[destWalk.length - 1]?.id === blockId &&
 				destWalk[destWalk.length - 1]?.depth === 1;
 	if (sameDoc && alreadyAtDest) {
 		return refusedEnvelope(
-			`block '${blockId}' is already the last member of the destination section — nothing to move`,
+			`block '${blockId}' already sits at the destination position — nothing to move`,
 		);
 	}
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
@@ -860,15 +865,35 @@ async function runMoveMode(
 		const postDestWalk = sameDoc
 			? postSourceWalk
 			: await walkIdSet(kernel, dest.rootId);
-		const movedInDest = idSet(postDestWalk).has(blockId);
+		// Same-doc `move` verifies POSITION, not presence: the block was
+		// already in this walk before the move, so set membership cannot
+		// distinguish "landed" from a silent kernel no-op behind HTTP success
+		// (e.g. a stale anchor after a concurrent edit). Require the block
+		// immediately after the anchor in the post-move walk; if the anchor
+		// block itself vanished (concurrent delete), the position is
+		// unverifiable — fall back to presence rather than false-failing on
+		// a check that can no longer run.
+		const anchorIdx =
+			sameDoc && anchor.kind === "move"
+				? postSourceWalk.findIndex((b) => b.id === anchor.previousID)
+				: -1;
+		const movedInDest =
+			anchorIdx >= 0
+				? postSourceWalk[anchorIdx + 1]?.id === blockId
+				: idSet(postDestWalk).has(blockId);
 		const movedGoneFromSource = sameDoc || !idSet(postSourceWalk).has(blockId);
 		const destPayload = sameDoc
 			? {}
 			: await destOutlinePayload(sessionId, postDestWalk);
 		const srcTail = await echoTail(input, doc, postSourceWalk);
 		if (!movedInDest || !movedGoneFromSource) {
+			const postDestIds = idSet(postDestWalk);
+			let why = "still present in the source tree";
+			if (!postDestIds.has(blockId)) why = "absent from the destination tree";
+			else if (sameDoc && !movedInDest)
+				why = "present but not immediately after the anchor";
 			return errorEnvelope(
-				`verified-move failed: block '${blockId}' is ${movedInDest ? "still present in the source tree" : "absent from the destination tree"} — the transaction rolled back silently behind HTTP success`,
+				`verified-move failed: block '${blockId}' is ${why} — the transaction rolled back silently behind HTTP success`,
 				{
 					kb: name,
 					anchor: anchor.anchor,

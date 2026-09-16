@@ -766,7 +766,9 @@ describe("block-level move", () => {
 			toHeadingId: "h1",
 		});
 		expect(result.status).toBe("refused");
-		expect(result.message).toContain("already the last member");
+		expect(result.message).toContain(
+			"already sits at the destination position",
+		);
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
 			0,
 		);
@@ -787,10 +789,92 @@ describe("block-level move", () => {
 			toDocId: "d-doc",
 		});
 		expect(result.status).toBe("refused");
-		expect(result.message).toContain("already the last member");
+		expect(result.message).toContain(
+			"already sits at the destination position",
+		);
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
 			0,
 		);
+	});
+
+	it("same-doc no-op target: block already immediately after the anchor → refusal, zero kernel moves", async () => {
+		// c1 (depth 2) already follows p1, h1's section anchor. The kernel
+		// moveBlock({id: c1, previousID: p1}) would no-op while the walk-set
+		// check ("c1 present") reports a successful move — the generalized
+		// pre-check refuses instead.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "c1", content: "nested" }],
+			childrenFor: {
+				"d-doc": [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("p1", "p", "", "first"),
+					{ ...walkBlock("c1", "p", "", "nested"), depth: 2 },
+				],
+				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			},
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "c1",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain(
+			"already sits at the destination position",
+		);
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
+	it("same-doc kernel no-op behind HTTP success: position check catches the misplacement", async () => {
+		// h1's section is [p1, p2]: moving p1 to its end anchors on p2. The
+		// stub never applies the move, so the post-move walk is unchanged —
+		// presence-based verification would report success for a no-op;
+		// the position check fails loud instead.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "p1", content: "mover" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain(
+			"present but not immediately after the anchor",
+		);
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			1,
+		);
+	});
+
+	it("same-doc: anchor block vanished post-move → position check falls back to presence", async () => {
+		// The kernel applies the move, but a concurrent delete removed the
+		// anchor block p2 — the position is unverifiable, so the check
+		// falls back to presence rather than false-failing.
+		const harness = moveHarness(() => {
+			harness.childrenFor["d-doc"] = [
+				walkBlock("h1", "h", "h1", "A"),
+				walkBlock("p1", "p", "", "mover"),
+			];
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.movedBlockId).toBe("p1");
 	});
 
 	it("doc-level: moveDocsByID with the notebook id on un-nest; pinned result shape", async () => {
