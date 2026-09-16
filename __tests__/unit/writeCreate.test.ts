@@ -52,6 +52,21 @@ describe("guard-stop staging", () => {
 		}
 	});
 
+	it("vanished candidate mid-guard-stop: duplicate stop degrades, not errors", async () => {
+		const { execute } = setup({
+			config: {
+				...duplicateConfig,
+				armWalkError: (arm) => arm(new SiYuanApiError(404)),
+			},
+		});
+		const r = await execute({ ...base, markdown: "the draft body" });
+		expect(r.status).toBe("duplicate");
+		const rows = r.rows as Record<string, unknown>[];
+		expect(rows).toHaveLength(1);
+		expect(rows[0]!.docId).toBe("d1");
+		expect(rows[0]!.outline).toBe("");
+	});
+
 	it("near-match stop stages inline drafts; candidates stay excerpt-only", async () => {
 		const { execute } = setup({
 			config: {

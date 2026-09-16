@@ -68,16 +68,30 @@ async function duplicateStop(
 	const walks: WalkedBlock[][] = [];
 	for (const row of rows) {
 		const docId = row.root_id;
-		// One walk per row serves both the outline and (single-row) the
-		// block-ID payload — never a second traversal of the same doc.
-		const walk = await walkBlockTree(kernel, docId);
+		// Guard-stop evidence is presentation-only: the write never fires on
+		// this path, so a candidate deleted between the guard query and these
+		// reads degrades to an empty outline/excerpt (nearMatchStop's rule)
+		// instead of discarding the whole duplicate stop. The strict posture
+		// stays reserved for write-verification walks. One walk per row also
+		// serves both the outline and (single-row) the block-ID payload —
+		// never a second traversal of the same doc.
+		const walk = await walkBlockTree(kernel, docId, {
+			tolerateVanished: true,
+		});
 		walks.push(walk);
 		const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
-		const md = await kernel.exportMarkdown(docId);
+		let markdown = "";
+		try {
+			const md = await kernel.exportMarkdown(docId);
+			markdown = md.content;
+		} catch (err) {
+			// Same vanished-candidate rule as the walk above.
+			if (!(err instanceof SiYuanApiError)) throw err;
+		}
 		const markdownPath = spillFile(
 			sessionId,
 			"kb_write-candidate",
-			md.content,
+			markdown,
 			"md",
 		);
 		detailed.push({
