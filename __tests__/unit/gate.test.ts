@@ -12,41 +12,9 @@ import {
 	resolveKbParam,
 	runKbCall,
 } from "../../gate.js";
-import type { SessionValidation } from "../../validation.js";
+import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;
-
-function validation(overrides?: {
-	scope?: string[];
-	validKBs?: [string, string][];
-	shapeErrors?: string[];
-	probe?: SessionValidation["probe"];
-	kernelVersion?: string;
-}): SessionValidation {
-	return {
-		settings: {
-			baseUrl: "http://127.0.0.1:6806",
-			apiToken: "token",
-			kbs: [
-				{ name: "recipes", notebook: "nb-r" },
-				{ name: "projects", notebook: "nb-p" },
-			],
-		},
-		shapeErrors: overrides?.shapeErrors ?? [],
-		probe: overrides?.probe ?? "ok",
-		kernelVersion: overrides?.kernelVersion ?? "3.8.3",
-		validKBs: new Map(
-			overrides?.validKBs ?? [
-				["recipes", "nb-r"],
-				["projects", "nb-p"],
-			],
-		),
-		scope: overrides?.scope ?? ["recipes"],
-		warnings: [],
-		authFailed: false,
-		lsNotebooksOk: true,
-	};
-}
 
 function kernelStub() {
 	const calls: string[] = [];

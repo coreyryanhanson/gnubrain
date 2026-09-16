@@ -34,27 +34,9 @@ import {
 	type WriteConfirmFn,
 } from "../../writeConfirm.js";
 import { registerWriteTool, type WriteToolHooks } from "../../write.js";
+import { validation } from "./fixtures.js";
 
-export function validation(
-	overrides: Partial<SessionValidation["settings"]> = {},
-) {
-	return {
-		settings: {
-			baseUrl: "http://127.0.0.1:6806",
-			apiToken: "token",
-			kbs: [{ name: "recipes", notebook: "nb-r" }],
-			...overrides,
-		},
-		shapeErrors: [],
-		probe: "ok",
-		kernelVersion: "3.8.3",
-		validKBs: new Map([["recipes", "nb-r"]]),
-		scope: ["recipes"],
-		warnings: [],
-		authFailed: false,
-		lsNotebooksOk: true,
-	} satisfies SessionValidation;
-}
+export { validation };
 
 export interface StubConfig {
 	// Create-flow routes (guard legs, parent lookup, verified-create read).

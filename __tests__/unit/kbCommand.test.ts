@@ -1,36 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dispatchKbCommand } from "../../kbCommand.js";
-import type { SessionValidation } from "../../validation.js";
-
-function validation(overrides?: {
-	scope?: string[];
-	validKBs?: [string, string][];
-}): SessionValidation {
-	return {
-		settings: {
-			baseUrl: "http://127.0.0.1:6806",
-			apiToken: "token",
-			kbs: [
-				{ name: "recipes", notebook: "nb-r" },
-				{ name: "projects", notebook: "nb-p" },
-				{ name: "archive", notebook: "nb-a" },
-			],
-		},
-		shapeErrors: [],
-		probe: "ok",
-		kernelVersion: "3.8.3",
-		validKBs: new Map(
-			overrides?.validKBs ?? [
-				["recipes", "nb-r"],
-				["projects", "nb-p"],
-			],
-		),
-		scope: overrides?.scope ?? ["recipes"],
-		warnings: [],
-		authFailed: false,
-		lsNotebooksOk: true,
-	};
-}
+import { validation } from "./fixtures.js";
 
 describe("dispatchKbCommand", () => {
 	it("bare /kb prints the scope and the available-but-off set", () => {
@@ -102,7 +72,20 @@ describe("dispatchKbCommand", () => {
 	});
 
 	it("a configured-but-invalid name gets the stale/encrypted rejection", () => {
-		const result = dispatchKbCommand("archive on", validation());
+		const result = dispatchKbCommand(
+			"archive on",
+			validation({
+				kbs: [
+					{ name: "recipes", notebook: "nb-r" },
+					{ name: "projects", notebook: "nb-p" },
+					{ name: "archive", notebook: "nb-a" },
+				],
+				validKBs: [
+					["recipes", "nb-r"],
+					["projects", "nb-p"],
+				],
+			}),
+		);
 		expect(result.message).toContain(
 			"KB 'archive' is not available (stale or encrypted notebook",
 		);

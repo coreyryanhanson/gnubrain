@@ -15,30 +15,10 @@ import {
 } from "../../tools.js";
 import { RESULT_LIMIT, spillFile, spillFileName } from "../../spill.js";
 import type { SessionValidation } from "../../validation.js";
+import { validation as makeValidation } from "./fixtures.js";
 
-function validation(): SessionValidation {
-	return {
-		settings: {
-			baseUrl: "http://127.0.0.1:6806",
-			apiToken: "token",
-			kbs: [
-				{ name: "recipes", notebook: "nb-r" },
-				{ name: "projects", notebook: "nb-p" },
-			],
-		},
-		shapeErrors: [],
-		probe: "ok",
-		kernelVersion: "3.8.3",
-		validKBs: new Map([
-			["recipes", "nb-r"],
-			["projects", "nb-p"],
-		]),
-		scope: ["recipes", "projects"],
-		warnings: [],
-		authFailed: false,
-		lsNotebooksOk: true,
-	};
-}
+// These tests exercise the full scope, unlike the shared fixture's default.
+const validation = () => makeValidation({ scope: ["recipes", "projects"] });
 
 /** Register the tools on a minimal fake pi and return the captured tool
  * definitions for direct execute() invocation. */

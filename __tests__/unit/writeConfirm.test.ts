@@ -142,7 +142,7 @@ describe("write confirmation", () => {
 		);
 		const { execute } = setup(
 			{ confirm, hasUI: true, __config: {} },
-			validation({ writeConfirmTimeout: 1 }),
+			validation({ settings: { writeConfirmTimeout: 1 } }),
 		);
 		const promise = execute({ ...base });
 		await vi.advanceTimersByTimeAsync(1500);
@@ -178,7 +178,7 @@ describe("write confirmation", () => {
 		);
 		const { execute } = setup(
 			{ confirm, hasUI: true },
-			validation({ writeConfirmTimeout: 0 }),
+			validation({ settings: { writeConfirmTimeout: 0 } }),
 		);
 		const r = await execute({ ...base });
 		expect(r.details.status).toBe("ok");
@@ -214,7 +214,7 @@ describe("headless default-deny", () => {
 	it("refuses with no UI and allowUnattendedWrites: false", async () => {
 		const { execute } = setup(
 			{ hasUI: false },
-			validation({ allowUnattendedWrites: false }),
+			validation({ settings: { allowUnattendedWrites: false } }),
 		);
 		const r = await execute({ ...base });
 		expect(r.details.status).toBe("refused");
@@ -224,7 +224,7 @@ describe("headless default-deny", () => {
 		const confirm = vi.fn();
 		const { execute, kernel } = setup(
 			{ confirm, hasUI: false },
-			validation({ allowUnattendedWrites: true }),
+			validation({ settings: { allowUnattendedWrites: true } }),
 		);
 		const r = await execute({ ...base });
 		expect(r.details.status).toBe("ok");
