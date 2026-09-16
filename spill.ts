@@ -9,6 +9,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** Serialize rows as JSONL (the spill format for query/search/outline rows). */
+export function jsonl(rows: unknown[]): string {
+	return rows.map((r) => JSON.stringify(r)).join("\n");
+}
+
 /** Shared limit constant: the injected query LIMIT default and the per-KB
  * search `pageSize`. */
 export const RESULT_LIMIT = 64;

@@ -10,13 +10,12 @@ import {
 	type BlockTransaction,
 } from "siyuan-kernel-api";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { sqlString, type KernelReadClient } from "./tools.js";
 import {
 	renderOutlineFromWalk,
-	sqlString,
 	walkBlockTree,
-	type KernelReadClient,
 	type WalkedBlock,
-} from "./tools.js";
+} from "./walk.js";
 import type { KernelProbeClient } from "./validation.js";
 
 /** Structural client subset the write tools need (tests stub it). */

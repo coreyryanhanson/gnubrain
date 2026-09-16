@@ -2,7 +2,7 @@
 // Pure functions over the document-order walk, so they are
 // fold-state-independent and independently testable.
 
-import type { WalkedBlock } from "./tools.js";
+import type { WalkedBlock } from "./walk.js";
 
 /** `appendBlock` on the doc root — the doc-end fallback (anchor echo). */
 const DOC_END_ANCHOR = "appendBlock(root) — no next heading";

@@ -6,14 +6,13 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
+import { rowPayload, sqlString } from "./tools.js";
 import {
 	renderOutline,
 	renderOutlineFromWalk,
-	rowPayload,
-	sqlString,
 	walkBlockTree,
 	type WalkedBlock,
-} from "./tools.js";
+} from "./walk.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	confirmWrite,

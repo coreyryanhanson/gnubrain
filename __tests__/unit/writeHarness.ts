@@ -19,7 +19,7 @@ import {
 	type WriteParams,
 } from "../../writeModes.js";
 import { OWNERSHIP_STMT_HEAD } from "../../tools.js";
-import type { WalkedBlock } from "../../tools.js";
+import type { WalkedBlock } from "../../walk.js";
 import {
 	BASELINE_CONTENTS_STMT_HEAD,
 	REFS_BACKLINK_STMT_HEAD,

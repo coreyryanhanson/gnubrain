@@ -10,13 +10,12 @@ import { Type, type Static } from "typebox";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import type { ContentBaselines } from "./baselines.js";
 import { previewAtNewline, spillFile } from "./spill.js";
+import { ownershipStmt, sqlString } from "./tools.js";
 import {
-	ownershipStmt,
 	renderOutlineFromWalk,
-	sqlString,
 	walkBlockTree,
 	type WalkedBlock,
-} from "./tools.js";
+} from "./walk.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	deriveAppendAnchor,

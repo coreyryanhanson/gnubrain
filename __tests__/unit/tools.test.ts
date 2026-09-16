@@ -8,7 +8,7 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { createContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
-import { walkBlockTree } from "../../tools.js";
+import { walkBlockTree } from "../../walk.js";
 import { inlineOrSpill, PREVIEW_CHARS } from "../../spill.js";
 import {
 	certifySelect,
