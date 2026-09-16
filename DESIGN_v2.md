@@ -880,11 +880,13 @@ tool's job — the same verified-not-trusted doctrine as `newBlockId`:
   holds a baseline content hash per targeted block — the hash of the content **as the
   tool last served it this session** (outline lines carry content; `query` rows can
   select it; write results refresh the map for blocks whose content the write result
-  actually carried). **Served content only**: a `newBlockId` target from a just-landed
-  write has no baseline (the submitted markdown is not the stored form — the kernel
-  re-parses it, and multi-block bodies make the mapping worse) — a follow-up `edit` on
-  such a target rides the no-baseline fallback below, not a hash of the agent's own
-  submission. Served-content hashes live in a session-scoped
+  actually carried). **Served content only**: never the agent's own submission — the
+  submitted markdown is not the stored form (the kernel re-parses it, and multi-block
+  bodies make the mapping worse). A `newBlockId` from a just-landed write is baselined
+  from the kernel's stored form (`blocks.content`, the representation the precondition
+  hashes) by the write result's baseline refresh, so a follow-up `edit` on it compares
+  like-for-like; any other target without served content rides the no-baseline fallback
+  below. Served-content hashes live in a session-scoped
   in-memory map — the same lifecycle class as the §5 breaker/cooldown state, never
   persisted (after resume/fork the map is empty and the fallback below applies).
 - **No served content this session** (target from an older spill file, hand-off
