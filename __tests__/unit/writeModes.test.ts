@@ -589,9 +589,17 @@ describe("replace-section", () => {
 			},
 		});
 		const result = await harness.execute(replaceParams);
-		// The insert landed first (visible duplication), the failure surfaces.
+		// The insert landed first (visible duplication), the failure surfaces
+		// as a partial-replace envelope with the surviving state — not a bare
+		// kernel message that invites a re-run (which would duplicate the body).
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("kernel gone mid-sweep");
+		expect(result.message).toContain("do NOT re-run");
+		expect(result.partialReplace).toBe(true);
+		expect(result.newBlockId).toBe("b-new");
+		expect(result.anchor).toBe("nextID=h2 (next heading)");
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 
 	it("mid-sweep drop after landed deletes → verificationFailed, not 'unreachable'", async () => {

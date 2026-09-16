@@ -548,8 +548,31 @@ async function runReplaceSectionMode(
 		}
 		// Deletes ride the pre-enumerated set — a post-insert re-enumeration
 		// would sweep the replacement into the delete set.
-		for (const block of deleteSet) {
-			await kernel.deleteBlock(block.id);
+		for (const [i, block] of deleteSet.entries()) {
+			try {
+				await kernel.deleteBlock(block.id);
+			} catch (err) {
+				if (!(err instanceof SiYuanApiError)) throw err;
+				// The insert has landed and part of the old section may be
+				// swept — a bare error here invites a re-run that duplicates
+				// the replacement. Surface the partial state instead.
+				return errorEnvelope(
+					`replace partially applied: the new section is in place (block '${newBlockId}') but the delete of '${block.id}' failed (${err instanceof Error ? err.message : String(err)})` +
+						(i > 0 ? `, and ${i} earlier block(s) were deleted` : "") +
+						` — do NOT re-run; delete the remaining old-section block(s) to finish: ${deleteSet
+							.slice(i)
+							.map((b) => b.id)
+							.join(", ")}`,
+					{
+						kb: name,
+						anchor: anchor.anchor,
+						newBlockId,
+						partialReplace: true,
+						deletedBlockIds: deleteSet.slice(0, i).map((b) => b.id),
+						remainingBlockIds: deleteSet.slice(i).map((b) => b.id),
+					},
+				);
+			}
 		}
 		// invalidRefs (write-result contract): post-write echo over the
 		// enumerated delete set — what actually got orphaned, verified.
