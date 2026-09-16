@@ -75,7 +75,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 			const p = params as WriteParams;
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: p.kb, arity: "single" },
-				async (names) => {
+				async (names, contact) => {
 					if (kernel === undefined) {
 						return errorEnvelope(
 							"kb tools are not ready — settings did not load",
@@ -113,8 +113,14 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						}
 					}
 					// Write-path probe gate: a successful probe (or a
-					// per-attempt retry) must precede any write.
-					const probeEnv = await gateWriteAttempt({ validation, kernel });
+					// per-attempt retry) must precede any write. A retry that
+					// reaches the kernel is real contact — it resets the
+					// breaker's consecutive count like any other call.
+					const probeEnv = await gateWriteAttempt({
+						validation,
+						kernel,
+						contact,
+					});
 					if (probeEnv !== null) return probeEnv;
 					const name = names[0] as string;
 					const boxId = validation.validKBs.get(name);
@@ -134,6 +140,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						hasUI: hooks.hasUI ?? ctx.hasUI,
 						confirmState: hooks.confirmState,
 						baselines: hooks.baselines,
+						contact,
 					};
 					if (p.mode === "create") {
 						return runCreateFlow({

@@ -57,6 +57,9 @@ export interface WriteFlowInput {
 	confirm: WriteConfirmFn;
 	confirmState: WriteConfirmState;
 	baselines: ContentBaselines;
+	/** Fires at the flow's first kernel call — kernel-free refusals
+	 * (preflight) must not reset the breaker's consecutive count. */
+	contact: () => void;
 }
 
 interface DocTarget {
@@ -227,6 +230,7 @@ export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 		summary: writeModeSummary(input.params),
 	});
 	if (!preflight.ok) return preflight.envelope;
+	input.contact();
 	const target = await resolveDocTarget(
 		input.kernel,
 		input.boxId,

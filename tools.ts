@@ -396,7 +396,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
-				async (names) => {
+				async (names, contact) => {
 					if (kernel === undefined) {
 						return errorEnvelope(
 							"kb tools are not ready — settings did not load",
@@ -421,6 +421,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					if (problem !== undefined) {
 						return errorEnvelope(`internal: ${problem}`);
 					}
+					contact();
 					const rows = await kernel.query(rebuilt.stmt);
 					return buildQueryEnvelope(
 						ctx.sessionManager.getSessionId(),
@@ -503,7 +504,7 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
-				async (names) => {
+				async (names, contact) => {
 					if (kernel === undefined) {
 						return errorEnvelope(
 							"kb tools are not ready — settings did not load",
@@ -515,6 +516,7 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						validation,
 						names,
 						params.query,
+						contact,
 					);
 				},
 			);
@@ -529,6 +531,7 @@ export async function runSearchFanOut(
 	validation: SessionValidation,
 	names: string[],
 	query: string,
+	contact: () => void,
 ): Promise<Envelope> {
 	// One kernel call per resolved KB (paths: [<boxId>]) — never one call
 	// with multiple paths under a single pageSize, which lets a hit-rich KB
@@ -542,6 +545,7 @@ export async function runSearchFanOut(
 	let truncatedKBs = 0;
 	let truncatedRows = 0;
 	for (const { name, boxId } of nameBoxPairs) {
+		contact();
 		const result = await kernel.search({
 			query,
 			paths: [boxId],
@@ -667,7 +671,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "single" },
-				async (names) => {
+				async (names, contact) => {
 					if (kernel === undefined) {
 						return errorEnvelope(
 							"kb tools are not ready — settings did not load",
@@ -676,11 +680,11 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					// The missing-docId refusal lives inside the gated op, after
 					// the gate resolved a valid kb: a typo'd kb with no docId must
 					// get the unknown-KB rejection, not the guidance. Returned as
-					// refused (never thrown), so runKbCall treats it as a
-					// successful call (recordSuccess) — the pre-existing pattern
-					// for op-internal refusals. Never answered with a doc listing
-					// or metrics: a success-shaped payload would mask the
-					// lost-docId mistake the call almost always is.
+					// refused (never thrown) — an op-internal refusal that never
+					// touched the kernel, so runKbCall skips recordSuccess and the
+					// consecutive-auth-failure count survives. Never answered with
+					// a doc listing or metrics: a success-shaped payload would mask
+					// the lost-docId mistake the call almost always is.
 					const docId = params.docId;
 					if (docId === undefined || docId === "") {
 						return refusedEnvelope(
@@ -696,6 +700,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						validation,
 						names[0] as string,
 						docId,
+						contact,
 					);
 				},
 			);
@@ -710,6 +715,7 @@ export async function runRead(
 	validation: SessionValidation,
 	name: string,
 	docId: string,
+	contact: () => void,
 ): Promise<Envelope> {
 	const boxId = validation.validKBs.get(name);
 	if (boxId === undefined) {
@@ -717,6 +723,7 @@ export async function runRead(
 	}
 	// GFM only, never getDoc. The kernel route takes a bare stmt (no bind
 	// params), so trusted ids ride escaped literals (ownershipStmt).
+	contact();
 	const ownership = await kernel.query(ownershipStmt(boxId, docId));
 	if (ownership.length === 0) {
 		return errorEnvelope(

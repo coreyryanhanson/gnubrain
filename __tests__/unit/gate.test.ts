@@ -285,8 +285,9 @@ describe("runKbCall error classification", () => {
 		let fail = true;
 		const envelope = await runKbCall(
 			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
-			async () => {
+			async (_names, contact) => {
 				if (fail) throw new SiYuanAuthError(403);
+				contact();
 				return { status: "ok", message: "" };
 			},
 		);
@@ -305,6 +306,31 @@ describe("runKbCall error classification", () => {
 		);
 		// 2 fail → success → 1 fail: not tripped.
 		expect(breaker.tripped).toBe(false);
+	});
+
+	it("an op-internal refusal that never touched the kernel does not reset the consecutive count", async () => {
+		const breaker = new CircuitBreaker();
+		const v = validation();
+		const authFail = () =>
+			runKbCall(
+				{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
+				async () => {
+					throw new SiYuanAuthError(403);
+				},
+			);
+		await authFail();
+		await authFail();
+		// A kernel-free refusal (e.g. kb_read's missing-docId) sits between
+		// auth failures: the "3 consecutive" property must survive it.
+		const refused = await runKbCall(
+			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
+			async () => ({ status: "refused", message: "docId is required" }),
+		);
+		expect(refused.status).toBe("refused");
+		const third = await authFail();
+		expect(third.status).toBe("refused");
+		expect(third.message).toContain("circuit breaker");
+		expect(breaker.tripped).toBe(true);
 	});
 
 	it("a network drop maps to the error envelope and never counts toward the breaker", async () => {

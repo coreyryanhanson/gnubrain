@@ -161,12 +161,13 @@ export function guardCall(input: {
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
  * attempt — a still-failed retry refuses only that write. Returns null to
- * proceed.
+ * proceed. `contact` fires iff the probe actually reached the kernel.
  */
 export async function gateWriteAttempt(input: {
 	validation: SessionValidation;
 	kernel: KernelProbeClient;
 	pinnedVersion?: string;
+	contact?: () => void;
 }): Promise<Envelope | null> {
 	const { validation, kernel } = input;
 	const pinnedVersion = input.pinnedVersion ?? PINNED_SIYUAN_VERSION;
@@ -182,6 +183,7 @@ export async function gateWriteAttempt(input: {
 	// unreachable / never-probed: per-write-attempt probe retry — never a
 	// session-wide loop.
 	try {
+		input.contact?.();
 		const version = await kernel.getVersion();
 		validation.kernelVersion = version;
 		if (version !== pinnedVersion) {
@@ -199,7 +201,10 @@ export async function gateWriteAttempt(input: {
 /**
  * Guard + run + classify. Reads never check the probe verdict: the kernel
  * attempt happens and its failure maps to the error envelope, so reads
- * recover per-call with no recovery step once the kernel returns.
+ * recover per-call with no recovery step once the kernel returns. The op
+ * signals actual kernel contact via `contact` — op-internal refusals (shape,
+ * missing docId) made zero kernel calls and must not reset the breaker's
+ * consecutive-auth-failure count.
  */
 export async function runKbCall(
 	input: {
@@ -209,14 +214,18 @@ export async function runKbCall(
 		arity: KbArity;
 		now?: number;
 	},
-	op: (names: string[]) => Promise<Envelope>,
+	op: (names: string[], contact: () => void) => Promise<Envelope>,
 ): Promise<Envelope> {
 	const gate = guardCall(input);
 	if (!gate.ok) return gate.envelope;
 
+	let kernelContact = false;
+	const contact = (): void => {
+		kernelContact = true;
+	};
 	let result: Envelope;
 	try {
-		result = await op(gate.names);
+		result = await op(gate.names, contact);
 	} catch (err) {
 		const now = input.now ?? Date.now();
 		if (err instanceof SiYuanAuthError) {
@@ -244,8 +253,8 @@ export async function runKbCall(
 		}
 		return errorEnvelope(err instanceof Error ? err.message : String(err));
 	}
-	// A successful authenticated call resets the consecutive count —
+	// A call that actually reached the kernel resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone.
-	input.breaker.recordSuccess();
+	if (kernelContact) input.breaker.recordSuccess();
 	return result;
 }

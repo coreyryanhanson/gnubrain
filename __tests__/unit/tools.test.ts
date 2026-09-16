@@ -324,6 +324,7 @@ describe("search tool", () => {
 			validation(),
 			["recipes", "projects"],
 			"docker",
+			() => {},
 		);
 		const searches = calls.filter((c) => c.method === "search");
 		expect(searches).toHaveLength(2);
@@ -389,6 +390,7 @@ describe("search tool", () => {
 			validation(),
 			["recipes"],
 			"docker",
+			() => {},
 		);
 		expect(result.post_filtered).toBe(true);
 		expect(result.count).toBe(1);
@@ -397,7 +399,14 @@ describe("search tool", () => {
 	it("a single active KB degenerates to the single-call shape", async () => {
 		const { runSearchFanOut } = await import("../../tools.js");
 		const { calls, client } = kernelStub();
-		await runSearchFanOut("sess-1", client, validation(), ["recipes"], "q");
+		await runSearchFanOut(
+			"sess-1",
+			client,
+			validation(),
+			["recipes"],
+			"q",
+			() => {},
+		);
 		expect(calls.filter((c) => c.method === "search")).toHaveLength(1);
 	});
 
@@ -418,6 +427,7 @@ describe("search tool", () => {
 			validation(),
 			["recipes", "projects"],
 			"q",
+			() => {},
 		);
 		expect(String(result.truncated)).toContain(`truncated in 2 of 2 KBs`);
 		expect(String(result.truncated)).toContain("full result in");
@@ -533,6 +543,7 @@ describe("read tool", () => {
 			validation(),
 			"recipes",
 			"foreign-doc",
+			() => {},
 		);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("no doc 'foreign-doc'");
@@ -558,6 +569,7 @@ describe("read tool", () => {
 			validation(),
 			"recipes",
 			"d1",
+			() => {},
 		);
 		const lines = String(result.outline).split("\n");
 		expect(lines).toHaveLength(201); // 200 + the pointer line

@@ -44,6 +44,9 @@ export interface CreateFlowInput {
 	confirm: WriteConfirmFn;
 	hasUI: boolean;
 	confirmState: WriteConfirmState;
+	/** Fires at the flow's first kernel call — kernel-free refusals
+	 * (preflight, mint) must not reset the breaker's consecutive count. */
+	contact: () => void;
 }
 
 async function duplicateStop(
@@ -232,6 +235,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 
 	// Guard — exact leg first; only an empty exact leg runs the scan.
 	if (!input.confirmNew) {
+		input.contact();
 		const exact = toGuardRows(await kernel.query(guardExactStmt(boxId, title)));
 		if (exact.length > 0) return duplicateStop(input, title, exact);
 		const near = toGuardRows(await kernel.query(guardNearStmt(boxId, title)));
@@ -251,6 +255,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	}
 
 	// Submission path from ground truth, never predicted (step 3).
+	input.contact();
 	let path: string;
 	let parentID: string | undefined;
 	let storedParentHpath: string | undefined;
