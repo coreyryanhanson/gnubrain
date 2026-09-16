@@ -348,7 +348,9 @@ inside the throttle lock window (it needs the kernel), so it runs before the
 raw-DELETE case like the rest.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
-   mint; `A & B` / apostrophe titles mint and re-find via escape parity; clean
+   mint; `A & B` / `say "hi"` / apostrophe titles mint and re-find via escape
+   parity — the pin that caught the stored-form mapping: `"`→`&quot;` and
+   `'` verbatim, never `&#30;`/`&#39;`; clean
    titles — leading/trailing-space-trimmed, Unicode, and the exactly-512-rune
    boundary — store verbatim + expected hpath (the live pin for §4's superset
    claim); kernel `renameDocByID` mid-test re-finds

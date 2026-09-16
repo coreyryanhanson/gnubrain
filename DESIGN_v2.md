@@ -437,10 +437,14 @@ the kernel stores — it builds the submission path from ground truth:
    kernel-side rejection can fire — the tool rejects where the kernel silently truncates);
    contains tab/newline/control characters (their stored form is an unpredictable kernel
    transform — reject at mint with a rephrase hint; user-minted docs with such titles
-   stay reachable by docId per R1). HTML-special characters (`& < > " '`) are **not**
-   rejected: the IAL stores them entity-escaped in `blocks.content`, but escaping is a
+   stay reachable by docId per R1). HTML-special characters (`& < > "`) are **not**
+   rejected: the stored form in `blocks.content` escapes them (lute's `html.EscapeHTMLStr`
+   — the same function `nodeStaticContent` runs over the title IAL), and escaping is a
    deterministic transform the tool can apply itself, so the guard matches these titles
-   via escape parity (guard SQL above) instead of rejecting them. Titles like `R&D`,
+   via escape parity (guard SQL above) instead of rejecting them. The apostrophe is the
+   parity trap: `EscapeHTMLStr` stores `'` **verbatim** (the kernel's own entity
+   normalization maps a produced `&#39;` back to a raw `'` — `kernel/model/search.go`),
+   so the guard must leave it unescaped too. Titles like `R&D`,
    `O'Reilly`, or "Don't repeat yourself" mint normally — LLM agents are the primary
    minters and such titles are common, so reject-at-mint here would be a recurring
    interruption training agents toward awkward rephrases. The trade: one new assumption
@@ -509,7 +513,7 @@ of form for identical strings only, and LLMs paraphrase. The taxonomy, stated ex
 | --- | --- |
 | ASCII casing | Title guard exact leg (`LIKE`, ASCII-case-insensitive) |
 | Shared prefix ("docker-networking" vs "docker-networks") | Near-match scan (prefix on title) |
-| Identical string containing HTML-special chars (`& < > " '`) | Guard exact leg matches via escape parity — the pattern is built from the HTML-escaped title (mint policy step 2), so these titles mint and match normally |
+| Identical string containing HTML-special chars (`& < > "`, and `'` stored verbatim) | Guard exact leg matches via escape parity — the pattern is built from the kernel's stored form (lute's `EscapeHTMLStr` mapping: `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`, `"`→`&quot;`, `'` verbatim), so these titles mint and match normally |
 | Identical string whose stored form would unpredictably transform (tab/newline/control — rejected at mint, above) | Rejected at mint with a rephrase hint; user-minted docs with such titles fall to the accepted-duplicate path |
 | Paraphrase ("docker-networking" vs "networking-in-docker") | Nothing — accepted duplicate, reconciled later |
 
