@@ -97,6 +97,7 @@ function deps(options?: {
 	project?: string;
 	version?: string;
 	notebooksError?: Error;
+	globalReadError?: Error;
 }): GnubrainDeps & { notebooks: () => number } {
 	let notebookCalls = 0;
 	return {
@@ -107,6 +108,7 @@ function deps(options?: {
 				}
 				return options.project;
 			}
+			if (options?.globalReadError) throw options.globalReadError;
 			return options?.global ?? GLOBAL_SETTINGS;
 		},
 		createClient: () => ({
@@ -133,6 +135,21 @@ function deps(options?: {
 }
 
 describe("index wiring", () => {
+	it("settings read error at session_start degrades instead of throwing", async () => {
+		const { pi, fire } = fakePi();
+		register(
+			pi,
+			deps({
+				globalReadError: Object.assign(new Error("boom"), { code: "EACCES" }),
+			}),
+		);
+		const { ctx, statuses } = fakeCtx();
+		// A rejected handler here would be an unhandled rejection — fire must
+		// resolve, and the slot must name the degraded config cause.
+		await fire("session_start", ctx);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: config");
+	});
+
 	it("session_start validates, resolves scope from defaultKBs, and renders the hollow slot", async () => {
 		const { pi, fire } = fakePi();
 		const d = deps();

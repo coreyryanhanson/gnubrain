@@ -65,6 +65,23 @@ export function latestPersistedScope(
  * The full startup validation pass. Also the `/kb` recovery hook's body:
  * re-running it re-reads settings and updates every cached verdict.
  */
+/** Degraded all-or-nothing result: the config is unusable → no probe ran,
+ * nothing valid, every tool call refused with the problems named. Shared by
+ * the shape branch of runSessionValidation and a revalidate() that threw. */
+export function degradedValidation(errors: string[]): SessionValidation {
+	return {
+		settings: undefined,
+		shapeErrors: errors,
+		probe: "never-probed",
+		kernelVersion: undefined,
+		validKBs: new Map(),
+		scope: [],
+		warnings: [],
+		authFailed: false,
+		lsNotebooksOk: false,
+	};
+}
+
 export async function runSessionValidation(input: {
 	loaded: LoadedSettings;
 	kernel: KernelProbeClient;
@@ -84,17 +101,7 @@ export async function runSessionValidation(input: {
 	if (shapeErrors.length > 0 || settings === undefined) {
 		// No probe ran — the connection settings are unusable. The status slot
 		// shows the config cause, not an unreachable kernel.
-		return {
-			settings: undefined,
-			shapeErrors,
-			probe: "never-probed",
-			kernelVersion: undefined,
-			validKBs: new Map(),
-			scope: [],
-			warnings,
-			authFailed: false,
-			lsNotebooksOk: false,
-		};
+		return degradedValidation(shapeErrors);
 	}
 
 	// Step 2 — kernel probe: unauthenticated, connectivity + version only.

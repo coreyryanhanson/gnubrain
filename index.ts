@@ -13,6 +13,7 @@ import { loadGnubrainSettings } from "./settings.js";
 import { renderKbStatus, type KbStatusInput } from "./status.js";
 import {
 	KB_SCOPE_ENTRY_TYPE,
+	degradedValidation,
 	latestPersistedScope,
 	runSessionValidation,
 	type KernelProbeClient,
@@ -185,7 +186,17 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// session in the same process.
 		confirmState.timedOut.clear();
 		baselines.clear();
-		validation = await revalidate(ctx);
+		try {
+			validation = await revalidate(ctx);
+		} catch (err) {
+			// A settings read error (EACCES, EISDIR, ...) must degrade like every
+			// other bad-input path — an unguarded throw would leave a fresh
+			// process silently never-probed and a new session in this process
+			// inheriting the previous session's validation.
+			validation = degradedValidation([
+				`settings load failed: ${err instanceof Error ? err.message : String(err)}`,
+			]);
+		}
 		// An auth failure on the first authenticated call feeds the breaker.
 		if (validation.authFailed) breaker.recordAuthFailure();
 		renderStatus(ctx);
