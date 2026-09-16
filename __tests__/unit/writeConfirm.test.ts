@@ -17,29 +17,29 @@ afterEach(() => {
 
 describe("markdownFile input", () => {
 	it("errors on a missing file with zero kernel calls", async () => {
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		const r = await execute({
 			...base,
 			markdown: undefined,
 			markdownFile: "/nope/missing.md",
 		});
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("/nope/missing.md");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("/nope/missing.md");
+		expect(calls).toHaveLength(0);
 	});
 
 	it("reads the file before the probe gate — a bad path still fires zero kernel calls on an unreachable kernel", async () => {
 		const v: SessionValidation = validation();
 		v.probe = "unreachable";
-		const { execute, kernel } = setup({}, v);
+		const { execute, calls } = setup({ validation: v });
 		const r = await execute({
 			...base,
 			markdown: undefined,
 			markdownFile: "/nope/missing.md",
 		});
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("/nope/missing.md");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("/nope/missing.md");
+		expect(calls).toHaveLength(0);
 	});
 
 	it("errors on a non-regular file", async () => {
@@ -51,27 +51,27 @@ describe("markdownFile input", () => {
 				markdown: undefined,
 				markdownFile: dir,
 			});
-			expect(r.details.status).toBe("error");
-			expect(r.details.message).toContain("not a regular file");
+			expect(r.status).toBe("error");
+			expect(r.message).toContain("not a regular file");
 		} finally {
 			rmSync(dir, { recursive: true });
 		}
 	});
 
 	it("errors when both markdown and markdownFile are passed", async () => {
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		const r = await execute({ ...base, markdownFile: "/tmp/x.md" });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain("exactly one");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("exactly one");
+		expect(calls).toHaveLength(0);
 	});
 
 	it("errors when neither is passed", async () => {
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		const r = await execute({ ...base, markdown: undefined });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain("exactly one");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("exactly one");
+		expect(calls).toHaveLength(0);
 	});
 
 	it("captures the file once at call start — mid-flow mutation never applies", async () => {
@@ -80,7 +80,7 @@ describe("markdownFile input", () => {
 		writeFileSync(path, "v1", "utf8");
 		let reads = 0;
 		try {
-			const { execute, kernel } = setup({
+			const { execute, calls } = setup({
 				readBodyFile: async (p) => {
 					reads++;
 					expect(reads).toBe(1);
@@ -95,10 +95,8 @@ describe("markdownFile input", () => {
 				markdown: undefined,
 				markdownFile: path,
 			});
-			expect(r.details.status).toBe("ok");
-			const create = kernel.calls.find(
-				(c) => c.method === "createDocWithMarkdown",
-			);
+			expect(r.status).toBe("ok");
+			const create = calls.find((c) => c.method === "createDocWithMarkdown");
 			expect((create?.args as { markdown: string } | undefined)?.markdown).toBe(
 				"v1",
 			);
@@ -122,12 +120,12 @@ describe("write confirmation", () => {
 			.mockResolvedValueOnce(true);
 		const { execute } = setup({ confirm, hasUI: true });
 		const declined = await execute({ ...base });
-		expect(declined.details.status).toBe("refused");
+		expect(declined.status).toBe("refused");
 		expect(confirm).toHaveBeenCalledTimes(1);
 		// The decline answered nothing about the write itself — a re-ask is
 		// legitimate, so the second call runs a fresh dialog.
 		const allowed = await execute({ ...base });
-		expect(allowed.details.status).toBe("ok");
+		expect(allowed.status).toBe("ok");
 		expect(confirm).toHaveBeenCalledTimes(2);
 	});
 
@@ -140,21 +138,22 @@ describe("write confirmation", () => {
 					opts.signal?.addEventListener("abort", () => resolve(false));
 				}),
 		);
-		const { execute } = setup(
-			{ confirm, hasUI: true, __config: {} },
-			validation({ settings: { writeConfirmTimeout: 1 } }),
-		);
+		const { execute } = setup({
+			confirm,
+			hasUI: true,
+			validation: validation({ settings: { writeConfirmTimeout: 1 } }),
+		});
 		const promise = execute({ ...base });
 		await vi.advanceTimersByTimeAsync(1500);
 		const timedOut = await promise;
-		expect(timedOut.details.status).toBe("refused");
-		expect(timedOut.details.reason).toBe("confirm_timeout");
+		expect(timedOut.status).toBe("refused");
+		expect(timedOut.reason).toBe("confirm_timeout");
 		expect(confirm).toHaveBeenCalledTimes(1);
 
 		// Re-request of the same write: immediate terminal refusal, no new dialog.
 		const again = await execute({ ...base });
-		expect(again.details.status).toBe("refused");
-		expect(again.details.reason).toBe("confirm_timeout");
+		expect(again.status).toBe("refused");
+		expect(again.reason).toBe("confirm_timeout");
 		expect(confirm).toHaveBeenCalledTimes(1);
 	});
 
@@ -176,61 +175,61 @@ describe("write confirmation", () => {
 				return Promise.resolve(true);
 			},
 		);
-		const { execute } = setup(
-			{ confirm, hasUI: true },
-			validation({ settings: { writeConfirmTimeout: 0 } }),
-		);
+		const { execute } = setup({
+			confirm,
+			hasUI: true,
+			validation: validation({ settings: { writeConfirmTimeout: 0 } }),
+		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("ok");
+		expect(r.status).toBe("ok");
 		// No signal — the dialog is untimed and can never fire confirm_timeout.
 		expect(seenOpts?.signal).toBeUndefined();
 		// No timer was armed that could abort anything later.
 		await vi.advanceTimersByTimeAsync(120_000);
-		expect(r.details.status).toBe("ok");
+		expect(r.status).toBe("ok");
 	});
 });
 
 describe("headless default-deny", () => {
 	it("refuses with no UI and allowUnattendedWrites absent — zero confirm/kernel calls", async () => {
 		const confirm = vi.fn();
-		const { execute, kernel } = setup({ confirm, hasUI: false });
+		const { execute, calls } = setup({ confirm, hasUI: false });
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain("allowUnattendedWrites");
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("allowUnattendedWrites");
 		expect(confirm).not.toHaveBeenCalled();
-		expect(kernel.calls).toHaveLength(0);
+		expect(calls).toHaveLength(0);
 	});
 
 	it("a denied write pays no probe retry on an unreachable kernel", async () => {
 		const v: SessionValidation = validation();
 		v.probe = "unreachable";
-		const { execute, kernel } = setup({ hasUI: false }, v);
+		const { execute, calls } = setup({ hasUI: false, validation: v });
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain("allowUnattendedWrites");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("allowUnattendedWrites");
+		expect(calls).toHaveLength(0);
 	});
 
 	it("refuses with no UI and allowUnattendedWrites: false", async () => {
-		const { execute } = setup(
-			{ hasUI: false },
-			validation({ settings: { allowUnattendedWrites: false } }),
-		);
+		const { execute } = setup({
+			hasUI: false,
+			validation: validation({ settings: { allowUnattendedWrites: false } }),
+		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("refused");
+		expect(r.status).toBe("refused");
 	});
 
 	it("allowUnattendedWrites: true proceeds unattended — dialog skipped", async () => {
 		const confirm = vi.fn();
-		const { execute, kernel } = setup(
-			{ confirm, hasUI: false },
-			validation({ settings: { allowUnattendedWrites: true } }),
-		);
+		const { execute, calls } = setup({
+			confirm,
+			hasUI: false,
+			validation: validation({ settings: { allowUnattendedWrites: true } }),
+		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("ok");
+		expect(r.status).toBe("ok");
 		expect(confirm).not.toHaveBeenCalled();
-		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
-			true,
-		);
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
 	});
 });

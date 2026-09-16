@@ -14,25 +14,17 @@ import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import {
 	base,
 	registerKbWrite,
-	setup as schemaSetup,
+	setup,
 	walkBlock,
-	writeSetup,
 	type StubConfig,
 	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
 import { contentHash } from "../../baselines.js";
 
-/** writeSetup with the config-first call shape the mode tests use. */
-function setup(config: StubConfig = {}) {
-	return writeSetup({ config });
-}
-
 describe("kb_write schema", () => {
 	it("does not declare confirmNew (learned only from rejections)", () => {
-		const { tool } = schemaSetup() as unknown as {
-			tool: { parameters: unknown };
-		};
+		const { tool } = setup();
 		const props = Object.keys(
 			(tool.parameters as { properties: Record<string, unknown> }).properties,
 		);
@@ -42,11 +34,11 @@ describe("kb_write schema", () => {
 	});
 
 	it("rejects kb: 'kbs' via the existing unknown-KB rejection — zero kernel calls", async () => {
-		const { execute, kernel } = schemaSetup();
+		const { execute, calls } = setup();
 		const r = await execute({ ...base, kb: "kbs" });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain("unknown KB 'kbs'");
-		expect(kernel.calls).toHaveLength(0);
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("unknown KB 'kbs'");
+		expect(calls).toHaveLength(0);
 	});
 });
 
@@ -138,7 +130,9 @@ describe("mode-target shape (schema table)", () => {
 describe("edit", () => {
 	it("applies via updateBlock and echoes the contract fields", async () => {
 		const { execute, calls } = setup({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			},
 		});
 		const result = await execute(editBase);
 		expect(result.status).toBe("ok");
@@ -153,7 +147,9 @@ describe("edit", () => {
 
 	it("no-baseline fallback: the dialog displays the block's current content; approval establishes the baseline", async () => {
 		const { execute, confirmCalls, calls } = setup({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			},
 		});
 		const result = await execute(editBase);
 		expect(result.status).toBe("ok");
@@ -177,9 +173,11 @@ describe("edit", () => {
 
 	it("matching re-check proceeds; kernel errors surface verbatim with the fresh outline", async () => {
 		const failing = setup({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
-			onUpdate: () => {
-				throw new SiYuanApiError(500, -1, "block [b-1] not found");
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanApiError(500, -1, "block [b-1] not found");
+				},
 			},
 		});
 		const refused = await failing.execute(editBase);
@@ -190,9 +188,11 @@ describe("edit", () => {
 
 	it("a missing/foreign blockId reaches the kernel — its synchronous not-found error surfaces verbatim (stale-target record)", async () => {
 		const { execute, calls, confirmCalls } = setup({
-			// blockRows route returns [] — the target is already gone.
-			onUpdate: () => {
-				throw new SiYuanApiError(500, -1, "block [b-ghost] not found");
+			config: {
+				// blockRows route returns [] — the target is already gone.
+				onUpdate: () => {
+					throw new SiYuanApiError(500, -1, "block [b-ghost] not found");
+				},
 			},
 		});
 		const orphan = await execute({ ...editBase, blockId: "b-ghost" });
@@ -204,9 +204,8 @@ describe("edit", () => {
 	});
 
 	it("the successful write result refreshes the served-content baseline", async () => {
-		const { execute, baselines } = writeSetup({
+		const { execute, baselines } = setup({
 			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
-			exposeBaselines: true,
 		});
 		await execute(editBase);
 		// The post-write walk's content became the baseline — a follow-up
@@ -221,7 +220,7 @@ async function setupWithEditMutation(): Promise<{
 	execute: WriteExec;
 	calls: { method: string; args: unknown }[];
 }> {
-	const harness = writeSetup({
+	const harness = setup({
 		config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
 	});
 	// The re-check's content read (baseline SELECT) serves the rewritten
@@ -266,12 +265,14 @@ describe("append", () => {
 		// The kernel applies the insert at insert time: the minted block
 		// appears in the post-write tree only (never in the pre-write walk).
 		const { execute, calls, childrenFor } = setup({
-			childrenFor: SECTION_DOC,
-			onInsert: () => {
-				childrenFor["d-doc"] = [
-					...SECTION_DOC["d-doc"],
-					walkBlock("b-new", "p", "", "new fact"),
-				];
+			config: {
+				childrenFor: SECTION_DOC,
+				onInsert: () => {
+					childrenFor["d-doc"] = [
+						...SECTION_DOC["d-doc"],
+						walkBlock("b-new", "p", "", "new fact"),
+					];
+				},
 			},
 		});
 		const result = await execute(appendParams("h1"));
@@ -286,12 +287,14 @@ describe("append", () => {
 
 	it("omitted headingId and final-section heading → appendBlock on the doc root", async () => {
 		const docEnd = setup({
-			childrenFor: SECTION_DOC,
-			onInsert: () => {
-				docEnd.childrenFor["d-doc"] = [
-					...SECTION_DOC["d-doc"],
-					walkBlock("b-new", "p", "", "new fact"),
-				];
+			config: {
+				childrenFor: SECTION_DOC,
+				onInsert: () => {
+					docEnd.childrenFor["d-doc"] = [
+						...SECTION_DOC["d-doc"],
+						walkBlock("b-new", "p", "", "new fact"),
+					];
+				},
 			},
 		});
 		const result = await docEnd.execute(appendParams());
@@ -300,12 +303,14 @@ describe("append", () => {
 		expect(insert?.args).toEqual({ data: "new fact", parentID: "d-doc" });
 
 		const trailing = setup({
-			childrenFor: SECTION_DOC,
-			onInsert: () => {
-				trailing.childrenFor["d-doc"] = [
-					...SECTION_DOC["d-doc"],
-					walkBlock("b-new", "p", "", "new fact"),
-				];
+			config: {
+				childrenFor: SECTION_DOC,
+				onInsert: () => {
+					trailing.childrenFor["d-doc"] = [
+						...SECTION_DOC["d-doc"],
+						walkBlock("b-new", "p", "", "new fact"),
+					];
+				},
 			},
 		});
 		const lastHeading = await trailing.execute(appendParams("h2"));
@@ -313,7 +318,7 @@ describe("append", () => {
 	});
 
 	it("walk-set diff: a returned id absent from the post-write tree → error (silent rollback)", async () => {
-		const appended = setup({ childrenFor: SECTION_DOC }); // the tree never changes
+		const appended = setup({ config: { childrenFor: SECTION_DOC } }); // the tree never changes
 		const result = await appended.execute(appendParams());
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("rolled back silently");
@@ -348,13 +353,15 @@ const replaceParams = {
 describe("replace-section", () => {
 	it("enumerates the delete set by walk, inserts BEFORE deleting, preserves the boundary", async () => {
 		const harness = setup({
-			childrenFor: REPLACE_DOC,
-			onInsert: () => {
-				harness.childrenFor["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
 			},
 		});
 		const result = await harness.execute(replaceParams);
@@ -385,19 +392,21 @@ describe("replace-section", () => {
 	it("a failed delete after a successful insert leaves duplication, never loss", async () => {
 		let deletes = 0;
 		const harness = setup({
-			childrenFor: REPLACE_DOC,
-			onInsert: () => {
-				harness.childrenFor["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
-			},
-			onDelete: () => {
-				deletes += 1;
-				if (deletes === 2) {
-					throw new SiYuanApiError(500, -1, "kernel gone mid-sweep");
-				}
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+				onDelete: () => {
+					deletes += 1;
+					if (deletes === 2) {
+						throw new SiYuanApiError(500, -1, "kernel gone mid-sweep");
+					}
+				},
 			},
 		});
 		const result = await harness.execute(replaceParams);
@@ -418,21 +427,23 @@ describe("replace-section", () => {
 		let arm: ((err: Error) => void) | undefined;
 		let deletes = 0;
 		const harness = setup({
-			childrenFor: REPLACE_DOC,
-			armQueryError: (set) => {
-				arm = set;
-			},
-			onInsert: () => {
-				harness.childrenFor["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
-			},
-			onDelete: () => {
-				deletes += 1;
-				// One delete applied, then the connection drops mid-sweep.
-				if (deletes === 2) arm?.(new SiYuanNetworkError());
+			config: {
+				childrenFor: REPLACE_DOC,
+				armQueryError: (set) => {
+					arm = set;
+				},
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+				onDelete: () => {
+					deletes += 1;
+					// One delete applied, then the connection drops mid-sweep.
+					if (deletes === 2) arm?.(new SiYuanNetworkError());
+				},
 			},
 		});
 		const result = await harness.execute(replaceParams);
@@ -444,9 +455,11 @@ describe("replace-section", () => {
 
 	it("the confirmation displays the delete set: count, content, inbound refs + referring hpaths", async () => {
 		const { execute, confirmCalls } = setup({
-			childrenFor: REPLACE_DOC,
-			refRows: [{ root_id: "d-other" }],
-			hpathRows: [{ hpath: "/Other doc" }],
+			config: {
+				childrenFor: REPLACE_DOC,
+				refRows: [{ root_id: "d-other" }],
+				hpathRows: [{ hpath: "/Other doc" }],
+			},
 		});
 		await execute(replaceParams);
 		const message = confirmCalls[0]?.message ?? "";
@@ -460,15 +473,17 @@ describe("replace-section", () => {
 
 	it("delete-bearing results carry invalidRefs (write-result contract)", async () => {
 		const harness = setup({
-			childrenFor: REPLACE_DOC,
-			refRows: [{ root_id: "d-other" }],
-			hpathRows: [{ hpath: "/Other doc" }],
-			onInsert: () => {
-				harness.childrenFor["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
+			config: {
+				childrenFor: REPLACE_DOC,
+				refRows: [{ root_id: "d-other" }],
+				hpathRows: [{ hpath: "/Other doc" }],
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
 			},
 		});
 		const result = await harness.execute(replaceParams);
@@ -477,12 +492,14 @@ describe("replace-section", () => {
 
 	it("final section: the sweep runs to end of doc (trailing content deleted), anchor is appendBlock(root)", async () => {
 		const harness = setup({
-			childrenFor: REPLACE_DOC,
-			onInsert: () => {
-				harness.childrenFor["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 4),
-					walkBlock("b-new", "p", "", "rewritten section"),
-				];
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 4),
+						walkBlock("b-new", "p", "", "rewritten section"),
+					];
+				},
 			},
 		});
 		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
@@ -497,7 +514,9 @@ describe("replace-section", () => {
 
 	it("an unresolvable insert (silent rollback) refuses the deletes — the old section is untouched", async () => {
 		const { execute, calls } = setup({
-			childrenFor: REPLACE_DOC,
+			config: {
+				childrenFor: REPLACE_DOC,
+			},
 		}); // the tree never shows the minted block
 		const result = await execute(replaceParams);
 		expect(result.status).toBe("error");
@@ -606,8 +625,7 @@ describe("replace-section", () => {
 			p2: "body two",
 			"b-new": "new fact",
 		};
-		const harness = writeSetup({
-			exposeBaselines: true,
+		const harness = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "changed body" }],
 				childrenFor: SECTION_DOC,
@@ -632,7 +650,7 @@ describe("replace-section", () => {
 			}
 			return baseQuery(stmt);
 		};
-		harness.baselines?.remember("p1", "served body");
+		harness.baselines.remember("p1", "served body");
 		const intervention = await harness.execute({
 			kb: "recipes",
 			mode: "append",
@@ -641,9 +659,7 @@ describe("replace-section", () => {
 		});
 		expect(intervention.status).toBe("ok");
 		// p1 was not in the append's result — its served baseline survives.
-		expect(harness.baselines?.servedHash("p1")).toBe(
-			contentHash("served body"),
-		);
+		expect(harness.baselines.servedHash("p1")).toBe(contentHash("served body"));
 		const edit = await harness.execute({
 			kb: "recipes",
 			mode: "edit",
@@ -664,7 +680,7 @@ async function replaceQueryHarness(
 	applyInsert?: (children: Record<string, unknown[]>) => void,
 	blockRows: Record<string, unknown>[] = [],
 ) {
-	const harness = writeSetup({
+	const harness = setup({
 		config: {
 			blockRows,
 			childrenFor: REPLACE_DOC,
@@ -696,11 +712,13 @@ async function replaceQueryHarness(
 describe("delete", () => {
 	it("block-level: targetGone from the post-write walk set, invalidRefs echo", async () => {
 		const { execute, calls, childrenFor } = setup({
-			blockRows: [{ id: "p1", content: "doomed" }],
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
-			// The kernel applies the delete: p1 vanishes from the tree.
-			onDelete: () => {
-				childrenFor["d-doc"] = [];
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+				// The kernel applies the delete: p1 vanishes from the tree.
+				onDelete: () => {
+					childrenFor["d-doc"] = [];
+				},
 			},
 		});
 		const result = await execute({
@@ -720,8 +738,10 @@ describe("delete", () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
 		// nothing (ErrBlockNotFound → nil, stale-target record).
 		const { execute } = setup({
-			blockRows: [{ id: "p1", content: "survivor" }],
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "survivor")] },
+			config: {
+				blockRows: [{ id: "p1", content: "survivor" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "survivor")] },
+			},
 		});
 		const result = await execute({
 			kb: "recipes",
@@ -738,7 +758,9 @@ describe("delete", () => {
 		// blockRows [] — the target vanished before the call; the delete-set
 		// display and confirmation are skipped (nothing to protect).
 		const { execute, calls, confirmCalls } = setup({
-			childrenFor: { "d-doc": [] },
+			config: {
+				childrenFor: { "d-doc": [] },
+			},
 		});
 		const result = await execute({
 			kb: "recipes",
@@ -758,12 +780,14 @@ describe("delete", () => {
 		// gone" behind a successful HTTP delete.
 		let arm: ((err: Error) => void) | undefined;
 		const { execute, calls } = setup({
-			blockRows: [{ id: "p1", content: "doomed" }],
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
-			armWalkError: (set) => {
-				arm = set;
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+				armWalkError: (set) => {
+					arm = set;
+				},
+				onDelete: () => arm?.(new SiYuanApiError(500, -1, "block locked")),
 			},
-			onDelete: () => arm?.(new SiYuanApiError(500, -1, "block locked")),
 		});
 		const result = await execute({
 			kb: "recipes",
@@ -780,9 +804,11 @@ describe("delete", () => {
 
 	it("doc-level: removeDocByID fires and the result carries only invalidRefs (pinned shape)", async () => {
 		const { execute, calls } = setup({
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },
-			refRows: [{ root_id: "d-other" }],
-			hpathRows: [{ hpath: "/Other doc" }],
+			config: {
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },
+				refRows: [{ root_id: "d-other" }],
+				hpathRows: [{ hpath: "/Other doc" }],
+			},
 		});
 		const result = await execute({
 			kb: "recipes",
@@ -829,7 +855,7 @@ describe("block-level move", () => {
 
 	/** move harness where `apply` mutates the children map kernel-side. */
 	function moveHarness(apply?: () => void, stub?: Partial<StubConfig>) {
-		return writeSetup({
+		return setup({
 			config: {
 				blockRows: [{ id: "p1", content: "mover" }],
 				childrenFor: JSON.parse(JSON.stringify(MOVE_DOC)),
@@ -1239,11 +1265,13 @@ describe("network drop after a landed write", () => {
 	it("edit: post-write echo-read drop → verificationFailed, not 'unreachable'", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const { execute, calls } = setup({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
-			armQueryError: (set) => {
-				arm = set;
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				armQueryError: (set) => {
+					arm = set;
+				},
+				onUpdate: () => arm?.(new SiYuanNetworkError()),
 			},
-			onUpdate: () => arm?.(new SiYuanNetworkError()),
 		});
 		const r = await execute(editBase);
 		expect(r.status).toBe("error");
@@ -1258,11 +1286,13 @@ describe("network drop after a landed write", () => {
 	it("edit: post-write read timeout classifies the same way", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const { execute } = setup({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
-			armQueryError: (set) => {
-				arm = set;
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				armQueryError: (set) => {
+					arm = set;
+				},
+				onUpdate: () => arm?.(new SiYuanTimeoutError(30_000)),
 			},
-			onUpdate: () => arm?.(new SiYuanTimeoutError(30_000)),
 		});
 		const r = await execute(editBase);
 		expect(r.status).toBe("error");
@@ -1273,10 +1303,12 @@ describe("network drop after a landed write", () => {
 	it("append: post-write verification drop → verificationFailed, not 'unreachable'", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const { execute, calls } = setup({
-			armQueryError: (set) => {
-				arm = set;
+			config: {
+				armQueryError: (set) => {
+					arm = set;
+				},
+				onInsert: () => arm?.(new SiYuanNetworkError()),
 			},
-			onInsert: () => arm?.(new SiYuanNetworkError()),
 		});
 		const r = await execute({
 			kb: "recipes",
@@ -1297,10 +1329,12 @@ describe("network drop after a landed write", () => {
 	it("append: post-write WALK drop (getChildBlocks) → verificationFailed, not the 'rolled back silently' retry invitation", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const { execute, calls } = setup({
-			armWalkError: (set) => {
-				arm = set;
+			config: {
+				armWalkError: (set) => {
+					arm = set;
+				},
+				onInsert: () => arm?.(new SiYuanNetworkError()),
 			},
-			onInsert: () => arm?.(new SiYuanNetworkError()),
 		});
 		const r = await execute({
 			kb: "recipes",

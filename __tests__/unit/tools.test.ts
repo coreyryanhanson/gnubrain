@@ -9,7 +9,19 @@ import { CircuitBreaker } from "../../breaker.js";
 import { createContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
 import { walkBlockTree } from "../../walk.js";
-import { inlineOrSpill, PREVIEW_CHARS } from "../../spill.js";
+import {
+	inlineOrSpill,
+	PREVIEW_CHARS,
+	RESULT_LIMIT,
+	spillFile,
+	spillFileName,
+} from "../../spill.js";
+import {
+	registerReadToolsAndToolset,
+	READ_TOOLSET_ID,
+	READ_TOOLSET_PERSIST_KEY,
+} from "../../tools.js";
+import { getRegisteredToolsets } from "pi-tool-masking";
 import {
 	certifySelect,
 	postFilterRows,
@@ -17,7 +29,6 @@ import {
 	verifyRebuilt,
 } from "../../sqlScope.js";
 import type { KernelReadClient } from "../../kernel.js";
-import { RESULT_LIMIT, spillFile, spillFileName } from "../../spill.js";
 import type { SessionValidation } from "../../validation.js";
 import { validation as makeValidation } from "./fixtures.js";
 
@@ -605,22 +616,10 @@ describe("read tool", () => {
 // Toolset + tool descriptions + degraded-session clause
 // ---------------------------------------------------------------------------
 
-import {
-	registerReadToolsAndToolset,
-	READ_TOOLSET_ID,
-	READ_TOOLSET_PERSIST_KEY,
-} from "../../tools.js";
-import { getRegisteredToolsets } from "pi-tool-masking";
-
 describe("read toolset + descriptions", () => {
 	it("registers the read toolset with the three kb_ members, default-enabled, pinned persist key", () => {
-		const { pi, toolDefs } = fakePi();
-		registerReadToolsAndToolset(pi, {
-			getValidation: () => undefined,
-			getKernel: () => undefined,
-			breaker: new CircuitBreaker(),
-			baselines: createContentBaselines(),
-		});
+		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
+		registerReadToolsAndToolset(pi, hooks);
 		expect([...toolDefs.keys()]).toEqual(["kb_query", "kb_search", "kb_read"]);
 		const entry = getRegisteredToolsets().find(
 			(t) => t.spec.id === READ_TOOLSET_ID,
@@ -636,13 +635,8 @@ describe("read toolset + descriptions", () => {
 	});
 
 	it("the query tool description carries the pinned table schemas, semantics notes, and discovery pattern", () => {
-		const { pi, toolDefs } = fakePi();
-		registerReadToolsAndToolset(pi, {
-			getValidation: () => undefined,
-			getKernel: () => undefined,
-			breaker: new CircuitBreaker(),
-			baselines: createContentBaselines(),
-		});
+		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
+		registerReadToolsAndToolset(pi, hooks);
 		const description = (
 			toolDefs.get("kb_query") as { description?: string } | undefined
 		)?.description as string;

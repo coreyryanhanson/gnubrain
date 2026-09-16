@@ -25,12 +25,12 @@ describe("guard-stop staging", () => {
 	};
 
 	it("inline body: stagedPath byte-equal, retry message names markdownFile", async () => {
-		const { execute } = setup({ __config: duplicateConfig });
+		const { execute } = setup({ config: duplicateConfig });
 		const r = await execute({ ...base, markdown: "the draft body" });
-		const stagedPath = r.details.stagedPath as string;
+		const stagedPath = r.stagedPath as string;
 		expect(stagedPath).toMatch(/draft-[0-9a-f]{16}\.md$/);
 		expect(readFileSync(stagedPath, "utf8")).toBe("the draft body");
-		expect(r.details.message).toContain(`markdownFile: '${stagedPath}'`);
+		expect(r.message).toContain(`markdownFile: '${stagedPath}'`);
 	});
 
 	it("markdownFile body: no staging", async () => {
@@ -38,15 +38,15 @@ describe("guard-stop staging", () => {
 		const path = join(dir, "body.md");
 		writeFileSync(path, "file body", "utf8");
 		try {
-			const { execute } = setup({ __config: duplicateConfig });
+			const { execute } = setup({ config: duplicateConfig });
 			const r = await execute({
 				...base,
 				markdown: undefined,
 				markdownFile: path,
 			});
-			expect(r.details.status).toBe("duplicate");
-			expect(r.details.stagedPath).toBeUndefined();
-			expect(r.details.message).not.toContain("markdownFile: '");
+			expect(r.status).toBe("duplicate");
+			expect(r.stagedPath).toBeUndefined();
+			expect(r.message).not.toContain("markdownFile: '");
 		} finally {
 			rmSync(dir, { recursive: true });
 		}
@@ -54,7 +54,7 @@ describe("guard-stop staging", () => {
 
 	it("near-match stop stages inline drafts; candidates stay excerpt-only", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				nearRows: [
 					{
 						id: "d1",
@@ -66,29 +66,29 @@ describe("guard-stop staging", () => {
 			},
 		});
 		const r = await execute({ ...base, markdown: "the draft body" });
-		expect(r.details.status).toBe("near_matches");
-		expect(r.details.stagedPath).toMatch(/draft-[0-9a-f]{16}\.md$/);
-		const candidates = r.details.candidates as { markdownPath?: string }[];
+		expect(r.status).toBe("near_matches");
+		expect(r.stagedPath).toMatch(/draft-[0-9a-f]{16}\.md$/);
+		const candidates = r.candidates as { markdownPath?: string }[];
 		expect(candidates[0]?.markdownPath).toBeUndefined();
 	});
 
 	it("non-guard stops stage nothing", async () => {
 		const { execute } = setup();
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("ok");
-		expect(r.details.stagedPath).toBeUndefined();
+		expect(r.status).toBe("ok");
+		expect(r.stagedPath).toBeUndefined();
 	});
 });
 
 describe("mode-target shape (create leg)", () => {
 	it("stray mode-target params refuse before any kernel call", async () => {
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		const r = await execute({ ...base, docId: "d1", headingId: "h1" });
-		expect(r.details.status).toBe("refused");
-		expect(r.details.message).toContain(
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain(
 			"mode 'create' does not take: docId, headingId",
 		);
-		expect(kernel.calls).toHaveLength(0);
+		expect(calls).toHaveLength(0);
 	});
 });
 
@@ -102,14 +102,12 @@ describe("verified-create", () => {
 	};
 
 	it("top-level create: submission path, by-ID assert, stored-shape echo", async () => {
-		const { execute, kernel } = setup({
-			__config: { createdRows: [createdRow] },
+		const { execute, calls } = setup({
+			config: { createdRows: [createdRow] },
 		});
 		const r = await execute({ ...base, topic: " Docker Networking " });
-		expect(r.details.status).toBe("ok");
-		const create = kernel.calls.find(
-			(c) => c.method === "createDocWithMarkdown",
-		);
+		expect(r.status).toBe("ok");
+		const create = calls.find((c) => c.method === "createDocWithMarkdown");
 		// Trim is the only lossless transform; top-level path is /<title>.
 		expect(create?.args).toEqual({
 			notebook: "nb-r",
@@ -117,17 +115,17 @@ describe("verified-create", () => {
 			markdown: "some body",
 		});
 		// Echo carries root docId, stored title, real hpath, fresh outline.
-		expect(r.details.docId).toBe("d-new");
-		expect(r.details.title).toBe("Docker Networking");
-		expect(r.details.hpath).toBe("/Docker Networking");
-		expect(r.details.outline).toContain("Heading → h1");
+		expect(r.docId).toBe("d-new");
+		expect(r.title).toBe("Docker Networking");
+		expect(r.hpath).toBe("/Docker Networking");
+		expect(r.outline).toContain("Heading → h1");
 	});
 
 	it("child row missing after create → fail-loud after the bounded re-reads", async () => {
-		const { execute, kernel } = setup({ __config: { createdRows: [] } });
+		const { execute, client } = setup({ config: { createdRows: [] } });
 		let verifiedReads = 0;
-		const baseQuery = kernel.client.query.bind(kernel.client);
-		kernel.client.query = async (stmt: string) => {
+		const baseQuery = client.query.bind(client);
+		client.query = async (stmt: string) => {
 			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
 				verifiedReads += 1;
 				return [];
@@ -135,18 +133,18 @@ describe("verified-create", () => {
 			return baseQuery(stmt);
 		};
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("verified-create failed");
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("verified-create failed");
 		// 1 initial read + 3 backoff re-reads, then fail-loud — never a retry
 		// of the create itself.
 		expect(verifiedReads).toBe(4);
 	});
 
 	it("index lag: blocks row not queryable on the first read appears on a backoff re-read → ok", async () => {
-		const { execute, kernel } = setup();
-		const baseQuery = kernel.client.query.bind(kernel.client);
+		const { execute, client } = setup();
+		const baseQuery = client.query.bind(client);
 		let verifiedReads = 0;
-		kernel.client.query = async (stmt: string) => {
+		client.query = async (stmt: string) => {
 			// The verified-create assert is the only read on the returned id;
 			// the guard legs are LIKE reads on the guard head.
 			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
@@ -156,13 +154,13 @@ describe("verified-create", () => {
 			return baseQuery(stmt);
 		};
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("ok");
+		expect(r.status).toBe("ok");
 		expect(verifiedReads).toBe(2);
 	});
 
 	it("nested create: parent hpath read-back + parentID sent", async () => {
-		const { execute, kernel } = setup({
-			__config: {
+		const { execute, calls } = setup({
+			config: {
 				parentRows: [{ id: "d1", hpath: "/Parent", content: "Parent" }],
 				createdRows: [
 					{ ...createdRow, content: "Child", hpath: "/Parent/Child" },
@@ -170,10 +168,8 @@ describe("verified-create", () => {
 			},
 		});
 		const r = await execute({ ...base, topic: "Child", parentId: "d1" });
-		expect(r.details.status).toBe("ok");
-		const create = kernel.calls.find(
-			(c) => c.method === "createDocWithMarkdown",
-		);
+		expect(r.status).toBe("ok");
+		const create = calls.find((c) => c.method === "createDocWithMarkdown");
 		expect(create?.args).toEqual({
 			notebook: "nb-r",
 			path: "/Parent/Child",
@@ -194,15 +190,15 @@ describe("verified-create", () => {
 		config.onCreate = () => {
 			config.parentRows = [];
 		};
-		const { execute } = setup({ __config: config });
+		const { execute } = setup({ config });
 		const r = await execute({ ...base, topic: "Child", parentId: "d1" });
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("ghost intermediate");
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("ghost intermediate");
 	});
 
 	it("child hpath mismatch against ground truth fails loud", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				parentRows: [{ id: "d1", hpath: "/Parent", content: "Parent" }],
 				createdRows: [
 					{ ...createdRow, content: "Child", hpath: "/Parent/Wrong" },
@@ -210,18 +206,16 @@ describe("verified-create", () => {
 			},
 		});
 		const r = await execute({ ...base, topic: "Child", parentId: "d1" });
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("ground truth");
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("ground truth");
 	});
 
 	it("stale/foreign parentId refuses before any create", async () => {
-		const { execute, kernel } = setup({ __config: { parentRows: [] } });
+		const { execute, calls } = setup({ config: { parentRows: [] } });
 		const r = await execute({ ...base, topic: "Child", parentId: "d1" });
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("stale or foreign target");
-		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
-			false,
-		);
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("stale or foreign target");
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(false);
 	});
 });
 
@@ -238,28 +232,28 @@ describe("near-match enrichment error handling", () => {
 
 	it("SiYuanApiError on a candidate: row still shown with empty excerpt", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				nearRows: [nearRow],
 				armWalkError: (arm) => arm(new SiYuanApiError(404)),
 			},
 		});
 		const r = await execute({ ...base, markdown: "body" });
-		expect(r.details.status).toBe("near_matches");
-		const candidates = r.details.candidates as { firstParagraph?: string }[];
+		expect(r.status).toBe("near_matches");
+		const candidates = r.candidates as { firstParagraph?: string }[];
 		expect(candidates).toHaveLength(1);
 		expect(candidates[0]?.firstParagraph).toBe("");
 	});
 
 	it("SiYuanNetworkError on a candidate: propagates, classified as unreachable", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				nearRows: [nearRow],
 				armWalkError: (arm) => arm(new SiYuanNetworkError()),
 			},
 		});
 		const r = await execute({ ...base, markdown: "body" });
-		expect(r.details.status).toBe("error");
-		expect(r.details.message).toContain("unreachable");
+		expect(r.status).toBe("error");
+		expect(r.message).toContain("unreachable");
 	});
 });
 
@@ -267,8 +261,8 @@ describe("near-match enrichment error handling", () => {
 // never "unreachable" — the doc exists and a blind retry would duplicate it.
 describe("network drop after a landed create", () => {
 	it("verified-create reads fail → verificationFailed, not 'unreachable'", async () => {
-		const { execute, kernel } = setup({
-			__config: {
+		const { execute, calls, client } = setup({
+			config: {
 				createdRows: [
 					{
 						id: "d-new",
@@ -280,20 +274,18 @@ describe("network drop after a landed create", () => {
 				],
 			},
 		});
-		const origCreate = kernel.client.createDocWithMarkdown.bind(kernel.client);
-		kernel.client.createDocWithMarkdown = async (params) => {
-			kernel.client.query = async () => {
+		const origCreate = client.createDocWithMarkdown.bind(client);
+		client.createDocWithMarkdown = async (params) => {
+			client.query = async () => {
 				throw new SiYuanNetworkError();
 			};
 			return origCreate(params);
 		};
 		const r = await execute({ ...base, topic: "Docker Networking" });
-		expect(r.details.status).toBe("error");
-		expect(r.details.verificationFailed).toBe(true);
-		expect(r.details.message).toContain("post-write verification reads failed");
-		expect(r.details.message).not.toContain("SiYuan unreachable");
-		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
-			true,
-		);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("post-write verification reads failed");
+		expect(r.message).not.toContain("SiYuan unreachable");
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
 	});
 });

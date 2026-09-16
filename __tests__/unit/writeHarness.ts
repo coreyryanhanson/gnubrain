@@ -289,94 +289,71 @@ export function registerKbWrite(
 	return { execute, tool };
 }
 
-/** Test hooks + stub-config pass-through (a local intersection, not a
- * module augmentation — the production interface stays clean). */
-type TestHooks = Partial<WriteToolHooks> & { __config?: StubConfig };
-
-export function setup(
-	hooks: TestHooks = {},
-	v: SessionValidation = validation(),
-) {
-	const { __config, ...hookRest } = hooks;
-	const kernel = writeKernelStub(__config ?? {});
-	const { execute, tool } = registerKbWrite(
-		{
-			getValidation: () => v,
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			...hookRest,
-		} as WriteToolHooks,
-		{ hasUI: hooks.hasUI },
-	);
-	return { execute, kernel, tool };
-}
-
 export type WriteExec = (
 	params: Record<string, unknown>,
 ) => Promise<Record<string, unknown> & { status: string; message: string }>;
 
 export interface WriteSetupResult {
+	/** Details-level result (status/message + echo fields) — the assertion
+	 * surface every write test uses. */
 	execute: WriteExec;
+	tool: { parameters: unknown; description?: string };
+	client: WriteKernelClient;
 	calls: { method: string; args: unknown }[];
 	confirmCalls: { title: string; message: string }[];
 	childrenFor: Record<string, unknown[]>;
-	client: WriteKernelClient;
-	baselines?: ContentBaselines;
+	baselines: ContentBaselines;
 }
 
-/** Registration wrapper for the mode-flow tests: a fresh kernel stub, a
- * fresh baselines map, and a confirm hook that records its calls (the
- * default approves). `mutate` runs inside the confirm callback — the
- * mid-flow kernel-side change the fresh-content legs exercise;
- * `exposeBaselines` surfaces the baselines map for direct assertions. */
-export function writeSetup(opts: {
-	config?: StubConfig;
-	confirm?: WriteConfirmFn;
-	mutate?: () => void;
-	exposeBaselines: true;
-}): WriteSetupResult & { baselines: ContentBaselines };
-export function writeSetup(opts?: {
-	config?: StubConfig;
-	confirm?: WriteConfirmFn;
-	mutate?: () => void;
-	exposeBaselines?: boolean;
-}): WriteSetupResult;
-export function writeSetup(
+/** The one kb_write harness: a fresh kernel stub, fresh baselines map, and
+ * a confirm hook that records its calls (the default approves — the
+ * headless default-deny runs in preflight, before the dialog).
+ * `mutate` runs inside the confirm callback — the mid-flow kernel-side
+ * change the fresh-content legs exercise. */
+export function setup(
 	opts: {
 		config?: StubConfig;
+		validation?: SessionValidation;
+		hasUI?: boolean;
 		confirm?: WriteConfirmFn;
+		readBodyFile?: (path: string) => Promise<string>;
 		mutate?: () => void;
-		exposeBaselines?: boolean;
 	} = {},
 ): WriteSetupResult {
 	const kernel = writeKernelStub(opts.config ?? {});
 	const confirmCalls: { title: string; message: string }[] = [];
-	const hooks = {
-		getValidation: () => validation(),
-		getKernel: () => kernel.client,
-		breaker: new CircuitBreaker(),
-		confirmState: createWriteConfirmState(),
-		baselines: createContentBaselines(),
-		confirm: async (
-			title: string,
-			message: string,
-			confirmOpts: { signal?: AbortSignal },
-		) => {
-			confirmCalls.push({ title, message });
-			opts.mutate?.();
-			return opts.confirm ? opts.confirm(title, message, confirmOpts) : true;
-		},
-	} as WriteToolHooks;
-	const { execute: run } = registerKbWrite(hooks);
+	const baselines = createContentBaselines();
+	const { execute: run, tool } = registerKbWrite(
+		{
+			getValidation: () => opts.validation ?? validation(),
+			getKernel: () => kernel.client,
+			breaker: new CircuitBreaker(),
+			confirmState: createWriteConfirmState(),
+			baselines,
+			confirm: async (
+				title: string,
+				message: string,
+				confirmOpts: { signal?: AbortSignal },
+			) => {
+				confirmCalls.push({ title, message });
+				opts.mutate?.();
+				return opts.confirm ? opts.confirm(title, message, confirmOpts) : true;
+			},
+			...(opts.readBodyFile !== undefined && {
+				readBodyFile: opts.readBodyFile,
+			}),
+		} as WriteToolHooks,
+		{ hasUI: opts.hasUI },
+	);
 	const execute: WriteExec = async (params) => (await run(params)).details;
 	return {
 		execute,
+		tool,
+		client: kernel.client,
 		calls: kernel.calls,
 		confirmCalls,
 		childrenFor: kernel.childrenFor,
-		client: kernel.client,
-		...(opts.exposeBaselines ? { baselines: hooks.baselines } : {}),
+		baselines,
 	};
 }
 

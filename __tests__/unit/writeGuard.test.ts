@@ -22,11 +22,11 @@ describe("mint policy", () => {
 			["has\nnewline", "tab/newline/control"],
 		];
 		for (const [topic, expected] of cases) {
-			const { execute, kernel } = setup();
+			const { execute, calls } = setup();
 			const r = await execute({ ...base, topic });
-			expect(r.details.status).toBe("refused");
-			expect(r.details.message).toContain(expected);
-			expect(kernel.calls).toHaveLength(0);
+			expect(r.status).toBe("refused");
+			expect(r.message).toContain(expected);
+			expect(calls).toHaveLength(0);
 		}
 	});
 
@@ -44,8 +44,8 @@ describe("mint policy", () => {
 
 describe("title guard", () => {
 	it("runs the exact leg against the single notebook, ASCII-cased variants included via LIKE", async () => {
-		const { execute, kernel } = setup({
-			__config: {
+		const { execute, calls } = setup({
+			config: {
 				exactRows: [
 					{
 						id: "d1",
@@ -59,8 +59,8 @@ describe("title guard", () => {
 		// Submitted casing differs only in ASCII case — the exact leg matches
 		// (LIKE is ASCII-case-insensitive) and returns a uniform duplicate stop.
 		const r = await execute({ ...base, topic: "Docker Networking" });
-		expect(r.details.status).toBe("duplicate");
-		const exact = kernel.calls.find(
+		expect(r.status).toBe("duplicate");
+		const exact = calls.find(
 			(c) => c.method === "query" && String(c.args).includes("LIKE"),
 		);
 		expect(String(exact?.args)).toContain("box = 'nb-r'");
@@ -72,9 +72,9 @@ describe("title guard", () => {
 	});
 
 	it("matches HTML-special titles via escape parity", async () => {
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		await execute({ ...base, topic: "R&D" });
-		const exact = kernel.calls.find(
+		const exact = calls.find(
 			(c) => c.method === "query" && String(c.args).includes("LIKE"),
 		);
 		expect(String(exact?.args)).toContain("R&amp;D");
@@ -113,17 +113,15 @@ describe("title guard", () => {
 			expect(guardNearStmt("nb-r", topic)).not.toContain("AND ()");
 		}
 		// End to end: the create mints instead of failing on malformed SQL.
-		const { execute, kernel } = setup();
+		const { execute, calls } = setup();
 		const r = await execute({ ...base, topic: "-" });
-		expect(r.details.status).toBe("ok");
-		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
-			true,
-		);
+		expect(r.status).toBe("ok");
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
 	});
 
 	it("exact stop: uniform duplicate for multi-row, all rows + per-row markdown spills", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				exactRows: [
 					{
 						id: "d1",
@@ -141,22 +139,22 @@ describe("title guard", () => {
 			},
 		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("duplicate");
-		const rows = r.details.rows as { docId: string; markdownPath: string }[];
+		expect(r.status).toBe("duplicate");
+		const rows = r.rows as { docId: string; markdownPath: string }[];
 		expect(rows).toHaveLength(2);
 		for (const row of rows) {
 			expect(row.docId).toMatch(/^d[12]$/);
 			expect(row.markdownPath).toMatch(/kb_write-candidate-[0-9a-f]{16}\.md$/);
 		}
-		expect(r.details.blockIds).toBeUndefined();
+		expect(r.blockIds).toBeUndefined();
 		// Message names all docIds and the confirmNew exit.
-		expect(r.details.message).toContain("d1, d2");
-		expect(r.details.message).toContain("confirmNew: true");
+		expect(r.message).toContain("d1, d2");
+		expect(r.message).toContain("confirmNew: true");
 	});
 
 	it("single-row duplicate adds the block-ID echo", async () => {
 		const { execute } = setup({
-			__config: {
+			config: {
 				exactRows: [
 					{
 						id: "d1",
@@ -168,8 +166,8 @@ describe("title guard", () => {
 			},
 		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("duplicate");
-		const blocks = r.details.blockIds as { id: string; content: string }[];
+		expect(r.status).toBe("duplicate");
+		const blocks = r.blockIds as { id: string; content: string }[];
 		expect(blocks[0]?.id).toBe("h1");
 		expect(blocks[0]?.content).toBe("Heading");
 	});
@@ -181,8 +179,8 @@ describe("title guard", () => {
 			content: `docker networking part ${i}`,
 			updated: "20260101120000",
 		}));
-		const { execute, kernel } = setup({
-			__config: {
+		const { execute, calls } = setup({
+			config: {
 				nearRows,
 				childRows: [
 					{ id: "p1", type: "p", subType: "", content: "first para" },
@@ -190,8 +188,8 @@ describe("title guard", () => {
 			},
 		});
 		const r = await execute({ ...base });
-		expect(r.details.status).toBe("near_matches");
-		const candidates = r.details.candidates as {
+		expect(r.status).toBe("near_matches");
+		const candidates = r.candidates as {
 			docId: string;
 			firstParagraph: string;
 			markdownPath?: string;
@@ -201,16 +199,16 @@ describe("title guard", () => {
 		for (const c of candidates) {
 			expect(c.markdownPath).toBeUndefined();
 		}
-		expect(r.details.truncated).toContain("capped at 20");
+		expect(r.truncated).toContain("capped at 20");
 		// Guard ran both legs: exact (empty) then near.
-		const stmts = kernel.calls.filter((c) => c.method === "query");
+		const stmts = calls.filter((c) => c.method === "query");
 		expect(stmts.length).toBe(2);
 		expect(String(stmts[1]?.args)).toContain("OR content LIKE");
 	});
 
 	it("confirmNew bypasses both guard legs (zero guard queries)", async () => {
-		const { execute, kernel } = setup({
-			__config: {
+		const { execute, calls } = setup({
+			config: {
 				exactRows: [
 					{
 						id: "d1",
@@ -222,9 +220,9 @@ describe("title guard", () => {
 			},
 		});
 		const r = await execute({ ...base, confirmNew: true });
-		expect(r.details.status).toBe("ok");
+		expect(r.status).toBe("ok");
 		// Only verified-create's read-back runs — no LIKE (guard) statements.
-		const guardQueries = kernel.calls.filter(
+		const guardQueries = calls.filter(
 			(c) => c.method === "query" && String(c.args).includes("LIKE"),
 		);
 		expect(guardQueries).toHaveLength(0);
