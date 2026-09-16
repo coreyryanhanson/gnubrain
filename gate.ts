@@ -161,13 +161,14 @@ export function guardCall(input: {
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
  * attempt — a still-failed retry refuses only that write. Returns null to
- * proceed. `contact` fires iff the probe actually reached the kernel.
+ * proceed. The probe does not fire `contact`: the breaker's reset-on-success
+ * contract counts only authenticated calls, and getVersion is unauthenticated
+ * — the op's own contact covers any write that actually reaches the kernel.
  */
 export async function gateWriteAttempt(input: {
 	validation: SessionValidation;
 	kernel: KernelProbeClient;
 	pinnedVersion?: string;
-	contact?: () => void;
 }): Promise<Envelope | null> {
 	const { validation, kernel } = input;
 	const pinnedVersion = input.pinnedVersion ?? PINNED_SIYUAN_VERSION;
@@ -184,10 +185,6 @@ export async function gateWriteAttempt(input: {
 	// session-wide loop.
 	try {
 		const version = await kernel.getVersion();
-		// Fires only once the probe has actually reached the kernel — a thrown
-		// probe must not reset the breaker's consecutive count via the post-op
-		// recordSuccess in runKbCall.
-		input.contact?.();
 		validation.kernelVersion = version;
 		if (version !== pinnedVersion) {
 			validation.probe = "drift";

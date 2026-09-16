@@ -151,13 +151,13 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					});
 					if (!preflight.ok) return preflight.envelope;
 					// Write-path probe gate: a successful probe (or a
-					// per-attempt retry) must precede any write. A retry that
-					// reaches the kernel is real contact — it resets the
-					// breaker's consecutive count like any other call.
+					// per-attempt retry) must precede any write. The probe is
+					// unauthenticated, so it does not fire `contact` — the breaker's
+					// reset-on-success contract counts only authenticated calls;
+					// the op's own contact covers any write that reaches the kernel.
 					const probeEnv = await gateWriteAttempt({
 						validation,
 						kernel,
-						contact,
 						...(hooks.pinnedVersion !== undefined && {
 							pinnedVersion: hooks.pinnedVersion,
 						}),

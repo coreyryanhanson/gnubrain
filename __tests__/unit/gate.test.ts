@@ -419,6 +419,32 @@ describe("write gate", () => {
 		expect(envelope?.message).toContain("4.0.0");
 		expect(v.probe).toBe("drift");
 	});
+
+	it("a successful probe retry does not reset the breaker's consecutive count — the probe is unauthenticated", async () => {
+		const breaker = new CircuitBreaker();
+		breaker.recordAuthFailure();
+		breaker.recordAuthFailure();
+		const v = validation({ probe: "unreachable" });
+		const kernel = {
+			baseUrl: "http://127.0.0.1:6806",
+			getVersion: async () => "3.8.3",
+			listNotebooks: async () => {
+				throw new Error("not used");
+			},
+		};
+		const envelope = await runKbCall(
+			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
+			async (_names) => {
+				await gateWriteAttempt({ validation: v, kernel });
+				throw new SiYuanAuthError(403); // token still bad after the probe
+			},
+		);
+		expect(envelope.status).toBe("refused"); // tripped → fail-fast refusal
+		expect(v.probe).toBe("ok"); // the probe did reach the kernel
+		// 2 previous failures + this one = tripped; the probe must not have
+		// cleared the count.
+		expect(breaker.tripped).toBe(true);
+	});
 });
 
 describe("reads never gate on the cached unreachable verdict", () => {
