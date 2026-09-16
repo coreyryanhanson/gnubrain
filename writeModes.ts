@@ -9,7 +9,7 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { Type, type Static } from "typebox";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import type { ContentBaselines } from "./baselines.js";
-import { spillFile } from "./spill.js";
+import { previewAtNewline, spillFile } from "./spill.js";
 import {
 	ownershipStmt,
 	renderOutlineFromWalk,
@@ -357,9 +357,7 @@ async function deleteSetDisplay(
 	let contentPreview = content;
 	if (content.length > DELETE_SET_PREVIEW_CHARS) {
 		const path = spillFile(sessionId, "kb_write-delete-set", content, "md");
-		let cut = content.lastIndexOf("\n", DELETE_SET_PREVIEW_CHARS);
-		if (cut <= 0) cut = DELETE_SET_PREVIEW_CHARS;
-		contentPreview = `${content.slice(0, cut)}\n… full delete-set content in ${path}`;
+		contentPreview = `${previewAtNewline(content, DELETE_SET_PREVIEW_CHARS)}\n… full delete-set content in ${path}`;
 	}
 	return {
 		deleteSet: { count: deleteSet.length, contentPreview },

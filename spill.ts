@@ -48,6 +48,13 @@ export function spillFile(
 	return path;
 }
 
+/** Cut at the last newline within budget; hard cut if none in range. */
+export function previewAtNewline(content: string, budget: number): string {
+	let cut = content.lastIndexOf("\n", budget);
+	if (cut <= 0) cut = budget;
+	return content.slice(0, cut);
+}
+
 /** The pointer line appended to inline previews. */
 export function spillPointer(moreChars: number, path: string): string {
 	return `… ${moreChars} more — full result in ${path}`;
@@ -66,7 +73,5 @@ export function inlineOrSpill(
 ): { inline: string; spillPath?: string } {
 	if (content.length <= PREVIEW_CHARS) return { inline: content };
 	const path = spillFile(sessionId, tool, content, ext);
-	let cut = content.lastIndexOf("\n", PREVIEW_CHARS);
-	if (cut <= 0) cut = PREVIEW_CHARS;
-	return { inline: content.slice(0, cut), spillPath: path };
+	return { inline: previewAtNewline(content, PREVIEW_CHARS), spillPath: path };
 }
