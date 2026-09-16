@@ -5,15 +5,16 @@
 import { sqlString } from "./tools.js";
 
 /** The kernel stores title IALs entity-escaped in blocks.content; the guard
- * computes the stored form rather than being blind to it. The double
- * quote maps to `&#30;` — the kernel's own encoding. */
+ * computes the stored form rather than being blind to it. The mapping is
+ * lute's `html.EscapeHTMLStr` — the kernel builds doc content through it
+ * (nodeStaticContent): `& < > "` escape, and `'` stores verbatim (the
+ * kernel's own entity normalization maps `&#39;` back to a raw `'`). */
 function htmlEscape(title: string): string {
 	return title
 		.replaceAll("&", "&amp;")
 		.replaceAll("<", "&lt;")
 		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&#30;")
-		.replaceAll("'", "&#39;");
+		.replaceAll('"', "&quot;");
 }
 
 /** LIKE-wildcard escaping for the guard patterns (ESCAPE '\'): the

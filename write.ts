@@ -29,7 +29,8 @@ import {
 	type WriteParams,
 } from "./writeModes.js";
 import { validateMintTitle } from "./writeGuard.js";
-import type { ContentBaselines, WriteKernelClient } from "./writeResult.js";
+import type { ContentBaselines } from "./baselines.js";
+import type { WriteKernelClient } from "./writeResult.js";
 
 export interface WriteToolHooks {
 	/** Live session validation — set by session_start / /kb recovery. */

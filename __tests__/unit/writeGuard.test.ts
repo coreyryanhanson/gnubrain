@@ -84,9 +84,14 @@ describe("title guard", () => {
 		expect(guardExactPattern("100%_devops")).toBe("100\\%\\_devops");
 	});
 
-	it('maps the double quote to the kernel\'s "&#30;" entity in both legs', () => {
-		expect(guardExactPattern('a"b')).toBe("a&#30;b");
-		expect(guardNearPatterns('a"b')).toEqual(["a&#30;b%"]);
+	it('maps the double quote to the kernel\'s "&quot;" entity in both legs', () => {
+		expect(guardExactPattern('a"b')).toBe("a&quot;b");
+		expect(guardNearPatterns('a"b')).toEqual(["a&quot;b%"]);
+	});
+
+	it("leaves the apostrophe verbatim — the kernel does not escape it", () => {
+		expect(guardExactPattern("it's")).toBe("it's");
+		expect(guardNearPatterns("it's")).toEqual(["it's%"]);
 	});
 
 	it("near-match legs include the underscore variant (kebab-vs-snake)", () => {

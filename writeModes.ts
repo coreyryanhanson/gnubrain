@@ -8,6 +8,7 @@
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { Type, type Static } from "typebox";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import type { ContentBaselines } from "./baselines.js";
 import { spillFile } from "./spill.js";
 import {
 	ownershipStmt,
@@ -38,7 +39,6 @@ import {
 	rootEcho,
 	walkDoc,
 	writeEchoTail,
-	type ContentBaselines,
 	type WriteKernelClient,
 } from "./writeResult.js";
 
@@ -282,23 +282,23 @@ async function confirmGate(
 export const BLOCK_IN_DOC_STMT_HEAD = "SELECT id, content FROM blocks WHERE id";
 export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
 
-/** The target read + pinned rejection shared by the blockId-targeting
- * modes — an echoed block id absent from the doc is a retarget hint, not
- * a kernel error. Returns the block's current content on a hit. */
+/** The target read shared by the blockId-targeting modes — the block's
+ * current content (confirmation display + fresh-content baseline), or
+ * null when the id is absent from the doc. Absence is never refused
+ * here: the stale-target record pins each op's own kernel outcome
+ * (edit/move surface the synchronous not-found error verbatim; delete
+ * is a success no-op) and the live suite watches the kernel, not this
+ * pre-read, for contract drift. */
 async function blockInDoc(
 	kernel: WriteKernelClient,
 	doc: DocTarget,
 	blockId: string,
-): Promise<{ content: string } | Envelope> {
+): Promise<{ content: string | null }> {
 	const rows = await kernel.query(
 		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}` +
 			` AND root_id = ${sqlString(doc.rootId)}`,
 	);
-	return rows[0] === undefined
-		? errorEnvelope(
-				`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
-			)
-		: { content: String(rows[0].content) };
+	return { content: rows[0] === undefined ? null : String(rows[0].content) };
 }
 
 /** The pinned rejection when a heading id is absent from the doc walk. */
@@ -377,28 +377,31 @@ async function runEditMode(
 	const { kernel, sessionId, name, baselines, params } = input;
 	const blockId = params.blockId as string;
 	const row = await blockInDoc(kernel, doc, blockId);
-	if ("status" in row) return row;
-	// Fresh-content baseline: served content where the session has seen
-	// this block, else the block's CURRENT content — displayed in the
-	// confirmation; approval establishes it.
-	const summary =
-		`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
-		`current content:\n${row.content}`;
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
-		if (gate !== null) return gate;
+	if (row.content !== null) {
+		// Fresh-content baseline: served content where the session has seen
+		// this block, else the block's CURRENT content — displayed in the
+		// confirmation; approval establishes it.
+		const summary =
+			`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
+			`current content:\n${row.content}`;
+		if (dialog) {
+			const gate = await confirmGate(input, confirmKey, summary);
+			if (gate !== null) return gate;
+		}
+		if (baselines.servedHash(blockId) === undefined) {
+			baselines.remember(blockId, row.content);
+		}
+		// Precondition: re-check after approval, before the kernel call.
+		const stale = await assertFreshContent(
+			kernel,
+			baselines,
+			[{ blockId, baseline: baselines.servedHash(blockId) }],
+			{ sessionId, docId: doc.rootId },
+		);
+		if (stale !== null) return stale;
 	}
-	if (baselines.servedHash(blockId) === undefined) {
-		baselines.remember(blockId, row.content);
-	}
-	// Precondition: re-check after approval, before the kernel call.
-	const stale = await assertFreshContent(
-		kernel,
-		baselines,
-		[{ blockId, baseline: baselines.servedHash(blockId) }],
-		{ sessionId, docId: doc.rootId },
-	);
-	if (stale !== null) return stale;
+	// An absent target is never refused here — updateBlock's synchronous
+	// not-found error surfaces verbatim below (stale-target record).
 	try {
 		await kernel.updateBlock({ id: blockId, data: input.body });
 	} catch (err) {
@@ -658,20 +661,24 @@ async function runDeleteMode(
 	}
 	const blockId = params.blockId as string;
 	const row = await blockInDoc(kernel, doc, blockId);
-	if ("status" in row) return row;
-	const display = await deleteSetDisplay(kernel, sessionId, [
-		{ id: blockId, content: row.content },
-	]);
-	const summary =
-		`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
-		`current content:\n${row.content}\n\n` +
-		`inbound refs: ${display.backlinks.count}` +
-		(display.backlinks.count > 0
-			? ` from: ${display.backlinks.hpaths.join(", ")}`
-			: "");
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
-		if (gate !== null) return gate;
+	if (row.content !== null) {
+		// Confirmation only when there is something to delete — an absent
+		// target is the kernel's success no-op (stale-target record): no
+		// dialog, the walk-set evidence below reports the end state.
+		const display = await deleteSetDisplay(kernel, sessionId, [
+			{ id: blockId, content: row.content },
+		]);
+		const summary =
+			`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
+			`current content:\n${row.content}\n\n` +
+			`inbound refs: ${display.backlinks.count}` +
+			(display.backlinks.count > 0
+				? ` from: ${display.backlinks.hpaths.join(", ")}`
+				: "");
+		if (dialog) {
+			const gate = await confirmGate(input, confirmKey, summary);
+			if (gate !== null) return gate;
+		}
 	}
 	await kernel.deleteBlock(blockId);
 	// Post-mutation reads: a network drop here must never read as
@@ -805,8 +812,6 @@ async function runMoveMode(
 		});
 	}
 	const blockId = params.blockId as string;
-	const row = await blockInDoc(kernel, doc, blockId);
-	if ("status" in row) return row;
 	const dest = await resolveDocTarget(
 		kernel,
 		boxId,
@@ -859,10 +864,24 @@ async function runMoveMode(
 		const gate = await confirmGate(input, confirmKey, summary);
 		if (gate !== null) return gate;
 	}
-	if (anchor.kind === "appendRoot") {
-		await kernel.moveBlock({ id: blockId, parentID: dest.rootId });
-	} else {
-		await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
+	try {
+		if (anchor.kind === "appendRoot") {
+			await kernel.moveBlock({ id: blockId, parentID: dest.rootId });
+		} else {
+			await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
+		}
+	} catch (err) {
+		// stale-target record: moveBlock's blocktree index check rejects a
+		// missing source/anchor synchronously — surface verbatim with the
+		// fresh outline attached. Network classes rethrow for runKbCall's
+		// unreachable classification — correct here, the move did not land.
+		if (!(err instanceof SiYuanApiError)) throw err;
+		const tail = await echoTail(input, doc);
+		return errorEnvelope(err.message, {
+			kb: name,
+			anchor: anchor.anchor,
+			...tail,
+		});
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the move may already be applied (finishWrite doc).

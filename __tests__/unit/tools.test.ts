@@ -1,8 +1,10 @@
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { CircuitBreaker } from "../../breaker.js";
+import { createContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
 import { walkBlockTree } from "../../tools.js";
 import { inlineOrSpill, PREVIEW_CHARS } from "../../spill.js";
@@ -33,6 +35,7 @@ function fakePiWithTools() {
 		getValidation: () => undefined,
 		getKernel: () => undefined,
 		breaker: new CircuitBreaker(),
+		baselines: createContentBaselines(),
 	};
 	return { tools, pi, hooks };
 }
@@ -455,6 +458,7 @@ describe("query tool", () => {
 					},
 				}) as never,
 			breaker: new CircuitBreaker(),
+			baselines: createContentBaselines(),
 		});
 		const tool = registered.kb_query!;
 		return {
@@ -524,6 +528,7 @@ describe("read tool", () => {
 			"recipes",
 			"foreign-doc",
 			() => {},
+			createContentBaselines(),
 		);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("no doc 'foreign-doc'");
@@ -550,6 +555,7 @@ describe("read tool", () => {
 			"recipes",
 			"d1",
 			() => {},
+			createContentBaselines(),
 		);
 		const lines = String(result.outline).split("\n");
 		expect(lines).toHaveLength(201); // 200 + the pointer line
@@ -599,6 +605,7 @@ describe("read toolset + descriptions", () => {
 			getValidation: () => undefined,
 			getKernel: () => undefined,
 			breaker: new CircuitBreaker(),
+			baselines: createContentBaselines(),
 		});
 		expect(registered.map((t) => t.name)).toEqual([
 			"kb_query",
@@ -631,6 +638,7 @@ describe("read toolset + descriptions", () => {
 			getValidation: () => undefined,
 			getKernel: () => undefined,
 			breaker: new CircuitBreaker(),
+			baselines: createContentBaselines(),
 		});
 		const description = registered.find((t) => t.name === "kb_query")
 			?.description as string;
@@ -680,6 +688,7 @@ describe("degraded session (shape clause, asserted with the registered tools)", 
 					},
 				}) as never,
 			breaker: new CircuitBreaker(),
+			baselines: createContentBaselines(),
 		});
 		expect(registered.map((t) => t.name)).toEqual([
 			"kb_query",
@@ -716,6 +725,94 @@ describe("degraded session (shape clause, asserted with the registered tools)", 
 function ctx2(sessionId: string) {
 	return { sessionManager: { getSessionId: () => sessionId } };
 }
+
+// ---------------------------------------------------------------------------
+// Served-content baselines (fresh-content precondition, read-side serve leg)
+// ---------------------------------------------------------------------------
+
+describe("read tools seed served-content baselines", () => {
+	const type = (r: { content: { text: string }[] }) =>
+		JSON.parse(r.content[0]!.text) as Record<string, unknown>;
+
+	function registered(tool: string, kernel: unknown) {
+		const registered: {
+			name: string;
+			execute?: (
+				id: string,
+				params: unknown,
+				signal: undefined,
+				onUpdate: undefined,
+				ctx: unknown,
+			) => Promise<{ content: { text: string }[] }>;
+		}[] = [];
+		const pi = {
+			registerTool(t: never) {
+				registered.push(t as never);
+			},
+			on: () => {},
+			events: { emit: () => {} },
+		};
+		const baselines = createContentBaselines();
+		registerReadToolsAndToolset(pi as never, {
+			getValidation: () => validation(),
+			getKernel: () => kernel as never,
+			breaker: new CircuitBreaker(),
+			baselines,
+		});
+		return { baselines, tool: registered.find((t) => t.name === tool)! };
+	}
+
+	it("kb_read records a baseline for each heading the outline serves (§10 outline-sourced pin)", async () => {
+		const { baselines, tool } = registered("kb_read", {
+			...kernelStub().client,
+			async query(_stmt: string) {
+				// ownership route
+				return [{ root_id: "d1" }];
+			},
+		});
+		const envelope = type(
+			await tool.execute!(
+				"id",
+				{ kb: "recipes", docId: "d1" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		// The walk's heading (id h1, content "Heading") was served → hashed.
+		expect(baselines.servedHash("h1")).toBeDefined();
+		// Same representation the re-check hashes: blocks.content.
+		expect(baselines.servedHash("h1")).toBe(
+			createHash("sha256").update("Heading").digest("hex").slice(0, 16),
+		);
+	});
+
+	it("kb_query records baselines for rows that selected id + content", async () => {
+		const { baselines, tool } = registered("kb_query", {
+			baseUrl: "http://127.0.0.1:6806",
+			async query(_stmt: string) {
+				return [
+					{ id: "p1", content: "first paragraph", box: "nb-r" },
+					// A content-less projection (refs-table row shape) — skipped.
+					{ id: "r1", def_block_id: "p1", box: "nb-r" },
+				];
+			},
+		});
+		const envelope = type(
+			await tool.execute!(
+				"id",
+				{ kb: ["recipes"], sql: "SELECT id, content FROM blocks" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(baselines.servedHash("p1")).toBeDefined();
+		expect(baselines.servedHash("r1")).toBeUndefined();
+	});
+});
 
 // ---------------------------------------------------------------------------
 // `kbs` discovery name
@@ -757,6 +854,7 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 					},
 				}) as never,
 			breaker: opts.breaker ?? new CircuitBreaker(),
+			baselines: createContentBaselines(),
 		});
 		return registered.find((t) => t.name === (opts.tool ?? "kb_read"))!;
 	}

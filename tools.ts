@@ -9,7 +9,9 @@ import { Parser } from "node-sql-parser";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { Type } from "typebox";
+import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { CircuitBreaker } from "./breaker.js";
+import { SiYuanApiError } from "siyuan-kernel-api";
 import {
 	configRefusalEnvelope,
 	errorEnvelope,
@@ -54,6 +56,10 @@ export interface ReadToolHooks {
 	/** Kernel client built from the freshest settings (revalidate). */
 	getKernel(): KernelReadClient | undefined;
 	breaker: CircuitBreaker;
+	/** Session-scoped fresh-content baselines — read tools seed it where
+	 * content is served to the agent (DESIGN §4's "as the tool last served
+	 * it"); the write precondition re-checks against the same map. */
+	baselines: ContentBaselines;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +435,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						boxes,
 						rows,
 						rebuilt.limit,
+						hooks.baselines,
 					);
 				},
 			);
@@ -443,8 +450,13 @@ function buildQueryEnvelope(
 	boxes: string[],
 	rows: Record<string, unknown>[],
 	limit: number,
+	baselines: ContentBaselines,
 ): Envelope {
 	const { kept, dropped } = postFilterRows(rows, boxes);
+	// Served-content baselines: any kept row that selected id + content
+	// becomes a precondition baseline (refs-table rows and content-less
+	// projections are skipped by rememberServedRows).
+	rememberServedRows(baselines, kept);
 	const envelope: Envelope = {
 		status: "ok",
 		message: `${kept.length} rows`,
@@ -701,6 +713,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						names[0] as string,
 						docId,
 						contact,
+						hooks.baselines,
 					);
 				},
 			);
@@ -716,6 +729,7 @@ export async function runRead(
 	name: string,
 	docId: string,
 	contact: () => void,
+	baselines: ContentBaselines,
 ): Promise<Envelope> {
 	const boxId = validation.validKBs.get(name);
 	if (boxId === undefined) {
@@ -740,7 +754,13 @@ export async function runRead(
 		hpath: doc.hPath,
 	};
 
-	const outline = await renderOutline(kernel, sessionId, "kb_read", rootId);
+	const outline = await renderOutline(
+		kernel,
+		sessionId,
+		"kb_read",
+		rootId,
+		baselines,
+	);
 	envelope.outline = outline.outline;
 	if (outline.fullOutlinePath !== undefined) {
 		envelope.fullOutlinePath = outline.fullOutlinePath;
@@ -772,22 +792,29 @@ export async function renderOutline(
 	sessionId: string,
 	tool: string,
 	rootId: string,
+	baselines?: ContentBaselines,
 ): Promise<{ outline: string; fullOutlinePath?: string }> {
 	return renderOutlineFromWalk(
 		sessionId,
 		tool,
 		await walkBlockTree(kernel, rootId, 1),
+		baselines,
 	);
 }
 
 /** Outline rendering from a walk already in hand — write flows render the
- * result outline from the verification walk without a second traversal. */
+ * result outline from the verification walk without a second traversal.
+ * When baselines is passed, the served heading rows seed the fresh-content
+ * baselines: outline lines carry content, and the walk's content IS
+ * blocks.content (the kernel builds both via nodeStaticContent). */
 export function renderOutlineFromWalk(
 	sessionId: string,
 	tool: string,
 	walk: WalkedBlock[],
+	baselines?: ContentBaselines,
 ): { outline: string; fullOutlinePath?: string } {
 	const headings = walk.filter((b) => b.type === "h");
+	if (baselines !== undefined) rememberServedRows(baselines, headings);
 	const lines = headings.map((h) => {
 		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
 		return `${"  ".repeat(level - 1)}${h.content} → ${h.id}`;
@@ -835,8 +862,17 @@ async function walkBlockTreeNested(
 	let children: Record<string, unknown>[];
 	try {
 		children = await kernel.getChildBlocks(rootId);
-	} catch {
-		return []; // a vanished container mid-walk ends that branch, not the doc
+	} catch (err) {
+		// A vanished container mid-walk ends that branch, not the doc — but
+		// only genuine API misses (the error base's remaining subclasses:
+		// auth/rate-limit classify in runKbCall; network/timeout must
+		// propagate). In the write path this walk is the post-write
+		// verification, and an empty walk here would read as "rolled back
+		// silently behind HTTP success" — finishWrite's verificationFailed
+		// envelope exists precisely to prevent that; it never sees a
+		// swallowed error.
+		if (!(err instanceof SiYuanApiError)) throw err;
+		return [];
 	}
 	const nodes: NestedBlock[] = [];
 	for (const child of children) {

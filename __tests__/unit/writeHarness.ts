@@ -24,10 +24,12 @@ import {
 	REFS_BACKLINK_STMT_HEAD,
 	REFERRING_HPATHS_STMT_HEAD,
 	ROOT_ECHO_STMT_HEAD,
-	createContentBaselines,
-	type ContentBaselines,
 	type WriteKernelClient,
 } from "../../writeResult.js";
+import {
+	createContentBaselines,
+	type ContentBaselines,
+} from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import {
 	createWriteConfirmState,
@@ -69,6 +71,10 @@ export interface StubConfig {
 	 * subsequent query() calls throw — the network drop between a landed
 	 * write and the post-write verification reads. */
 	armQueryError?: (arm: (err: Error) => void) => void;
+	/** Same arm pattern for getChildBlocks — the post-write verification
+	 * walk drop (a query-arm doesn't reach it: the walk rides the child
+	 * route, not SQL). */
+	armWalkError?: (arm: (err: Error) => void) => void;
 }
 
 /** Kernel stub with a SQL router over every write-flow route. Verified rows
@@ -103,6 +109,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 	let queryError: Error | undefined;
 	config.armQueryError?.((err) => {
 		queryError = err;
+	});
+	let walkError: Error | undefined;
+	config.armWalkError?.((err) => {
+		walkError = err;
 	});
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
@@ -178,6 +188,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
+			if (walkError) throw walkError;
 			return (childrenFor[id] ?? unseededDefault) as Record<string, unknown>[];
 		},
 		async createDocWithMarkdown(params) {

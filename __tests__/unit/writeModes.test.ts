@@ -175,12 +175,19 @@ describe("edit", () => {
 		expect(refused.outline).toBeDefined();
 	});
 
-	it("a missing/foreign blockId errors with zero kernel writes", async () => {
-		const { execute, calls } = setup(); // blockRows route returns []
+	it("a missing/foreign blockId reaches the kernel — its synchronous not-found error surfaces verbatim (stale-target record)", async () => {
+		const { execute, calls, confirmCalls } = setup({
+			// blockRows route returns [] — the target is already gone.
+			onUpdate: () => {
+				throw new SiYuanApiError(500, -1, "block [b-ghost] not found");
+			},
+		});
 		const orphan = await execute({ ...editBase, blockId: "b-ghost" });
 		expect(orphan.status).toBe("error");
-		expect(orphan.message).toContain("b-ghost");
-		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
+		expect(orphan.message).toContain("block [b-ghost] not found");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+		// No confirmation: nothing exists to show or protect.
+		expect(confirmCalls).toHaveLength(0);
 	});
 
 	it("the successful write result refreshes the served-content baseline", async () => {
@@ -647,6 +654,24 @@ describe("delete", () => {
 		expect(result.message).toContain("STILL PRESENT");
 	});
 
+	it("a pre-deleted target: no dialog, kernel no-op → ok with the absent-target evidence", async () => {
+		// blockRows [] — the target vanished before the call; the delete-set
+		// display and confirmation are skipped (nothing to protect).
+		const { execute, calls, confirmCalls } = setup({
+			childrenFor: { "d-doc": [] },
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.targetGone).toBe(true);
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+		expect(confirmCalls).toHaveLength(0);
+	});
+
 	it("doc-level: removeDocByID fires and the result carries only invalidRefs (pinned shape)", async () => {
 		const { execute, calls } = setup({
 			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },
@@ -714,6 +739,18 @@ describe("block-level move", () => {
 			},
 		});
 	}
+
+	it("a pre-deleted source block: moveBlock's synchronous not-found error surfaces verbatim (stale-target record)", async () => {
+		const { execute, calls } = moveHarness(() => {
+			throw new SiYuanApiError(-1, -1, "block not found");
+		});
+		const result = await execute(moveParams);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("block not found");
+		expect(result.kb).toBe("recipes");
+		expect(result.outline).toBeDefined();
+		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
+	});
 
 	it("cross-doc: destination anchor, move via previousID, both outlines + movedBlockId", async () => {
 		const harness = moveHarness(() => {
@@ -1072,6 +1109,33 @@ describe("network drop after a landed write", () => {
 		expect(r.status).toBe("error");
 		expect(r.verificationFailed).toBe(true);
 		expect(r.message).not.toContain("SiYuan unreachable");
+		expect(
+			calls.filter(
+				(c) => c.method === "insertBlock" || c.method === "appendBlock",
+			),
+		).toHaveLength(1);
+	});
+
+	it("append: post-write WALK drop (getChildBlocks) → verificationFailed, not the 'rolled back silently' retry invitation", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			armWalkError: (set) => {
+				arm = set;
+			},
+			onInsert: () => arm?.(new SiYuanNetworkError()),
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "append",
+			docId: "d-doc",
+			markdown: "new section",
+		});
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		// The dangerous message: the write LANDED — a silent-rollback reading
+		// invites the blind retry that duplicates it.
+		expect(r.message).not.toContain("rolled back silently");
+		expect(r.message).toContain("post-write verification reads failed");
 		expect(
 			calls.filter(
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",

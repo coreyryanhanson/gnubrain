@@ -1,9 +1,8 @@
 // Shared write-result machinery: the structural kernel client the write
-// tools need, the session-scoped fresh-content baselines, and the
-// echo/verification evidence (root echo, backlink check, post-write walk
-// sets) every doc-targeting result shares.
+// tools need, and the echo/verification evidence (root echo, backlink
+// check, post-write walk sets) every doc-targeting result shares.
 
-import { createHash } from "node:crypto";
+import { contentHash, type ContentBaselines } from "./baselines.js";
 import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
@@ -49,41 +48,6 @@ export interface WriteKernelClient extends KernelReadClient, KernelProbeClient {
 	}): Promise<null>;
 	removeDocByID(id: string): Promise<null>;
 	moveDocsByID(params: { fromIDs: string[]; toID: string }): Promise<null>;
-}
-
-// ---------------------------------------------------------------------------
-// Content baselines (fresh-content precondition)
-// ---------------------------------------------------------------------------
-
-/** sha256-16hex of one block's content — the fresh-content baseline key. */
-function contentHash(content: string): string {
-	return createHash("sha256").update(content).digest("hex").slice(0, 16);
-}
-
-/** Session-scoped served-content baselines (fresh-content precondition,
- * decision record): hash of each block's content as the tool last SERVED it
- * this session — never persisted, never seeded from submitted markdown
- * (the kernel re-parses it, so the stored form is unknowable at submit
- * time). Same lifecycle class as the breaker/confirm state: after
- * resume/fork the map is empty and the no-baseline fallback applies. */
-export class ContentBaselines {
-	private hashes = new Map<string, string>();
-
-	remember(blockId: string, content: string): void {
-		this.hashes.set(blockId, contentHash(content));
-	}
-
-	servedHash(blockId: string): string | undefined {
-		return this.hashes.get(blockId);
-	}
-
-	clear(): void {
-		this.hashes.clear();
-	}
-}
-
-export function createContentBaselines(): ContentBaselines {
-	return new ContentBaselines();
 }
 
 interface BaselineView {
@@ -332,9 +296,12 @@ export async function writeEchoTail(input: {
 	}
 	// Refresh baselines for the target doc's blocks (write results
 	// refresh the map for blocks whose content the result carried) —
-	// from blocks.content, the same representation the re-check hashes;
-	// walk content is a different rendering and would false-positive
-	// stale_content wherever the two representations drift.
+	// from blocks.content, the same representation the re-check hashes.
+	// The SQL read (not walk rows) keeps the map's single-source invariant
+	// explicit: the walk's content IS blocks.content (the kernel builds
+	// both via nodeStaticContent), but a walk taken mid-write races the
+	// index differently than the re-check's query path — same source,
+	// same read mechanism, no representation drift.
 	if (walk.length > 0) {
 		for (const row of rowsToBaselineView(
 			await kernel.query(baselineContentsStmt(walk.map((b) => b.id))),

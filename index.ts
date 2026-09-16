@@ -24,11 +24,9 @@ import {
 	registerReadToolsAndToolset,
 	type KernelReadClient,
 } from "./tools.js";
+import { createContentBaselines } from "./baselines.js";
 import { createWriteConfirmState } from "./writeConfirm.js";
-import {
-	createContentBaselines,
-	type WriteKernelClient,
-} from "./writeResult.js";
+import { type WriteKernelClient } from "./writeResult.js";
 import {
 	registerWriteTool,
 	WRITE_TOOLSET_ID,
@@ -70,6 +68,10 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	const breaker = new CircuitBreaker();
 	// Kernel client built from the freshest settings on every validation pass.
 	let kernelClient: KernelProbeClient | undefined;
+	// Session-scoped fresh-content baselines: the read tools feed it where
+	// content is served, the write precondition checks against it (decision
+	// record — empty after resume/fork, the no-baseline fallback applies).
+	const baselines = createContentBaselines();
 
 	// Read tools + toolset: the hooks read the live closure state,
 	// so masking and post-toggle scope compose mid-session.
@@ -77,14 +79,12 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		getValidation: () => validation,
 		getKernel: () => kernelClient as KernelReadClient | undefined,
 		breaker,
+		baselines,
 	});
 
 	// Write tool: rides the same gate + probe verdict. The confirm state is
-	// session-scoped machinery, same lifecycle class as the breaker; the
-	// fresh-content baselines ride the same lifecycle (decision record —
-	// empty after resume/fork, the no-baseline fallback applies).
+	// session-scoped machinery, same lifecycle class as the breaker.
 	const confirmState = createWriteConfirmState();
-	const baselines = createContentBaselines();
 	registerWriteTool(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernelClient as WriteKernelClient | undefined,
