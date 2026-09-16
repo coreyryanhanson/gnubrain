@@ -9,9 +9,8 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { CircuitBreaker } from "./breaker.js";
-import { errorEnvelope, refusedEnvelope } from "./envelope.js";
+import { errorEnvelope, refusedEnvelope, textResult } from "./envelope.js";
 import { gateWriteAttempt, runKbCall } from "./gate.js";
-import { textResult } from "./kernel.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	readBodyFile,

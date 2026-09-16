@@ -74,6 +74,18 @@ export function rateLimitRefusalEnvelope(
 	);
 }
 
+/** Tool result wrapper — pretty-printed envelope as text content plus the
+ * structured details (the shape every tool result rides). */
+export function textResult(envelope: Envelope): {
+	content: { type: "text"; text: string }[];
+	details: Envelope;
+} {
+	return {
+		content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
+		details: envelope,
+	};
+}
+
 /** breaker refusal — fail-fast, names the token fix and the /kb recovery. */
 export function breakerRefusalEnvelope(): Envelope {
 	return refusedEnvelope(

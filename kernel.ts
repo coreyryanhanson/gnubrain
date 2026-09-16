@@ -3,7 +3,6 @@
 // Kept out of the tool modules so low-level consumers (walk, write flows)
 // never import from a tool-registration file.
 
-import type { Envelope } from "./envelope.js";
 import { inlineOrSpill, jsonl } from "./spill.js";
 
 /** Structural client subset the read tools need (tests stub it). */
@@ -65,16 +64,4 @@ export function rowPayload(
 	const { inline, spillPath } = inlineOrSpill(sessionId, tool, text, "jsonl");
 	if (spillPath === undefined) return { rows: kept };
 	return { preview: inline, fullResultPath: spillPath };
-}
-
-/** Tool result wrapper — pretty-printed envelope as text content plus the
- * structured details (the shape every tool result rides). */
-export function textResult(envelope: Envelope): {
-	content: { type: "text"; text: string }[];
-	details: Envelope;
-} {
-	return {
-		content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
-		details: envelope,
-	};
 }

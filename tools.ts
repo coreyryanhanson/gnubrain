@@ -16,14 +16,10 @@ import {
 	errorEnvelope,
 	type Envelope,
 	refusedEnvelope,
+	textResult,
 } from "./envelope.js";
 import { EMPTY_SCOPE_MESSAGE, runKbCall } from "./gate.js";
-import {
-	ownershipStmt,
-	rowPayload,
-	textResult,
-	type KernelReadClient,
-} from "./kernel.js";
+import { ownershipStmt, rowPayload, type KernelReadClient } from "./kernel.js";
 import {
 	inlineOrSpill,
 	jsonl,
@@ -54,7 +50,7 @@ export interface ReadToolHooks {
 }
 
 // ---------------------------------------------------------------------------
-// kb_query — parser certification + AST rebuild
+// kb_query
 // ---------------------------------------------------------------------------
 
 /** The gate guarantees every resolved name sits in the valid set; this keeps
