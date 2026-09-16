@@ -51,6 +51,8 @@ export interface GnubrainDeps {
 	homeDir?: string;
 	/** Test seam for the kernel client. */
 	createClient?: (baseUrl: string, token: string) => KernelProbeClient;
+	/** Per-test version-pin override; absent → the module pin applies. */
+	pinnedVersion?: string;
 }
 
 function defaultReadFile(path: string): Promise<string> {
@@ -91,6 +93,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		breaker,
 		confirmState,
 		baselines,
+		...(deps.pinnedVersion !== undefined && {
+			pinnedVersion: deps.pinnedVersion,
+		}),
 	});
 
 	// Write toolset (tool-masking record): one tool, all mutation modes;
@@ -173,6 +178,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 					listNotebooks: () => Promise.reject(new Error("no settings")),
 				} satisfies KernelProbeClient),
 			persistedScope: persisted,
+			...(deps.pinnedVersion !== undefined && {
+				pinnedVersion: deps.pinnedVersion,
+			}),
 		});
 	}
 

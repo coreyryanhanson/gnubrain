@@ -43,6 +43,9 @@ export interface WriteToolHooks {
 	/** Session-scoped fresh-content baselines (decision record) — same
 	 * lifecycle class as the breaker/confirm state. */
 	baselines: ContentBaselines;
+	/** Per-test version-pin override — threaded to the write gate so a
+	 * drift refusal names the overridden pin, not the module constant. */
+	pinnedVersion?: string;
 	/** Injectable seams (unit tests); defaults wire to ctx at execute time. */
 	confirm?: WriteConfirmFn;
 	hasUI?: boolean;
@@ -155,6 +158,9 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						validation,
 						kernel,
 						contact,
+						...(hooks.pinnedVersion !== undefined && {
+							pinnedVersion: hooks.pinnedVersion,
+						}),
 					});
 					if (probeEnv !== null) return probeEnv;
 					const flowBase = {

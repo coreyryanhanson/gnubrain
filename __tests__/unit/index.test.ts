@@ -432,6 +432,35 @@ describe("read + write toolset wiring", () => {
 		]);
 	});
 
+	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {
+		const { pi, fire, runTool } = fakePi();
+		const d = deps({ version: "3.8.3" });
+		register(pi, { ...d, pinnedVersion: "9.9.9" });
+		const { ctx, statuses } = fakeCtx({
+			hasUI: true,
+			confirm: async () => true,
+		});
+		await fire("session_start", ctx);
+		// The drift verdict drives the status cause tag; the write refusal
+		// names the overridden pin alongside the kernel-reported version.
+		expect(statuses.at(-1)?.[1]).toBe("● kb: version");
+		const refused = (
+			await runTool(
+				"kb_write",
+				{ kb: "dev", mode: "create", topic: "T", markdown: "b" },
+				ctx,
+			)
+		).details;
+		expect(refused.status).toBe("refused");
+		expect(refused.message).toContain("3.8.3");
+		expect(refused.message).toContain("9.9.9");
+
+		// A drift session never blocks the kbs discovery short-circuit
+		// (zero kernel calls) — writes refuse, reads answer.
+		const read = (await runTool("kb_read", { kb: "kbs" }, ctx)).details;
+		expect(read.status).toBe("ok");
+	});
+
 	it("bare /kb prints both toolset-state lines", async () => {
 		const { pi, fire, runCommand } = fakePi();
 		register(pi, deps());
