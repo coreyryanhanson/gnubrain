@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { SiYuanAuthError } from "siyuan-kernel-api";
-import { TOOLSET_EVENTS } from "pi-tool-masking";
+import { TOOLSET_EVENTS, getRegisteredToolsets } from "pi-tool-masking";
 import register, { type GnubrainDeps } from "../../index.js";
+import { READ_TOOLSET_ID } from "../../tools.js";
+import { WRITE_TOOLSET_ID, WRITE_TOOLSET_PERSIST_KEY } from "../../write.js";
 
 interface EnvelopeShape {
 	status: string;
@@ -430,6 +432,28 @@ describe("read + write toolset wiring", () => {
 			"kb_read",
 			"kb_write",
 		]);
+	});
+
+	// The write toolset is a single-tool, read-requiring toolset. The
+	// settings tier applies toolsetDefaults pins per-toolset at restore
+	// WITHOUT re-running the requires cascade — the documented reachable
+	// write-without-read state. That restore behavior is pinned by
+	// pi-tool-masking's own suite; what gnubrain owns is the spec shape
+	// (asserted here) and the live-toggle cascade (the /kb tools verbs
+	// below), plus the backstop record: masking is the outer layer, and
+	// confirmation + headless default-deny remain in force on every write
+	// regardless of how the toolset state was reached.
+	it("the write toolset spec: single kb_write member, read-requiring, default-enabled, pinned persist key", () => {
+		const { pi } = fakePi();
+		register(pi, deps());
+		const write = getRegisteredToolsets().find(
+			(t) => t.spec.id === WRITE_TOOLSET_ID,
+		);
+		expect(write).toBeDefined();
+		expect([...write!.spec.names]).toEqual(["kb_write"]);
+		expect(write!.spec.requires).toEqual([READ_TOOLSET_ID]);
+		expect(write!.spec.defaultEnabled).toBe(true);
+		expect(write!.spec.persistKey).toBe(WRITE_TOOLSET_PERSIST_KEY);
 	});
 
 	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {
