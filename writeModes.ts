@@ -672,7 +672,7 @@ async function runDeleteMode(
 		]);
 		const summary =
 			`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
-			`current content:\n${row.content}\n\n` +
+			`current content:\n${display.deleteSet.contentPreview}\n\n` +
 			`inbound refs: ${display.backlinks.count}` +
 			(display.backlinks.count > 0
 				? ` from: ${display.backlinks.hpaths.join(", ")}`
