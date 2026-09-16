@@ -382,14 +382,21 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		name: "kb_query",
 		label: "KB Query",
 		description: QUERY_DESCRIPTION,
-		parameters: Type.Object({
-			kb: Type.Array(Type.String(), {
-				description: "KB name(s) to query — must be in the active scope",
-			}),
-			sql: Type.String({
-				description: "One SELECT statement over the blocks or refs table",
-			}),
-		}),
+		parameters: Type.Object(
+			{
+				kb: Type.Array(Type.String(), {
+					description: "KB name(s) to query — must be in the active scope",
+				}),
+				sql: Type.String({
+					description: "One SELECT statement over the blocks or refs table",
+				}),
+			},
+			// Reject invented params at schema level so the calling model learns
+			// immediately. kb_write deliberately omits this flag — its runtime
+			// check (modeShapeProblem) enforces the same strictness while
+			// exempting the undeclared-on-purpose confirmNew.
+			{ additionalProperties: false },
+		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
@@ -645,20 +652,27 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		name: "kb_read",
 		label: "KB Read",
 		description: READ_DESCRIPTION,
-		parameters: Type.Object({
-			kb: Type.String({
-				description:
-					"KB name the doc belongs to — must be in the active scope, or the reserved discovery name 'kbs' to list active KBs",
-			}),
-			// Optional so the kb: "kbs" discovery form passes schema validation;
-			// a real read with no docId is refused inside the gated op.
-			docId: Type.Optional(
-				Type.String({
+		parameters: Type.Object(
+			{
+				kb: Type.String({
 					description:
-						"Document root block ID (root_id from kb_query/kb_search rows)",
+						"KB name the doc belongs to — must be in the active scope, or the reserved discovery name 'kbs' to list active KBs",
 				}),
-			),
-		}),
+				// Optional so the kb: "kbs" discovery form passes schema validation;
+				// a real read with no docId is refused inside the gated op.
+				docId: Type.Optional(
+					Type.String({
+						description:
+							"Document root block ID (root_id from kb_query/kb_search rows)",
+					}),
+				),
+			},
+			// kb_read has no runtime shape check, so the schema is the only
+			// defense against invented params. kb_write deliberately omits this
+			// flag — modeShapeProblem enforces the same strictness at runtime
+			// while exempting the undeclared-on-purpose confirmNew.
+			{ additionalProperties: false },
+		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
