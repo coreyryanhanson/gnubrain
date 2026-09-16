@@ -264,11 +264,56 @@ async function confirmGate(
 	});
 }
 
-function blockInDocStmt(docId: string, blockId: string): string {
-	return (
+/** The target read + pinned rejection shared by the blockId-targeting
+ * modes — an echoed block id absent from the doc is a retarget hint, not
+ * a kernel error. Returns the block's current content on a hit. */
+async function blockInDoc(
+	kernel: WriteKernelClient,
+	doc: DocTarget,
+	blockId: string,
+): Promise<{ content: string } | Envelope> {
+	const rows = await kernel.query(
 		`SELECT id, content FROM blocks WHERE id = ${sqlString(blockId)}` +
-		` AND root_id = ${sqlString(docId)}`
+			` AND root_id = ${sqlString(doc.rootId)}`,
 	);
+	return rows[0] === undefined
+		? errorEnvelope(
+				`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
+			)
+		: { content: String(rows[0].content) };
+}
+
+/** The pinned rejection when a heading id is absent from the doc walk. */
+function headingInWalk(
+	walk: WalkedBlock[],
+	doc: DocTarget,
+	headingId: string,
+): WalkedBlock | Envelope {
+	const heading = walk.find((b) => b.id === headingId && b.type === "h");
+	return heading === undefined
+		? errorEnvelope(
+				`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+			)
+		: heading;
+}
+
+/** writeEchoTail with the flow's fixed identity args bound — call sites
+ * pass only an optional pre-fetched verification walk. */
+async function echoTail(
+	input: WriteFlowInput,
+	doc: DocTarget,
+	walk?: WalkedBlock[] | undefined,
+): Promise<Record<string, unknown>> {
+	return (
+		await writeEchoTail({
+			kernel: input.kernel,
+			sessionId: input.sessionId,
+			boxId: input.boxId,
+			docId: doc.rootId,
+			baselines: input.baselines,
+			walk,
+		})
+	).envelope;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,26 +356,22 @@ async function runEditMode(
 	dialog: boolean,
 	confirmKey: string,
 ): Promise<Envelope> {
-	const { kernel, sessionId, name, boxId, baselines, params } = input;
+	const { kernel, sessionId, name, baselines, params } = input;
 	const blockId = params.blockId as string;
-	const rows = await kernel.query(blockInDocStmt(doc.rootId, blockId));
-	if (rows[0] === undefined) {
-		return errorEnvelope(
-			`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
-		);
-	}
+	const row = await blockInDoc(kernel, doc, blockId);
+	if ("status" in row) return row;
 	// Fresh-content baseline: served content where the session has seen
 	// this block, else the block's CURRENT content — displayed in the
 	// confirmation; approval establishes it.
 	const summary =
 		`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
-		`current content:\n${String(rows[0].content)}`;
+		`current content:\n${row.content}`;
 	if (dialog) {
 		const gate = await confirmGate(input, confirmKey, summary);
 		if (gate !== null) return gate;
 	}
 	if (baselines.servedHash(blockId) === undefined) {
-		baselines.remember(blockId, String(rows[0].content));
+		baselines.remember(blockId, row.content);
 	}
 	// Precondition: re-check after approval, before the kernel call.
 	const stale = await assertFreshContent(
@@ -348,30 +389,18 @@ async function runEditMode(
 		// for runKbCall's unreachable classification — correct here, the
 		// mutation itself did not land.
 		if (!(err instanceof SiYuanApiError)) throw err;
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines,
-		});
-		return errorEnvelope(err.message, { kb: name, ...tail.envelope });
+		const tail = await echoTail(input, doc);
+		return errorEnvelope(err.message, { kb: name, ...tail });
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc).
 	return finishWrite(name, {}, async () => {
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines,
-		});
+		const tail = await echoTail(input, doc);
 		return {
 			status: "ok",
 			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,
 			kb: name,
-			...tail.envelope,
+			...tail,
 		};
 	});
 }
@@ -384,19 +413,13 @@ async function runAppendMode(
 	dialog: boolean,
 	confirmKey: string,
 ): Promise<Envelope> {
-	const { kernel, sessionId, name, boxId, params } = input;
+	const { kernel, name, params } = input;
 	// The walk doubles as anchor data AND the pre-write set for verification
 	// (stale-target record: the same walk the anchor derivation fetches).
 	const walk = await walkBlockTree(kernel, doc.rootId, 1);
 	if (params.headingId !== undefined) {
-		const heading = walk.find(
-			(b) => b.id === params.headingId && b.type === "h",
-		);
-		if (heading === undefined) {
-			return errorEnvelope(
-				`headingId '${params.headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-			);
-		}
+		const heading = headingInWalk(walk, doc, params.headingId);
+		if ("status" in heading) return heading;
 	}
 	const anchor = deriveAppendAnchor(walk, params.headingId);
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
@@ -424,34 +447,20 @@ async function runAppendMode(
 			!preIds.has(newBlockId) &&
 			postIds.has(newBlockId);
 		if (!landed) {
-			const tail = await writeEchoTail({
-				kernel,
-				sessionId,
-				boxId,
-				docId: doc.rootId,
-				baselines: input.baselines,
-				walk: postWalk,
-			});
+			const tail = await echoTail(input, doc, postWalk);
 			return errorEnvelope(
 				`verified-append failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`,
-				{ kb: name, anchor: anchor.anchor, ...tail.envelope },
+				{ kb: name, anchor: anchor.anchor, ...tail },
 			);
 		}
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines: input.baselines,
-			walk: postWalk,
-		});
+		const tail = await echoTail(input, doc, postWalk);
 		return {
 			status: "ok",
 			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
 			kb: name,
 			anchor: anchor.anchor,
 			newBlockId,
-			...tail.envelope,
+			...tail,
 		};
 	});
 }
@@ -464,16 +473,12 @@ async function runReplaceSectionMode(
 	dialog: boolean,
 	confirmKey: string,
 ): Promise<Envelope> {
-	const { kernel, sessionId, name, boxId, baselines, params } = input;
+	const { kernel, sessionId, name, baselines, params } = input;
 	const headingId = params.headingId as string;
 	// Delete-set enumeration rides the document-order walk, never SQL.
 	const walk = await walkBlockTree(kernel, doc.rootId, 1);
-	const heading = walk.find((b) => b.id === headingId && b.type === "h");
-	if (heading === undefined) {
-		return errorEnvelope(
-			`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-		);
-	}
+	const heading = headingInWalk(walk, doc, headingId);
+	if ("status" in heading) return heading;
 	const deleteSet = sectionDeleteSet(walk, headingId);
 	// The confirmation displays the enumerated delete set — block count,
 	// the trailing blocks' current content (spill budget applies), and the
@@ -550,13 +555,7 @@ async function runReplaceSectionMode(
 		// The echo tail re-walks AFTER the deletes: the post-insert walk still
 		// carries the swept blocks, and the outline-freshness contract requires
 		// the post-write tree (write-result contract).
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines,
-		});
+		const tail = await echoTail(input, doc);
 		return {
 			status: "ok",
 			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
@@ -564,7 +563,7 @@ async function runReplaceSectionMode(
 			anchor: anchor.anchor,
 			newBlockId,
 			invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
-			...tail.envelope,
+			...tail,
 		};
 	});
 }
@@ -577,7 +576,7 @@ async function runDeleteMode(
 	dialog: boolean,
 	confirmKey: string,
 ): Promise<Envelope> {
-	const { kernel, sessionId, name, boxId, params } = input;
+	const { kernel, sessionId, name, params } = input;
 	if (params.doc === true) {
 		// Whole-doc delete: the delete set is the walk set; backlink
 		// visibility rides the confirmation (delete mode).
@@ -617,18 +616,14 @@ async function runDeleteMode(
 		});
 	}
 	const blockId = params.blockId as string;
-	const rows = await kernel.query(blockInDocStmt(doc.rootId, blockId));
-	if (rows[0] === undefined) {
-		return errorEnvelope(
-			`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
-		);
-	}
+	const row = await blockInDoc(kernel, doc, blockId);
+	if ("status" in row) return row;
 	const display = await deleteSetDisplay(kernel, sessionId, [
-		{ id: blockId, content: String(rows[0].content) },
+		{ id: blockId, content: row.content },
 	]);
 	const summary =
 		`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
-		`current content:\n${String(rows[0].content)}\n\n` +
+		`current content:\n${row.content}\n\n` +
 		`inbound refs: ${display.backlinks.count}` +
 		(display.backlinks.count > 0
 			? ` from: ${display.backlinks.hpaths.join(", ")}`
@@ -646,14 +641,7 @@ async function runDeleteMode(
 		const postWalk = await walkIdSet(kernel, doc.rootId);
 		const targetGone = !idSet(postWalk).has(blockId);
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines: input.baselines,
-			walk: postWalk,
-		});
+		const tail = await echoTail(input, doc, postWalk);
 		return {
 			status: "ok",
 			message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target ${targetGone ? "absent from" : "STILL PRESENT in"} the post-write tree; ${invalidRefs.count} orphaned ref(s)`,
@@ -664,7 +652,7 @@ async function runDeleteMode(
 				count: invalidRefs.count,
 				hpaths: invalidRefs.hpaths,
 			},
-			...tail.envelope,
+			...tail,
 		};
 	});
 }
@@ -764,30 +752,20 @@ async function runMoveMode(
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the move may already be applied (finishWrite doc).
 		return finishWrite(name, {}, async () => {
-			const tail = await writeEchoTail({
-				kernel,
-				sessionId,
-				boxId,
-				docId: doc.rootId,
-				baselines: input.baselines,
-			});
+			const tail = await echoTail(input, doc);
 			// Pinned shape: outline + title/hpath echo, no anchor/newBlockId/
 			// destOutline (doc-level record).
 			return {
 				status: "ok",
 				message: `moved doc '${doc.title}' to ${destLabel} (KB ${name})`,
 				kb: name,
-				...tail.envelope,
+				...tail,
 			};
 		});
 	}
 	const blockId = params.blockId as string;
-	const rows = await kernel.query(blockInDocStmt(doc.rootId, blockId));
-	if (rows[0] === undefined) {
-		return errorEnvelope(
-			`no block '${blockId}' in doc '${doc.title}' (${doc.rootId}) — targets are echoed block IDs; re-fetch the outline (kb_read) or a kb_query row, then re-target`,
-		);
-	}
+	const row = await blockInDoc(kernel, doc, blockId);
+	if ("status" in row) return row;
 	const dest = await resolveDocTarget(
 		kernel,
 		boxId,
@@ -855,21 +833,14 @@ async function runMoveMode(
 		const destPayload = sameDoc
 			? {}
 			: await destOutlinePayload(sessionId, postDestWalk);
-		const srcTail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines: input.baselines,
-			walk: postSourceWalk,
-		});
+		const srcTail = await echoTail(input, doc, postSourceWalk);
 		if (!movedInDest || !movedGoneFromSource) {
 			return errorEnvelope(
 				`verified-move failed: block '${blockId}' is ${movedInDest ? "still present in the source tree" : "absent from the destination tree"} — the transaction rolled back silently behind HTTP success`,
 				{
 					kb: name,
 					anchor: anchor.anchor,
-					...srcTail.envelope,
+					...srcTail,
 					...destPayload,
 				},
 			);
@@ -880,7 +851,7 @@ async function runMoveMode(
 			kb: name,
 			anchor: anchor.anchor,
 			movedBlockId: blockId,
-			...srcTail.envelope,
+			...srcTail,
 			...destPayload,
 		};
 	});

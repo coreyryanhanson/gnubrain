@@ -306,7 +306,7 @@ export async function writeEchoTail(input: {
 	boxId: string;
 	docId: string;
 	baselines: ContentBaselines;
-	walk?: WalkedBlock[];
+	walk?: WalkedBlock[] | undefined;
 }): Promise<{
 	walk: WalkedBlock[];
 	envelope: Record<string, unknown>;
