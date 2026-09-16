@@ -201,6 +201,16 @@ describe("headless default-deny", () => {
 		expect(kernel.calls).toHaveLength(0);
 	});
 
+	it("a denied write pays no probe retry on an unreachable kernel", async () => {
+		const v: SessionValidation = validation();
+		v.probe = "unreachable";
+		const { execute, kernel } = setup({ hasUI: false }, v);
+		const r = await execute({ ...base });
+		expect(r.details.status).toBe("refused");
+		expect(r.details.message).toContain("allowUnattendedWrites");
+		expect(kernel.calls).toHaveLength(0);
+	});
+
 	it("refuses with no UI and allowUnattendedWrites: false", async () => {
 		const { execute } = setup(
 			{ hasUI: false },

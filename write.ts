@@ -15,17 +15,20 @@ import { textResult } from "./tools.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	readBodyFile,
+	preflightWrite,
 	type WriteConfirmFn,
 	type WriteConfirmState,
 } from "./writeConfirm.js";
-import { runCreateFlow } from "./writeCreate.js";
+import { createConfirmInputs, runCreateFlow } from "./writeCreate.js";
 import {
 	CONTENT_BEARING_MODES,
+	modeConfirmInputs,
 	modeShapeProblem,
 	runWriteMode,
 	writeSchema,
 	type WriteParams,
 } from "./writeModes.js";
+import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines, WriteKernelClient } from "./writeResult.js";
 
 export interface WriteToolHooks {
@@ -112,6 +115,37 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 							}
 						}
 					}
+					// KB resolution: local map lookup, zero kernel calls.
+					const name = names[0] as string;
+					const boxId = validation.validKBs.get(name);
+					if (boxId === undefined) {
+						return errorEnvelope(`KB '${name}' is not in the valid set`);
+					}
+					// Confirm key + pre-dialog permission before the probe gate:
+					// both are kernel-free, so a denied write costs zero kernel
+					// round-trips. Key/summary are shared with the flows so the
+					// terminal confirm_timeout key can't drift.
+					let confirmInputs: { key: string; summary: string };
+					let title = "";
+					if (p.mode === "create") {
+						const mint = validateMintTitle(p.topic ?? "");
+						if (!mint.ok) return refusedEnvelope(mint.message);
+						title = mint.title;
+						confirmInputs = createConfirmInputs(
+							name,
+							title,
+							(body ?? "").length,
+						);
+					} else {
+						confirmInputs = modeConfirmInputs(name, p);
+					}
+					const preflight = preflightWrite({
+						hasUI: hooks.hasUI ?? ctx.hasUI,
+						allowUnattendedWrites: validation.settings?.allowUnattendedWrites,
+						state: hooks.confirmState,
+						...confirmInputs,
+					});
+					if (!preflight.ok) return preflight.envelope;
 					// Write-path probe gate: a successful probe (or a
 					// per-attempt retry) must precede any write. A retry that
 					// reaches the kernel is real contact — it resets the
@@ -122,11 +156,6 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						contact,
 					});
 					if (probeEnv !== null) return probeEnv;
-					const name = names[0] as string;
-					const boxId = validation.validKBs.get(name);
-					if (boxId === undefined) {
-						return errorEnvelope(`KB '${name}' is not in the valid set`);
-					}
 					const flowBase = {
 						sessionId: ctx.sessionManager.getSessionId(),
 						kernel,
@@ -136,8 +165,9 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						body: body ?? "",
 						confirm:
 							hooks.confirm ??
-							((title, message, opts) => ctx.ui.confirm(title, message, opts)),
-						hasUI: hooks.hasUI ?? ctx.hasUI,
+							((t, message, opts) => ctx.ui.confirm(t, message, opts)),
+						dialog: preflight.dialog,
+						confirmInputs,
 						confirmState: hooks.confirmState,
 						baselines: hooks.baselines,
 						contact,
@@ -145,7 +175,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					if (p.mode === "create") {
 						return runCreateFlow({
 							...flowBase,
-							title: p.topic ?? "",
+							title,
 							parentId: p.parentId,
 							bodyFromFile: fromFile,
 							confirmNew: p.confirmNew === true,
@@ -155,6 +185,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					// target shape (schema table) before any kernel call.
 					return runWriteMode({
 						...flowBase,
+						confirmKey: confirmInputs.key,
 						params: p,
 					});
 				},

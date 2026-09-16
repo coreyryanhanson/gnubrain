@@ -24,7 +24,6 @@ import {
 } from "./writeAnchors.js";
 import {
 	confirmWrite,
-	preflightWrite,
 	writeConfirmKey,
 	type WriteConfirmFn,
 	type WriteConfirmState,
@@ -53,7 +52,11 @@ export interface WriteFlowInput {
 	params: WriteParams;
 	/** Captured content body ("" on body-less modes). */
 	body: string;
-	hasUI: boolean;
+	/** Preflight verdict from the kb_write entry: run the interactive
+	 * dialog (true) or skip it for an approved unattended write (false). */
+	dialog: boolean;
+	/** Confirm key — computed once at the kb_write entry. */
+	confirmKey: string;
 	confirm: WriteConfirmFn;
 	confirmState: WriteConfirmState;
 	baselines: ContentBaselines;
@@ -206,30 +209,36 @@ function writeModeSummary(p: WriteParams): string {
 	}
 }
 
+/** Confirm key + preflight summary for a non-create mode — params only;
+ * shared by the kb_write entry (preflight precedes the probe gate) and
+ * runWriteMode's dialog so the terminal confirm_timeout key can't drift. */
+export function modeConfirmInputs(
+	name: string,
+	p: WriteParams,
+): { key: string; summary: string } {
+	return {
+		key: writeConfirmKey([
+			name,
+			p.mode,
+			p.docId,
+			p.blockId,
+			p.headingId,
+			p.doc === true ? "doc" : undefined,
+			p.toDocId,
+			p.toHeadingId,
+		]),
+		summary: writeModeSummary(p),
+	};
+}
+
 /** Dispatch point for the non-create modes; mode-target shape is checked
  * once at the kb_write entry (write.ts) — create never reaches here. */
 export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 	const mode = input.params.mode;
-	const confirmKey = writeConfirmKey([
-		input.name,
-		mode,
-		input.params.docId,
-		input.params.blockId,
-		input.params.headingId,
-		input.params.doc === true ? "doc" : undefined,
-		input.params.toDocId,
-		input.params.toHeadingId,
-	]);
-	// Pre-dialog permission before ANY kernel call — a denied write
-	// costs zero round-trips, same posture as create.
-	const preflight = preflightWrite({
-		hasUI: input.hasUI,
-		allowUnattendedWrites: input.validation.settings?.allowUnattendedWrites,
-		state: input.confirmState,
-		key: confirmKey,
-		summary: writeModeSummary(input.params),
-	});
-	if (!preflight.ok) return preflight.envelope;
+	const confirmKey = input.confirmKey;
+	// Pre-dialog permission (headless default-deny + terminal
+	// confirm_timeout) already ran at the kb_write entry, before the
+	// probe gate — a denied write costs zero kernel round-trips.
 	input.contact();
 	const target = await resolveDocTarget(
 		input.kernel,
@@ -240,15 +249,15 @@ export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 	if ("status" in target) return target;
 	switch (mode) {
 		case "edit":
-			return runEditMode(input, target, preflight.dialog, confirmKey);
+			return runEditMode(input, target, input.dialog, confirmKey);
 		case "append":
-			return runAppendMode(input, target, preflight.dialog, confirmKey);
+			return runAppendMode(input, target, input.dialog, confirmKey);
 		case "replace-section":
-			return runReplaceSectionMode(input, target, preflight.dialog, confirmKey);
+			return runReplaceSectionMode(input, target, input.dialog, confirmKey);
 		case "delete":
-			return runDeleteMode(input, target, preflight.dialog, confirmKey);
+			return runDeleteMode(input, target, input.dialog, confirmKey);
 		case "move":
-			return runMoveMode(input, target, preflight.dialog, confirmKey);
+			return runMoveMode(input, target, input.dialog, confirmKey);
 		default:
 			return errorEnvelope(`internal: unhandled write mode '${mode}'`);
 	}

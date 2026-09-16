@@ -2,7 +2,7 @@
 // scan) → write confirmation → submission path from ground truth →
 // verified-create by-ID asserts → echo, with guard-stop draft staging.
 
-import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import {
 	renderOutline,
@@ -13,7 +13,6 @@ import {
 import type { SessionValidation } from "./validation.js";
 import {
 	confirmWrite,
-	preflightWrite,
 	writeConfirmKey,
 	type WriteConfirmFn,
 	type WriteConfirmState,
@@ -23,7 +22,6 @@ import {
 	guardExactStmt,
 	guardNearStmt,
 	toGuardRows,
-	validateMintTitle,
 	type GuardRow,
 } from "./writeGuard.js";
 import { finishWrite, type WriteKernelClient } from "./writeResult.js";
@@ -35,14 +33,19 @@ export interface CreateFlowInput {
 	/** Resolved KB name + notebook id (the gate already validated both). */
 	name: string;
 	boxId: string;
+	/** Minted (normalized) title — the kb_write entry validated it. */
 	title: string;
 	parentId?: string | undefined;
 	body: string;
 	/** True when the body came from markdownFile — staging is skipped. */
 	bodyFromFile: boolean;
 	confirmNew: boolean;
+	/** Preflight verdict from the kb_write entry: run the interactive
+	 * dialog (true) or skip it for an approved unattended write (false). */
+	dialog: boolean;
+	/** Confirm key + dialog summary — computed once at the kb_write entry. */
+	confirmInputs: { key: string; summary: string };
 	confirm: WriteConfirmFn;
-	hasUI: boolean;
 	confirmState: WriteConfirmState;
 	/** Fires at the flow's first kernel call — kernel-free refusals
 	 * (preflight, mint) must not reset the breaker's consecutive count. */
@@ -206,6 +209,20 @@ async function verifiedRoot(
 	}
 }
 
+/** Confirm key + preflight summary for create — shared by the kb_write
+ * entry (preflight precedes the probe gate) and the dialog so the terminal
+ * confirm_timeout key can't drift. */
+export function createConfirmInputs(
+	name: string,
+	title: string,
+	bodyLen: number,
+): { key: string; summary: string } {
+	return {
+		key: writeConfirmKey([name, "create", title]),
+		summary: `Create '${title}' in KB '${name}' (${bodyLen} chars)`,
+	};
+}
+
 /**
  * The `create` flow: title guard (exact leg, then near-match scan) →
  * write confirmation → submission path built from ground truth →
@@ -215,23 +232,12 @@ async function verifiedRoot(
  */
 export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const { kernel, validation, sessionId, name, boxId } = input;
-	const mint = validateMintTitle(input.title);
-	if (!mint.ok) return refusedEnvelope(mint.message);
-	const title = mint.title;
-	const confirmKey = writeConfirmKey([name, "create", title]);
-	const summary = `Create '${title}' in KB '${name}' (${input.body.length} chars)`;
+	const title = input.title;
+	const { key: confirmKey, summary } = input.confirmInputs;
 
-	// Pre-dialog permission: headless default-deny + terminal
-	// confirm_timeout — both before the guard, so a denied write costs zero
-	// kernel calls.
-	const preflight = preflightWrite({
-		hasUI: input.hasUI,
-		allowUnattendedWrites: validation.settings?.allowUnattendedWrites,
-		state: input.confirmState,
-		key: confirmKey,
-		summary,
-	});
-	if (!preflight.ok) return preflight.envelope;
+	// Pre-dialog permission (headless default-deny + terminal
+	// confirm_timeout) already ran at the kb_write entry, before the
+	// probe gate — a denied write costs zero kernel round-trips.
 
 	// Guard — exact leg first; only an empty exact leg runs the scan.
 	if (!input.confirmNew) {
@@ -243,7 +249,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	}
 
 	// Write confirmation — after the guard, so a stop costs no dialog.
-	if (preflight.dialog) {
+	if (input.dialog) {
 		const gate = await confirmWrite({
 			confirm: input.confirm,
 			writeConfirmTimeout: validation.settings?.writeConfirmTimeout,
