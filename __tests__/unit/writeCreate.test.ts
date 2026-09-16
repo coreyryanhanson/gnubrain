@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SiYuanNetworkError } from "siyuan-kernel-api";
+import { SiYuanApiError, SiYuanNetworkError } from "siyuan-kernel-api";
 import { VERIFIED_ROOT_STMT_HEAD } from "../../writeCreate.js";
 import { type StubConfig, base, setup } from "./writeHarness.js";
 
@@ -222,6 +222,46 @@ describe("verified-create", () => {
 		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
 			false,
 		);
+	});
+});
+
+// A network drop after a successful mint must report verificationFailed,
+// never "unreachable" — the doc exists and a blind retry would duplicate it.
+// near-match enrichment: a genuine API miss on a candidate (vanished doc
+// mid-scan) leaves an empty excerpt; auth/rate-limit/network errors rethrow
+// for runKbCall's classification instead of being masked as a missing excerpt.
+describe("near-match enrichment error handling", () => {
+	const nearRow = {
+		id: "d1",
+		root_id: "d1",
+		content: "docker networking",
+		updated: "20260101120000",
+	};
+
+	it("SiYuanApiError on a candidate: row still shown with empty excerpt", async () => {
+		const { execute } = setup({
+			__config: {
+				nearRows: [nearRow],
+				armWalkError: (arm) => arm(new SiYuanApiError(404, -1, "not found")),
+			},
+		});
+		const r = await execute({ ...base, markdown: "body" });
+		expect(r.details.status).toBe("near_matches");
+		const candidates = r.details.candidates as { firstParagraph?: string }[];
+		expect(candidates).toHaveLength(1);
+		expect(candidates[0]?.firstParagraph).toBe("");
+	});
+
+	it("SiYuanNetworkError on a candidate: propagates, classified as unreachable", async () => {
+		const { execute } = setup({
+			__config: {
+				nearRows: [nearRow],
+				armWalkError: (arm) => arm(new SiYuanNetworkError()),
+			},
+		});
+		const r = await execute({ ...base, markdown: "body" });
+		expect(r.details.status).toBe("error");
+		expect(r.details.message).toContain("unreachable");
 	});
 });
 

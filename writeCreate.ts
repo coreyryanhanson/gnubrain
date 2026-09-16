@@ -2,6 +2,7 @@
 // scan) → write confirmation → submission path from ground truth →
 // verified-create by-ID asserts → echo, with guard-stop draft staging.
 
+import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
@@ -130,8 +131,11 @@ async function nearMatchStop(
 		try {
 			const children = await kernel.getChildBlocks(row.root_id);
 			firstParagraph = String(children[0]?.content ?? "");
-		} catch {
-			// vanished candidate mid-scan — empty excerpt, row still shown
+		} catch (err) {
+			// Vanished candidate mid-scan — empty excerpt, row still shown.
+			// Auth/rate-limit/network rethrow for runKbCall's classification.
+			if (!(err instanceof SiYuanApiError)) throw err;
+			firstParagraph = "";
 		}
 		candidates.push({
 			docId: row.root_id,
