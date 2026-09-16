@@ -2,10 +2,10 @@
 // Every call routes through the shared gate (shape → breaker → cooldown → kb
 // param); kernel errors classify in runKbCall. Scoping is tool-owned: the
 // agent never writes box IDs or notebook IDs, and search's aux params are
-// rejected at the schema.
+// rejected at the schema. Shared kernel primitives live in kernel.ts; the
+// SQL certification layer in sqlScope.ts.
 
-import type { AST, BaseFrom, Binary, Select } from "node-sql-parser";
-import { Parser } from "node-sql-parser";
+import type { Binary } from "node-sql-parser";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { Type } from "typebox";
@@ -19,36 +19,27 @@ import {
 } from "./envelope.js";
 import { EMPTY_SCOPE_MESSAGE, runKbCall } from "./gate.js";
 import {
+	ownershipStmt,
+	rowPayload,
+	textResult,
+	type KernelReadClient,
+} from "./kernel.js";
+import {
 	inlineOrSpill,
 	jsonl,
 	RESULT_LIMIT,
 	spillFile,
 	spillPointer,
 } from "./spill.js";
+import {
+	certifySelect,
+	postFilterRows,
+	rebuildWithScope,
+	reparse,
+	verifyRebuilt,
+} from "./sqlScope.js";
 import { renderOutline } from "./walk.js";
 import type { SessionValidation } from "./validation.js";
-
-/** Structural client subset the read tools need (tests stub it). */
-export interface KernelReadClient {
-	readonly baseUrl: string;
-	query(stmt: string): Promise<Record<string, unknown>[]>;
-	search(params: {
-		query: string;
-		paths: string[];
-		pageSize: number;
-	}): Promise<{
-		blocks: {
-			id: string;
-			rootID: string;
-			box: string;
-			hPath: string;
-			updated: string;
-		}[];
-		matchedBlockCount: number;
-	}>;
-	exportMarkdown(id: string): Promise<{ hPath: string; content: string }>;
-	getChildBlocks(id: string): Promise<Record<string, unknown>[]>;
-}
 
 export interface ReadToolHooks {
 	/** Live session validation — set by session_start / /kb recovery. */
@@ -63,55 +54,8 @@ export interface ReadToolHooks {
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
-/** Single-quote SQL string literal — ids ride the ownership query; agent
- * input is escaped, never interpolated raw. */
-export function sqlString(value: string): string {
-	return `'${value.replaceAll("'", "''")}'`;
-}
-
-/** SELECT head the kernel stubs route on — keep builders and heads in
- * sync by construction (the builder concatenates the head constant). */
-export const OWNERSHIP_STMT_HEAD = "SELECT root_id FROM blocks WHERE id";
-
-/** Ownership query: resolves the docId's root within the KB — doubles
- * as the scope check (an id from another KB matches no row). */
-export function ownershipStmt(boxId: string, docId: string): string {
-	return (
-		`${OWNERSHIP_STMT_HEAD} = ${sqlString(docId)}` +
-		` AND box = ${sqlString(boxId)}`
-	);
-}
-
-/**
- * Row payload: within the inline budget the rows ride the envelope;
- * overflow spills the full JSONL and the envelope keeps a newline-boundary
- * preview plus the pointer.
- */
-export function rowPayload(
-	sessionId: string,
-	tool: string,
-	kept: Record<string, unknown>[],
-): {
-	rows?: Record<string, unknown>[];
-	preview?: string;
-	fullResultPath?: string;
-} {
-	const text = jsonl(kept);
-	const { inline, spillPath } = inlineOrSpill(sessionId, tool, text, "jsonl");
-	if (spillPath === undefined) return { rows: kept };
-	return { preview: inline, fullResultPath: spillPath };
-}
-
-// ---------------------------------------------------------------------------
 // kb_query — parser certification + AST rebuild
 // ---------------------------------------------------------------------------
-
-const CERT_TABLES = new Set(["blocks", "refs"]);
-const parser = new Parser();
-const SQL_DIALECT = { type: "sqlite" } as const;
 
 /** The gate guarantees every resolved name sits in the valid set; this keeps
  * that invariant explicit rather than a non-null assertion. */
@@ -123,240 +67,6 @@ function resolveBox(name: string, validation: SessionValidation): string {
 		);
 	}
 	return box;
-}
-
-export type CertResult =
-	| { ok: true; ast: Select }
-	| { ok: false; reason: string };
-
-/** layer 1 — parser-based certification, never a token scan. Worst case
- * at every rung is a rejection with the reason named, never a guess. */
-export function certifySelect(stmt: string): CertResult {
-	let ast: unknown;
-	try {
-		ast = parser.astify(stmt, SQL_DIALECT);
-	} catch (err) {
-		return {
-			ok: false,
-			reason: `statement does not parse: ${err instanceof Error ? err.message : String(err)}`,
-		};
-	}
-	// Spike finding: multi-statement input does not throw — astify returns an
-	// array, so the cert rejects on Array.isArray.
-	if (Array.isArray(ast)) {
-		return {
-			ok: false,
-			reason:
-				"multiple statements are not allowed — exactly one top-level SELECT",
-		};
-	}
-	const node = ast as Select;
-	if (node.type !== "select") {
-		return { ok: false, reason: `only SELECT is allowed (got ${node.type})` };
-	}
-	// The kernel's readonly layer permits WITH — layer 1 is the only line of
-	// defense against a CTE shadowing an allowlisted table.
-	if (node.with !== undefined && node.with !== null) {
-		return { ok: false, reason: "CTEs (WITH) are not allowed" };
-	}
-	// UNION parses as type 'select' with the second arm in _next/set_op,
-	// so rejection keys on those fields, not the type string.
-	if (node._next !== undefined || node.set_op !== undefined) {
-		return { ok: false, reason: "UNION / compound queries are not allowed" };
-	}
-	if (node.having !== undefined && node.having !== null) {
-		return { ok: false, reason: "bare HAVING is not allowed (v1 policy)" };
-	}
-	const from = node.from;
-	if (!Array.isArray(from) || from.length === 0) {
-		return {
-			ok: false,
-			reason: "query must read FROM blocks or refs",
-		};
-	}
-	for (const entry of from) {
-		if ("expr" in entry) {
-			return { ok: false, reason: "subqueries are not allowed" };
-		}
-		if ("join" in entry) {
-			return {
-				ok: false,
-				reason: "JOINs are not allowed — single-table FROM only",
-			};
-		}
-		if ("type" in entry && entry.type === "dual") {
-			return {
-				ok: false,
-				reason: "FROM dual is not allowed — only blocks and refs",
-			};
-		}
-	}
-	if (from.length > 1) {
-		return {
-			ok: false,
-			reason: "single-table FROM only — comma cross-joins are rejected",
-		};
-	}
-	const table = (from[0] as BaseFrom).table;
-	if (!CERT_TABLES.has(table)) {
-		return {
-			ok: false,
-			reason: `FROM '${table}' is not allowed — only blocks and refs`,
-		};
-	}
-	return { ok: true, ast: node };
-}
-
-/** Hand-built `box IN ('a','b')` AST node (sqlite dialect shape). */
-function boxInAst(boxes: string[]): Binary {
-	return {
-		type: "binary_expr",
-		operator: "IN",
-		left: { type: "column_ref", table: null, column: "box" },
-		right: {
-			type: "expr_list",
-			value: boxes.map((b) => ({ type: "single_quote_string", value: b })),
-		},
-	};
-}
-
-export interface RebuiltStatement {
-	stmt: string;
-	limitInjected: boolean;
-	limit: number;
-}
-
-/**
- * layer 1 rebuild: splice `(existing) AND box IN (...)` into the top-level
- * WHERE (fresh WHERE when none — never a bare concatenation, which would turn
- * `a OR b` into `a OR (b AND box IN ...)`), inject LIMIT iff the AST shows
- * none, serialize, and re-parse for verification.
- */
-export function rebuildWithScope(
-	ast: Select,
-	boxes: string[],
-): RebuiltStatement {
-	const boxIn = boxInAst(boxes);
-	let limitInjected = false;
-	if (ast.limit === undefined || ast.limit === null) {
-		ast.limit = {
-			seperator: "",
-			value: [{ type: "number", value: RESULT_LIMIT }],
-		};
-		limitInjected = true;
-	}
-	if (ast.where === undefined || ast.where === null) {
-		ast.where = boxIn;
-	} else {
-		// The parens flag survives serialization — without it the serializer
-		// renders `a OR b AND box IN (...)`, and AND binds tighter than OR.
-		ast.where = {
-			type: "binary_expr",
-			operator: "AND",
-			left: { ...ast.where, parentheses: true },
-			right: boxIn,
-		} as Binary;
-	}
-	const stmt = parser.sqlify(ast, SQL_DIALECT);
-	const limitValue = Array.isArray(ast.limit?.value)
-		? Number(ast.limit.value[0]?.value)
-		: RESULT_LIMIT;
-	return { stmt, limitInjected, limit: limitValue };
-}
-
-const norm = (x: unknown): string => JSON.stringify(x);
-
-/**
- * layer 1 verification: the executed statement is the re-parsed one, and
- * the re-parse must still be a single certified SELECT whose WHERE is the
- * original expression ANDed with the injected predicate.
- */
-export function verifyRebuilt(
-	re: AST,
-	boxes: string[],
-	originalWhere: Binary | null,
-	limit: number,
-): string | undefined {
-	if (Array.isArray(re) || re.type !== "select") {
-		return "re-parsed statement is not a single SELECT";
-	}
-	if (re._next !== undefined || re.set_op !== undefined) {
-		return "re-parsed statement is a compound query";
-	}
-	const where = re.where;
-	// Fresh WHERE (the original had none): the re-parsed WHERE IS the injected
-	// predicate, not an AND of one.
-	if (originalWhere === null) {
-		if (where === undefined || where === null) {
-			return "re-parsed statement lost the injected box predicate";
-		}
-		const problem = checkBoxIn(where as Binary, boxes);
-		if (problem !== undefined) return problem;
-	} else {
-		if (
-			where === undefined ||
-			where === null ||
-			where.type !== "binary_expr" ||
-			where.operator !== "AND"
-		) {
-			return "re-parsed WHERE is not the original expression ANDed with the injected predicate";
-		}
-		if (norm(where.left) !== norm({ ...originalWhere, parentheses: true })) {
-			return "re-parsed WHERE altered the original expression";
-		}
-		const problem = checkBoxIn(where.right as Binary | undefined, boxes);
-		if (problem !== undefined) return problem;
-	}
-	const reLimit = Array.isArray(re.limit?.value)
-		? Number(re.limit.value[0]?.value)
-		: undefined;
-	if (reLimit !== limit) {
-		return "re-parsed statement lost the LIMIT clause";
-	}
-	return undefined;
-}
-
-/** The injected predicate survived the serialize → re-parse round trip. */
-function checkBoxIn(
-	boxIn: Binary | undefined,
-	boxes: string[],
-): string | undefined {
-	if (
-		boxIn === undefined ||
-		boxIn.type !== "binary_expr" ||
-		boxIn.operator !== "IN" ||
-		(boxIn.left as { column?: unknown } | undefined)?.column !== "box" ||
-		!Array.isArray((boxIn.right as { value?: unknown[] } | undefined)?.value) ||
-		norm(
-			(boxIn.right as { value: { value: unknown }[] }).value.map(
-				(v) => v.value,
-			),
-		) !== norm(boxes)
-	) {
-		return "re-parsed statement lost the injected box predicate";
-	}
-	return undefined;
-}
-
-/** layer 3 — post-filter backstop. Rows that carry a `box` field are
- * dropped unless `box` is in the resolved set; aggregate rows (no `box`)
- * are exempt — layer 1 guarantees the injected predicate on the executed
- * statement. */
-export function postFilterRows(
-	rows: Record<string, unknown>[],
-	boxIds: string[],
-): { kept: Record<string, unknown>[]; dropped: number } {
-	const boxSet = new Set(boxIds);
-	const kept: Record<string, unknown>[] = [];
-	let dropped = 0;
-	for (const row of rows) {
-		if ("box" in row && !boxSet.has(String(row.box))) {
-			dropped++;
-		} else {
-			kept.push(row);
-		}
-	}
-	return { kept, dropped };
 }
 
 const QUERY_DESCRIPTION = `SQL over the GNUbrain knowledge base (SQLite, executed readonly). Pass kb as an array of KB names; the tool scopes every statement with box IN (...) itself — never write box.
@@ -419,7 +129,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					// verification compares the re-parse against it.
 					const originalWhere = certified.ast.where;
 					const rebuilt = rebuildWithScope(certified.ast, boxes);
-					const reparsed = parser.astify(rebuilt.stmt, SQL_DIALECT) as AST;
+					const reparsed = reparse(rebuilt.stmt);
 					const problem = verifyRebuilt(
 						reparsed,
 						boxes,
@@ -812,14 +522,4 @@ export function registerReadToolsAndToolset(
 		persistKey: READ_TOOLSET_PERSIST_KEY,
 		defaultEnabled: true,
 	});
-}
-
-export function textResult(envelope: Envelope): {
-	content: { type: "text"; text: string }[];
-	details: Envelope;
-} {
-	return {
-		content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
-		details: envelope,
-	};
 }

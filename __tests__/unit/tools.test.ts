@@ -15,8 +15,8 @@ import {
 	postFilterRows,
 	rebuildWithScope,
 	verifyRebuilt,
-	type KernelReadClient,
-} from "../../tools.js";
+} from "../../sqlScope.js";
+import type { KernelReadClient } from "../../kernel.js";
 import { RESULT_LIMIT, spillFile, spillFileName } from "../../spill.js";
 import type { SessionValidation } from "../../validation.js";
 import { validation as makeValidation } from "./fixtures.js";

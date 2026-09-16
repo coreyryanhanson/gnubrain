@@ -6,7 +6,7 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
-import { rowPayload, sqlString } from "./tools.js";
+import { rowPayload, sqlString } from "./kernel.js";
 import {
 	renderOutline,
 	renderOutlineFromWalk,

@@ -2,7 +2,7 @@
 // Patterns are built from the kernel's stored (HTML-escaped) form; the
 // near- match leg scans separator-variant prefixes, capped at GUARD_NEAR_CAP.
 
-import { sqlString } from "./tools.js";
+import { sqlString } from "./kernel.js";
 
 /** The kernel stores title IALs entity-escaped in blocks.content; the guard
  * computes the stored form rather than being blind to it. The mapping is

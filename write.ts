@@ -11,7 +11,7 @@ import type {
 import type { CircuitBreaker } from "./breaker.js";
 import { errorEnvelope, refusedEnvelope } from "./envelope.js";
 import { gateWriteAttempt, runKbCall } from "./gate.js";
-import { textResult } from "./tools.js";
+import { textResult } from "./kernel.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	readBodyFile,

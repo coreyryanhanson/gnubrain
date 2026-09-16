@@ -5,7 +5,7 @@
 
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { rememberServedRows, type ContentBaselines } from "./baselines.js";
-import type { KernelReadClient } from "./tools.js";
+import type { KernelReadClient } from "./kernel.js";
 import { OUTLINE_HEADINGS, jsonl, spillFile } from "./spill.js";
 
 /** Extension-owned recursion bound for the getChildBlocks walk — the kernel

@@ -10,7 +10,7 @@ import {
 	type BlockTransaction,
 } from "siyuan-kernel-api";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
-import { sqlString, type KernelReadClient } from "./tools.js";
+import { sqlString, type KernelReadClient } from "./kernel.js";
 import {
 	renderOutlineFromWalk,
 	walkBlockTree,

@@ -18,7 +18,7 @@ import {
 	PARENT_DOC_STMT_HEAD,
 	type WriteParams,
 } from "../../writeModes.js";
-import { OWNERSHIP_STMT_HEAD } from "../../tools.js";
+import { OWNERSHIP_STMT_HEAD } from "../../kernel.js";
 import type { WalkedBlock } from "../../walk.js";
 import {
 	BASELINE_CONTENTS_STMT_HEAD,
