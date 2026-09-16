@@ -98,7 +98,8 @@ async function resolveDocTarget(
 
 /** Mode-specific target params (schema table) — anything else the agent
  * sends is rejected before any kernel call. `confirmNew` is never declared
- * in the tool schema but always accepted at runtime (decision record). */
+ * in the tool schema but accepted at runtime on create only (decision
+ * record) — other modes reject it like any invented param. */
 const MODE_PARAMS: Record<string, string[]> = {
 	create: ["topic", "parentId"],
 	edit: ["docId", "blockId"],
@@ -131,7 +132,7 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 	const unexpected = Object.keys(p).filter(
 		(k) =>
 			!base.has(k) &&
-			k !== "confirmNew" &&
+			(k !== "confirmNew" || mode !== "create") &&
 			!allowed.includes(k) &&
 			(p as Record<string, unknown>)[k] !== undefined,
 	);

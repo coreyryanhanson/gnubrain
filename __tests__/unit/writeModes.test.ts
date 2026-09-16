@@ -97,6 +97,10 @@ describe("mode-target shape (schema table)", () => {
 			{ kb: "r", mode: "delete", docId: "d", blockId: "b", markdownFile: "/x" },
 			"mode 'delete' does not take: markdownFile",
 		],
+		[
+			{ kb: "r", mode: "delete", docId: "d", blockId: "b", confirmNew: true },
+			"mode 'delete' does not take: confirmNew",
+		],
 	];
 	it.each(cases)("rejects %# with the reason named", (params, expected) => {
 		expect(modeShapeProblem(params as WriteParams)).toContain(expected);
@@ -114,6 +118,14 @@ describe("mode-target shape (schema table)", () => {
 				docId: "d",
 				blockId: "b",
 				toDocId: "t",
+			} as WriteParams),
+		).toBeUndefined();
+		expect(
+			modeShapeProblem({
+				kb: "r",
+				mode: "create",
+				topic: "t",
+				confirmNew: true,
 			} as WriteParams),
 		).toBeUndefined();
 	});

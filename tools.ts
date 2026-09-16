@@ -394,7 +394,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// Reject invented params at schema level so the calling model learns
 			// immediately. kb_write deliberately omits this flag — its runtime
 			// check (modeShapeProblem) enforces the same strictness while
-			// exempting the undeclared-on-purpose confirmNew.
+			// exempting confirmNew on create only.
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -670,7 +670,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// kb_read has no runtime shape check, so the schema is the only
 			// defense against invented params. kb_write deliberately omits this
 			// flag — modeShapeProblem enforces the same strictness at runtime
-			// while exempting the undeclared-on-purpose confirmNew.
+			// while exempting confirmNew on create only.
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
