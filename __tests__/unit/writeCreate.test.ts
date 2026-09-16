@@ -121,11 +121,41 @@ describe("verified-create", () => {
 		expect(r.details.outline).toContain("Heading → h1");
 	});
 
-	it("child row missing after create → fail-loud", async () => {
-		const { execute } = setup({ __config: { createdRows: [] } });
+	it("child row missing after create → fail-loud after the bounded re-reads", async () => {
+		const { execute, kernel } = setup({ __config: { createdRows: [] } });
+		const baseQuery = kernel.client.query.bind(kernel.client);
+		let verifiedReads = 0;
+		kernel.client.query = async (stmt: string) => {
+			if (stmt.includes("id = 'd-new'") && stmt.includes("AND type = 'd'")) {
+				verifiedReads += 1;
+				return [];
+			}
+			return baseQuery(stmt);
+		};
 		const r = await execute({ ...base });
 		expect(r.details.status).toBe("error");
 		expect(r.details.message).toContain("verified-create failed");
+		// 1 initial read + 3 backoff re-reads, then fail-loud — never a retry
+		// of the create itself.
+		expect(verifiedReads).toBe(4);
+	});
+
+	it("index lag: blocks row not queryable on the first read appears on a backoff re-read → ok", async () => {
+		const { execute, kernel } = setup();
+		const baseQuery = kernel.client.query.bind(kernel.client);
+		let verifiedReads = 0;
+		kernel.client.query = async (stmt: string) => {
+			// The verified-create assert is the only read filtering the
+			// returned id with type = 'd'; the guard legs are LIKE reads.
+			if (stmt.includes("id = 'd-new'") && stmt.includes("AND type = 'd'")) {
+				verifiedReads += 1;
+				if (verifiedReads === 1) return [];
+			}
+			return baseQuery(stmt);
+		};
+		const r = await execute({ ...base });
+		expect(r.details.status).toBe("ok");
+		expect(verifiedReads).toBe(2);
 	});
 
 	it("nested create: parent hpath read-back + parentID sent", async () => {

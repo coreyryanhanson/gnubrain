@@ -164,6 +164,39 @@ function verifiedRootStmt(boxId: string, returnedId: string): string {
 	);
 }
 
+/** Verified-create re-reads: the kernel indexes a fresh doc asynchronously —
+ * createDocWithMd resolves when the doc is in the tree, while its blocks
+ * row lands via the async index queue (observed live even on an empty DB).
+ * Exponential gaps cover the fast-index common case cheaply and tolerate a
+ * busy-queue tail (~1s worst case; happy path pays nothing). */
+// ponytail: fixed table, not a backoff policy knob — a live 5b run that
+// still races past 1s is the signal to revisit the delays
+const VERIFY_RETRY_DELAYS_MS = [150, 300, 600];
+
+async function verifiedRoot(
+	kernel: WriteKernelClient,
+	boxId: string,
+	returnedId: string,
+): Promise<
+	{ id: string; root_id: string; content: string; hpath: string } | undefined
+> {
+	for (let attempt = 0; ; attempt++) {
+		const rows = (await kernel.query(verifiedRootStmt(boxId, returnedId))).map(
+			(r) => ({
+				id: String(r.id),
+				root_id: String(r.root_id),
+				content: String(r.content),
+				hpath: String(r.hpath),
+			}),
+		);
+		const root = rows[0];
+		if (root !== undefined) return root;
+		const delay = VERIFY_RETRY_DELAYS_MS[attempt];
+		if (delay === undefined) return undefined;
+		await new Promise((resolve) => setTimeout(resolve, delay));
+	}
+}
+
 /**
  * The `create` flow: title guard (exact leg, then near-match scan) →
  * write confirmation → submission path built from ground truth →
@@ -240,16 +273,9 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	});
 
 	// Verified-create (step 4): by-ID asserts on the kernel-returned root
-	// ID — fail-loud on shape, never a by-title re-lookup.
-	const rootRows = (
-		await kernel.query(verifiedRootStmt(boxId, returnedId))
-	).map((r) => ({
-		id: String(r.id),
-		root_id: String(r.root_id),
-		content: String(r.content),
-		hpath: String(r.hpath),
-	}));
-	const root = rootRows[0];
+	// ID — fail-loud on shape, never a by-title re-lookup. The bounded
+	// re-read absorbs the kernel's async index lag (verifiedRoot doc).
+	const root = await verifiedRoot(kernel, boxId, returnedId);
 	if (root === undefined) {
 		return errorEnvelope(
 			`verified-create failed: the kernel returned doc id '${returnedId}' but no type='d' row exists for it in KB '${name}' — the mint is unconfirmable; do not retry blindly`,
