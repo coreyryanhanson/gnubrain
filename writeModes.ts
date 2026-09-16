@@ -758,6 +758,13 @@ async function destOutlinePayload(
 			};
 }
 
+/** Doc end in flattened document order: a block's children trail it, so the
+ * walk's last element is the moved block's deepest descendant — "last
+ * top-level block" is the position check that survives trailing children. */
+function isDocEnd(walk: WalkedBlock[], blockId: string): boolean {
+	return walk.filter((b) => b.depth === 1).at(-1)?.id === blockId;
+}
+
 async function runMoveMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
@@ -854,8 +861,7 @@ async function runMoveMode(
 			? anchor.previousID === blockId ||
 				destWalk[destWalk.findIndex((b) => b.id === anchor.previousID) + 1]
 					?.id === blockId
-			: destWalk[destWalk.length - 1]?.id === blockId &&
-				destWalk[destWalk.length - 1]?.depth === 1;
+			: isDocEnd(destWalk, blockId);
 	if (sameDoc && alreadyAtDest) {
 		return refusedEnvelope(
 			`block '${blockId}' already sits at the destination position — nothing to move`,
@@ -898,19 +904,30 @@ async function runMoveMode(
 		// Same-doc `move` verifies POSITION, not presence: the block was
 		// already in this walk before the move, so set membership cannot
 		// distinguish "landed" from a silent kernel no-op behind HTTP success
-		// (e.g. a stale anchor after a concurrent edit). Require the block
-		// immediately after the anchor in the post-move walk; if the anchor
-		// block itself vanished (concurrent delete), the position is
-		// unverifiable — fall back to presence rather than false-failing on
-		// a check that can no longer run.
+		// (e.g. a stale anchor after a concurrent edit). Section anchors
+		// require the block immediately after the anchor in the post-move
+		// walk; doc-end moves require the block to be the doc's last
+		// top-level block (isDocEnd — trailing children make "last walk
+		// element" wrong). If the anchor block itself vanished (concurrent
+		// delete), the position is unverifiable — fall back to presence
+		// rather than false-failing on a check that can no longer run.
 		const anchorIdx =
 			sameDoc && anchor.kind === "move"
 				? postSourceWalk.findIndex((b) => b.id === anchor.previousID)
 				: -1;
-		const movedInDest =
-			anchorIdx >= 0
-				? postSourceWalk[anchorIdx + 1]?.id === blockId
-				: idSet(postDestWalk).has(blockId);
+		let movedInDest: boolean;
+		if (anchorIdx >= 0) {
+			// Section anchor: the element right after the anchor is the block.
+			movedInDest = postSourceWalk[anchorIdx + 1]?.id === blockId;
+		} else if (sameDoc && anchor.kind === "appendRoot") {
+			// Doc-end anchor: last top-level block (trailing children make
+			// "last walk element" wrong).
+			movedInDest = isDocEnd(postSourceWalk, blockId);
+		} else {
+			// Cross-doc (or vanished-anchor fallback): block IDs are globally
+			// unique, so membership in the destination doc does discriminate.
+			movedInDest = idSet(postDestWalk).has(blockId);
+		}
 		const movedGoneFromSource = sameDoc || !idSet(postSourceWalk).has(blockId);
 		const destPayload = sameDoc
 			? {}
@@ -923,7 +940,10 @@ async function runMoveMode(
 			let why = "still present in the source tree";
 			if (!postDestIds.has(blockId)) why = "absent from the destination tree";
 			else if (sameDoc && !movedInDest)
-				why = "present but not immediately after the anchor";
+				why =
+					anchor.kind === "appendRoot"
+						? "present but not the doc's last top-level block"
+						: "present but not immediately after the anchor";
 			return errorEnvelope(
 				`verified-move failed: block '${blockId}' is ${why} — the transaction rolled back silently behind HTTP success`,
 				{

@@ -962,6 +962,78 @@ describe("block-level move", () => {
 		);
 	});
 
+	it("same-doc doc-end move: a silent kernel no-op is caught by the position check", async () => {
+		// p1 is mid-doc; the kernel no-ops behind HTTP success — same-doc
+		// walk presence can't distinguish, only the doc-end position can.
+		const { execute, calls } = moveHarness(); // the tree never changes
+		const result = await execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-doc",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("not the doc's last top-level block");
+		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
+	});
+
+	it("same-doc doc-end move with children: the trailing child doesn't false-fail the position check", async () => {
+		// Flattened document order puts the moved block's child after it —
+		// a "last walk element" shape would false-fail this good move.
+		// Nested depth comes from the walk's recursion (childrenFor[p1]),
+		// not from a depth field on the doc's flat child list.
+		const harness = moveHarness(() => {
+			harness.childrenFor["d-doc"] = [
+				walkBlock("h1", "h", "h1", "A"),
+				walkBlock("p2", "p", "", "stay"),
+				walkBlock("p1", "p", "", "mover"),
+			];
+			harness.childrenFor["p1"] = [walkBlock("c1", "p", "", "kid")];
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-doc",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.movedBlockId).toBe("p1");
+	});
+
+	it("doc-end pre-check survives trailing children: block with a child already at doc end refuses, zero kernel moves", async () => {
+		// p2's child c1 is the walk's literal last element; the doc-end
+		// shape is "last top-level block", not "last element". Nested depth
+		// comes from the walk's recursion (childrenFor[p2]).
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "p2", content: "stay" }],
+			childrenFor: {
+				"d-doc": [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("p1", "p", "", "first"),
+					walkBlock("p2", "p", "", "stay"),
+				],
+				p2: [walkBlock("c1", "p", "", "kid")],
+				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			},
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p2",
+			toDocId: "d-doc",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain(
+			"already sits at the destination position",
+		);
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
 	it("same-doc no-op target: block already immediately after the anchor → refusal, zero kernel moves", async () => {
 		// c1 (depth 2) already follows p1, h1's section anchor. The kernel
 		// moveBlock({id: c1, previousID: p1}) would no-op while the walk-set
