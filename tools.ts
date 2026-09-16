@@ -405,7 +405,7 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					const boxes = names.map((n) => resolveBox(n, validation));
 					const certified = certifySelect(params.sql);
 					if (!certified.ok) {
-						return { status: "refused", message: certified.reason };
+						return refusedEnvelope(certified.reason);
 					}
 					// Capture the original WHERE before the rebuild splices it —
 					// verification compares the re-parse against it.

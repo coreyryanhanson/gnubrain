@@ -37,7 +37,7 @@ import {
 	idSet,
 	newBlockIdFrom,
 	rootEcho,
-	walkIdSet,
+	walkDoc,
 	writeEchoTail,
 	type ContentBaselines,
 	type WriteKernelClient,
@@ -449,7 +449,7 @@ async function runAppendMode(
 		// single-block: exactly one id (pinned live).
 		const newBlockId = newBlockIdFrom(tx);
 		const preIds = idSet(walk);
-		const postWalk = await walkIdSet(kernel, doc.rootId);
+		const postWalk = await walkDoc(kernel, doc.rootId);
 		const postIds = idSet(postWalk);
 		const landed =
 			newBlockId !== undefined &&
@@ -539,7 +539,7 @@ async function runReplaceSectionMode(
 		// Verify the insert landed BEFORE any delete — a silent rollback
 		// must not sweep the old section away (stale-target record).
 		const preIds = idSet(walk);
-		const afterInsertWalk = await walkIdSet(kernel, doc.rootId);
+		const afterInsertWalk = await walkDoc(kernel, doc.rootId);
 		const landed =
 			newBlockId !== undefined &&
 			!preIds.has(newBlockId) &&
@@ -670,7 +670,7 @@ async function runDeleteMode(
 	return finishWrite(name, { blockId }, async () => {
 		// Verified, not trusted: a missing ID is a kernel success no-op —
 		// the walk-set evidence (target gone) is the report, never assumed.
-		const postWalk = await walkIdSet(kernel, doc.rootId);
+		const postWalk = await walkDoc(kernel, doc.rootId);
 		const targetGone = !idSet(postWalk).has(blockId);
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);
 		const tail = await echoTail(input, doc, postWalk);
@@ -861,10 +861,10 @@ async function runMoveMode(
 		// Verified, not trusted: a tree-level miss rolls back silently
 		// behind HTTP success — movedBlockId must appear in the destination's
 		// post-move walk set (and, cross-doc, be gone from the source's).
-		const postSourceWalk = await walkIdSet(kernel, doc.rootId);
+		const postSourceWalk = await walkDoc(kernel, doc.rootId);
 		const postDestWalk = sameDoc
 			? postSourceWalk
-			: await walkIdSet(kernel, dest.rootId);
+			: await walkDoc(kernel, dest.rootId);
 		// Same-doc `move` verifies POSITION, not presence: the block was
 		// already in this walk before the move, so set membership cannot
 		// distinguish "landed" from a silent kernel no-op behind HTTP success

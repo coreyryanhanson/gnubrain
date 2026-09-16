@@ -61,10 +61,6 @@ export function latestPersistedScope(
 	return undefined;
 }
 
-/**
- * The full startup validation pass. Also the `/kb` recovery hook's body:
- * re-running it re-reads settings and updates every cached verdict.
- */
 /** Degraded all-or-nothing result: the config is unusable → no probe ran,
  * nothing valid, every tool call refused with the problems named. Shared by
  * the shape branch of runSessionValidation and a revalidate() that threw. */
@@ -82,6 +78,10 @@ export function degradedValidation(errors: string[]): SessionValidation {
 	};
 }
 
+/**
+ * The full startup validation pass. Also the `/kb` recovery hook's body:
+ * re-running it re-reads settings and updates every cached verdict.
+ */
 export async function runSessionValidation(input: {
 	loaded: LoadedSettings;
 	kernel: KernelProbeClient;

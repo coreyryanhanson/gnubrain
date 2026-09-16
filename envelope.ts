@@ -3,6 +3,8 @@
 // markers, never statuses; success results carry
 // `status: "ok"` plus their payload.
 
+import { BREAKER_THRESHOLD } from "./breaker.js";
+
 export type EnvelopeStatus =
 	| "ok"
 	| "near_matches"
@@ -75,7 +77,7 @@ export function rateLimitRefusalEnvelope(
 /** breaker refusal — fail-fast, names the token fix and the /kb recovery. */
 export function breakerRefusalEnvelope(): Envelope {
 	return refusedEnvelope(
-		`SiYuan auth circuit breaker tripped after 3 consecutive auth failures — ` +
+		`SiYuan auth circuit breaker tripped after ${BREAKER_THRESHOLD} consecutive auth failures — ` +
 			`all kb calls are refused locally with zero kernel calls. Fix the ` +
 			`apiToken in the global settings file, then run /kb to re-validate.`,
 	);

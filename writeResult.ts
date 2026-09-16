@@ -259,7 +259,7 @@ function rootEchoStmt(boxId: string, docId: string): string {
 
 /** The unfiltered post-write walk (stale-target record) — evidence for
  * insert/move/delete verification. */
-export async function walkIdSet(
+export async function walkDoc(
 	kernel: WriteKernelClient,
 	docId: string,
 ): Promise<WalkedBlock[]> {
