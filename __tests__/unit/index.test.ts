@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SiYuanAuthError } from "siyuan-kernel-api";
 import register, { type GnubrainDeps } from "../../index.js";
+
+interface EnvelopeShape {
+	status: string;
+	message: string;
+	reason?: string;
+}
 
 type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
@@ -12,6 +18,10 @@ function fakePi() {
 	>();
 	const entries: { type: string; customType?: string; data?: unknown }[] = [];
 	const tools: { name: string }[] = [];
+	const toolDefs = new Map<
+		string,
+		{ execute: (...args: unknown[]) => Promise<{ details: EnvelopeShape }> }
+	>();
 	// pi semantics: registered tools are active by default; masking rewrites
 	// this set via setActiveTools.
 	let active: string[] = [];
@@ -29,8 +39,14 @@ function fakePi() {
 		) {
 			commands.set(name, options);
 		},
-		registerTool(tool: { name: string }) {
+		registerTool(tool: { name: string; execute: unknown }) {
 			tools.push({ name: tool.name });
+			toolDefs.set(
+				tool.name,
+				tool as {
+					execute: (...args: unknown[]) => Promise<{ details: EnvelopeShape }>;
+				},
+			);
 			active = [...active, tool.name];
 		},
 		getAllTools: () => tools as never,
@@ -49,6 +65,11 @@ function fakePi() {
 			Promise.all((handlers.get(event) ?? []).map((h) => h(event, ctx))),
 		runCommand: async (args: string, ctx: unknown) =>
 			await commands.get("kb")?.handler(args, ctx),
+		runTool: async (name: string, params: unknown, ctx: unknown) => {
+			const tool = toolDefs.get(name);
+			if (tool === undefined) throw new Error(`no tool registered: ${name}`);
+			return await tool.execute("test-id", params, undefined, undefined, ctx);
+		},
 		entries,
 		tools,
 	};
@@ -57,6 +78,12 @@ function fakePi() {
 function fakeCtx(options?: {
 	cwd?: string;
 	entries?: { type: string; customType?: string; data?: unknown }[];
+	hasUI?: boolean;
+	confirm?: (
+		title: string,
+		message: string,
+		opts?: { signal?: AbortSignal },
+	) => Promise<boolean>;
 }) {
 	const statuses: [string, string | undefined][] = [];
 	const notifications: [string, string | undefined][] = [];
@@ -70,7 +97,9 @@ function fakeCtx(options?: {
 					notifications.push([message, severity]);
 				},
 				theme: { fg: (_c: string, t: string) => t },
+				confirm: options?.confirm,
 			},
+			hasUI: options?.hasUI,
 			cwd: options?.cwd ?? "/project",
 			sessionManager: {
 				getEntries: () => options?.entries ?? [],
@@ -319,6 +348,62 @@ describe("index wiring", () => {
 		// The count restarted: a healthy re-check renders the healthy slot,
 		// not the carried breaker tag.
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+	});
+
+	it("confirm_timeout does not survive a session restart — the re-request gets a fresh dialog", async () => {
+		vi.useFakeTimers();
+		try {
+			// writeConfirmTimeout: 1 so the dialog's abort timer is one fake tick.
+			const settings = JSON.stringify({
+				gnubrain: {
+					baseUrl: "http://127.0.0.1:6806",
+					apiToken: "token",
+					kbs: [{ name: "dev", notebook: "nb-1" }],
+					defaultKBs: ["dev"],
+					writeConfirmTimeout: 1,
+				},
+			});
+			const { pi, fire, runTool } = fakePi();
+			const d = deps({ global: settings });
+			const base = d.createClient!;
+			d.createClient = () =>
+				({ ...base("", ""), query: async () => [] }) as never;
+			register(pi, d);
+			// First dialog hangs until the abort, then answers false —
+			// the timed-out path, not an explicit decline.
+			let hangDialog = true;
+			const { ctx } = fakeCtx({
+				hasUI: true,
+				confirm: (_t, _m, opts) =>
+					new Promise<boolean>((resolve) => {
+						if (!hangDialog) resolve(false);
+						else opts?.signal?.addEventListener("abort", () => resolve(false));
+					}),
+			});
+			await fire("session_start", ctx);
+			const params = { kb: "dev", mode: "create", topic: "T", markdown: "b" };
+			const first = runTool("kb_write", params, ctx);
+			await vi.advanceTimersByTimeAsync(1000);
+			const timedOut = (await first).details;
+			expect(timedOut.status).toBe("refused");
+			expect(timedOut.reason).toBe("confirm_timeout");
+
+			// Same session: the refusal is terminal — no new dialog.
+			const retried = await runTool("kb_write", params, ctx);
+			expect(retried.details.reason).toBe("confirm_timeout");
+
+			// New session in the same process: the timeout is forgotten —
+			// the re-request reaches a fresh dialog (explicit decline, not
+			// the terminal refusal).
+			await fire("session_shutdown", ctx);
+			await fire("session_start", ctx);
+			hangDialog = false;
+			const fresh = await runTool("kb_write", params, ctx);
+			expect(fresh.details.status).toBe("refused");
+			expect(fresh.details.message).toContain("declined by the user");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 
