@@ -331,9 +331,16 @@ export async function writeEchoTail(input: {
 		envelope.hpath = root.hpath;
 	}
 	// Refresh baselines for the target doc's blocks (write results
-	// refresh the map for blocks whose content the result carried).
-	for (const block of walk) {
-		baselines.remember(block.id, block.content);
+	// refresh the map for blocks whose content the result carried) —
+	// from blocks.content, the same representation the re-check hashes;
+	// walk content is a different rendering and would false-positive
+	// stale_content wherever the two representations drift.
+	if (walk.length > 0) {
+		for (const row of rowsToBaselineView(
+			await kernel.query(baselineContentsStmt(walk.map((b) => b.id))),
+		)) {
+			baselines.remember(row.blockId, row.content);
+		}
 	}
 	return { walk, envelope };
 }

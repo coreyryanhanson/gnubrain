@@ -535,6 +535,38 @@ describe("replace-section", () => {
 		expect(result.status).toBe("ok");
 		expect(result.reason).toBeUndefined();
 	});
+
+	it("write results re-seed baselines from blocks.content — follow-up writes compare like-for-like", async () => {
+		// The walk serves a plain form ("old two"), blocks.content the
+		// rendered form ("old **two**"). The first write's tail must seed
+		// outline baselines from blocks.content (the representation the
+		// re-check hashes); a walk-seeded baseline would refuse the
+		// follow-up write as stale_content on pure representation drift.
+		const harness = await replaceQueryHarness(
+			() => [
+				{ id: "p1", content: "old **one**" },
+				{ id: "p2", content: "old **two**" },
+			],
+			(children) => {
+				children["d-doc"] = [
+					...REPLACE_DOC["d-doc"].slice(0, 3),
+					walkBlock("b-new", "p", "", "rewritten section"),
+					...REPLACE_DOC["d-doc"].slice(3),
+				];
+			},
+			[{ id: "p2", content: "old **two**" }],
+		);
+		const first = await harness.execute(replaceParams);
+		expect(first.status).toBe("ok");
+		const second = await harness.execute({
+			kb: "recipes",
+			mode: "edit",
+			docId: "d-doc",
+			blockId: "p2",
+			markdown: "old two, corrected",
+		});
+		expect(second.status).toBe("ok");
+	});
 });
 
 /** replace-section harness with scripted `WHERE id IN` content reads —
@@ -543,9 +575,11 @@ describe("replace-section", () => {
 async function replaceQueryHarness(
 	respondIdIn: (read: number) => Record<string, unknown>[],
 	applyInsert?: (children: Record<string, unknown[]>) => void,
+	blockRows: Record<string, unknown>[] = [],
 ) {
 	const harness = writeSetup({
 		config: {
+			blockRows,
 			childrenFor: REPLACE_DOC,
 			...(applyInsert
 				? {
