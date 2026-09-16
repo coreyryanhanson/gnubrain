@@ -37,25 +37,28 @@ function deps(options?: {
 			if (options?.globalReadError) throw options.globalReadError;
 			return options?.global ?? GLOBAL_SETTINGS;
 		},
-		createClient: () => ({
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => options?.version ?? "3.8.3",
-			listNotebooks: () => {
-				notebookCalls++;
-				if (options?.notebooksError) throw options.notebooksError;
-				return Promise.resolve({
-					notebooks: [
-						{
-							id: "nb-1",
-							name: "dev",
-							encrypted: false,
-							unlocked: true,
-							closed: false,
-						},
-					],
-				});
-			},
-		}),
+		// Probe-only stub: these tests exercise validation paths, never a
+		// write/read method, so the full WriteKernelClient shape is unexercised.
+		createClient: () =>
+			({
+				baseUrl: "http://127.0.0.1:6806",
+				getVersion: async () => options?.version ?? "3.8.3",
+				listNotebooks: () => {
+					notebookCalls++;
+					if (options?.notebooksError) throw options.notebooksError;
+					return Promise.resolve({
+						notebooks: [
+							{
+								id: "nb-1",
+								name: "dev",
+								encrypted: false,
+								unlocked: true,
+								closed: false,
+							},
+						],
+					});
+				},
+			}) as never,
 		notebooks: () => notebookCalls,
 	};
 }

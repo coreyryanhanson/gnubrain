@@ -20,11 +20,7 @@ import {
 	type KernelProbeClient,
 	type SessionValidation,
 } from "./validation.js";
-import {
-	READ_TOOLSET_ID,
-	registerReadToolsAndToolset,
-	type KernelReadClient,
-} from "./tools.js";
+import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
 import { createContentBaselines } from "./baselines.js";
 import { createWriteConfirmState } from "./writeConfirm.js";
 import { type WriteKernelClient } from "./writeResult.js";
@@ -51,7 +47,7 @@ export interface GnubrainDeps {
 	readFile?: (path: string) => Promise<string>;
 	homeDir?: string;
 	/** Test seam for the kernel client. */
-	createClient?: (baseUrl: string, token: string) => KernelProbeClient;
+	createClient?: (baseUrl: string, token: string) => WriteKernelClient;
 	/** Per-test version-pin override; absent → the module pin applies. */
 	pinnedVersion?: string;
 }
@@ -70,7 +66,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	let validation: SessionValidation | undefined;
 	const breaker = new CircuitBreaker();
 	// Kernel client built from the freshest settings on every validation pass.
-	let kernelClient: KernelProbeClient | undefined;
+	let kernelClient: WriteKernelClient | undefined;
 	// Session-scoped fresh-content baselines: the read tools feed it where
 	// content is served, the write precondition checks against it (decision
 	// record — empty after resume/fork, the no-baseline fallback applies).
@@ -80,7 +76,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// so masking and post-toggle scope compose mid-session.
 	const readToolset: Toolset = registerReadToolsAndToolset(pi, {
 		getValidation: () => validation,
-		getKernel: () => kernelClient as KernelReadClient | undefined,
+		getKernel: () => kernelClient,
 		breaker,
 		baselines,
 	});
@@ -90,7 +86,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	const confirmState = createWriteConfirmState();
 	registerWriteTool(pi, {
 		getValidation: () => validation,
-		getKernel: () => kernelClient as WriteKernelClient | undefined,
+		getKernel: () => kernelClient,
 		breaker,
 		confirmState,
 		baselines,
