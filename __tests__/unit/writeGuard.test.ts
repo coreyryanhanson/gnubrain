@@ -179,7 +179,9 @@ describe("title guard", () => {
 		const { execute, kernel } = setup({
 			__config: {
 				nearRows,
-				children: [{ id: "p1", type: "p", subType: "", content: "first para" }],
+				childRows: [
+					{ id: "p1", type: "p", subType: "", content: "first para" },
+				],
 			},
 		});
 		const r = await execute({ ...base });

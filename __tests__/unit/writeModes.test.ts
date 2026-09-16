@@ -10,221 +10,21 @@ import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 } from "siyuan-kernel-api";
-import { CircuitBreaker } from "../../breaker.js";
-import {
-	createWriteConfirmState,
-	type WriteConfirmFn,
-} from "../../writeConfirm.js";
-import {
-	modeShapeProblem,
-	BLOCK_IN_DOC_STMT_HEAD,
-	PARENT_DOC_STMT_HEAD,
-	type WriteParams,
-} from "../../writeModes.js";
-import { OWNERSHIP_STMT_HEAD } from "../../tools.js";
+import { modeShapeProblem, type WriteParams } from "../../writeModes.js";
 import {
 	base,
 	registerKbWrite,
 	setup as schemaSetup,
-	validation,
 	walkBlock,
+	writeSetup,
+	type StubConfig,
+	type WriteExec,
 } from "./writeHarness.js";
-import { type WriteToolHooks } from "../../write.js";
-import {
-	createContentBaselines,
-	BASELINE_CONTENTS_STMT_HEAD,
-	REFS_BACKLINK_STMT_HEAD,
-	REFERRING_HPATHS_STMT_HEAD,
-	ROOT_ECHO_STMT_HEAD,
-	type ContentBaselines,
-	type WriteKernelClient,
-} from "../../writeResult.js";
+import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
 
-interface StubConfig {
-	blockRows?: Record<string, unknown>[];
-	refRows?: Record<string, unknown>[];
-	hpathRows?: Record<string, unknown>[];
-	parentDocRows?: Record<string, unknown>[];
-	/** docId → root row (ownership + echo routes discriminate by id). */
-	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
-	/** docId → child-block rows (walks discriminate by doc). */
-	childrenFor?: Record<string, unknown[]>;
-	onInsert?: () => void;
-	onDelete?: () => void;
-	onMove?: () => void;
-	onUpdate?: () => void;
-	/** Captures a setter the test calls from a mutation callback: all
-	 * subsequent query() calls throw — the network drop between a landed
-	 * write and the post-write verification reads. */
-	armQueryError?: (arm: (err: Error) => void) => void;
-}
-
-/** Kernel stub with a SQL router over the mode-flow routes (ownership, root
- * echo, block-in-doc, content re-check, refs) and the block-write methods.
- * The returned `childrenFor` map is live — tests mutate it inside the
- * write-callbacks to simulate the kernel applying (or rolling back) an op. */
-function writeKernelStub(config: StubConfig = {}) {
-	const calls: { method: string; args: unknown }[] = [];
-	const tx = [{ doOperations: [{ id: "b-new" }] }];
-	const docRoots = config.docRoots ?? {
-		"d-doc": { content: "Docker Networking", hpath: "/Docker Networking" },
-	};
-	const childrenFor: Record<string, unknown[]> = {
-		"d-doc": [],
-		...JSON.parse(JSON.stringify(config.childrenFor ?? {})),
-	};
-	const stmtDocId = (stmt: string): string | undefined =>
-		/id = '([^']+)'/.exec(stmt)?.[1];
-	let queryError: Error | undefined;
-	config.armQueryError?.((err) => {
-		queryError = err;
-	});
-	const client: WriteKernelClient = {
-		baseUrl: "http://127.0.0.1:6806",
-		getVersion: async () => "3.8.3",
-		listNotebooks: async () => ({ notebooks: [] }),
-		async query(stmt) {
-			calls.push({ method: "query", args: stmt });
-			if (queryError) throw queryError;
-			// Route on the production SELECT heads — a SQL rewording updates
-			// the head constant in the same diff, never a silent re-route.
-			if (stmt.startsWith(REFS_BACKLINK_STMT_HEAD)) {
-				return config.refRows ?? [];
-			}
-			if (stmt.startsWith(REFERRING_HPATHS_STMT_HEAD)) {
-				return config.hpathRows ?? [];
-			}
-			// BASELINE_CONTENTS' head is a prefix-superset of BLOCK_IN_DOC's
-			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) return [];
-			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
-				return config.blockRows ?? [];
-			}
-			if (stmt.startsWith(PARENT_DOC_STMT_HEAD)) {
-				return config.parentDocRows ?? [];
-			}
-			if (
-				stmt.startsWith(OWNERSHIP_STMT_HEAD) ||
-				stmt.startsWith(ROOT_ECHO_STMT_HEAD)
-			) {
-				const docId = stmtDocId(stmt);
-				const root = docId === undefined ? undefined : docRoots[docId];
-				return root === undefined
-					? []
-					: [{ root_id: docId, content: root.content, hpath: root.hpath }];
-			}
-			throw new Error(`stub has no route for: ${stmt}`);
-		},
-		async search() {
-			throw new Error("write flow never searches");
-		},
-		async exportMarkdown(id) {
-			calls.push({ method: "exportMarkdown", args: id });
-			return { hPath: "/doc", content: `# markdown of ${id}\nbody` };
-		},
-		async getChildBlocks(id) {
-			calls.push({ method: "getChildBlocks", args: id });
-			return (childrenFor[id] ?? []) as Record<string, unknown>[];
-		},
-		async createDocWithMarkdown(params) {
-			calls.push({ method: "createDocWithMarkdown", args: params });
-			return "d-new";
-		},
-		async updateBlock(params) {
-			calls.push({ method: "updateBlock", args: params });
-			config.onUpdate?.();
-			return tx;
-		},
-		async insertBlock(params) {
-			calls.push({ method: "insertBlock", args: params });
-			config.onInsert?.();
-			return tx;
-		},
-		async appendBlock(params) {
-			calls.push({ method: "appendBlock", args: params });
-			config.onInsert?.();
-			return tx;
-		},
-		async deleteBlock(id) {
-			calls.push({ method: "deleteBlock", args: id });
-			config.onDelete?.();
-			return tx;
-		},
-		async moveBlock(params) {
-			calls.push({ method: "moveBlock", args: params });
-			config.onMove?.();
-			return null;
-		},
-		async removeDocByID(id) {
-			calls.push({ method: "removeDocByID", args: id });
-			return null;
-		},
-		async moveDocsByID(params) {
-			calls.push({ method: "moveDocsByID", args: params });
-			config.onMove?.();
-			return null;
-		},
-	};
-	return { calls, client, childrenFor };
-}
-
-type Details = Record<string, unknown> & { status: string; message: string };
-type Exec = (params: Record<string, unknown>) => Promise<Details>;
-
-/** Register kb_write on a fake pi and return an execute() bound to an
- * interactive ctx (confirm always true unless `confirm` overrides). The
- * optional `mutate` runs inside the confirm callback — the mid-flow
- * kernel-side change the fresh-content legs exercise. */
-function setup(
-	config: StubConfig = {},
-	confirm: WriteConfirmFn = async () => true,
-	mutate?: () => void,
-): {
-	execute: Exec;
-	calls: { method: string; args: unknown }[];
-	confirmCalls: { title: string; message: string }[];
-	childrenFor: Record<string, unknown[]>;
-} {
-	const kernel = writeKernelStub(config);
-	const confirmCalls: { title: string; message: string }[] = [];
-	const { execute: run } = registerKbWrite({
-		getValidation: () => validation(),
-		getKernel: () => kernel.client,
-		breaker: new CircuitBreaker(),
-		confirmState: createWriteConfirmState(),
-		baselines: createContentBaselines(),
-		confirm: async (title: string, message: string, opts) => {
-			confirmCalls.push({ title, message });
-			mutate?.();
-			return confirm(title, message, opts);
-		},
-	} as WriteToolHooks);
-	const execute: Exec = async (params) => (await run(params)).details;
-	return {
-		execute,
-		calls: kernel.calls,
-		confirmCalls,
-		childrenFor: kernel.childrenFor,
-	};
-}
-
-/** setup() variant exposing the hooks' baselines map for direct assertions. */
-function setupWithBaselines(config: StubConfig = {}): {
-	execute: Exec;
-	calls: { method: string; args: unknown }[];
-	baselines: ContentBaselines;
-} {
-	const kernel = writeKernelStub(config);
-	const baselines = createContentBaselines();
-	const { execute: run } = registerKbWrite({
-		getValidation: () => validation(),
-		getKernel: () => kernel.client,
-		breaker: new CircuitBreaker(),
-		confirmState: createWriteConfirmState(),
-		baselines,
-	} as WriteToolHooks);
-	const execute: Exec = async (params) => (await run(params)).details;
-	return { execute, calls: kernel.calls, baselines };
+/** writeSetup with the config-first call shape the mode tests use. */
+function setup(config: StubConfig = {}) {
+	return writeSetup({ config });
 }
 
 describe("kb_write schema", () => {
@@ -351,7 +151,7 @@ describe("edit", () => {
 	});
 
 	it("post-approval change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
-		const harness = setupWithEditMutation();
+		const harness = await setupWithEditMutation();
 		const result = await harness.execute(editBase);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
@@ -384,8 +184,9 @@ describe("edit", () => {
 	});
 
 	it("the successful write result refreshes the served-content baseline", async () => {
-		const { execute, baselines } = setupWithBaselines({
-			blockRows: [{ id: "b-1", content: "stale paragraph" }],
+		const { execute, baselines } = writeSetup({
+			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
+			exposeBaselines: true,
 		});
 		await execute(editBase);
 		// The post-write walk's content became the baseline — a follow-up
@@ -396,27 +197,19 @@ describe("edit", () => {
 
 /** edit harness whose kernel-side content flips between the baseline read
  * and the post-approval re-check (the race the precondition exists for). */
-function setupWithEditMutation(): {
-	execute: Exec;
+async function setupWithEditMutation(): Promise<{
+	execute: WriteExec;
 	calls: { method: string; args: unknown }[];
-} {
-	const kernel = writeKernelStub({
-		blockRows: [{ id: "b-1", content: "stale paragraph" }],
+}> {
+	const harness = writeSetup({
+		config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
 	});
-	const { execute: run } = registerKbWrite({
-		getValidation: () => validation(),
-		getKernel: () => kernel.client,
-		breaker: new CircuitBreaker(),
-		confirmState: createWriteConfirmState(),
-		baselines: createContentBaselines(),
-		confirm: async () => true,
-	} as WriteToolHooks);
 	// The re-check's content read (baseline SELECT) serves the rewritten
 	// form — the kernel-side change landed after approval (the baseline was
 	// established from the pre-dialog block read; the re-check re-reads NOW).
-	const baseQuery = kernel.client.query.bind(kernel.client);
+	const baseQuery = harness.client.query.bind(harness.client);
 	let rechecked = false;
-	kernel.client.query = async (stmt: string) => {
+	harness.client.query = async (stmt: string) => {
 		const rows = await baseQuery(stmt);
 		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD) && !rechecked) {
 			rechecked = true;
@@ -424,8 +217,7 @@ function setupWithEditMutation(): {
 		}
 		return rows;
 	};
-	const execute: Exec = async (params) => (await run(params)).details;
-	return { execute, calls: kernel.calls };
+	return harness;
 }
 
 // ---------------------------------------------------------------------------
@@ -697,7 +489,7 @@ describe("replace-section", () => {
 		// Read 1 (baseline, pre-dialog) matches the walk; read 2 (the
 		// post-approval re-check) serves the concurrently rewritten p1 — the
 		// kernel-side change landed after approval.
-		const harness = replaceQueryHarness((read) =>
+		const harness = await replaceQueryHarness((read) =>
 			read === 1
 				? [
 						{ id: "p1", content: "old one" },
@@ -726,7 +518,7 @@ describe("replace-section", () => {
 		// The walk serves a plain form, blocks.content a rendered form —
 		// baseline and re-check both ride blocks.content, so the replace
 		// proceeds (the precondition stays representation-independent).
-		const harness = replaceQueryHarness(
+		const harness = await replaceQueryHarness(
 			() => [
 				{ id: "p1", content: "old **one**" },
 				{ id: "p2", content: "old **two**" },
@@ -748,43 +540,32 @@ describe("replace-section", () => {
 /** replace-section harness with scripted `WHERE id IN` content reads —
  * read 1 is the pre-dialog baseline read, read 2 the post-approval
  * re-check (the two representation-matched reads the precondition rides). */
-function replaceQueryHarness(
+async function replaceQueryHarness(
 	respondIdIn: (read: number) => Record<string, unknown>[],
 	applyInsert?: (children: Record<string, unknown[]>) => void,
-): {
-	execute: Exec;
-	calls: { method: string; args: unknown }[];
-	childrenFor: Record<string, unknown[]>;
-} {
-	const kernel = writeKernelStub({
-		childrenFor: REPLACE_DOC,
-		...(applyInsert
-			? {
-					onInsert: () => {
-						applyInsert(kernel.childrenFor);
-					},
-				}
-			: {}),
+) {
+	const harness = writeSetup({
+		config: {
+			childrenFor: REPLACE_DOC,
+			...(applyInsert
+				? {
+						onInsert: () => {
+							applyInsert(harness.childrenFor);
+						},
+					}
+				: {}),
+		},
 	});
-	const { execute: run } = registerKbWrite({
-		getValidation: () => validation(),
-		getKernel: () => kernel.client,
-		breaker: new CircuitBreaker(),
-		confirmState: createWriteConfirmState(),
-		baselines: createContentBaselines(),
-		confirm: async () => true,
-	} as WriteToolHooks);
-	const baseQuery = kernel.client.query.bind(kernel.client);
+	const baseQuery = harness.client.query.bind(harness.client);
 	let idInReads = 0;
-	kernel.client.query = async (stmt: string) => {
+	harness.client.query = async (stmt: string) => {
 		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
 			idInReads += 1;
 			return respondIdIn(idInReads);
 		}
 		return baseQuery(stmt);
 	};
-	const execute: Exec = async (params) => (await run(params)).details;
-	return { execute, calls: kernel.calls, childrenFor: kernel.childrenFor };
+	return harness;
 }
 
 // ---------------------------------------------------------------------------
@@ -883,28 +664,21 @@ describe("block-level move", () => {
 
 	/** move harness where `apply` mutates the children map kernel-side. */
 	function moveHarness(apply?: () => void, stub?: Partial<StubConfig>) {
-		const kernel = writeKernelStub({
-			blockRows: [{ id: "p1", content: "mover" }],
-			childrenFor: JSON.parse(JSON.stringify(MOVE_DOC)),
-			docRoots: {
-				"d-doc": {
-					content: "Docker Networking",
-					hpath: "/Docker Networking",
+		return writeSetup({
+			config: {
+				blockRows: [{ id: "p1", content: "mover" }],
+				childrenFor: JSON.parse(JSON.stringify(MOVE_DOC)),
+				docRoots: {
+					"d-doc": {
+						content: "Docker Networking",
+						hpath: "/Docker Networking",
+					},
+					"d-other": { content: "Other doc", hpath: "/Other doc" },
 				},
-				"d-other": { content: "Other doc", hpath: "/Other doc" },
+				...(apply ? { onMove: apply } : {}),
+				...stub,
 			},
-			...(apply ? { onMove: apply } : {}),
-			...stub,
 		});
-		const { execute: run } = registerKbWrite({
-			getValidation: () => validation(),
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines: createContentBaselines(),
-		} as WriteToolHooks);
-		const execute: Exec = async (params) => (await run(params)).details;
-		return { execute, calls: kernel.calls, childrenFor: kernel.childrenFor };
 	}
 
 	it("cross-doc: destination anchor, move via previousID, both outlines + movedBlockId", async () => {
@@ -1110,10 +884,7 @@ describe("write-tool doctrine lines", () => {
 		const { tool } = registerKbWrite({
 			getValidation: () => undefined,
 			getKernel: () => undefined,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines: createContentBaselines(),
-		} as WriteToolHooks);
+		} as never);
 		return tool.description ?? "";
 	}
 

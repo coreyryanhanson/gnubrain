@@ -1,20 +1,39 @@
 // Shared harness for the kb_write test files: a SessionValidation with
-// defaults, a SQL-routed kernel stub, a fake-pi setup() bound to the
-// registered kb_write tool, and the base create params. Consumed by
-// writeConfirm/writeGuard/writeCreate tests and the writeModes schema leg.
+// defaults, a SQL-routed kernel stub covering the create flow (guard legs,
+// parent lookup, verified-create read) AND the mode flow (ownership, echo,
+// block-in-doc, refs, baselines), a fake-pi setup() bound to the registered
+// kb_write tool, and the base create params. Consumed by
+// writeConfirm/writeGuard/writeCreate/writeAnchors tests and the full
+// writeModes suite.
 
 import { CircuitBreaker } from "../../breaker.js";
 import {
 	PARENT_LOOKUP_STMT_HEAD,
 	VERIFIED_ROOT_STMT_HEAD,
 } from "../../writeCreate.js";
-import type { WalkedBlock } from "../../tools.js";
 import { GUARD_STMT_HEAD } from "../../writeGuard.js";
+import {
+	BLOCK_IN_DOC_STMT_HEAD,
+	PARENT_DOC_STMT_HEAD,
+	type WriteParams,
+} from "../../writeModes.js";
+import { OWNERSHIP_STMT_HEAD } from "../../tools.js";
+import type { WalkedBlock } from "../../tools.js";
+import {
+	BASELINE_CONTENTS_STMT_HEAD,
+	REFS_BACKLINK_STMT_HEAD,
+	REFERRING_HPATHS_STMT_HEAD,
+	ROOT_ECHO_STMT_HEAD,
+	createContentBaselines,
+	type ContentBaselines,
+	type WriteKernelClient,
+} from "../../writeResult.js";
 import type { SessionValidation } from "../../validation.js";
-import { createWriteConfirmState } from "../../writeConfirm.js";
-import { type WriteParams } from "../../writeModes.js";
+import {
+	createWriteConfirmState,
+	type WriteConfirmFn,
+} from "../../writeConfirm.js";
 import { registerWriteTool, type WriteToolHooks } from "../../write.js";
-import { type WriteKernelClient } from "../../writeResult.js";
 
 export function validation(
 	overrides: Partial<SessionValidation["settings"]> = {},
@@ -38,23 +57,71 @@ export function validation(
 }
 
 export interface StubConfig {
+	// Create-flow routes (guard legs, parent lookup, verified-create read).
 	exactRows?: Record<string, unknown>[];
 	nearRows?: Record<string, unknown>[];
 	parentRows?: Record<string, unknown>[];
 	createdRows?: Record<string, unknown>[];
-	children?: Record<string, unknown>[];
+	// Mode-flow routes (ownership, echo, block-in-doc, refs, baselines).
+	blockRows?: Record<string, unknown>[];
+	refRows?: Record<string, unknown>[];
+	hpathRows?: Record<string, unknown>[];
+	parentDocRows?: Record<string, unknown>[];
+	/** docId → root row (ownership + echo routes discriminate by id). */
+	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
+	/** docId → child-block rows; the map is live — tests mutate it inside
+	 * the write callbacks to simulate the kernel applying (or rolling back)
+	 * an op. */
+	childrenFor?: Record<string, unknown[]>;
+	/** Create-flow alias for childrenFor["d-doc"] (the pre-create doc walk).
+	 * Named childRows, not children: two identically-shaped optional array
+	 * properties in one interface trip a tsgo 7.0.x excess-property bug. */
+	childRows?: Record<string, unknown>[];
+	// Mutation hooks + error arming.
 	onCreate?: () => void;
+	onInsert?: () => void;
+	onDelete?: () => void;
+	onMove?: () => void;
+	onUpdate?: () => void;
+	/** Captures a setter the test calls from a mutation callback: all
+	 * subsequent query() calls throw — the network drop between a landed
+	 * write and the post-write verification reads. */
+	armQueryError?: (arm: (err: Error) => void) => void;
 }
 
-/** Kernel stub with a SQL router covering the create flow: guard legs vs
- * parent lookup vs the verified-create read, plus a create-call log.
- * Verified rows default to a well-formed minted row unless the test pins
- * the read (empty array = missing row → fail-loud). Block-write methods
- * exist to satisfy the client interface; mode-flow routing (ownership,
- * echo, block-in-doc, refs) lives in writeModes.test.ts's own stub. */
+/** Kernel stub with a SQL router over every write-flow route. Verified rows
+ * default to a well-formed minted row unless the test pins the read (empty
+ * array = missing row → fail-loud). The returned `childrenFor` map is live.
+ * The default minted doc ("d-new", returned by createDocWithMarkdown and the
+ * verified-create read) carries one heading child — the create flow's
+ * post-create outline read walks it. */
 export function writeKernelStub(config: StubConfig = {}) {
 	const calls: { method: string; args: unknown }[] = [];
 	const tx = [{ doOperations: [{ id: "b-new" }] }];
+	const docRoots = config.docRoots ?? {
+		"d-doc": { content: "Docker Networking", hpath: "/Docker Networking" },
+	};
+	const defaultChildren = [
+		{ id: "h1", type: "h", subType: "h1", content: "Heading" },
+	];
+	const childrenFor: Record<string, unknown[]> = {
+		"d-doc": [],
+		...(config.childRows ? { "d-doc": config.childRows } : {}),
+		...JSON.parse(JSON.stringify(config.childrenFor ?? {})),
+	};
+	// Unseeded ids: per-doc seeds exist → mode-flow semantics, unseeded ids
+	// (block ids reached by the walk's recursion) are childless; otherwise
+	// create-flow semantics — one tree for every doc (candidates, the minted
+	// doc) riding childRows or the default heading walk.
+	const unseededDefault = config.childrenFor
+		? []
+		: (config.childRows ?? defaultChildren);
+	const stmtDocId = (stmt: string): string | undefined =>
+		/id = '([^']+)'/.exec(stmt)?.[1];
+	let queryError: Error | undefined;
+	config.armQueryError?.((err) => {
+		queryError = err;
+	});
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => {
@@ -64,8 +131,36 @@ export function writeKernelStub(config: StubConfig = {}) {
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
+			if (queryError) throw queryError;
 			// Route on the production SELECT heads — a SQL rewording updates
 			// the head constant in the same diff, never a silent re-route.
+			// Mode-flow routes:
+			if (stmt.startsWith(REFS_BACKLINK_STMT_HEAD)) {
+				return config.refRows ?? [];
+			}
+			if (stmt.startsWith(REFERRING_HPATHS_STMT_HEAD)) {
+				return config.hpathRows ?? [];
+			}
+			// BASELINE_CONTENTS' head is a prefix-superset of BLOCK_IN_DOC's
+			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) return [];
+			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+				return config.blockRows ?? [];
+			}
+			if (stmt.startsWith(PARENT_DOC_STMT_HEAD)) {
+				return config.parentDocRows ?? [];
+			}
+			if (
+				stmt.startsWith(OWNERSHIP_STMT_HEAD) ||
+				stmt.startsWith(ROOT_ECHO_STMT_HEAD)
+			) {
+				const docId = stmtDocId(stmt);
+				const root = docId === undefined ? undefined : docRoots[docId];
+				return root === undefined
+					? []
+					: [{ root_id: docId, content: root.content, hpath: root.hpath }];
+			}
+			// Create-flow routes:
 			if (stmt.startsWith(GUARD_STMT_HEAD)) {
 				// The exact leg has no LIMIT; the near scan always ends LIMIT
 				// 21. (A " OR " check would misroute a fixture title that
@@ -101,11 +196,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
-			return (
-				config.children ?? [
-					{ id: "h1", type: "h", subType: "h1", content: "Heading" },
-				]
-			);
+			return (childrenFor[id] ?? unseededDefault) as Record<string, unknown>[];
 		},
 		async createDocWithMarkdown(params) {
 			calls.push({ method: "createDocWithMarkdown", args: params });
@@ -114,22 +205,27 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async updateBlock(params) {
 			calls.push({ method: "updateBlock", args: params });
+			config.onUpdate?.();
 			return tx;
 		},
 		async insertBlock(params) {
 			calls.push({ method: "insertBlock", args: params });
+			config.onInsert?.();
 			return tx;
 		},
 		async appendBlock(params) {
 			calls.push({ method: "appendBlock", args: params });
+			config.onInsert?.();
 			return tx;
 		},
 		async deleteBlock(id) {
 			calls.push({ method: "deleteBlock", args: id });
+			config.onDelete?.();
 			return tx;
 		},
 		async moveBlock(params) {
 			calls.push({ method: "moveBlock", args: params });
+			config.onMove?.();
 			return null;
 		},
 		async removeDocByID(id) {
@@ -138,10 +234,11 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async moveDocsByID(params) {
 			calls.push({ method: "moveDocsByID", args: params });
+			config.onMove?.();
 			return null;
 		},
 	};
-	return { calls, client };
+	return { calls, client, childrenFor };
 }
 
 export function walkBlock(
@@ -233,6 +330,74 @@ export function setup(
 		{ hasUI: hooks.hasUI },
 	);
 	return { execute, kernel, tool };
+}
+
+export type WriteExec = (
+	params: Record<string, unknown>,
+) => Promise<Record<string, unknown> & { status: string; message: string }>;
+
+export interface WriteSetupResult {
+	execute: WriteExec;
+	calls: { method: string; args: unknown }[];
+	confirmCalls: { title: string; message: string }[];
+	childrenFor: Record<string, unknown[]>;
+	client: WriteKernelClient;
+	baselines?: ContentBaselines;
+}
+
+/** Registration wrapper for the mode-flow tests: a fresh kernel stub, a
+ * fresh baselines map, and a confirm hook that records its calls (the
+ * default approves). `mutate` runs inside the confirm callback — the
+ * mid-flow kernel-side change the fresh-content legs exercise;
+ * `exposeBaselines` surfaces the baselines map for direct assertions. */
+export function writeSetup(opts: {
+	config?: StubConfig;
+	confirm?: WriteConfirmFn;
+	mutate?: () => void;
+	exposeBaselines: true;
+}): WriteSetupResult & { baselines: ContentBaselines };
+export function writeSetup(opts?: {
+	config?: StubConfig;
+	confirm?: WriteConfirmFn;
+	mutate?: () => void;
+	exposeBaselines?: boolean;
+}): WriteSetupResult;
+export function writeSetup(
+	opts: {
+		config?: StubConfig;
+		confirm?: WriteConfirmFn;
+		mutate?: () => void;
+		exposeBaselines?: boolean;
+	} = {},
+): WriteSetupResult {
+	const kernel = writeKernelStub(opts.config ?? {});
+	const confirmCalls: { title: string; message: string }[] = [];
+	const hooks = {
+		getValidation: () => validation(),
+		getKernel: () => kernel.client,
+		breaker: new CircuitBreaker(),
+		confirmState: createWriteConfirmState(),
+		baselines: createContentBaselines(),
+		confirm: async (
+			title: string,
+			message: string,
+			confirmOpts: { signal?: AbortSignal },
+		) => {
+			confirmCalls.push({ title, message });
+			opts.mutate?.();
+			return opts.confirm ? opts.confirm(title, message, confirmOpts) : true;
+		},
+	} as WriteToolHooks;
+	const { execute: run } = registerKbWrite(hooks);
+	const execute: WriteExec = async (params) => (await run(params)).details;
+	return {
+		execute,
+		calls: kernel.calls,
+		confirmCalls,
+		childrenFor: kernel.childrenFor,
+		client: kernel.client,
+		...(opts.exposeBaselines ? { baselines: hooks.baselines } : {}),
+	};
 }
 
 export const base = {
