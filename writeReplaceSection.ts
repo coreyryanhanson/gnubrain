@@ -50,18 +50,21 @@ export async function runReplaceSectionMode(
 		(display.backlinks.count > 0
 			? " — replacing orphans refs into the section's content blocks (the heading ID survives)"
 			: "");
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
-		if (gate !== null) return gate;
-	}
-	// Fresh-content precondition: establish missing baselines from the same
-	// blocks.content read the post-approval re-check uses (representation-
-	// independent), then re-check before any kernel call.
+	// Fresh-content precondition: establish missing baselines BEFORE the
+	// dialog, from the same blocks.content read the post-approval re-check
+	// uses (representation-independent). Approval then establishes exactly
+	// the content in view — a change landing between display and approval is
+	// caught by the re-check below as stale_content, not laundered into the
+	// baseline by a post-approval read.
 	await establishBaselines(
 		kernel,
 		baselines,
 		deleteSet.map((b) => b.id),
 	);
+	if (dialog) {
+		const gate = await confirmGate(input, confirmKey, summary);
+		if (gate !== null) return gate;
+	}
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,

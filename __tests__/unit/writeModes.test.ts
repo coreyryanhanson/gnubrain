@@ -569,6 +569,26 @@ describe("replace-section", () => {
 		).toHaveLength(0);
 	});
 
+	it("the baseline read precedes the confirmation dialog — approval establishes the displayed content, not a post-approval re-read", async () => {
+		// The establish read (read 1) must run before confirmGate: a change
+		// landing between display and approval must surface as stale_content
+		// on the re-check (read 2), never be laundered into the baseline by a
+		// post-approval read.
+		const harness = setup({ config: { childrenFor: REPLACE_DOC } });
+		const baseQuery = harness.client.query.bind(harness.client);
+		// Record how many confirmations had fired at each baseline read.
+		const timeline: number[] = [];
+		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+				timeline.push(harness.confirmCalls.length);
+			}
+			return baseQuery(stmt);
+		};
+		await harness.execute(replaceParams);
+		expect(harness.confirmCalls).toHaveLength(1);
+		expect(timeline).toEqual([0, 1]);
+	});
+
 	it("walk/blocks representation drift does not false-positive stale_content", async () => {
 		// The walk serves a plain form, blocks.content a rendered form —
 		// baseline and re-check both ride blocks.content, so the replace
