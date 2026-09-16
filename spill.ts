@@ -19,7 +19,7 @@ export const OUTLINE_HEADINGS = 200;
 
 /** `os.tmpdir()/gnubrain/<session-id>/` — per-session, so concurrent sessions
  * querying the same KB never collide. */
-export function sessionSpillDir(sessionId: string): string {
+function sessionSpillDir(sessionId: string): string {
 	return join(tmpdir(), "gnubrain", sessionId);
 }
 

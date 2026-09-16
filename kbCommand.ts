@@ -1,8 +1,7 @@
 // /kb command — scope print, single-name and set-wide toggles, and the
 // /kb tools toolset dispatcher. Pure dispatch: recovery (re-validation),
 // persistence, and the actual toolset enable/disable happen in index.ts
-// before/after this returns. Read verbs (tools read|off) land here; the
-// write verb lands with the write toolset and prints usage until then.
+// before/after this returns.
 
 import { kbNameProblem } from "./gate.js";
 import type { SessionValidation } from "./validation.js";

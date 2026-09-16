@@ -175,7 +175,7 @@ function verifiedRootStmt(boxId: string, returnedId: string): string {
  * row lands via the async index queue (observed live even on an empty DB).
  * Exponential gaps cover the fast-index common case cheaply and tolerate a
  * busy-queue tail (~1s worst case; happy path pays nothing). */
-// ponytail: fixed table, not a backoff policy knob — a live 5b run that
+// ponytail: fixed table, not a backoff policy knob — a live run that
 // still races past 1s is the signal to revisit the delays
 const VERIFY_RETRY_DELAYS_MS = [150, 300, 600];
 

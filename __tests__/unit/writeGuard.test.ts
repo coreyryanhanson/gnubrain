@@ -84,6 +84,11 @@ describe("title guard", () => {
 		expect(guardExactPattern("100%_devops")).toBe("100\\%\\_devops");
 	});
 
+	it('maps the double quote to the kernel\'s "&#30;" entity in both legs', () => {
+		expect(guardExactPattern('a"b')).toBe("a&#30;b");
+		expect(guardNearPatterns('a"b')).toEqual(["a&#30;b%"]);
+	});
+
 	it("near-match legs include the underscore variant (kebab-vs-snake)", () => {
 		expect(guardNearPatterns("docker networking")).toEqual([
 			"docker networking%",
