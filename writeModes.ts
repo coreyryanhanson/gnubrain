@@ -264,6 +264,11 @@ async function confirmGate(
 	});
 }
 
+/** SELECT heads the kernel stubs route on — keep builders and heads in
+ * sync by construction (each builder concatenates its head constant). */
+export const BLOCK_IN_DOC_STMT_HEAD = "SELECT id, content FROM blocks WHERE id";
+export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
+
 /** The target read + pinned rejection shared by the blockId-targeting
  * modes — an echoed block id absent from the doc is a retarget hint, not
  * a kernel error. Returns the block's current content on a hit. */
@@ -273,7 +278,7 @@ async function blockInDoc(
 	blockId: string,
 ): Promise<{ content: string } | Envelope> {
 	const rows = await kernel.query(
-		`SELECT id, content FROM blocks WHERE id = ${sqlString(blockId)}` +
+		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}` +
 			` AND root_id = ${sqlString(doc.rootId)}`,
 	);
 	return rows[0] === undefined
@@ -670,7 +675,7 @@ async function runDeleteMode(
 /** A nested doc's parent doc id (type='d' rows chain via parent_id) — the
  * doc-level self-descendant pre-check walks this. */
 function parentDocStmt(docId: string): string {
-	return `SELECT parent_id FROM blocks WHERE id = ${sqlString(docId)} AND type = 'd'`;
+	return `${PARENT_DOC_STMT_HEAD} WHERE id = ${sqlString(docId)} AND type = 'd'`;
 }
 
 async function isOwnDescendant(

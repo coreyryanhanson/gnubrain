@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SiYuanNetworkError } from "siyuan-kernel-api";
+import { VERIFIED_ROOT_STMT_HEAD } from "../../writeCreate.js";
 import { type StubConfig, base, setup } from "./writeHarness.js";
 
 describe("guard-stop staging", () => {
@@ -124,10 +125,10 @@ describe("verified-create", () => {
 
 	it("child row missing after create → fail-loud after the bounded re-reads", async () => {
 		const { execute, kernel } = setup({ __config: { createdRows: [] } });
-		const baseQuery = kernel.client.query.bind(kernel.client);
 		let verifiedReads = 0;
+		const baseQuery = kernel.client.query.bind(kernel.client);
 		kernel.client.query = async (stmt: string) => {
-			if (stmt.includes("id = 'd-new'") && stmt.includes("AND type = 'd'")) {
+			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
 				verifiedReads += 1;
 				return [];
 			}
@@ -146,9 +147,9 @@ describe("verified-create", () => {
 		const baseQuery = kernel.client.query.bind(kernel.client);
 		let verifiedReads = 0;
 		kernel.client.query = async (stmt: string) => {
-			// The verified-create assert is the only read filtering the
-			// returned id with type = 'd'; the guard legs are LIKE reads.
-			if (stmt.includes("id = 'd-new'") && stmt.includes("AND type = 'd'")) {
+			// The verified-create assert is the only read on the returned id;
+			// the guard legs are LIKE reads on the guard head.
+			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
 				verifiedReads += 1;
 				if (verifiedReads === 1) return [];
 			}

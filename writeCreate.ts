@@ -150,16 +150,22 @@ function stagedEnvelope(envelope: Envelope, input: CreateFlowInput): Envelope {
 	return envelope;
 }
 
+/** SELECT heads the kernel stubs route on — keep builders and heads in sync
+ * by construction (each builder concatenates its head constant). */
+export const PARENT_LOOKUP_STMT_HEAD = "SELECT id, hpath, content FROM blocks";
+export const VERIFIED_ROOT_STMT_HEAD =
+	"SELECT id, root_id, content, hpath, updated FROM blocks";
+
 function parentLookupStmt(boxId: string, parentId: string): string {
 	return (
-		`SELECT id, hpath, content FROM blocks ` +
+		`${PARENT_LOOKUP_STMT_HEAD} ` +
 		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(parentId)} AND type = 'd'`
 	);
 }
 
 function verifiedRootStmt(boxId: string, returnedId: string): string {
 	return (
-		`SELECT id, root_id, content, hpath, updated FROM blocks ` +
+		`${VERIFIED_ROOT_STMT_HEAD} ` +
 		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(returnedId)} AND type = 'd'`
 	);
 }

@@ -105,9 +105,13 @@ export function toGuardRows(rows: Record<string, unknown>[]): GuardRow[] {
 	}));
 }
 
+/** Shared guard-leg SELECT head — kernel stubs route on this prefix. */
+export const GUARD_STMT_HEAD =
+	"SELECT id, root_id, content, updated FROM blocks";
+
 export function guardExactStmt(boxId: string, title: string): string {
 	return (
-		`SELECT id, root_id, content, updated FROM blocks ` +
+		`${GUARD_STMT_HEAD} ` +
 		`WHERE box = ${sqlString(boxId)} AND type = 'd' ` +
 		`AND content LIKE ${sqlString(guardExactPattern(title))} ESCAPE ${sqlString("\\")}`
 	);
@@ -120,7 +124,7 @@ export function guardNearStmt(boxId: string, title: string): string {
 	// LIMIT caps returned rows, not scan work (content has no index);
 	// +1 so the caller can distinguish "exactly 20" from "20+".
 	return (
-		`SELECT id, root_id, content, updated FROM blocks ` +
+		`${GUARD_STMT_HEAD} ` +
 		`WHERE box = ${sqlString(boxId)} AND type = 'd' AND (${legs}) ` +
 		`LIMIT ${GUARD_NEAR_CAP + 1}`
 	);

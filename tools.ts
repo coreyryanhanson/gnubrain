@@ -66,11 +66,15 @@ export function sqlString(value: string): string {
 	return `'${value.replaceAll("'", "''")}'`;
 }
 
+/** SELECT head the kernel stubs route on — keep builders and heads in
+ * sync by construction (the builder concatenates the head constant). */
+export const OWNERSHIP_STMT_HEAD = "SELECT root_id FROM blocks WHERE id";
+
 /** Ownership query: resolves the docId's root within the KB — doubles
  * as the scope check (an id from another KB matches no row). */
 export function ownershipStmt(boxId: string, docId: string): string {
 	return (
-		`SELECT root_id FROM blocks WHERE id = ${sqlString(docId)}` +
+		`${OWNERSHIP_STMT_HEAD} = ${sqlString(docId)}` +
 		` AND box = ${sqlString(boxId)}`
 	);
 }

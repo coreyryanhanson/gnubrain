@@ -15,7 +15,13 @@ import {
 	createWriteConfirmState,
 	type WriteConfirmFn,
 } from "../../writeConfirm.js";
-import { modeShapeProblem, type WriteParams } from "../../writeModes.js";
+import {
+	modeShapeProblem,
+	BLOCK_IN_DOC_STMT_HEAD,
+	PARENT_DOC_STMT_HEAD,
+	type WriteParams,
+} from "../../writeModes.js";
+import { OWNERSHIP_STMT_HEAD } from "../../tools.js";
 import {
 	base,
 	registerKbWrite,
@@ -26,6 +32,10 @@ import {
 import { type WriteToolHooks } from "../../write.js";
 import {
 	createContentBaselines,
+	BASELINE_CONTENTS_STMT_HEAD,
+	REFS_BACKLINK_STMT_HEAD,
+	REFERRING_HPATHS_STMT_HEAD,
+	ROOT_ECHO_STMT_HEAD,
 	type ContentBaselines,
 	type WriteKernelClient,
 } from "../../writeResult.js";
@@ -76,14 +86,26 @@ function writeKernelStub(config: StubConfig = {}) {
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
 			if (queryError) throw queryError;
-			if (stmt.includes("FROM refs")) return config.refRows ?? [];
-			if (stmt.includes("root_id IN")) return config.hpathRows ?? [];
-			if (stmt.includes("WHERE id IN")) return [];
-			if (stmt.includes("AND root_id =")) return config.blockRows ?? [];
-			if (stmt.includes("SELECT parent_id")) return config.parentDocRows ?? [];
+			// Route on the production SELECT heads — a SQL rewording updates
+			// the head constant in the same diff, never a silent re-route.
+			if (stmt.startsWith(REFS_BACKLINK_STMT_HEAD)) {
+				return config.refRows ?? [];
+			}
+			if (stmt.startsWith(REFERRING_HPATHS_STMT_HEAD)) {
+				return config.hpathRows ?? [];
+			}
+			// BASELINE_CONTENTS' head is a prefix-superset of BLOCK_IN_DOC's
+			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) return [];
+			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+				return config.blockRows ?? [];
+			}
+			if (stmt.startsWith(PARENT_DOC_STMT_HEAD)) {
+				return config.parentDocRows ?? [];
+			}
 			if (
-				stmt.includes("SELECT root_id, content, hpath") ||
-				stmt.includes("SELECT root_id FROM blocks")
+				stmt.startsWith(OWNERSHIP_STMT_HEAD) ||
+				stmt.startsWith(ROOT_ECHO_STMT_HEAD)
 			) {
 				const docId = stmtDocId(stmt);
 				const root = docId === undefined ? undefined : docRoots[docId];
@@ -389,14 +411,14 @@ function setupWithEditMutation(): {
 		baselines: createContentBaselines(),
 		confirm: async () => true,
 	} as WriteToolHooks);
-	// The re-check's content read (`WHERE id IN`) serves the rewritten form —
-	// the kernel-side change landed after approval (the baseline was
+	// The re-check's content read (baseline SELECT) serves the rewritten
+	// form — the kernel-side change landed after approval (the baseline was
 	// established from the pre-dialog block read; the re-check re-reads NOW).
 	const baseQuery = kernel.client.query.bind(kernel.client);
 	let rechecked = false;
 	kernel.client.query = async (stmt: string) => {
 		const rows = await baseQuery(stmt);
-		if (stmt.includes("WHERE id IN") && !rechecked) {
+		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD) && !rechecked) {
 			rechecked = true;
 			return [{ id: "b-1", content: "concurrently rewritten" }];
 		}
@@ -747,7 +769,7 @@ function replaceQueryHarness(
 	const baseQuery = kernel.client.query.bind(kernel.client);
 	let idInReads = 0;
 	kernel.client.query = async (stmt: string) => {
-		if (stmt.includes("WHERE id IN")) {
+		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
 			idInReads += 1;
 			return respondIdIn(idInReads);
 		}

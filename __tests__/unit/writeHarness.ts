@@ -4,7 +4,12 @@
 // writeConfirm/writeGuard/writeCreate tests and the writeModes schema leg.
 
 import { CircuitBreaker } from "../../breaker.js";
+import {
+	PARENT_LOOKUP_STMT_HEAD,
+	VERIFIED_ROOT_STMT_HEAD,
+} from "../../writeCreate.js";
 import type { WalkedBlock } from "../../tools.js";
+import { GUARD_STMT_HEAD } from "../../writeGuard.js";
 import type { SessionValidation } from "../../validation.js";
 import { createWriteConfirmState } from "../../writeConfirm.js";
 import { type WriteParams } from "../../writeModes.js";
@@ -59,12 +64,20 @@ export function writeKernelStub(config: StubConfig = {}) {
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
-			if (stmt.includes(" OR content LIKE")) return config.nearRows ?? [];
-			if (stmt.includes("LIKE")) return config.exactRows ?? [];
-			if (stmt.includes("SELECT id, hpath, content FROM blocks")) {
+			// Route on the production SELECT heads — a SQL rewording updates
+			// the head constant in the same diff, never a silent re-route.
+			if (stmt.startsWith(GUARD_STMT_HEAD)) {
+				// The exact leg has no LIMIT; the near scan always ends LIMIT
+				// 21. (A " OR " check would misroute a fixture title that
+				// embeds " OR " — the exact pattern carries the title verbatim.)
+				return stmt.includes("LIMIT")
+					? (config.nearRows ?? [])
+					: (config.exactRows ?? []);
+			}
+			if (stmt.startsWith(PARENT_LOOKUP_STMT_HEAD)) {
 				return config.parentRows ?? [];
 			}
-			if (stmt.includes("SELECT id, root_id, content, hpath, updated")) {
+			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
 				return (
 					config.createdRows ?? [
 						{

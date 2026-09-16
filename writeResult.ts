@@ -98,10 +98,17 @@ function rowsToBaselineView(rows: Record<string, unknown>[]): BaselineView[] {
 	}));
 }
 
+/** SELECT heads the kernel stubs route on — keep builders and heads in
+ * sync by construction (each builder concatenates its head constant). */
+export const BASELINE_CONTENTS_STMT_HEAD =
+	"SELECT id, content FROM blocks WHERE id IN";
+export const REFERRING_HPATHS_STMT_HEAD =
+	"SELECT DISTINCT hpath FROM blocks WHERE root_id IN";
+export const ROOT_ECHO_STMT_HEAD = "SELECT root_id, content, hpath FROM blocks";
+
 function baselineContentsStmt(ids: string[]): string {
 	return (
-		`SELECT id, content FROM blocks WHERE id IN ` +
-		`(${ids.map(sqlString).join(", ")})`
+		`${BASELINE_CONTENTS_STMT_HEAD} ` + `(${ids.map(sqlString).join(", ")})`
 	);
 }
 
@@ -193,7 +200,7 @@ export function newBlockIdFrom(tx: BlockTransaction[]): string | undefined {
 	return tx[0]?.doOperations[0]?.id;
 }
 
-const REFS_BACKLINK_STMT_HEAD =
+export const REFS_BACKLINK_STMT_HEAD =
 	"SELECT DISTINCT root_id FROM refs WHERE def_block_id IN";
 
 function refsBacklinkStmt(ids: string[]): string {
@@ -203,8 +210,7 @@ function refsBacklinkStmt(ids: string[]): string {
 /** Referring docs' display paths — the confirmation's "who cites this" list. */
 function referringHpathsStmt(rootIds: string[]): string {
 	return (
-		`SELECT DISTINCT hpath FROM blocks WHERE root_id IN ` +
-		`(${rootIds.map(sqlString).join(", ")})`
+		`${REFERRING_HPATHS_STMT_HEAD} ` + `(${rootIds.map(sqlString).join(", ")})`
 	);
 }
 
@@ -246,7 +252,7 @@ export async function rootEcho(
 
 function rootEchoStmt(boxId: string, docId: string): string {
 	return (
-		`SELECT root_id, content, hpath FROM blocks ` +
+		`${ROOT_ECHO_STMT_HEAD} ` +
 		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(docId)} AND type = 'd'`
 	);
 }
