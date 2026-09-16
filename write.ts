@@ -188,8 +188,9 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 							confirmNew: p.confirmNew === true,
 						});
 					}
-					// Non-create modes: runWriteMode validates the mode-specific
-					// target shape (schema table) before any kernel call.
+					// Non-create modes: the mode-specific target shape (schema
+					// table) was already validated by modeShapeProblem at the entry
+					// — runWriteMode does not re-validate.
 					return runWriteMode({
 						...flowBase,
 						confirmKey: confirmInputs.key,

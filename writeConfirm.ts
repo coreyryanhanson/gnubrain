@@ -127,7 +127,7 @@ export async function confirmWrite(input: {
 
 /** Structured error for file-path input failures (missing / not a regular
  * file / unreadable) — always resolved before any kernel call. */
-export class BodyFileError extends Error {}
+class BodyFileError extends Error {}
 
 /** The trust posture: "must exist, must be a regular file" — no path
  * allowlisting (single-user VM holding an admin token). */
