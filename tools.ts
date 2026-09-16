@@ -583,7 +583,9 @@ export async function runSearchFanOut(
 		}
 		if (result.matchedBlockCount > result.blocks.length) {
 			truncatedKBs++;
-			truncatedRows += result.matchedBlockCount;
+			// Surplus only: rows the agent didn't see, so shown (count) +
+			// hidden (truncatedRows) = the kernel's total matches.
+			truncatedRows += result.matchedBlockCount - result.blocks.length;
 		}
 	}
 	const envelope: Envelope = {

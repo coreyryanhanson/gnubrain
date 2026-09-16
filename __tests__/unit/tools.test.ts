@@ -398,9 +398,18 @@ describe("search tool", () => {
 		const { runSearchFanOut } = await import("../../tools.js");
 		const saturated: KernelReadClient = {
 			...kernelStub().client,
-			async search() {
+			async search(params) {
+				// Deliberately short window plus a match count beyond it —
+				// pins the surplus arithmetic in the truncation marker. Echo
+				// the called box so the post-filter keeps every row.
 				return {
-					blocks: [],
+					blocks: Array.from({ length: RESULT_LIMIT - 1 }, () => ({
+						id: "s1",
+						rootID: "d1",
+						box: params.paths[0] as string,
+						hPath: "/doc",
+						updated: "20260101120000",
+					})),
 					matchedBlockCount: RESULT_LIMIT + 10,
 				};
 			},
@@ -413,7 +422,10 @@ describe("search tool", () => {
 			"q",
 			() => {},
 		);
-		expect(String(result.truncated)).toContain(`truncated in 2 of 2 KBs`);
+		// 2 KBs × (RESULT_LIMIT + 10 − (RESULT_LIMIT − 1)) = 22 hidden rows.
+		expect(String(result.truncated)).toContain(
+			"22 rows — truncated in 2 of 2 KBs",
+		);
 		expect(String(result.truncated)).toContain("full result in");
 	});
 
