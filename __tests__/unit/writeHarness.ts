@@ -146,6 +146,59 @@ type Exec = (params: Record<string, unknown>) => Promise<{
 	details: Record<string, unknown> & { status: string; message: string };
 }>;
 
+/** Register kb_write on a fake pi and return the registered tool plus an
+ * execute() bound to an interactive ctx (the default dialog confirms —
+ * tests inject overrides via hooks). */
+export function registerKbWrite(
+	hooks: WriteToolHooks,
+	opts: { hasUI?: boolean | undefined } = {},
+) {
+	let registered:
+		| { name: string; description?: string; execute: unknown }
+		| undefined;
+	const pi = {
+		registerTool(tool: {
+			name: string;
+			description?: string;
+			execute: unknown;
+		}) {
+			registered = tool;
+		},
+	};
+	registerWriteTool(
+		pi as unknown as Parameters<typeof registerWriteTool>[0],
+		hooks,
+	);
+	const ctx = {
+		sessionManager: { getSessionId: () => "sess-w" },
+		hasUI: opts.hasUI ?? true,
+		ui: { confirm: async () => true },
+	};
+	const tool = registered as unknown as {
+		execute: (
+			id: string,
+			params: WriteParams,
+			s: undefined,
+			o: undefined,
+			c: unknown,
+		) => Promise<{
+			content: { type: "text"; text: string }[];
+			details: Record<string, unknown> & { status: string; message: string };
+		}>;
+		parameters: unknown;
+		description?: string;
+	};
+	const execute = ((params: Record<string, unknown>) =>
+		tool.execute(
+			"id",
+			params as WriteParams,
+			undefined,
+			undefined,
+			ctx,
+		)) as Exec;
+	return { execute, tool };
+}
+
 /** Test hooks + stub-config pass-through (a local intersection, not a
  * module augmentation — the production interface stays clean). */
 type TestHooks = Partial<WriteToolHooks> & { __config?: StubConfig };
@@ -154,16 +207,9 @@ export function setup(
 	hooks: TestHooks = {},
 	v: SessionValidation = validation(),
 ) {
-	const tools = new Map<string, { execute: unknown }>();
-	const pi = {
-		registerTool(tool: { name: string; execute: unknown }) {
-			tools.set(tool.name, tool);
-		},
-	};
 	const { __config, ...hookRest } = hooks;
 	const kernel = writeKernelStub(__config ?? {});
-	registerWriteTool(
-		pi as unknown as Parameters<typeof registerWriteTool>[0],
+	const { execute, tool } = registerKbWrite(
 		{
 			getValidation: () => v,
 			getKernel: () => kernel.client,
@@ -171,35 +217,8 @@ export function setup(
 			confirmState: createWriteConfirmState(),
 			...hookRest,
 		} as WriteToolHooks,
+		{ hasUI: hooks.hasUI },
 	);
-	const tool = tools.get("kb_write") as unknown as {
-		execute: (
-			id: string,
-			params: WriteParams,
-			signal: undefined,
-			onUpdate: undefined,
-			ctx: unknown,
-		) => Promise<{ details: Record<string, unknown> }>;
-		parameters: unknown;
-	};
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-w" },
-		hasUI: hooks.hasUI ?? true,
-		// Default dialog: the user always confirms — tests inject overrides.
-		ui: { confirm: async () => true },
-	};
-	const execute = ((params: Record<string, unknown>) =>
-		(
-			tool.execute as (
-				id: string,
-				params: WriteParams,
-				s: undefined,
-				o: undefined,
-				c: unknown,
-			) => Promise<{
-				details: Record<string, unknown> & { status: string; message: string };
-			}>
-		)("id", params as WriteParams, undefined, undefined, ctx)) as Exec;
 	return { execute, kernel, tool };
 }
 

@@ -18,11 +18,12 @@ import {
 import { modeShapeProblem, type WriteParams } from "../../writeModes.js";
 import {
 	base,
+	registerKbWrite,
 	setup as schemaSetup,
 	validation,
 	walkBlock,
 } from "./writeHarness.js";
-import { registerWriteTool, type WriteToolHooks } from "../../write.js";
+import { type WriteToolHooks } from "../../write.js";
 import {
 	createContentBaselines,
 	type ContentBaselines,
@@ -162,46 +163,21 @@ function setup(
 	confirmCalls: { title: string; message: string }[];
 	childrenFor: Record<string, unknown[]>;
 } {
-	let registered: { execute: unknown } | undefined;
-	const pi = {
-		registerTool(tool: { name: string; execute: unknown }) {
-			registered = tool;
-		},
-	};
 	const kernel = writeKernelStub(config);
 	const confirmCalls: { title: string; message: string }[] = [];
-	registerWriteTool(
-		pi as never,
-		{
-			getValidation: () => validation(),
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines: createContentBaselines(),
-			confirm: async (title: string, message: string, opts) => {
-				confirmCalls.push({ title, message });
-				mutate?.();
-				return confirm(title, message, opts);
-			},
-		} as WriteToolHooks,
-	);
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-5" },
-		hasUI: true,
-		ui: { confirm: async () => true },
-	};
-	const tool = registered as unknown as {
-		execute: (
-			id: string,
-			params: WriteParams,
-			s: undefined,
-			o: undefined,
-			c: unknown,
-		) => Promise<{ details: Details }>;
-	};
-	const execute: Exec = async (params) =>
-		(await tool.execute("id", params as WriteParams, undefined, undefined, ctx))
-			.details;
+	const { execute: run } = registerKbWrite({
+		getValidation: () => validation(),
+		getKernel: () => kernel.client,
+		breaker: new CircuitBreaker(),
+		confirmState: createWriteConfirmState(),
+		baselines: createContentBaselines(),
+		confirm: async (title: string, message: string, opts) => {
+			confirmCalls.push({ title, message });
+			mutate?.();
+			return confirm(title, message, opts);
+		},
+	} as WriteToolHooks);
+	const execute: Exec = async (params) => (await run(params)).details;
 	return {
 		execute,
 		calls: kernel.calls,
@@ -216,35 +192,16 @@ function setupWithBaselines(config: StubConfig = {}): {
 	calls: { method: string; args: unknown }[];
 	baselines: ContentBaselines;
 } {
-	let registered: { execute: unknown } | undefined;
-	const pi = {
-		registerTool(tool: { name: string; execute: unknown }) {
-			registered = tool;
-		},
-	};
 	const kernel = writeKernelStub(config);
 	const baselines = createContentBaselines();
-	registerWriteTool(
-		pi as never,
-		{
-			getValidation: () => validation(),
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines,
-		} as WriteToolHooks,
-	);
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-5" },
-		hasUI: true,
-		ui: { confirm: async () => true },
-	};
-	const tool = registered as unknown as {
-		execute: (...a: unknown[]) => Promise<{ details: Details }>;
-	};
-	const execute: Exec = async (params) =>
-		(await tool.execute("id", params as WriteParams, undefined, undefined, ctx))
-			.details;
+	const { execute: run } = registerKbWrite({
+		getValidation: () => validation(),
+		getKernel: () => kernel.client,
+		breaker: new CircuitBreaker(),
+		confirmState: createWriteConfirmState(),
+		baselines,
+	} as WriteToolHooks);
+	const execute: Exec = async (params) => (await run(params)).details;
 	return { execute, calls: kernel.calls, baselines };
 }
 
@@ -421,26 +378,17 @@ function setupWithEditMutation(): {
 	execute: Exec;
 	calls: { method: string; args: unknown }[];
 } {
-	let registered: { execute: unknown } | undefined;
-	const pi = {
-		registerTool(tool: { name: string; execute: unknown }) {
-			registered = tool;
-		},
-	};
 	const kernel = writeKernelStub({
 		blockRows: [{ id: "b-1", content: "stale paragraph" }],
 	});
-	registerWriteTool(
-		pi as never,
-		{
-			getValidation: () => validation(),
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines: createContentBaselines(),
-			confirm: async () => true,
-		} as WriteToolHooks,
-	);
+	const { execute: run } = registerKbWrite({
+		getValidation: () => validation(),
+		getKernel: () => kernel.client,
+		breaker: new CircuitBreaker(),
+		confirmState: createWriteConfirmState(),
+		baselines: createContentBaselines(),
+		confirm: async () => true,
+	} as WriteToolHooks);
 	// The re-check's content read (`WHERE id IN`) serves the rewritten form —
 	// the kernel-side change landed after approval (the baseline was
 	// established from the pre-dialog block read; the re-check re-reads NOW).
@@ -454,17 +402,7 @@ function setupWithEditMutation(): {
 		}
 		return rows;
 	};
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-5" },
-		hasUI: true,
-		ui: { confirm: async () => true },
-	};
-	const tool = registered as unknown as {
-		execute: (...a: unknown[]) => Promise<{ details: Details }>;
-	};
-	const execute: Exec = async (params) =>
-		(await tool.execute("id", params as WriteParams, undefined, undefined, ctx))
-			.details;
+	const execute: Exec = async (params) => (await run(params)).details;
 	return { execute, calls: kernel.calls };
 }
 
@@ -788,12 +726,6 @@ function replaceQueryHarness(
 	calls: { method: string; args: unknown }[];
 	childrenFor: Record<string, unknown[]>;
 } {
-	let registered: { execute: unknown } | undefined;
-	const pi = {
-		registerTool(tool: { name: string; execute: unknown }) {
-			registered = tool;
-		},
-	};
 	const kernel = writeKernelStub({
 		childrenFor: REPLACE_DOC,
 		...(applyInsert
@@ -804,17 +736,14 @@ function replaceQueryHarness(
 				}
 			: {}),
 	});
-	registerWriteTool(
-		pi as never,
-		{
-			getValidation: () => validation(),
-			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
-			baselines: createContentBaselines(),
-			confirm: async () => true,
-		} as WriteToolHooks,
-	);
+	const { execute: run } = registerKbWrite({
+		getValidation: () => validation(),
+		getKernel: () => kernel.client,
+		breaker: new CircuitBreaker(),
+		confirmState: createWriteConfirmState(),
+		baselines: createContentBaselines(),
+		confirm: async () => true,
+	} as WriteToolHooks);
 	const baseQuery = kernel.client.query.bind(kernel.client);
 	let idInReads = 0;
 	kernel.client.query = async (stmt: string) => {
@@ -824,17 +753,7 @@ function replaceQueryHarness(
 		}
 		return baseQuery(stmt);
 	};
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-5" },
-		hasUI: true,
-		ui: { confirm: async () => true },
-	};
-	const tool = registered as unknown as {
-		execute: (...a: unknown[]) => Promise<{ details: Details }>;
-	};
-	const execute: Exec = async (params) =>
-		(await tool.execute("id", params as WriteParams, undefined, undefined, ctx))
-			.details;
+	const execute: Exec = async (params) => (await run(params)).details;
 	return { execute, calls: kernel.calls, childrenFor: kernel.childrenFor };
 }
 
@@ -934,12 +853,6 @@ describe("block-level move", () => {
 
 	/** move harness where `apply` mutates the children map kernel-side. */
 	function moveHarness(apply?: () => void, stub?: Partial<StubConfig>) {
-		let registered: { execute: unknown } | undefined;
-		const pi = {
-			registerTool(tool: { name: string; execute: unknown }) {
-				registered = tool;
-			},
-		};
 		const kernel = writeKernelStub({
 			blockRows: [{ id: "p1", content: "mover" }],
 			childrenFor: JSON.parse(JSON.stringify(MOVE_DOC)),
@@ -953,34 +866,14 @@ describe("block-level move", () => {
 			...(apply ? { onMove: apply } : {}),
 			...stub,
 		});
-		registerWriteTool(
-			pi as never,
-			{
-				getValidation: () => validation(),
-				getKernel: () => kernel.client,
-				breaker: new CircuitBreaker(),
-				confirmState: createWriteConfirmState(),
-				baselines: createContentBaselines(),
-			} as WriteToolHooks,
-		);
-		const ctx = {
-			sessionManager: { getSessionId: () => "sess-5" },
-			hasUI: true,
-			ui: { confirm: async () => true },
-		};
-		const tool = registered as unknown as {
-			execute: (...a: unknown[]) => Promise<{ details: Details }>;
-		};
-		const execute: Exec = async (params) =>
-			(
-				await tool.execute(
-					"id",
-					params as WriteParams,
-					undefined,
-					undefined,
-					ctx,
-				)
-			).details;
+		const { execute: run } = registerKbWrite({
+			getValidation: () => validation(),
+			getKernel: () => kernel.client,
+			breaker: new CircuitBreaker(),
+			confirmState: createWriteConfirmState(),
+			baselines: createContentBaselines(),
+		} as WriteToolHooks);
+		const execute: Exec = async (params) => (await run(params)).details;
 		return { execute, calls: kernel.calls, childrenFor: kernel.childrenFor };
 	}
 
@@ -1184,23 +1077,14 @@ describe("block-level move", () => {
 
 describe("write-tool doctrine lines", () => {
 	function registeredDescription(): string {
-		let description: string | undefined;
-		const pi = {
-			registerTool: (t: { name: string; description: string }) => {
-				if (t.name === "kb_write") description = t.description;
-			},
-		};
-		registerWriteTool(
-			pi as never,
-			{
-				getValidation: () => undefined,
-				getKernel: () => undefined,
-				breaker: new CircuitBreaker(),
-				confirmState: createWriteConfirmState(),
-				baselines: createContentBaselines(),
-			} as WriteToolHooks,
-		);
-		return description ?? "";
+		const { tool } = registerKbWrite({
+			getValidation: () => undefined,
+			getKernel: () => undefined,
+			breaker: new CircuitBreaker(),
+			confirmState: createWriteConfirmState(),
+			baselines: createContentBaselines(),
+		} as WriteToolHooks);
+		return tool.description ?? "";
 	}
 
 	it("pins mint-by-title / consume-by-ID, echoed targets, tool-derived anchors, replace-first, and the kbs mirror", () => {
