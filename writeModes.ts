@@ -762,7 +762,7 @@ async function destOutlinePayload(
  * walk's last element is the moved block's deepest descendant — "last
  * top-level block" is the position check that survives trailing children. */
 function isDocEnd(walk: WalkedBlock[], blockId: string): boolean {
-	return walk.filter((b) => b.depth === 1).at(-1)?.id === blockId;
+	return walk.findLast((b) => b.depth === 1)?.id === blockId;
 }
 
 async function runMoveMode(
