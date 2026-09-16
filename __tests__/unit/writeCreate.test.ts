@@ -225,8 +225,6 @@ describe("verified-create", () => {
 	});
 });
 
-// A network drop after a successful mint must report verificationFailed,
-// never "unreachable" — the doc exists and a blind retry would duplicate it.
 // near-match enrichment: a genuine API miss on a candidate (vanished doc
 // mid-scan) leaves an empty excerpt; auth/rate-limit/network errors rethrow
 // for runKbCall's classification instead of being masked as a missing excerpt.
@@ -242,7 +240,7 @@ describe("near-match enrichment error handling", () => {
 		const { execute } = setup({
 			__config: {
 				nearRows: [nearRow],
-				armWalkError: (arm) => arm(new SiYuanApiError(404, -1, "not found")),
+				armWalkError: (arm) => arm(new SiYuanApiError(404)),
 			},
 		});
 		const r = await execute({ ...base, markdown: "body" });
