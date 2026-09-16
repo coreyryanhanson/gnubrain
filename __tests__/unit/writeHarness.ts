@@ -7,6 +7,7 @@
 // writeModes suite.
 
 import { CircuitBreaker } from "../../breaker.js";
+import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import {
 	PARENT_LOOKUP_STMT_HEAD,
 	VERIFIED_ROOT_STMT_HEAD,
@@ -256,28 +257,14 @@ export function registerKbWrite(
 	hooks: WriteToolHooks,
 	opts: { hasUI?: boolean | undefined } = {},
 ) {
-	let registered:
-		| { name: string; description?: string; execute: unknown }
-		| undefined;
-	const pi = {
-		registerTool(tool: {
-			name: string;
-			description?: string;
-			execute: unknown;
-		}) {
-			registered = tool;
-		},
-	};
-	registerWriteTool(
-		pi as unknown as Parameters<typeof registerWriteTool>[0],
-		hooks,
-	);
-	const ctx = {
-		sessionManager: { getSessionId: () => "sess-w" },
+	const { pi, toolDefs } = createFakePi();
+	registerWriteTool(pi, hooks);
+	// The default dialog confirms; tests inject overrides via hooks.
+	const { ctx } = createFakeCtx({
 		hasUI: opts.hasUI ?? true,
-		ui: { confirm: async () => true },
-	};
-	const tool = registered as unknown as {
+		confirm: async () => true,
+	});
+	const tool = toolDefs.get("kb_write") as unknown as {
 		execute: (
 			id: string,
 			params: WriteParams,

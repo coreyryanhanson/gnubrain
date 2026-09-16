@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
+import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { createContentBaselines } from "../../baselines.js";
@@ -23,22 +24,17 @@ import { validation as makeValidation } from "./fixtures.js";
 // These tests exercise the full scope, unlike the shared fixture's default.
 const validation = () => makeValidation({ scope: ["recipes", "projects"] });
 
-/** Register the tools on a minimal fake pi and return the captured tool
- * definitions for direct execute() invocation. */
+/** Register the tools on a fake pi and return the captured tool definitions
+ * for direct execution. */
 function fakePiWithTools() {
-	const tools = new Map<string, { name: string; [k: string]: unknown }>();
-	const pi = {
-		registerTool(tool: { name: string }) {
-			tools.set(tool.name, tool);
-		},
-	};
+	const { pi, toolDefs } = fakePi();
 	const hooks = {
 		getValidation: () => undefined,
 		getKernel: () => undefined,
 		breaker: new CircuitBreaker(),
 		baselines: createContentBaselines(),
 	};
-	return { tools, pi, hooks };
+	return { tools: toolDefs, pi, hooks };
 }
 
 // ---------------------------------------------------------------------------
