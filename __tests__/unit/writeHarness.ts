@@ -16,8 +16,8 @@ import { GUARD_STMT_HEAD } from "../../writeGuard.js";
 import {
 	BLOCK_IN_DOC_STMT_HEAD,
 	PARENT_DOC_STMT_HEAD,
-	type WriteParams,
-} from "../../writeModes.js";
+} from "../../writeFlow.js";
+import type { WriteParams } from "../../writeSchema.js";
 import { OWNERSHIP_STMT_HEAD } from "../../kernel.js";
 import type { WalkedBlock } from "../../walk.js";
 import {

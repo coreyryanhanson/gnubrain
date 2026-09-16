@@ -1,8 +1,8 @@
 // kb_write registration: the tool surface (schema + description), the
 // hooks the chassis injects, and the write-path probe gate. The flows live
-// in writeCreate.ts / writeModes.ts; confirmation in writeConfirm.ts;
-// guard SQL in writeGuard.ts; anchors in writeAnchors.ts; shared
-// baselines/echo in writeResult.ts.
+// in writeCreate.ts / writeModes.ts; shape/schema in writeSchema.ts;
+// confirmation in writeConfirm.ts; guard SQL in writeGuard.ts; anchors in
+// writeAnchors.ts; shared baselines/echo in writeResult.ts.
 
 import type {
 	ExtensionAPI,
@@ -23,10 +23,10 @@ import {
 	CONTENT_BEARING_MODES,
 	modeConfirmInputs,
 	modeShapeProblem,
-	runWriteMode,
 	writeSchema,
 	type WriteParams,
-} from "./writeModes.js";
+} from "./writeSchema.js";
+import { runWriteMode } from "./writeModes.js";
 import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines } from "./baselines.js";
 import type { WriteKernelClient } from "./writeResult.js";
@@ -157,6 +157,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					const probeEnv = await gateWriteAttempt({
 						validation,
 						kernel,
+						breaker: hooks.breaker,
 						...(hooks.pinnedVersion !== undefined && {
 							pinnedVersion: hooks.pinnedVersion,
 						}),

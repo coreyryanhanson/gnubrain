@@ -468,4 +468,18 @@ describe("read + write toolset wiring", () => {
 		await emitEvent(TOOLSET_EVENTS.restored);
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
 	});
+
+	it("a TOOLSET_EVENT after session_shutdown does not repaint the cleared slot", async () => {
+		const { pi, fire, emitEvent } = fakePi();
+		register(pi, deps());
+		const { ctx, statuses } = fakeCtx();
+		await fire("session_start", ctx);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+		await fire("session_shutdown", ctx);
+		expect(statuses.at(-1)).toEqual(["kb", undefined]);
+		// The closure lives on after shutdown; a toolset event from another
+		// extension must not paint a stale "(none)" into the cleared slot.
+		await emitEvent(TOOLSET_EVENTS.changed);
+		expect(statuses.at(-1)).toEqual(["kb", undefined]);
+	});
 });

@@ -36,7 +36,8 @@ import {
 // kb_search / kb_read) and read toolset, kb_write (write confirmation
 // gate + create flow), and the write toolset (requires the read toolset —
 // live-toggle cascade), the /kb tools write verb, the fresh-content
-// baselines, and the write-mode dispatch (writeModes.ts).
+// baselines, and the write-mode dispatch (writeModes.ts, over the
+// writeSchema/writeFlow/writeEdit/... files).
 // All of it hangs off the same register(pi, deps) seam.
 
 const STATUS_KEY = "kb";
@@ -314,6 +315,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		}
 		validation = undefined;
 		kernelClient = undefined;
+		// A later toolset event must not repaint the cleared slot against a
+		// dead ctx — drop the render anchor with the session.
+		lastRenderCtx = undefined;
 		confirmState.timedOut.clear();
 		baselines.clear();
 	});

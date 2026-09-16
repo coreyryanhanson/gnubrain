@@ -10,7 +10,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 } from "siyuan-kernel-api";
-import { modeShapeProblem, type WriteParams } from "../../writeModes.js";
+import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import {
 	base,
 	registerKbWrite,

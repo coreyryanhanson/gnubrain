@@ -158,16 +158,53 @@ export function guardCall(input: {
 }
 
 /**
+ * Breaker-mutating error legs shared by the read dispatch and the write
+ * probe: auth feeds the consecutive-failure count, 429 arms the local
+ * cooldown (never counted toward the breaker). Returns null for any other
+ * error — callers keep their own network/unknown envelopes.
+ */
+function classifyKernelError(
+	err: unknown,
+	breaker: CircuitBreaker,
+	now: number,
+): Envelope | null {
+	if (err instanceof SiYuanAuthError) {
+		breaker.recordAuthFailure();
+		if (breaker.tripped) {
+			return breakerRefusalEnvelope();
+		}
+		return errorEnvelope(
+			`SiYuan auth rejected the request (HTTP ${err.status}) — check the apiToken in the global settings file`,
+		);
+	}
+	if (err instanceof SiYuanRateLimitError) {
+		breaker.recordRateLimit(err, now);
+		return rateLimitRefusalEnvelope(
+			breaker.cooldownUntil,
+			err.retryAfterSeconds,
+			now,
+		);
+	}
+	return null;
+}
+
+/**
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
  * attempt — a still-failed retry refuses only that write. Returns null to
  * proceed. The probe does not fire `contact`: the breaker's reset-on-success
  * contract counts only authenticated calls, and getVersion is unauthenticated
  * — the op's own contact covers any write that actually reaches the kernel.
+ * A probe that comes back 429/auth classifies like any kernel call: the 429
+ * arms the local cooldown (retrying writes then refuse locally with zero
+ * kernel calls — any call inside an active lock extends it), and the verdict
+ * stays "unreachable" — the probe retries after the cooldown expires.
  */
 export async function gateWriteAttempt(input: {
 	validation: SessionValidation;
 	kernel: KernelProbeClient;
+	breaker: CircuitBreaker;
+	now?: number;
 	pinnedVersion?: string;
 }): Promise<Envelope | null> {
 	const { validation, kernel } = input;
@@ -192,7 +229,13 @@ export async function gateWriteAttempt(input: {
 		}
 		validation.probe = "ok";
 		return null;
-	} catch {
+	} catch (err) {
+		const classified = classifyKernelError(
+			err,
+			input.breaker,
+			input.now ?? Date.now(),
+		);
+		if (classified !== null) return classified;
 		validation.probe = "unreachable";
 		return refusedEnvelope(`SiYuan unreachable at ${kernel.baseUrl}`);
 	}
@@ -228,23 +271,8 @@ export async function runKbCall(
 		result = await op(gate.names, contact);
 	} catch (err) {
 		const now = input.now ?? Date.now();
-		if (err instanceof SiYuanAuthError) {
-			input.breaker.recordAuthFailure();
-			if (input.breaker.tripped) {
-				return breakerRefusalEnvelope();
-			}
-			return errorEnvelope(
-				`SiYuan auth rejected the request (HTTP ${err.status}) — check the apiToken in the global settings file`,
-			);
-		}
-		if (err instanceof SiYuanRateLimitError) {
-			input.breaker.recordRateLimit(err, now);
-			return rateLimitRefusalEnvelope(
-				input.breaker.cooldownUntil,
-				err.retryAfterSeconds,
-				now,
-			);
-		}
+		const classified = classifyKernelError(err, input.breaker, now);
+		if (classified !== null) return classified;
 		if (
 			err instanceof SiYuanNetworkError ||
 			err instanceof SiYuanTimeoutError

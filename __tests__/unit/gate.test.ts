@@ -350,7 +350,11 @@ describe("write gate", () => {
 	it("version drift fails closed with the static refusal naming both versions", async () => {
 		const { client, calls } = kernelStub();
 		const v = validation({ probe: "drift", kernelVersion: "3.9.0" });
-		const envelope = await gateWriteAttempt({ validation: v, kernel: client });
+		const envelope = await gateWriteAttempt({
+			validation: v,
+			kernel: client,
+			breaker: new CircuitBreaker(),
+		});
 		expect(envelope?.status).toBe("refused");
 		expect(envelope?.message).toContain("3.9.0");
 		expect(envelope?.message).toContain("3.8.3");
@@ -372,10 +376,22 @@ describe("write gate", () => {
 			},
 		};
 		// First write attempt retries and heals the cached verdict.
-		expect(await gateWriteAttempt({ validation: v, kernel })).toBeNull();
+		expect(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker: new CircuitBreaker(),
+			}),
+		).toBeNull();
 		expect(v.probe).toBe("ok");
 		// Second attempt sees the cached ok verdict — no extra probe.
-		expect(await gateWriteAttempt({ validation: v, kernel })).toBeNull();
+		expect(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker: new CircuitBreaker(),
+			}),
+		).toBeNull();
 		expect(calls).toEqual(["probe"]);
 	});
 
@@ -390,17 +406,80 @@ describe("write gate", () => {
 				throw new Error("not used");
 			},
 		};
-		const envelope = await gateWriteAttempt({ validation: v, kernel });
+		const envelope = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker: new CircuitBreaker(),
+		});
 		expect(envelope?.status).toBe("refused");
 		expect(envelope?.message).toContain(
 			"SiYuan unreachable at http://127.0.0.1:6806",
 		);
+		expect(v.probe).toBe("unreachable");
+	});
+
+	it("a 429 on the probe arms the cooldown instead of reporting unreachable", async () => {
+		const v = validation({ probe: "unreachable" });
+		const breaker = new CircuitBreaker();
+		const kernel = {
+			baseUrl: "http://127.0.0.1:6806",
+			getVersion: async () => {
+				throw new SiYuanRateLimitError(429, 90);
+			},
+			listNotebooks: async () => {
+				throw new Error("not used");
+			},
+		};
+		const envelope = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker,
+			now: NOW,
+		});
+		expect(envelope?.status).toBe("refused");
+		expect(envelope?.message).toContain("rate-limit lockout");
+		expect(envelope?.message).toContain("Retry-After: 90s");
+		// The 429 arms the local cooldown — subsequent writes refuse in
+		// guardCall with zero kernel calls (any call inside an active lock
+		// extends it) — and never counts toward the breaker.
+		expect(breaker.inCooldown(NOW)).toBe(true);
+		expect(breaker.tripped).toBe(false);
+		// The status ladder has no throttle state: the verdict stays
+		// "unreachable" and the probe retries after the cooldown expires.
+		expect(v.probe).toBe("unreachable");
+	});
+
+	it("a 401 on the probe feeds the breaker's consecutive-failure count", async () => {
+		const v = validation({ probe: "unreachable" });
+		const breaker = new CircuitBreaker();
+		const kernel = {
+			baseUrl: "http://127.0.0.1:6806",
+			getVersion: async () => {
+				throw new SiYuanAuthError(401);
+			},
+			listNotebooks: async () => {
+				throw new Error("not used");
+			},
+		};
+		const envelope = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker,
+		});
+		expect(envelope?.status).toBe("error");
+		expect(envelope?.message).toContain("auth rejected the request");
+		expect(breaker.failures).toBe(1);
+		expect(v.probe).toBe("unreachable");
 	});
 
 	it("an ok probe passes without any probe call", async () => {
 		const { client, calls } = kernelStub();
 		expect(
-			await gateWriteAttempt({ validation: validation(), kernel: client }),
+			await gateWriteAttempt({
+				validation: validation(),
+				kernel: client,
+				breaker: new CircuitBreaker(),
+			}),
 		).toBeNull();
 		expect(calls).toEqual([]);
 	});
@@ -414,7 +493,11 @@ describe("write gate", () => {
 				throw new Error("not used");
 			},
 		};
-		const envelope = await gateWriteAttempt({ validation: v, kernel });
+		const envelope = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker: new CircuitBreaker(),
+		});
 		expect(envelope?.status).toBe("refused");
 		expect(envelope?.message).toContain("4.0.0");
 		expect(v.probe).toBe("drift");
@@ -435,7 +518,7 @@ describe("write gate", () => {
 		const envelope = await runKbCall(
 			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
 			async (_names) => {
-				await gateWriteAttempt({ validation: v, kernel });
+				await gateWriteAttempt({ validation: v, kernel, breaker });
 				throw new SiYuanAuthError(403); // token still bad after the probe
 			},
 		);
