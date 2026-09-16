@@ -25,7 +25,7 @@ export async function renderOutline(
 	return renderOutlineFromWalk(
 		sessionId,
 		tool,
-		await walkBlockTree(kernel, rootId, 1, { tolerateVanished: true }),
+		await walkBlockTree(kernel, rootId, { tolerateVanished: true }),
 		baselines,
 	);
 }
@@ -134,7 +134,6 @@ async function walkBlockTreeNested(
 export async function walkBlockTree(
 	kernel: KernelReadClient,
 	rootId: string,
-	depth: number,
 	opts?: { tolerateVanished?: boolean },
 ): Promise<WalkedBlock[]> {
 	const flat: WalkedBlock[] = [];
@@ -145,11 +144,14 @@ export async function walkBlockTree(
 			flatten(node.children);
 		}
 	}
+	// Entry depth is always 1 (root's direct children); the recursion drives
+	// it deeper and WalkedBlock.depth feeds the anchor derivation. Exposing
+	// the entry depth would let a caller silently mis-anchor every block.
 	flatten(
 		await walkBlockTreeNested(
 			kernel,
 			rootId,
-			depth,
+			1,
 			opts?.tolerateVanished ?? false,
 		),
 	);

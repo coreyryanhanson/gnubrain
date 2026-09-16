@@ -125,10 +125,6 @@ export async function confirmWrite(input: {
 // File-path input — markdown XOR markdownFile, read once at call start
 // ---------------------------------------------------------------------------
 
-/** Structured error for file-path input failures (missing / not a regular
- * file / unreadable) — always resolved before any kernel call. */
-class BodyFileError extends Error {}
-
 /** The trust posture: "must exist, must be a regular file" — no path
  * allowlisting (single-user VM holding an admin token). */
 export async function readBodyFile(path: string): Promise<string> {
@@ -136,17 +132,17 @@ export async function readBodyFile(path: string): Promise<string> {
 	try {
 		stat = await fsStat(path);
 	} catch (err) {
-		throw new BodyFileError(
+		throw new Error(
 			`markdownFile '${path}' is not readable: ${err instanceof Error ? err.message : String(err)}`,
 		);
 	}
 	if (!stat.isFile()) {
-		throw new BodyFileError(`markdownFile '${path}' is not a regular file`);
+		throw new Error(`markdownFile '${path}' is not a regular file`);
 	}
 	try {
 		return await fsReadFile(path, "utf8");
 	} catch (err) {
-		throw new BodyFileError(
+		throw new Error(
 			`markdownFile '${path}' is unreadable: ${err instanceof Error ? err.message : String(err)}`,
 		);
 	}

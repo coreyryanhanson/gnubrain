@@ -23,7 +23,6 @@ import {
 	finishWrite,
 	idSet,
 	newBlockIdFrom,
-	walkDoc,
 } from "./writeResult.js";
 
 export async function runReplaceSectionMode(
@@ -35,7 +34,7 @@ export async function runReplaceSectionMode(
 	const { kernel, sessionId, name, baselines, params } = input;
 	const headingId = params.headingId as string;
 	// Delete-set enumeration rides the document-order walk, never SQL.
-	const walk = await walkBlockTree(kernel, doc.rootId, 1);
+	const walk = await walkBlockTree(kernel, doc.rootId);
 	const heading = headingInWalk(walk, doc, headingId);
 	if ("status" in heading) return heading;
 	const deleteSet = sectionDeleteSet(walk, headingId);
@@ -89,7 +88,7 @@ export async function runReplaceSectionMode(
 		// Verify the insert landed BEFORE any delete — a silent rollback
 		// must not sweep the old section away (stale-target record).
 		const preIds = idSet(walk);
-		const afterInsertWalk = await walkDoc(kernel, doc.rootId);
+		const afterInsertWalk = await walkBlockTree(kernel, doc.rootId);
 		const landed =
 			newBlockId !== undefined &&
 			!preIds.has(newBlockId) &&

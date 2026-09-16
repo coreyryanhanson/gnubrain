@@ -114,7 +114,7 @@ export function resolveKbParam(
 	return { ok: true, names: requested };
 }
 
-export type GateResult =
+type GateResult =
 	| { ok: true; names: string[] }
 	| { ok: false; envelope: Envelope };
 

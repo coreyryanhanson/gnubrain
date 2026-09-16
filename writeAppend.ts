@@ -11,7 +11,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import { finishWrite, idSet, newBlockIdFrom, walkDoc } from "./writeResult.js";
+import { finishWrite, idSet, newBlockIdFrom } from "./writeResult.js";
 
 export async function runAppendMode(
 	input: WriteFlowInput,
@@ -22,7 +22,7 @@ export async function runAppendMode(
 	const { kernel, name, params } = input;
 	// The walk doubles as anchor data AND the pre-write set for verification
 	// (stale-target record: the same walk the anchor derivation fetches).
-	const walk = await walkBlockTree(kernel, doc.rootId, 1);
+	const walk = await walkBlockTree(kernel, doc.rootId);
 	if (params.headingId !== undefined) {
 		const heading = headingInWalk(walk, doc, params.headingId);
 		if ("status" in heading) return heading;
@@ -46,7 +46,7 @@ export async function runAppendMode(
 		// single-block: exactly one id (pinned live).
 		const newBlockId = newBlockIdFrom(tx);
 		const preIds = idSet(walk);
-		const postWalk = await walkDoc(kernel, doc.rootId);
+		const postWalk = await walkBlockTree(kernel, doc.rootId);
 		const postIds = idSet(postWalk);
 		const landed =
 			newBlockId !== undefined &&

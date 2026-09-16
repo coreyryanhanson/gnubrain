@@ -70,7 +70,7 @@ async function duplicateStop(
 		const docId = row.root_id;
 		// One walk per row serves both the outline and (single-row) the
 		// block-ID payload — never a second traversal of the same doc.
-		const walk = await walkBlockTree(kernel, docId, 1);
+		const walk = await walkBlockTree(kernel, docId);
 		walks.push(walk);
 		const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
 		const md = await kernel.exportMarkdown(docId);

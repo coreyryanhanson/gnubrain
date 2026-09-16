@@ -20,12 +20,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import {
-	finishWrite,
-	idSet,
-	walkDoc,
-	type WriteKernelClient,
-} from "./writeResult.js";
+import { finishWrite, idSet, type WriteKernelClient } from "./writeResult.js";
 
 /** A nested doc's parent doc id (type='d' rows chain via parent_id) — the
  * doc-level self-descendant pre-check walks this. */
@@ -148,10 +143,10 @@ export async function runMoveMode(
 	const sameDoc = dest.rootId === doc.rootId;
 	// Destination outline: cross-doc fetches the destination walk;
 	// same-doc derives from the already-in-hand source walk — no extra call.
-	const sourceWalk = await walkBlockTree(kernel, doc.rootId, 1);
+	const sourceWalk = await walkBlockTree(kernel, doc.rootId);
 	const destWalk = sameDoc
 		? sourceWalk
-		: await walkBlockTree(kernel, dest.rootId, 1);
+		: await walkBlockTree(kernel, dest.rootId);
 	if (params.toHeadingId !== undefined) {
 		const heading = destWalk.find(
 			(b) => b.id === params.toHeadingId && b.type === "h",
@@ -214,10 +209,10 @@ export async function runMoveMode(
 		// Verified, not trusted: a tree-level miss rolls back silently
 		// behind HTTP success — movedBlockId must appear in the destination's
 		// post-move walk set (and, cross-doc, be gone from the source's).
-		const postSourceWalk = await walkDoc(kernel, doc.rootId);
+		const postSourceWalk = await walkBlockTree(kernel, doc.rootId);
 		const postDestWalk = sameDoc
 			? postSourceWalk
-			: await walkDoc(kernel, dest.rootId);
+			: await walkBlockTree(kernel, dest.rootId);
 		// Same-doc `move` verifies POSITION, not presence: the block was
 		// already in this walk before the move, so set membership cannot
 		// distinguish "landed" from a silent kernel no-op behind HTTP success

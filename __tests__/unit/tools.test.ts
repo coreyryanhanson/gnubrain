@@ -587,7 +587,7 @@ describe("read tool", () => {
 				return id === "d1" ? headings : [];
 			},
 		};
-		const all = await walkBlockTree(client, "d1", 1);
+		const all = await walkBlockTree(client, "d1");
 		expect(all.map((b) => b.id)).toEqual(["h1", "p1"]);
 	});
 
@@ -603,12 +603,12 @@ describe("read tool", () => {
 			},
 		};
 		// Read path: the concurrent-deleted container shortens the outline.
-		const tolerant = await walkBlockTree(client, "d1", 1, {
+		const tolerant = await walkBlockTree(client, "d1", {
 			tolerateVanished: true,
 		});
 		expect(tolerant.map((b) => b.id)).toEqual(["gone"]);
 		// Default (write verification): the same error propagates.
-		await expect(walkBlockTree(client, "d1", 1)).rejects.toBe(boom);
+		await expect(walkBlockTree(client, "d1")).rejects.toBe(boom);
 	});
 });
 

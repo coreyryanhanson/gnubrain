@@ -4,13 +4,15 @@
 // shape `config`, tripped breaker `breaker`, version drift `version`;
 // then never-probed → grey; healthy → capability colors.
 
+import type { ProbeVerdict } from "./validation.js";
+
 export interface KbStatusTheme {
 	/** pi's Theme.fg — colorizes the glyph. */
 	fg(color: string, text: string): string;
 }
 
 export interface KbStatusInput {
-	probe: "ok" | "drift" | "unreachable" | "never-probed";
+	probe: ProbeVerdict;
 	shapeErrors: string[];
 	breakerTripped: boolean;
 	scope: string[];

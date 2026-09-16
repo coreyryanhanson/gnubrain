@@ -131,7 +131,7 @@ export async function assertFreshContent(
 				const fresh = renderOutlineFromWalk(
 					context.sessionId,
 					"kb_write",
-					await walkBlockTree(kernel, context.docId, 1),
+					await walkBlockTree(kernel, context.docId),
 				);
 				outline = {
 					outline: fresh.outline,
@@ -221,15 +221,6 @@ function rootEchoStmt(boxId: string, docId: string): string {
 	);
 }
 
-/** The unfiltered post-write walk (stale-target record) — evidence for
- * insert/move/delete verification. */
-export async function walkDoc(
-	kernel: WriteKernelClient,
-	docId: string,
-): Promise<WalkedBlock[]> {
-	return walkBlockTree(kernel, docId, 1);
-}
-
 export function idSet(walk: WalkedBlock[]): Set<string> {
 	return new Set(walk.map((b) => b.id));
 }
@@ -291,7 +282,7 @@ export async function writeEchoTail(input: {
 	envelope: Record<string, unknown>;
 }> {
 	const { kernel, sessionId, boxId, docId, baselines, refreshBlockIds } = input;
-	const walk = input.walk ?? (await walkBlockTree(kernel, docId, 1));
+	const walk = input.walk ?? (await walkBlockTree(kernel, docId));
 	const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
 	const root = await rootEcho(kernel, boxId, docId);
 	const envelope: Record<string, unknown> = { outline: outline.outline };

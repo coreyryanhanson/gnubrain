@@ -14,7 +14,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import { backlinkCheck, finishWrite, idSet, walkDoc } from "./writeResult.js";
+import { backlinkCheck, finishWrite, idSet } from "./writeResult.js";
 
 export async function runDeleteMode(
 	input: WriteFlowInput,
@@ -26,7 +26,7 @@ export async function runDeleteMode(
 	if (params.doc === true) {
 		// Whole-doc delete: the delete set is the walk set; backlink
 		// visibility rides the confirmation (delete mode).
-		const walk = await walkBlockTree(kernel, doc.rootId, 1);
+		const walk = await walkBlockTree(kernel, doc.rootId);
 		const display = await deleteSetDisplay(kernel, sessionId, walk);
 		const summary =
 			`Delete doc '${doc.title}' (${doc.rootId}) in KB ${name}\n\n` +
@@ -82,7 +82,7 @@ export async function runDeleteMode(
 	return finishWrite(name, { blockId }, async () => {
 		// Verified, not trusted: a missing ID is a kernel success no-op —
 		// the walk-set evidence (target gone) is the report, never assumed.
-		const postWalk = await walkDoc(kernel, doc.rootId);
+		const postWalk = await walkBlockTree(kernel, doc.rootId);
 		const targetGone = !idSet(postWalk).has(blockId);
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);
 		const tail = await echoTail(input, doc, postWalk);
