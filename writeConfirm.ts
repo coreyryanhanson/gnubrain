@@ -33,7 +33,7 @@ const DEFAULT_WRITE_CONFIRM_TIMEOUT = 60;
  * confirm_timeout rule — both zero-kernel-call checks that run before the
  * guard so a denied write costs no kernel round-trips. Returns `dialog:
  * true` when the interactive dialog must run after the guard, `dialog:
- * false` for an approved unattended write (dialog skipped)..
+ * false` for an approved unattended write (dialog skipped).
  */
 export function preflightWrite(input: {
 	hasUI: boolean;

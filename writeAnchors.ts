@@ -110,7 +110,7 @@ export function deriveMoveAnchor(
 	// Last member at the heading's own container depth — recursing through a
 	// subheading's section (its content sits at the same walk depth), never
 	// into a list/quote container (deeper blocks are skipped by the depth
-	// test, so the anchor stays at section level)..
+	// test, so the anchor stays at section level).
 	let anchor: WalkedBlock | undefined;
 	for (let i = members.length - 1; i >= 0; i--) {
 		const member = members[i];
