@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SiYuanAuthError } from "siyuan-kernel-api";
+import { TOOLSET_EVENTS } from "pi-tool-masking";
 import register, { type GnubrainDeps } from "../../index.js";
 
 interface EnvelopeShape {
@@ -25,6 +26,7 @@ function fakePi() {
 	// pi semantics: registered tools are active by default; masking rewrites
 	// this set via setActiveTools.
 	let active: string[] = [];
+	const eventHandlers = new Map<string, Handler[]>();
 	const pi = {
 		on(event: string, handler: Handler) {
 			const list = handlers.get(event) ?? [];
@@ -54,13 +56,24 @@ function fakePi() {
 		setActiveTools(names: string[]) {
 			active = [...names];
 		},
-		events: { emit: () => {}, on: () => {} },
+		events: {
+			emit: () => {},
+			on: (event: string, handler: Handler) => {
+				const list = eventHandlers.get(event) ?? [];
+				list.push(handler);
+				eventHandlers.set(event, list);
+			},
+		},
 		appendEntry(customType: string, data?: unknown) {
 			entries.push({ type: "custom", customType, data });
 		},
 	};
 	return {
 		pi: pi as unknown as Parameters<typeof register>[0],
+		emitEvent: async (event: string) =>
+			Promise.all(
+				(eventHandlers.get(event) ?? []).map((h) => h(event, undefined)),
+			),
 		fire: (event: string, ctx: unknown) =>
 			Promise.all((handlers.get(event) ?? []).map((h) => h(event, ctx))),
 		runCommand: async (args: string, ctx: unknown) =>
@@ -478,5 +491,21 @@ describe("read + write toolset wiring", () => {
 		expect(notifications.at(-1)?.[0]).toContain(
 			"read toolset (kb_query, kb_search, kb_read): off",
 		);
+	});
+
+	it("TOOLSET_EVENTS repaint the status slot without a ctx-bearing trigger", async () => {
+		const { pi, fire, emitEvent } = fakePi();
+		register(pi, deps());
+		const { ctx, statuses } = fakeCtx();
+		await fire("session_start", ctx);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+		// External masking (allowlist mode, toolsetDefaults) fires the event
+		// with no ctx — the repaint must reuse the last render's ctx.
+		pi.setActiveTools([]);
+		await emitEvent(TOOLSET_EVENTS.changed);
+		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		pi.setActiveTools(["kb_query", "kb_search", "kb_read", "kb_write"]);
+		await emitEvent(TOOLSET_EVENTS.restored);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
 	});
 });
