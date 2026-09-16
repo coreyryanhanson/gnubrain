@@ -183,8 +183,11 @@ export async function gateWriteAttempt(input: {
 	// unreachable / never-probed: per-write-attempt probe retry — never a
 	// session-wide loop.
 	try {
-		input.contact?.();
 		const version = await kernel.getVersion();
+		// Fires only once the probe has actually reached the kernel — a thrown
+		// probe must not reset the breaker's consecutive count via the post-op
+		// recordSuccess in runKbCall.
+		input.contact?.();
 		validation.kernelVersion = version;
 		if (version !== pinnedVersion) {
 			validation.probe = "drift";
