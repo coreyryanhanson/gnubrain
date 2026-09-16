@@ -444,19 +444,9 @@ describe("query tool", () => {
 	/** Register the read tools on a fake pi with a query-only kernel stub
 	 * returning `rows`; execute kb_query through the registered definition. */
 	async function executeQuery(rows: Record<string, unknown>[]) {
-		const registered: Record<
-			string,
-			{ execute: (...a: unknown[]) => Promise<{ details: unknown }> }
-		> = {};
-		const pi = {
-			registerTool(tool: { name: string; execute: unknown }) {
-				registered[tool.name] = tool as never;
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
+		const { pi, toolDefs } = fakePi();
 		const kernelCalls: string[] = [];
-		registerReadToolsAndToolset(pi as never, {
+		registerReadToolsAndToolset(pi, {
 			getValidation: () => validation(),
 			getKernel: () =>
 				({
@@ -469,7 +459,9 @@ describe("query tool", () => {
 			breaker: new CircuitBreaker(),
 			baselines: createContentBaselines(),
 		});
-		const tool = registered.kb_query!;
+		const tool = toolDefs.get("kb_query") as unknown as {
+			execute: (...a: unknown[]) => Promise<{ details: unknown }>;
+		};
 		return {
 			run: async (sql: string) =>
 				(
@@ -622,25 +614,14 @@ import { getRegisteredToolsets } from "pi-tool-masking";
 
 describe("read toolset + descriptions", () => {
 	it("registers the read toolset with the three kb_ members, default-enabled, pinned persist key", () => {
-		const registered: { name: string }[] = [];
-		const pi = {
-			registerTool(tool: { name: string }) {
-				registered.push({ name: tool.name });
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
-		registerReadToolsAndToolset(pi as never, {
+		const { pi, toolDefs } = fakePi();
+		registerReadToolsAndToolset(pi, {
 			getValidation: () => undefined,
 			getKernel: () => undefined,
 			breaker: new CircuitBreaker(),
 			baselines: createContentBaselines(),
 		});
-		expect(registered.map((t) => t.name)).toEqual([
-			"kb_query",
-			"kb_search",
-			"kb_read",
-		]);
+		expect([...toolDefs.keys()]).toEqual(["kb_query", "kb_search", "kb_read"]);
 		const entry = getRegisteredToolsets().find(
 			(t) => t.spec.id === READ_TOOLSET_ID,
 		);
@@ -655,22 +636,16 @@ describe("read toolset + descriptions", () => {
 	});
 
 	it("the query tool description carries the pinned table schemas, semantics notes, and discovery pattern", () => {
-		const registered: { name: string; description?: string }[] = [];
-		const pi = {
-			registerTool(tool: { name: string; description: string }) {
-				registered.push(tool);
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
-		registerReadToolsAndToolset(pi as never, {
+		const { pi, toolDefs } = fakePi();
+		registerReadToolsAndToolset(pi, {
 			getValidation: () => undefined,
 			getKernel: () => undefined,
 			breaker: new CircuitBreaker(),
 			baselines: createContentBaselines(),
 		});
-		const description = registered.find((t) => t.name === "kb_query")
-			?.description as string;
+		const description = (
+			toolDefs.get("kb_query") as { description?: string } | undefined
+		)?.description as string;
 		// blocks schema + refs schema (pin)
 		expect(description).toContain(
 			"blocks: id, parent_id, root_id, hpath, box, type, content, updated, sort",
