@@ -1427,7 +1427,7 @@ writes; the opt-out is typed, in settings.
       project that wants both just lists both names in its `defaultKBs` — names are
       cheap to re-list, unlike notebook IDs.
     Validation note: `defaultKBs` names are validated against the (global-only) `kbs`
-    array at `session_start`, so a project default naming a missing/renamed KB still
+    array at `session_start`, so a default naming a missing/renamed KB still
     fails loudly at startup rather than producing a half scope — the name is dropped
     with a warning while valid siblings are kept (stale-notebook precedent; never a
     fallback to the global default, which could silently expand scope). Two failure
