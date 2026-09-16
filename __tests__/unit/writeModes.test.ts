@@ -740,6 +740,32 @@ describe("delete", () => {
 		expect(confirmCalls).toHaveLength(0);
 	});
 
+	it("a kernel rejection mid-verification (SiYuanApiError) → verificationFailed, never a false ok", async () => {
+		// The client throws SiYuanApiError for unknown/locked ids on
+		// getChildBlocks; a strict walk must not let that read as "target
+		// gone" behind a successful HTTP delete.
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			blockRows: [{ id: "p1", content: "doomed" }],
+			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+			armWalkError: (set) => {
+				arm = set;
+			},
+			onDelete: () => arm?.(new SiYuanApiError(500, -1, "block locked")),
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.verificationFailed).toBe(true);
+		expect(result.message).toContain("post-write verification reads failed");
+		expect(result.targetGone).toBeUndefined();
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+	});
+
 	it("doc-level: removeDocByID fires and the result carries only invalidRefs (pinned shape)", async () => {
 		const { execute, calls } = setup({
 			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },

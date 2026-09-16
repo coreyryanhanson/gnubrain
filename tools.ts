@@ -797,7 +797,7 @@ export async function renderOutline(
 	return renderOutlineFromWalk(
 		sessionId,
 		tool,
-		await walkBlockTree(kernel, rootId, 1),
+		await walkBlockTree(kernel, rootId, 1, { tolerateVanished: true }),
 		baselines,
 	);
 }
@@ -852,11 +852,18 @@ interface NestedBlock extends WalkedBlock {
 }
 
 /** getChildBlocks walk preserving container structure. Headings are
- * leaves; only real containers (lists, blockquotes, superblocks) nest. */
+ * leaves; only real containers (lists, blockquotes, superblocks) nest.
+ *
+ * Errors propagate — including SiYuanApiError (unknown/locked block id):
+ * this walk is the post-write verification evidence, and a swallowed
+ * error would read an empty walk as "target gone" behind HTTP success.
+ * The read outline opts into tolerance: a container deleted concurrently
+ * mid-kb_read shortens the outline instead of failing the read. */
 async function walkBlockTreeNested(
 	kernel: KernelReadClient,
 	rootId: string,
 	depth: number,
+	tolerateVanished: boolean,
 ): Promise<NestedBlock[]> {
 	if (depth > MAX_WALK_DEPTH) return [];
 	let children: Record<string, unknown>[];
@@ -866,12 +873,8 @@ async function walkBlockTreeNested(
 		// A vanished container mid-walk ends that branch, not the doc — but
 		// only genuine API misses (the error base's remaining subclasses:
 		// auth/rate-limit classify in runKbCall; network/timeout must
-		// propagate). In the write path this walk is the post-write
-		// verification, and an empty walk here would read as "rolled back
-		// silently behind HTTP success" — finishWrite's verificationFailed
-		// envelope exists precisely to prevent that; it never sees a
-		// swallowed error.
-		if (!(err instanceof SiYuanApiError)) throw err;
+		// propagate).
+		if (!tolerateVanished || !(err instanceof SiYuanApiError)) throw err;
 		return [];
 	}
 	const nodes: NestedBlock[] = [];
@@ -884,7 +887,12 @@ async function walkBlockTreeNested(
 			depth,
 			children: [],
 		};
-		node.children = await walkBlockTreeNested(kernel, node.id, depth + 1);
+		node.children = await walkBlockTreeNested(
+			kernel,
+			node.id,
+			depth + 1,
+			tolerateVanished,
+		);
 		nodes.push(node);
 	}
 	return nodes;
@@ -892,11 +900,14 @@ async function walkBlockTreeNested(
 
 /** Full unfiltered getChildBlocks walk in document order. The heading filter
  * is rendering-only — callers keep the full set as write-verification
- * evidence. */
+ * evidence. tolerateVanished: a SiYuanApiError (unknown/locked id, e.g. a
+ * container deleted concurrently) ends that branch instead of propagating —
+ * for read-path outlines only; write verification stays strict. */
 export async function walkBlockTree(
 	kernel: KernelReadClient,
 	rootId: string,
 	depth: number,
+	opts?: { tolerateVanished?: boolean },
 ): Promise<WalkedBlock[]> {
 	const flat: WalkedBlock[] = [];
 	function flatten(nodes: NestedBlock[]): void {
@@ -906,7 +917,14 @@ export async function walkBlockTree(
 			flatten(node.children);
 		}
 	}
-	flatten(await walkBlockTreeNested(kernel, rootId, depth));
+	flatten(
+		await walkBlockTreeNested(
+			kernel,
+			rootId,
+			depth,
+			opts?.tolerateVanished ?? false,
+		),
+	);
 	return flat;
 }
 

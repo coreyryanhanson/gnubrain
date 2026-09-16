@@ -4,6 +4,7 @@
 
 import { contentHash, type ContentBaselines } from "./baselines.js";
 import {
+	SiYuanApiError,
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 	type BlockTransaction,
@@ -252,7 +253,12 @@ export async function finishWrite(
 	} catch (err) {
 		if (
 			!(err instanceof SiYuanNetworkError) &&
-			!(err instanceof SiYuanTimeoutError)
+			!(err instanceof SiYuanTimeoutError) &&
+			// A kernel rejection mid-verification (unknown/locked id) leaves
+			// the write's outcome unverified too — same envelope. Sibling of
+			// auth/rate-limit, so breaker counting and 429 cooldown are not
+			// affected.
+			!(err instanceof SiYuanApiError)
 		) {
 			throw err;
 		}

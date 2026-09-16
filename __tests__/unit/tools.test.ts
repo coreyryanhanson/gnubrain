@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
+import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { createContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
@@ -577,6 +578,26 @@ describe("read tool", () => {
 		};
 		const all = await walkBlockTree(client, "d1", 1);
 		expect(all.map((b) => b.id)).toEqual(["h1", "p1"]);
+	});
+
+	it("read walk tolerates a vanished container (SiYuanApiError ends that branch); strict default propagates", async () => {
+		const boom = new SiYuanApiError(500, -1, "locked");
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async getChildBlocks(id) {
+				if (id === "gone") throw boom;
+				return id === "d1"
+					? [{ id: "gone", type: "l", subType: "", content: "" }]
+					: [];
+			},
+		};
+		// Read path: the concurrent-deleted container shortens the outline.
+		const tolerant = await walkBlockTree(client, "d1", 1, {
+			tolerateVanished: true,
+		});
+		expect(tolerant.map((b) => b.id)).toEqual(["gone"]);
+		// Default (write verification): the same error propagates.
+		await expect(walkBlockTree(client, "d1", 1)).rejects.toBe(boom);
 	});
 });
 
