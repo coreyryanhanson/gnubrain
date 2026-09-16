@@ -7,9 +7,11 @@ import { spillFile } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
 import {
 	renderOutline,
+	renderOutlineFromWalk,
 	rowPayload,
 	sqlString,
 	walkBlockTree,
+	type WalkedBlock,
 } from "./tools.js";
 import type { SessionValidation } from "./validation.js";
 import {
@@ -63,9 +65,14 @@ async function duplicateStop(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name } = input;
 	const detailed: Record<string, unknown>[] = [];
+	const walks: WalkedBlock[][] = [];
 	for (const row of rows) {
 		const docId = row.root_id;
-		const outline = await renderOutline(kernel, sessionId, "kb_write", docId);
+		// One walk per row serves both the outline and (single-row) the
+		// block-ID payload — never a second traversal of the same doc.
+		const walk = await walkBlockTree(kernel, docId, 1);
+		walks.push(walk);
+		const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
 		const md = await kernel.exportMarkdown(docId);
 		const markdownPath = spillFile(
 			sessionId,
@@ -91,10 +98,9 @@ async function duplicateStop(
 		rows: detailed,
 	};
 	// Single-row: block IDs with content so the agent can go straight to
-	// `edit` by blockId (step 1).
+	// `edit` by blockId (step 1) — reuses the outline walk already in hand.
 	if (rows.length === 1) {
-		const docId = rows[0]!.root_id;
-		const blocks = (await walkBlockTree(kernel, docId, 1)).map((b) => ({
+		const blocks = walks[0]!.map((b) => ({
 			id: b.id,
 			type: b.type,
 			content: b.content,
