@@ -138,7 +138,13 @@ export function writeKernelStub(config: StubConfig = {}) {
 			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
 			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) return [];
 			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
-				return config.blockRows ?? [];
+				// blockRows fixtures are rows of the default doc ("d-doc") —
+				// the stub fills root_id; a foreign-block test pins root_id
+				// explicitly (the spread lets the fixture win).
+				return (config.blockRows ?? []).map((r) => ({
+					root_id: "d-doc",
+					...r,
+				}));
 			}
 			if (stmt.startsWith(PARENT_DOC_STMT_HEAD)) {
 				return config.parentDocRows ?? [];

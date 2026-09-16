@@ -186,7 +186,7 @@ describe("edit", () => {
 		expect(refused.outline).toBeDefined();
 	});
 
-	it("a missing/foreign blockId reaches the kernel — its synchronous not-found error surfaces verbatim (stale-target record)", async () => {
+	it("a missing blockId reaches the kernel — its synchronous not-found error surfaces verbatim (stale-target record)", async () => {
 		const { execute, calls, confirmCalls } = setup({
 			config: {
 				// blockRows route returns [] — the target is already gone.
@@ -200,6 +200,22 @@ describe("edit", () => {
 		expect(orphan.message).toContain("block [b-ghost] not found");
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
 		// No confirmation: nothing exists to show or protect.
+		expect(confirmCalls).toHaveLength(0);
+	});
+
+	it("a foreign blockId (another doc's block) is refused before any dialog or kernel write", async () => {
+		const { execute, calls, confirmCalls } = setup({
+			config: {
+				blockRows: [
+					{ id: "b-foreign", content: "other doc", root_id: "d-other" },
+				],
+			},
+		});
+		const result = await execute({ ...editBase, blockId: "b-foreign" });
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("belongs to another doc");
+		expect(result.message).toContain("d-other");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
 		expect(confirmCalls).toHaveLength(0);
 	});
 
@@ -754,6 +770,25 @@ describe("delete", () => {
 		expect(result.message).toContain("STILL PRESENT");
 	});
 
+	it("a foreign blockId (another doc's block) is refused before any dialog or kernel delete", async () => {
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [
+					{ id: "p-other", content: "other doc", root_id: "d-other" },
+				],
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p-other",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("belongs to another doc");
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+	});
+
 	it("a pre-deleted target: no dialog, kernel no-op → ok with the absent-target evidence", async () => {
 		// blockRows [] — the target vanished before the call; the delete-set
 		// display and confirmation are skipped (nothing to protect).
@@ -871,6 +906,23 @@ describe("block-level move", () => {
 			},
 		});
 	}
+
+	it("a foreign blockId (a block of another doc) is refused before any anchor or kernel move", async () => {
+		// b-foreign is not in the source walk — membership is the scoping check.
+		const harness = moveHarness();
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "b-foreign",
+			toDocId: "d-other",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("is not a block of source doc");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
 
 	it("a pre-deleted source block: moveBlock's synchronous not-found error surfaces verbatim (stale-target record)", async () => {
 		const { execute, calls } = moveHarness(() => {

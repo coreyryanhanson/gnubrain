@@ -144,6 +144,15 @@ export async function runMoveMode(
 	// Destination outline: cross-doc fetches the destination walk;
 	// same-doc derives from the already-in-hand source walk — no extra call.
 	const sourceWalk = await walkBlockTree(kernel, doc.rootId);
+	// Doc scoping: the kernel mutates by raw block id with no doc scoping of
+	// its own, so a foreign id (another doc or KB) would move a block the
+	// user never saw into the destination and read as success. The walk is
+	// already in hand — membership is the scoping check.
+	if (!sourceWalk.some((b) => b.id === blockId)) {
+		return refusedEnvelope(
+			`blockId '${blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+		);
+	}
 	const destWalk = sameDoc
 		? sourceWalk
 		: await walkBlockTree(kernel, dest.rootId);

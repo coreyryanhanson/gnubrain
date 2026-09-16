@@ -90,26 +90,40 @@ export async function confirmGate(
 
 /** SELECT heads the kernel stubs route on — keep builders and heads in
  * sync by construction (each builder concatenates its head constant). */
-export const BLOCK_IN_DOC_STMT_HEAD = "SELECT id, content FROM blocks WHERE id";
+export const BLOCK_IN_DOC_STMT_HEAD =
+	"SELECT id, content, root_id FROM blocks WHERE id";
 export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
 
 /** The target read shared by the blockId-targeting modes — the block's
  * current content (confirmation display + fresh-content baseline), or
- * null when the id is absent from the doc. Absence is never refused
+ * null when the id is absent from the kernel. Absence is never refused
  * here: the stale-target record pins each op's own kernel outcome
  * (edit/move surface the synchronous not-found error verbatim; delete
  * is a success no-op) and the live suite watches the kernel, not this
- * pre-read, for contract drift. */
+ * pre-read, for contract drift. A block that EXISTS but belongs to a
+ * different doc (cross-doc or cross-KB — kb_query rows carry raw ids
+ * across all active KBs) is refused here: the kernel mutates by raw id
+ * with no doc scoping of its own, so forwarding it would write outside
+ * the targeted doc, past the dialog and the fresh-content baseline
+ * (the SQL cannot distinguish foreign from absent — the code compare
+ * can). The TOCTOU window between this read and the kernel call is the
+ * same one every precondition here accepts; post-write verification
+ * walks are the backstop. */
 export async function blockInDoc(
 	kernel: WriteKernelClient,
 	doc: DocTarget,
 	blockId: string,
-): Promise<{ content: string | null }> {
+): Promise<{ content: string | null } | { refusal: string }> {
 	const rows = await kernel.query(
-		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}` +
-			` AND root_id = ${sqlString(doc.rootId)}`,
+		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}`,
 	);
-	return { content: rows[0] === undefined ? null : String(rows[0].content) };
+	if (rows[0] === undefined) return { content: null };
+	const rootId = String(rows[0].root_id ?? "");
+	return rootId === doc.rootId
+		? { content: String(rows[0].content) }
+		: {
+				refusal: `block '${blockId}' belongs to another doc (root ${rootId}), not '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+			};
 }
 
 /** The pinned rejection when a heading id is absent from the doc walk. */

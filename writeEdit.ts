@@ -1,7 +1,7 @@
 // The edit flow: updateBlock on an agent-supplied blockId target.
 
 import { SiYuanApiError } from "siyuan-kernel-api";
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	blockInDoc,
 	confirmGate,
@@ -20,6 +20,7 @@ export async function runEditMode(
 	const { kernel, sessionId, name, baselines, params } = input;
 	const blockId = params.blockId as string;
 	const row = await blockInDoc(kernel, doc, blockId);
+	if ("refusal" in row) return refusedEnvelope(row.refusal);
 	if (row.content !== null) {
 		// Fresh-content baseline: served content where the session has seen
 		// this block, else the block's CURRENT content — displayed in the

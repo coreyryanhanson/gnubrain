@@ -3,7 +3,7 @@
 // set is the walk set). An absent target is the kernel's success no-op —
 // the walk-set evidence reports the end state, never assumed.
 
-import type { Envelope } from "./envelope.js";
+import { refusedEnvelope, type Envelope } from "./envelope.js";
 import { walkBlockTree } from "./walk.js";
 import {
 	backlinkSummary,
@@ -60,6 +60,7 @@ export async function runDeleteMode(
 	}
 	const blockId = params.blockId as string;
 	const row = await blockInDoc(kernel, doc, blockId);
+	if ("refusal" in row) return refusedEnvelope(row.refusal);
 	if (row.content !== null) {
 		// Confirmation only when there is something to delete — an absent
 		// target is the kernel's success no-op (stale-target record): no
