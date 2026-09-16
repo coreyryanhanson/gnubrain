@@ -1,7 +1,21 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 // validation step 1 — offline shape validation of the `gnubrain` settings entry.
 // No network, no kernel calls (those are validation steps 2–3).
 // project-vs-global split: `kbs` + connection keys + interaction dials are
 // global-only; the project file supplies `defaultKBs` names only.
+
+/** Layout of the extension's two settings files — single source of truth so
+ * test harnesses (in-memory `readFile` mocks, temp-HOME seeding) key off the
+ * same builders instead of copying the path strings. */
+export function globalSettingsPath(homeDir?: string): string {
+	return join(homeDir ?? homedir(), ".pi", "agent", "settings.json");
+}
+
+export function projectSettingsPath(cwd: string): string {
+	return join(cwd, ".pi", "settings.json");
+}
 
 export interface KbEntry {
 	name: string;

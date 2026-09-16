@@ -1,6 +1,4 @@
 import { readFile as fsReadFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -9,7 +7,11 @@ import { defineToolset, TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
-import { loadGnubrainSettings } from "./settings.js";
+import {
+	globalSettingsPath,
+	loadGnubrainSettings,
+	projectSettingsPath,
+} from "./settings.js";
 import { renderKbStatus, type KbStatusInput } from "./status.js";
 import {
 	KB_SCOPE_ENTRY_TYPE,
@@ -44,7 +46,13 @@ const STATUS_KEY = "kb";
 
 /** Runtime deps the write tool adds to the register seam. */
 export interface GnubrainDeps {
-	/** Injectable file read — unit tests mock it; the integration suite injects fixture settings in memory through the same seam. */
+	/** Injectable file read — unit tests mock it; the integration suite injects
+	 * fixture settings in memory through the same seam. Key mocks off
+	 * globalSettingsPath/projectSettingsPath, and mind the two file shapes: the
+	 * global file must carry the full `gnubrain` object (baseUrl/apiToken/kbs);
+	 * a project file may omit `gnubrain` entirely or hold only
+	 * `{gnubrain: {defaultKBs}}` — connection keys there fail shape validation
+	 * and degrade the whole session. */
 	readFile?: (path: string) => Promise<string>;
 	homeDir?: string;
 	/** Test seam for the kernel client. */
@@ -152,8 +160,8 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	async function revalidate(ctx: ExtensionContext): Promise<SessionValidation> {
 		const loaded = await loadGnubrainSettings(
 			readFile,
-			join(deps.homeDir ?? homedir(), ".pi", "agent", "settings.json"),
-			join(ctx.cwd, ".pi", "settings.json"),
+			globalSettingsPath(deps.homeDir),
+			projectSettingsPath(ctx.cwd),
 		);
 		const kernel =
 			loaded.global.ok && loaded.global.settings

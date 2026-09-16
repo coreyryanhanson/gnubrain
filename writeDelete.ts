@@ -6,6 +6,7 @@
 import type { Envelope } from "./envelope.js";
 import { walkBlockTree } from "./walk.js";
 import {
+	backlinkSummary,
 	blockInDoc,
 	confirmGate,
 	deleteSetDisplay,
@@ -31,10 +32,7 @@ export async function runDeleteMode(
 			`Delete doc '${doc.title}' (${doc.rootId}) in KB ${name}\n\n` +
 			`delete set: ${display.deleteSet.count} block(s)\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
-			`inbound refs: ${display.backlinks.count}` +
-			(display.backlinks.count > 0
-				? ` from: ${display.backlinks.hpaths.join(", ")}`
-				: "");
+			backlinkSummary(display);
 		if (dialog) {
 			const gate = await confirmGate(input, confirmKey, summary);
 			if (gate !== null) return gate;
@@ -72,10 +70,7 @@ export async function runDeleteMode(
 		const summary =
 			`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
-			`inbound refs: ${display.backlinks.count}` +
-			(display.backlinks.count > 0
-				? ` from: ${display.backlinks.hpaths.join(", ")}`
-				: "");
+			backlinkSummary(display);
 		if (dialog) {
 			const gate = await confirmGate(input, confirmKey, summary);
 			if (gate !== null) return gate;

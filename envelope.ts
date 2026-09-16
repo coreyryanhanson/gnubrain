@@ -99,3 +99,11 @@ export function breakerRefusalEnvelope(): Envelope {
 export function configRefusalEnvelope(errors: string[]): Envelope {
 	return refusedEnvelope(`gnubrain settings are invalid: ${errors.join("; ")}`);
 }
+
+/** A docId that does not resolve in the KB — shared by the read and write
+ * paths so the discovery hint cannot drift between them. */
+export function noSuchDocEnvelope(name: string, docId: string): Envelope {
+	return errorEnvelope(
+		`no doc '${docId}' in KB '${name}' — docIds are echoed root_id values from kb_query/kb_search/kb_read/write results; an ID from another KB reads as nothing`,
+	);
+}

@@ -8,6 +8,7 @@ import { errorEnvelope, type Envelope } from "./envelope.js";
 import { deriveAppendAnchor, sectionDeleteSet } from "./writeAnchors.js";
 import { walkBlockTree } from "./walk.js";
 import {
+	backlinkSummary,
 	confirmGate,
 	deleteSetDisplay,
 	echoTail,
@@ -46,9 +47,9 @@ export async function runReplaceSectionMode(
 		`Replace the section under heading '${heading.content}' in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
 		`delete set: ${display.deleteSet.count} block(s)\n\n` +
 		`current content:\n${display.deleteSet.contentPreview}\n\n` +
-		`inbound refs: ${display.backlinks.count}` +
+		backlinkSummary(display) +
 		(display.backlinks.count > 0
-			? ` from: ${display.backlinks.hpaths.join(", ")} — replacing orphans refs into the section's content blocks (the heading ID survives)`
+			? " — replacing orphans refs into the section's content blocks (the heading ID survives)"
 			: "");
 	if (dialog) {
 		const gate = await confirmGate(input, confirmKey, summary);

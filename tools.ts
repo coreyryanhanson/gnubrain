@@ -15,6 +15,7 @@ import {
 	configRefusalEnvelope,
 	errorEnvelope,
 	type Envelope,
+	noSuchDocEnvelope,
 	refusedEnvelope,
 	textResult,
 } from "./envelope.js";
@@ -452,9 +453,7 @@ export async function runRead(
 	contact();
 	const ownership = await kernel.query(ownershipStmt(boxId, docId));
 	if (ownership.length === 0) {
-		return errorEnvelope(
-			`no doc '${docId}' in KB '${name}' — docIds are root_id values echoed by kb_query/kb_search; an ID from another KB reads as nothing`,
-		);
+		return noSuchDocEnvelope(name, docId);
 	}
 	const rootId = String(ownership[0]?.root_id);
 	const doc = await kernel.exportMarkdown(rootId);

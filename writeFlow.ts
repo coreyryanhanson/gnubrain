@@ -3,7 +3,7 @@
 // reads, and the delete-set display — everything the per-mode flow files
 // (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) build on.
 
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, type Envelope, noSuchDocEnvelope } from "./envelope.js";
 import { previewAtNewline, spillFile } from "./spill.js";
 import { ownershipStmt, sqlString } from "./kernel.js";
 import type { WalkedBlock } from "./walk.js";
@@ -63,9 +63,7 @@ export async function resolveDocTarget(
 	const rows = await kernel.query(ownershipStmt(boxId, docId));
 	const rootId = rows[0] === undefined ? undefined : String(rows[0].root_id);
 	if (rootId === undefined) {
-		return errorEnvelope(
-			`no doc '${docId}' in KB '${name}' — docIds are echoed root_id values from kb_query/kb_search/kb_read/write results; an ID from another KB reads as nothing`,
-		);
+		return noSuchDocEnvelope(name, docId);
 	}
 	const root = await rootEcho(kernel, boxId, rootId);
 	if (root === undefined) {
@@ -157,6 +155,19 @@ export async function echoTail(
 // ---------------------------------------------------------------------------
 
 const DELETE_SET_PREVIEW_CHARS = 2000;
+
+/** Confirmation summary line for a delete-bearing write's inbound refs —
+ * one home so the wording cannot drift between delete and replace-section. */
+export function backlinkSummary(display: {
+	backlinks: { count: number; hpaths: string[] };
+}): string {
+	return (
+		`inbound refs: ${display.backlinks.count}` +
+		(display.backlinks.count > 0
+			? ` from: ${display.backlinks.hpaths.join(", ")}`
+			: "")
+	);
+}
 
 export async function deleteSetDisplay(
 	kernel: WriteKernelClient,
