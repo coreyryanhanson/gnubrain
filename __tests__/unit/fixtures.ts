@@ -32,6 +32,7 @@ export function validation(overrides?: {
 			overrides?.validKBs ?? kbs.map(({ name, notebook }) => [name, notebook]),
 		),
 		scope: overrides?.scope ?? ["recipes"],
+		defaultKBs: ["recipes", "projects"],
 		warnings: [],
 		authFailed: false,
 		lsNotebooksOk: true,

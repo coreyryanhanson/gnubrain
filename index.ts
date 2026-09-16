@@ -15,6 +15,7 @@ import {
 	KB_SCOPE_ENTRY_TYPE,
 	degradedValidation,
 	latestPersistedScope,
+	resolveValidatedScope,
 	runSessionValidation,
 	type KernelProbeClient,
 	type SessionValidation,
@@ -167,7 +168,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		if (kernel !== undefined) kernelClient = kernel;
 		// A kernel stub is only needed past shape validation; when the shape
 		// failed the pipeline skips the network steps regardless.
-		const persisted = latestPersistedScope(ctx.sessionManager.getEntries());
+		// Branch-scoped read: only the active branch's scope snapshot counts —
+		// a scope toggle on an abandoned branch must not leak back in.
+		const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
 		return runSessionValidation({
 			loaded,
 			kernel:
@@ -281,8 +284,29 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		},
 	});
 
-	// Post-restore re-render: the slot reflects the restored scope.
+	// /tree navigation: the active branch changed, so branch-derived state
+	// must be re-derived from the new branch — nothing else is re-probed
+	// (settings/kernel state is navigation-invariant; /new, /resume and /fork
+	// all fire session_start, which re-runs the full pipeline).
 	pi.on("session_tree", (_event, ctx) => {
+		const v = validation;
+		if (v !== undefined && v.settings !== undefined) {
+			// Offline re-resolution against the cached valid set: no kernel
+			// probe (the status slot reflects the result).
+			const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
+			// A scratch warning sink: nothing renders validation.warnings, and
+			// appending per navigation would accumulate; the drop decisions are
+			// already reflected in the resulting scope (the slot shows it).
+			v.scope = resolveValidatedScope(
+				persisted ?? v.defaultKBs,
+				v.settings,
+				v.validKBs,
+				[],
+			);
+		}
+		// A different branch is a different conversation history: served-content
+		// baselines from the old branch must not verify writes on this one.
+		baselines.clear();
 		renderStatus(ctx);
 	});
 

@@ -93,6 +93,8 @@ function fakePi() {
 function fakeCtx(options?: {
 	cwd?: string;
 	entries?: { type: string; customType?: string; data?: unknown }[];
+	/** Active-branch entries; defaults to `entries` (no branching). */
+	branch?: { type: string; customType?: string; data?: unknown }[];
 	hasUI?: boolean;
 	confirm?: (
 		title: string,
@@ -118,7 +120,7 @@ function fakeCtx(options?: {
 			cwd: options?.cwd ?? "/project",
 			sessionManager: {
 				getEntries: () => options?.entries ?? [],
-				getBranch: () => options?.entries ?? [],
+				getBranch: () => options?.branch ?? options?.entries ?? [],
 				getSessionId: () => "test-session",
 			},
 		},
@@ -215,6 +217,28 @@ describe("index wiring", () => {
 		});
 		await fire("session_start", ctx);
 		expect(statuses.at(-1)?.[1]).toBe("● kb: (none)");
+	});
+
+	it("session_tree re-resolves scope from the active branch — an abandoned branch's toggle does not leak", async () => {
+		const { pi, fire } = fakePi();
+		register(pi, deps());
+		// Branch A: no scope toggles → defaultKBs apply. Branch B: dev toggled
+		// off (its snapshot lives only on B's path).
+		const { ctx: ctxA, statuses: statusesA } = fakeCtx({ entries: [] });
+		const { ctx: ctxB, statuses: statusesB } = fakeCtx({
+			entries: [],
+			branch: [
+				{ type: "custom", customType: "kb-scope", data: { active: [] } },
+			],
+		});
+		await fire("session_start", ctxB);
+		expect(statusesB.at(-1)?.[1]).toBe("● kb: (none)");
+		// /tree to branch A: defaultKBs apply again (no snapshot on A's path).
+		await fire("session_tree", ctxA);
+		expect(statusesA.at(-1)?.[1]).toBe("● kb: dev");
+		// And back: the branch-scoped snapshot wins again on B.
+		await fire("session_tree", ctxB);
+		expect(statusesB.at(-1)?.[1]).toBe("● kb: (none)");
 	});
 
 	it("a shape failure degrades the session and the slot shows the config tag", async () => {

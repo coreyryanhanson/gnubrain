@@ -31,6 +31,9 @@ export interface SessionValidation {
 	validKBs: Map<string, string>;
 	/** Active scope names, all valid; empty = nothing active (never activate-all). */
 	scope: string[];
+	/** The configured default (project defaultKBs over global) — retained so
+	 * /tree navigation can re-resolve scope offline from the new branch. */
+	defaultKBs: string[];
 	warnings: string[];
 	/** A call-level auth failure on `lsNotebooks` — feeds the breaker. Network drops never set it. */
 	authFailed: boolean;
@@ -49,8 +52,7 @@ export function latestPersistedScope(
 ): string[] | undefined {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
-		if (entry === undefined) continue;
-		if (entry.type === "custom" && entry.customType === KB_SCOPE_ENTRY_TYPE) {
+		if (entry?.type === "custom" && entry.customType === KB_SCOPE_ENTRY_TYPE) {
 			const data = entry.data as { active?: unknown } | undefined;
 			if (Array.isArray(data?.active)) {
 				return data.active.filter((n): n is string => typeof n === "string");
@@ -59,6 +61,32 @@ export function latestPersistedScope(
 		}
 	}
 	return undefined;
+}
+
+/** Scope filter shared by startup validation and /tree re-resolution:
+ * warn-and-drop unknown names (no global-default fallback — stale-notebook
+ * precedent), warn-and-drop stale/encrypted names, keep valid siblings. */
+export function resolveValidatedScope(
+	requested: readonly string[],
+	settings: GnubrainSettings,
+	validKBs: Map<string, string>,
+	warnings: string[],
+): string[] {
+	const scope: string[] = [];
+	for (const name of requested) {
+		if (!settings.kbs.some((kb) => kb.name === name)) {
+			// Project-file unknown names: warn and drop, keep valid siblings;
+			// never fall back to the global default (stale-notebook precedent).
+			warnings.push(`KB '${name}' is not configured — dropped from scope`);
+		} else if (!validKBs.has(name)) {
+			warnings.push(
+				`KB '${name}' is not in the valid set (stale or encrypted notebook) — dropped from scope`,
+			);
+		} else {
+			scope.push(name);
+		}
+	}
+	return scope;
 }
 
 /** Degraded all-or-nothing result: the config is unusable → no probe ran,
@@ -72,6 +100,7 @@ export function degradedValidation(errors: string[]): SessionValidation {
 		kernelVersion: undefined,
 		validKBs: new Map(),
 		scope: [],
+		defaultKBs: [],
 		warnings: [],
 		authFailed: false,
 		lsNotebooksOk: false,
@@ -117,6 +146,9 @@ export async function runSessionValidation(input: {
 
 	// Step 3 — notebook existence + encryption state. The first authenticated
 	// call: an auth failure feeds the breaker; a network drop never counts.
+	// The configured default (project defaultKBs over global) is retained on
+	// every result so /tree navigation can re-resolve scope offline.
+	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
 	const validKBs = new Map<string, string>();
 	try {
 		const list: NotebookList = await input.kernel.listNotebooks();
@@ -151,31 +183,20 @@ export async function runSessionValidation(input: {
 			kernelVersion,
 			validKBs,
 			scope: [],
+			defaultKBs: configuredDefault,
 			warnings,
 			authFailed: err instanceof SiYuanAuthError,
 			lsNotebooksOk: false,
 		};
 	}
 
-	// Scope resolution: persisted scope wins, else defaultKBs — the project
-	// file's value when present, else the global one. Absent = empty set.
-	const persisted = input.persistedScope;
-	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
-	const requested = persisted ?? configuredDefault;
-	const scope: string[] = [];
-	for (const name of requested) {
-		if (!settings.kbs.some((kb) => kb.name === name)) {
-			// Project-file unknown names: warn and drop, keep valid siblings;
-			// never fall back to the global default (stale-notebook precedent).
-			warnings.push(`KB '${name}' is not configured — dropped from scope`);
-		} else if (!validKBs.has(name)) {
-			warnings.push(
-				`KB '${name}' is not in the valid set (stale or encrypted notebook) — dropped from scope`,
-			);
-		} else {
-			scope.push(name);
-		}
-	}
+	// Scope resolution: persisted scope wins, else the configured default.
+	const scope = resolveValidatedScope(
+		input.persistedScope ?? configuredDefault,
+		settings,
+		validKBs,
+		warnings,
+	);
 
 	return {
 		settings,
@@ -184,6 +205,7 @@ export async function runSessionValidation(input: {
 		kernelVersion,
 		validKBs,
 		scope,
+		defaultKBs: configuredDefault,
 		warnings,
 		authFailed: false,
 		lsNotebooksOk: true,
