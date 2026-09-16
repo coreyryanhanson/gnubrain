@@ -26,7 +26,7 @@ import {
 	validateMintTitle,
 	type GuardRow,
 } from "./writeGuard.js";
-import type { WriteKernelClient } from "./writeResult.js";
+import { finishWrite, type WriteKernelClient } from "./writeResult.js";
 
 export interface CreateFlowInput {
 	sessionId: string;
@@ -272,51 +272,55 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		...(parentID !== undefined ? { parentID } : {}),
 	});
 
-	// Verified-create (step 4): by-ID asserts on the kernel-returned root
-	// ID — fail-loud on shape, never a by-title re-lookup. The bounded
-	// re-read absorbs the kernel's async index lag (verifiedRoot doc).
-	const root = await verifiedRoot(kernel, boxId, returnedId);
-	if (root === undefined) {
-		return errorEnvelope(
-			`verified-create failed: the kernel returned doc id '${returnedId}' but no type='d' row exists for it in KB '${name}' — the mint is unconfirmable; do not retry blindly`,
-		);
-	}
-	if (parentID !== undefined) {
-		// Nested asserts: the parent must still exist with the hpath that was
-		// used, and the child's hpath must equal storedParentHpath + "/" +
-		// the child's STORED title (ground truth, never the submitted form).
-		const parentNow = (
-			await kernel.query(parentLookupStmt(boxId, parentID))
-		).map((r) => ({ hpath: String(r.hpath) }))[0];
-		if (parentNow === undefined || parentNow.hpath !== storedParentHpath) {
+	// Post-mint reads: a network drop during verification must never read
+	// as "unreachable" — the doc may already be minted (finishWrite doc).
+	return finishWrite(input.name, { docId: returnedId }, async () => {
+		// Verified-create (step 4): by-ID asserts on the kernel-returned root
+		// ID — fail-loud on shape, never a by-title re-lookup. The bounded
+		// re-read absorbs the kernel's async index lag (verifiedRoot doc).
+		const root = await verifiedRoot(kernel, boxId, returnedId);
+		if (root === undefined) {
 			return errorEnvelope(
-				`verified-create failed: parent '${parentID}' was deleted or renamed between the hpath read-back and the create — the kernel minted a ghost intermediate; drop the ghost subtree and retry`,
+				`verified-create failed: the kernel returned doc id '${returnedId}' but no type='d' row exists for it in KB '${name}' — the mint is unconfirmable; do not retry blindly`,
 			);
 		}
-		const expectedChildHpath = `${storedParentHpath}/${root.content}`;
-		if (root.hpath !== expectedChildHpath) {
-			return errorEnvelope(
-				`verified-create failed: stored hpath '${root.hpath}' does not match ground truth '${expectedChildHpath}' — unexpected kernel title normalization`,
-			);
+		if (parentID !== undefined) {
+			// Nested asserts: the parent must still exist with the hpath that was
+			// used, and the child's hpath must equal storedParentHpath + "/" +
+			// the child's STORED title (ground truth, never the submitted form).
+			const parentNow = (
+				await kernel.query(parentLookupStmt(boxId, parentID))
+			).map((r) => ({ hpath: String(r.hpath) }))[0];
+			if (parentNow === undefined || parentNow.hpath !== storedParentHpath) {
+				return errorEnvelope(
+					`verified-create failed: parent '${parentID}' was deleted or renamed between the hpath read-back and the create — the kernel minted a ghost intermediate; drop the ghost subtree and retry`,
+				);
+			}
+			const expectedChildHpath = `${storedParentHpath}/${root.content}`;
+			if (root.hpath !== expectedChildHpath) {
+				return errorEnvelope(
+					`verified-create failed: stored hpath '${root.hpath}' does not match ground truth '${expectedChildHpath}' — unexpected kernel title normalization`,
+				);
+			}
 		}
-	}
 
-	const outline = await renderOutline(
-		kernel,
-		sessionId,
-		"kb_write",
-		root.root_id,
-	);
-	return {
-		status: "ok",
-		message: `created '${root.content}' in KB '${name}' — docId ${root.root_id}, hpath ${root.hpath}`,
-		kb: name,
-		docId: root.root_id,
-		title: root.content,
-		hpath: root.hpath,
-		outline: outline.outline,
-		...(outline.fullOutlinePath !== undefined
-			? { fullOutlinePath: outline.fullOutlinePath }
-			: {}),
-	};
+		const outline = await renderOutline(
+			kernel,
+			sessionId,
+			"kb_write",
+			root.root_id,
+		);
+		return {
+			status: "ok",
+			message: `created '${root.content}' in KB '${name}' — docId ${root.root_id}, hpath ${root.hpath}`,
+			kb: name,
+			docId: root.root_id,
+			title: root.content,
+			hpath: root.hpath,
+			outline: outline.outline,
+			...(outline.fullOutlinePath !== undefined
+				? { fullOutlinePath: outline.fullOutlinePath }
+				: {}),
+		};
+	});
 }

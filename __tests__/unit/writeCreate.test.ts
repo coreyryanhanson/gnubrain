@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { SiYuanNetworkError } from "siyuan-kernel-api";
 import { type StubConfig, base, setup } from "./writeHarness.js";
 
 describe("guard-stop staging", () => {
@@ -219,6 +220,41 @@ describe("verified-create", () => {
 		expect(r.details.message).toContain("stale or foreign target");
 		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
 			false,
+		);
+	});
+});
+
+// A network drop after a successful mint must report verificationFailed,
+// never "unreachable" — the doc exists and a blind retry would duplicate it.
+describe("network drop after a landed create", () => {
+	it("verified-create reads fail → verificationFailed, not 'unreachable'", async () => {
+		const { execute, kernel } = setup({
+			__config: {
+				createdRows: [
+					{
+						id: "d-new",
+						root_id: "d-new",
+						content: "Docker Networking",
+						hpath: "/Docker Networking",
+						updated: "20260101120000",
+					},
+				],
+			},
+		});
+		const origCreate = kernel.client.createDocWithMarkdown.bind(kernel.client);
+		kernel.client.createDocWithMarkdown = async (params) => {
+			kernel.client.query = async () => {
+				throw new SiYuanNetworkError();
+			};
+			return origCreate(params);
+		};
+		const r = await execute({ ...base, topic: "Docker Networking" });
+		expect(r.details.status).toBe("error");
+		expect(r.details.verificationFailed).toBe(true);
+		expect(r.details.message).toContain("post-write verification reads failed");
+		expect(r.details.message).not.toContain("SiYuan unreachable");
+		expect(kernel.calls.some((c) => c.method === "createDocWithMarkdown")).toBe(
+			true,
 		);
 	});
 });

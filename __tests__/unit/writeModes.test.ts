@@ -5,7 +5,11 @@
 // definition on a fake-pi harness with a SQL-routed kernel stub.
 
 import { describe, expect, it } from "vitest";
-import { SiYuanApiError } from "siyuan-kernel-api";
+import {
+	SiYuanApiError,
+	SiYuanNetworkError,
+	SiYuanTimeoutError,
+} from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import {
 	createWriteConfirmState,
@@ -38,6 +42,10 @@ interface StubConfig {
 	onDelete?: () => void;
 	onMove?: () => void;
 	onUpdate?: () => void;
+	/** Captures a setter the test calls from a mutation callback: all
+	 * subsequent query() calls throw — the network drop between a landed
+	 * write and the post-write verification reads. */
+	armQueryError?: (arm: (err: Error) => void) => void;
 }
 
 /** Kernel stub with a SQL router over the mode-flow routes (ownership, root
@@ -56,12 +64,17 @@ function writeKernelStub(config: StubConfig = {}) {
 	};
 	const stmtDocId = (stmt: string): string | undefined =>
 		/id = '([^']+)'/.exec(stmt)?.[1];
+	let queryError: Error | undefined;
+	config.armQueryError?.((err) => {
+		queryError = err;
+	});
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => "3.8.3",
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
+			if (queryError) throw queryError;
 			if (stmt.includes("FROM refs")) return config.refRows ?? [];
 			if (stmt.includes("root_id IN")) return config.hpathRows ?? [];
 			if (stmt.includes("WHERE id IN")) return [];
@@ -621,6 +634,34 @@ describe("replace-section", () => {
 		expect(result.message).toContain("kernel gone mid-sweep");
 	});
 
+	it("mid-sweep drop after landed deletes → verificationFailed, not 'unreachable'", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		let deletes = 0;
+		const harness = setup({
+			childrenFor: REPLACE_DOC,
+			armQueryError: (set) => {
+				arm = set;
+			},
+			onInsert: () => {
+				harness.childrenFor["d-doc"] = [
+					...REPLACE_DOC["d-doc"].slice(0, 3),
+					walkBlock("b-new", "p", "", "rewritten section"),
+					...REPLACE_DOC["d-doc"].slice(3),
+				];
+			},
+			onDelete: () => {
+				deletes += 1;
+				// One delete applied, then the connection drops mid-sweep.
+				if (deletes === 2) arm?.(new SiYuanNetworkError());
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.verificationFailed).toBe(true);
+		expect(result.message).toContain("post-write verification reads failed");
+		expect(result.message).not.toContain("SiYuan unreachable");
+	});
+
 	it("the confirmation displays the delete set: count, content, inbound refs + referring hpaths", async () => {
 		const { execute, confirmCalls } = setup({
 			childrenFor: REPLACE_DOC,
@@ -1170,5 +1211,68 @@ describe("write-tool doctrine lines", () => {
 		expect(description).toContain("always tool-derived");
 		expect(description).toContain("prefer edit/replace-section over append");
 		expect(description).toContain("'kbs' is read-only");
+	});
+});
+
+// Network drop between a landed write and its post-write verification
+// reads: the result must never read as "SiYuan unreachable" — that
+// invites the blind retry that duplicates or re-applies the write.
+describe("network drop after a landed write", () => {
+	it("edit: post-write echo-read drop → verificationFailed, not 'unreachable'", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			armQueryError: (set) => {
+				arm = set;
+			},
+			onUpdate: () => arm?.(new SiYuanNetworkError()),
+		});
+		const r = await execute(editBase);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("post-write verification reads failed");
+		expect(r.message).toContain("do NOT retry blindly");
+		expect(r.message).not.toContain("SiYuan unreachable");
+		// The mutation itself landed — the failure is in the reads.
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+	});
+
+	it("edit: post-write read timeout classifies the same way", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const { execute } = setup({
+			blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			armQueryError: (set) => {
+				arm = set;
+			},
+			onUpdate: () => arm?.(new SiYuanTimeoutError(30_000)),
+		});
+		const r = await execute(editBase);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("post-write verification reads failed");
+	});
+
+	it("append: post-write verification drop → verificationFailed, not 'unreachable'", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			armQueryError: (set) => {
+				arm = set;
+			},
+			onInsert: () => arm?.(new SiYuanNetworkError()),
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "append",
+			docId: "d-doc",
+			markdown: "new section",
+		});
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).not.toContain("SiYuan unreachable");
+		expect(
+			calls.filter(
+				(c) => c.method === "insertBlock" || c.method === "appendBlock",
+			),
+		).toHaveLength(1);
 	});
 });

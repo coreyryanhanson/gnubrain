@@ -33,6 +33,7 @@ import {
 	assertFreshContent,
 	backlinkCheck,
 	establishBaselines,
+	finishWrite,
 	idSet,
 	newBlockIdFrom,
 	rootEcho,
@@ -343,8 +344,9 @@ async function runEditMode(
 		await kernel.updateBlock({ id: blockId, data: input.body });
 	} catch (err) {
 		// stale-target record: updateBlock errors synchronously — surface
-		// verbatim with the fresh outline attached. Auth/rate-limit/network
-		// classes rethrow for runKbCall's classification.
+		// verbatim with the fresh outline attached. Network classes rethrow
+		// for runKbCall's unreachable classification — correct here, the
+		// mutation itself did not land.
 		if (!(err instanceof SiYuanApiError)) throw err;
 		const tail = await writeEchoTail({
 			kernel,
@@ -355,19 +357,23 @@ async function runEditMode(
 		});
 		return errorEnvelope(err.message, { kb: name, ...tail.envelope });
 	}
-	const tail = await writeEchoTail({
-		kernel,
-		sessionId,
-		boxId,
-		docId: doc.rootId,
-		baselines,
+	// Post-mutation reads: a network drop here must never read as
+	// "unreachable" — the edit is already applied (finishWrite doc).
+	return finishWrite(name, {}, async () => {
+		const tail = await writeEchoTail({
+			kernel,
+			sessionId,
+			boxId,
+			docId: doc.rootId,
+			baselines,
+		});
+		return {
+			status: "ok",
+			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,
+			kb: name,
+			...tail.envelope,
+		};
 	});
-	return {
-		status: "ok",
-		message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,
-		kb: name,
-		...tail.envelope,
-	};
 }
 
 // --- append (tool-derived nextID anchor; doc-end fallback) ------------
@@ -402,19 +408,35 @@ async function runAppendMode(
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
 			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
-	// verified, not trusted: the returned id must appear among the
-	// post-write walk set's newly-present ids — a tree-level miss rolls back
-	// silently behind HTTP success. Multi-block: diff-based; single-block:
-	// exactly one id (pinned live)..
-	const newBlockId = newBlockIdFrom(tx);
-	const preIds = idSet(walk);
-	const postWalk = await walkIdSet(kernel, doc.rootId);
-	const postIds = idSet(postWalk);
-	const landed =
-		newBlockId !== undefined &&
-		!preIds.has(newBlockId) &&
-		postIds.has(newBlockId);
-	if (!landed) {
+	// Post-mutation reads: a network drop here must never read as
+	// "unreachable" — the insert may already be applied (finishWrite doc).
+	return finishWrite(name, { anchor: anchor.anchor }, async () => {
+		// verified, not trusted: the returned id must appear among the
+		// post-write walk set's newly-present ids — a tree-level miss rolls
+		// back silently behind HTTP success. Multi-block: diff-based;
+		// single-block: exactly one id (pinned live).
+		const newBlockId = newBlockIdFrom(tx);
+		const preIds = idSet(walk);
+		const postWalk = await walkIdSet(kernel, doc.rootId);
+		const postIds = idSet(postWalk);
+		const landed =
+			newBlockId !== undefined &&
+			!preIds.has(newBlockId) &&
+			postIds.has(newBlockId);
+		if (!landed) {
+			const tail = await writeEchoTail({
+				kernel,
+				sessionId,
+				boxId,
+				docId: doc.rootId,
+				baselines: input.baselines,
+				walk: postWalk,
+			});
+			return errorEnvelope(
+				`verified-append failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`,
+				{ kb: name, anchor: anchor.anchor, ...tail.envelope },
+			);
+		}
 		const tail = await writeEchoTail({
 			kernel,
 			sessionId,
@@ -423,27 +445,15 @@ async function runAppendMode(
 			baselines: input.baselines,
 			walk: postWalk,
 		});
-		return errorEnvelope(
-			`verified-append failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`,
-			{ kb: name, anchor: anchor.anchor, ...tail.envelope },
-		);
-	}
-	const tail = await writeEchoTail({
-		kernel,
-		sessionId,
-		boxId,
-		docId: doc.rootId,
-		baselines: input.baselines,
-		walk: postWalk,
+		return {
+			status: "ok",
+			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
+			kb: name,
+			anchor: anchor.anchor,
+			newBlockId,
+			...tail.envelope,
+		};
 	});
-	return {
-		status: "ok",
-		message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
-		kb: name,
-		anchor: anchor.anchor,
-		newBlockId,
-		...tail.envelope,
-	};
 }
 
 // --- replace-section (enumerate → insert → delete, one call) ----------
@@ -506,51 +516,57 @@ async function runReplaceSectionMode(
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
 			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
-	const newBlockId = newBlockIdFrom(tx);
-	// Verify the insert landed BEFORE any delete — a silent rollback must not
-	// sweep the old section away (stale-target record).
-	const preIds = idSet(walk);
-	const afterInsertWalk = await walkIdSet(kernel, doc.rootId);
-	const landed =
-		newBlockId !== undefined &&
-		!preIds.has(newBlockId) &&
-		idSet(afterInsertWalk).has(newBlockId);
-	if (!landed) {
-		return errorEnvelope(
-			`verified-insert failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; the old section is untouched`,
-			{ kb: name, anchor: anchor.anchor },
+	// Everything from here on is post-mutation — a drop anywhere in the
+	// insert verification, the delete sweep, or the echo must never read
+	// as "unreachable" while the insert has landed and the sweep may be
+	// half-applied (finishWrite doc).
+	return finishWrite(name, { anchor: anchor.anchor }, async () => {
+		const newBlockId = newBlockIdFrom(tx);
+		// Verify the insert landed BEFORE any delete — a silent rollback
+		// must not sweep the old section away (stale-target record).
+		const preIds = idSet(walk);
+		const afterInsertWalk = await walkIdSet(kernel, doc.rootId);
+		const landed =
+			newBlockId !== undefined &&
+			!preIds.has(newBlockId) &&
+			idSet(afterInsertWalk).has(newBlockId);
+		if (!landed) {
+			return errorEnvelope(
+				`verified-insert failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; the old section is untouched`,
+				{ kb: name, anchor: anchor.anchor },
+			);
+		}
+		// Deletes ride the pre-enumerated set — a post-insert re-enumeration
+		// would sweep the replacement into the delete set.
+		for (const block of deleteSet) {
+			await kernel.deleteBlock(block.id);
+		}
+		// invalidRefs (write-result contract): post-write echo over the
+		// enumerated delete set — what actually got orphaned, verified.
+		const invalidRefs = await backlinkCheck(
+			kernel,
+			deleteSet.map((b) => b.id),
 		);
-	}
-	// Deletes ride the pre-enumerated set — a post-insert re-enumeration
-	// would sweep the replacement into the delete set.
-	for (const block of deleteSet) {
-		await kernel.deleteBlock(block.id);
-	}
-	// invalidRefs (write-result contract): post-write echo over the
-	// enumerated delete set — what actually got orphaned, verified.
-	const invalidRefs = await backlinkCheck(
-		kernel,
-		deleteSet.map((b) => b.id),
-	);
-	// The echo tail re-walks AFTER the deletes: the post-insert walk still
-	// carries the swept blocks, and the outline-freshness contract requires
-	// the post-write tree (write-result contract).
-	const tail = await writeEchoTail({
-		kernel,
-		sessionId,
-		boxId,
-		docId: doc.rootId,
-		baselines,
+		// The echo tail re-walks AFTER the deletes: the post-insert walk still
+		// carries the swept blocks, and the outline-freshness contract requires
+		// the post-write tree (write-result contract).
+		const tail = await writeEchoTail({
+			kernel,
+			sessionId,
+			boxId,
+			docId: doc.rootId,
+			baselines,
+		});
+		return {
+			status: "ok",
+			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
+			kb: name,
+			anchor: anchor.anchor,
+			newBlockId,
+			invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
+			...tail.envelope,
+		};
 	});
-	return {
-		status: "ok",
-		message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
-		kb: name,
-		anchor: anchor.anchor,
-		newBlockId,
-		invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
-		...tail.envelope,
-	};
 }
 
 // --- delete (block-level deleteBlock; doc-level removeDocByID) --------
@@ -580,18 +596,25 @@ async function runDeleteMode(
 			if (gate !== null) return gate;
 		}
 		await kernel.removeDocByID(doc.rootId);
-		// invalidRefs rides the pre-delete walk set — the doc is gone.
-		const invalidRefs = await backlinkCheck(
-			kernel,
-			walk.map((b) => b.id),
-		);
-		// Pinned shape: only invalidRefs — no doc left to outline.
-		return {
-			status: "ok",
-			message: `deleted doc '${doc.title}' (${doc.rootId}) in KB ${name} — ${invalidRefs.count} orphaned ref(s)`,
-			kb: name,
-			invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
-		};
+		// Post-mutation reads: a network drop here must never read as
+		// "unreachable" — the doc may already be gone (finishWrite doc).
+		return finishWrite(name, {}, async () => {
+			// invalidRefs rides the pre-delete walk set — the doc is gone.
+			const invalidRefs = await backlinkCheck(
+				kernel,
+				walk.map((b) => b.id),
+			);
+			// Pinned shape: only invalidRefs — no doc left to outline.
+			return {
+				status: "ok",
+				message: `deleted doc '${doc.title}' (${doc.rootId}) in KB ${name} — ${invalidRefs.count} orphaned ref(s)`,
+				kb: name,
+				invalidRefs: {
+					count: invalidRefs.count,
+					hpaths: invalidRefs.hpaths,
+				},
+			};
+		});
 	}
 	const blockId = params.blockId as string;
 	const rows = await kernel.query(blockInDocStmt(doc.rootId, blockId));
@@ -615,28 +638,35 @@ async function runDeleteMode(
 		if (gate !== null) return gate;
 	}
 	await kernel.deleteBlock(blockId);
-	// Verified, not trusted: a missing ID is a kernel success no-op —
-	// the walk-set evidence (target gone) is the report, never assumed.
-	const postWalk = await walkIdSet(kernel, doc.rootId);
-	const targetGone = !idSet(postWalk).has(blockId);
-	const invalidRefs = await backlinkCheck(kernel, [blockId]);
-	const tail = await writeEchoTail({
-		kernel,
-		sessionId,
-		boxId,
-		docId: doc.rootId,
-		baselines: input.baselines,
-		walk: postWalk,
+	// Post-mutation reads: a network drop here must never read as
+	// "unreachable" — the delete may already be applied (finishWrite doc).
+	return finishWrite(name, { blockId }, async () => {
+		// Verified, not trusted: a missing ID is a kernel success no-op —
+		// the walk-set evidence (target gone) is the report, never assumed.
+		const postWalk = await walkIdSet(kernel, doc.rootId);
+		const targetGone = !idSet(postWalk).has(blockId);
+		const invalidRefs = await backlinkCheck(kernel, [blockId]);
+		const tail = await writeEchoTail({
+			kernel,
+			sessionId,
+			boxId,
+			docId: doc.rootId,
+			baselines: input.baselines,
+			walk: postWalk,
+		});
+		return {
+			status: "ok",
+			message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target ${targetGone ? "absent from" : "STILL PRESENT in"} the post-write tree; ${invalidRefs.count} orphaned ref(s)`,
+			kb: name,
+			blockId,
+			targetGone,
+			invalidRefs: {
+				count: invalidRefs.count,
+				hpaths: invalidRefs.hpaths,
+			},
+			...tail.envelope,
+		};
 	});
-	return {
-		status: "ok",
-		message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target ${targetGone ? "absent from" : "STILL PRESENT in"} the post-write tree; ${invalidRefs.count} orphaned ref(s)`,
-		kb: name,
-		blockId,
-		targetGone,
-		invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
-		...tail.envelope,
-	};
 }
 
 // --- move (block-level moveBlock with tool-derived anchors;
@@ -731,21 +761,25 @@ async function runMoveMode(
 			if (!(err instanceof SiYuanApiError)) throw err;
 			return errorEnvelope(err.message, { kb: name, docId: doc.rootId });
 		}
-		const tail = await writeEchoTail({
-			kernel,
-			sessionId,
-			boxId,
-			docId: doc.rootId,
-			baselines: input.baselines,
+		// Post-mutation reads: a network drop here must never read as
+		// "unreachable" — the move may already be applied (finishWrite doc).
+		return finishWrite(name, {}, async () => {
+			const tail = await writeEchoTail({
+				kernel,
+				sessionId,
+				boxId,
+				docId: doc.rootId,
+				baselines: input.baselines,
+			});
+			// Pinned shape: outline + title/hpath echo, no anchor/newBlockId/
+			// destOutline (doc-level record).
+			return {
+				status: "ok",
+				message: `moved doc '${doc.title}' to ${destLabel} (KB ${name})`,
+				kb: name,
+				...tail.envelope,
+			};
 		});
-		// Pinned shape: outline + title/hpath echo, no anchor/newBlockId/
-		// destOutline (doc-level record).
-		return {
-			status: "ok",
-			message: `moved doc '${doc.title}' to ${destLabel} (KB ${name})`,
-			kb: name,
-			...tail.envelope,
-		};
 	}
 	const blockId = params.blockId as string;
 	const rows = await kernel.query(blockInDocStmt(doc.rootId, blockId));
@@ -806,19 +840,21 @@ async function runMoveMode(
 	} else {
 		await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
 	}
-	// Verified, not trusted: a tree-level miss rolls back silently
-	// behind HTTP success — movedBlockId must appear in the destination's
-	// post-move walk set (and, cross-doc, be gone from the source's).
-	const postSourceWalk = await walkIdSet(kernel, doc.rootId);
-	const postDestWalk = sameDoc
-		? postSourceWalk
-		: await walkIdSet(kernel, dest.rootId);
-	const movedInDest = idSet(postDestWalk).has(blockId);
-	const movedGoneFromSource = sameDoc || !idSet(postSourceWalk).has(blockId);
-	const destPayload = sameDoc
-		? {}
-		: await destOutlinePayload(sessionId, postDestWalk);
-	if (!movedInDest || !movedGoneFromSource) {
+	// Post-mutation reads: a network drop here must never read as
+	// "unreachable" — the move may already be applied (finishWrite doc).
+	return finishWrite(name, { anchor: anchor.anchor }, async () => {
+		// Verified, not trusted: a tree-level miss rolls back silently
+		// behind HTTP success — movedBlockId must appear in the destination's
+		// post-move walk set (and, cross-doc, be gone from the source's).
+		const postSourceWalk = await walkIdSet(kernel, doc.rootId);
+		const postDestWalk = sameDoc
+			? postSourceWalk
+			: await walkIdSet(kernel, dest.rootId);
+		const movedInDest = idSet(postDestWalk).has(blockId);
+		const movedGoneFromSource = sameDoc || !idSet(postSourceWalk).has(blockId);
+		const destPayload = sameDoc
+			? {}
+			: await destOutlinePayload(sessionId, postDestWalk);
 		const srcTail = await writeEchoTail({
 			kernel,
 			sessionId,
@@ -827,33 +863,27 @@ async function runMoveMode(
 			baselines: input.baselines,
 			walk: postSourceWalk,
 		});
-		return errorEnvelope(
-			`verified-move failed: block '${blockId}' is ${movedInDest ? "still present in the source tree" : "absent from the destination tree"} — the transaction rolled back silently behind HTTP success`,
-			{
-				kb: name,
-				anchor: anchor.anchor,
-				...srcTail.envelope,
-				...destPayload,
-			},
-		);
-	}
-	const srcTail = await writeEchoTail({
-		kernel,
-		sessionId,
-		boxId,
-		docId: doc.rootId,
-		baselines: input.baselines,
-		walk: postSourceWalk,
+		if (!movedInDest || !movedGoneFromSource) {
+			return errorEnvelope(
+				`verified-move failed: block '${blockId}' is ${movedInDest ? "still present in the source tree" : "absent from the destination tree"} — the transaction rolled back silently behind HTTP success`,
+				{
+					kb: name,
+					anchor: anchor.anchor,
+					...srcTail.envelope,
+					...destPayload,
+				},
+			);
+		}
+		return {
+			status: "ok",
+			message: `moved block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})`,
+			kb: name,
+			anchor: anchor.anchor,
+			movedBlockId: blockId,
+			...srcTail.envelope,
+			...destPayload,
+		};
 	});
-	return {
-		status: "ok",
-		message: `moved block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})`,
-		kb: name,
-		anchor: anchor.anchor,
-		movedBlockId: blockId,
-		...srcTail.envelope,
-		...destPayload,
-	};
 }
 
 // ---------------------------------------------------------------------------

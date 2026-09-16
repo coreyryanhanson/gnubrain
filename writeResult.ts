@@ -4,8 +4,12 @@
 // sets) every doc-targeting result shares.
 
 import { createHash } from "node:crypto";
-import type { BlockTransaction } from "siyuan-kernel-api";
-import { refusedEnvelope, type Envelope } from "./envelope.js";
+import {
+	SiYuanNetworkError,
+	SiYuanTimeoutError,
+	type BlockTransaction,
+} from "siyuan-kernel-api";
+import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	renderOutlineFromWalk,
 	sqlString,
@@ -258,6 +262,38 @@ export async function walkIdSet(
 
 export function idSet(walk: WalkedBlock[]): Set<string> {
 	return new Set(walk.map((b) => b.id));
+}
+
+/** Post-mutation wrapper for the verification + echo reads every write
+ * runs AFTER the kernel mutation has been issued. A network drop there
+ * must not surface as runKbCall's "SiYuan unreachable" envelope: the
+ * mutation may already be applied, and that message invites the blind
+ * retry that would duplicate or re-apply the write. Network/timeout
+ * errors become a distinct `verificationFailed` error envelope; auth and
+ * rate-limit errors still propagate so runKbCall keeps classifying them
+ * (breaker counting, 429 cooldown). */
+export async function finishWrite(
+	kb: string,
+	extra: Record<string, unknown>,
+	build: () => Promise<Envelope>,
+): Promise<Envelope> {
+	try {
+		return await build();
+	} catch (err) {
+		if (
+			!(err instanceof SiYuanNetworkError) &&
+			!(err instanceof SiYuanTimeoutError)
+		) {
+			throw err;
+		}
+		return errorEnvelope(
+			`the write call returned success but the post-write verification reads failed: ` +
+				`${err instanceof Error ? err.message : String(err)} — the write's ` +
+				`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
+				`(kb_read) and confirm the write landed before repeating it`,
+			{ ...extra, kb, verificationFailed: true },
+		);
+	}
 }
 
 /** Fresh outline + root echo + content-baseline refresh — the tail every
