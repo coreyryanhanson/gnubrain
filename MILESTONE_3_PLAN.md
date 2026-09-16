@@ -499,12 +499,9 @@ Polish and the M3 gate (§11).
 + [ ] README of `gnubrain` updated to describe the tool surface; DESIGN
       doc §11 M3 row marked done.
 + [ ] If M3 code was split into new files: `package.json` `files` updated to
-      include them (currently only `index.ts` / `settings.ts`; npm publish's
+      include them (`*.ts` already covers the flat root layout; npm publish's
       `files` allowlist itself drops anything absent — `scripts/release.mjs`
-      only stages git changes, the enforcement is npm's). Also refresh
-      `index.ts`'s scaffold comments ("M2: settings load + validation, eager
-      version probe, verdict caching." and "Kernel probe, version gate, tools,
-      and /kb all arrive in M2+."), which S1–S5 make stale.
+      only stages git changes, the enforcement is npm's).
 
 Milestone 3 gate (from §11): all of the above; explicitly incl. the
 title-guard kernel round-trip pin, the version-refusal contract pin, the

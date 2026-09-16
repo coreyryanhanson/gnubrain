@@ -861,9 +861,10 @@ single-block pin — "a single-block body's diff must be exactly that one ID" �
 §10 integration suite's job, where the fixture controls the body (full record on
 `newBlockId`, below). The other targets ride their kernel behavior or an equivalent
 assertion: an `edit` target's synchronous not-found error surfaces verbatim; a `delete`
-target already gone reports success with the unfiltered post-write block tree as
-evidence — the same walk-ID set the insert verification uses, since a non-heading target
-can never appear in the heading-only outline (goal state reached either way); a **`move`
+target already gone reports success with the target's absence from the unfiltered
+post-write block tree (`targetGone`) as evidence — the same walk-ID set the insert
+verification uses, since a non-heading target can never appear in the heading-only
+outline (goal state reached either way); a **`move`
 is verified like an insert** — `movedBlockId` must appear in the destination doc's
 post-move `getChildBlocks` walk set (and be absent from the source's), the outlines the
 cross-doc move result already fetches — because a tree-level miss rolls back silently
@@ -1653,7 +1654,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     is absent from the post-write block tree (the unfiltered `getChildBlocks` walk set,
     §3 — not the heading-only outline) → `status: error` naming the vanished target,
     never success; an edit target's kernel error surfaces verbatim with the fresh
-    outline; a delete no-op reports success with the unfiltered walk-ID set as evidence;
+    outline; a delete no-op reports success with `targetGone` (absence from the
+    unfiltered post-write walk set) as evidence;
     a cross-doc move whose `movedBlockId` is absent from the destination post-move walk
     set (or still present in the source's) → `status: error`, never a silent no-move
     success;
@@ -1841,8 +1843,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     synchronous not-found error surfaces as a failed result naming the block;
     (b) `append` anchored to it → the tool's `newBlockId`-in-block-tree assertion (the
     unfiltered `getChildBlocks` walk set, §3) turns the kernel's silent rollback into
-    `{status: error}` with the fresh outline attached, and no block was inserted; (c) `delete` against it → success with the unfiltered walk-ID set showing
-    the target already absent (the kernel's success no-op, benign end state); (d) `move`
+    `{status: error}` with the fresh outline attached, and no block was inserted; (c) `delete` against it → success with `targetGone` showing
+    the target already absent from the unfiltered walk set (the kernel's success no-op, benign end state); (d) `move`
     whose source block was deleted → the handler's synchronous `-1`
     (`block not found`, `api/block_op.go:474` — blocktree-index check) surfaces as a
     failed result; (e) `move` whose destination anchor is deleted between outline-fetch
