@@ -853,8 +853,13 @@ accepts arbitrary markdown and the kernel mints one block per parsed block, so a
 multi-block body's `newBlockId` is only the kernel's representative of several — the
 verification compares the post-write walk set against the pre-write set (the same walk
 the anchor derivation already fetches before every write): the returned ID must appear
-among the newly-present IDs, and a single-block body's diff must be exactly that one ID
-(full record on `newBlockId`, below). The other targets ride their kernel behavior or an equivalent
+among the newly-present IDs. Runtime enforces that membership check only — the tool
+accepts arbitrary markdown it does not parse, so it cannot know whether a body mints one
+block or several, and a diff-size check would both false-fail multi-block bodies and
+false-fail concurrent writes to the same doc (§9 makes those normal usage). The exact
+single-block pin — "a single-block body's diff must be exactly that one ID" — is the
+§10 integration suite's job, where the fixture controls the body (full record on
+`newBlockId`, below). The other targets ride their kernel behavior or an equivalent
 assertion: an `edit` target's synchronous not-found error surfaces verbatim; a `delete`
 target already gone reports success with the unfiltered post-write block tree as
 evidence — the same walk-ID set the insert verification uses, since a non-heading target

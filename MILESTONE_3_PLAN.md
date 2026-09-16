@@ -204,7 +204,9 @@ confirmation gate and the `create` flow end to end. Registered name
    cross-doc block `move` adds `destOutline` + `movedBlockId`.
 3. **Stale-target verification (§4)** — verified, not trusted: `newBlockId` /
    `movedBlockId` must appear in the post-write unfiltered walk-set diff
-   (multi-block bodies: diff-based; single-block: exactly one ID); `updateBlock`
+   (membership only at runtime — the tool accepts arbitrary markdown it does not
+   parse, so the single-block diff-of-exactly-one pin is the live suite's,
+   5b item 10); `updateBlock`
    errors surface verbatim; `delete` no-op reports success with walk-set
    evidence; silent rollbacks → `{status: error}` with fresh outline attached.
 4. **Fresh-content precondition (§4)** — baseline content hash per targeted
