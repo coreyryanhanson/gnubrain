@@ -34,7 +34,7 @@ export function renderKbStatus(
 ): string {
 	const fg = theme
 		? (color: string, text: string) => theme.fg(color, text)
-		: (color: string, text: string) => text;
+		: (_color: string, text: string) => text;
 
 	if (input.probe === "unreachable") {
 		return `${fg("error", GLYPH_FILLED)} kb: ${input.scope.join(", ") || "(none)"}`;

@@ -128,10 +128,16 @@ export async function assertFreshContent(
 			baselines.remember(target.blockId, currentContent);
 			let outline: Record<string, unknown> = {};
 			if (context !== undefined) {
+				// The refusal payload carries the outline's heading content — seed
+				// it like every other serve site, or a follow-up edit on a served
+				// heading takes the no-baseline fallback and launders a concurrent
+				// change past the precondition (the target block itself is already
+				// remembered above).
 				const fresh = renderOutlineFromWalk(
 					context.sessionId,
 					"kb_write",
 					await walkBlockTree(kernel, context.docId),
+					baselines,
 				);
 				outline = {
 					outline: fresh.outline,

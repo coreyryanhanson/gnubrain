@@ -1035,20 +1035,20 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 		expect(kernelCalls).toHaveLength(0);
 	});
 
-	it("a typo'd kb with no docId gets the unknown-KB rejection, not the guidance", async () => {
+	it("a near-miss kb name (separator guess) gets the unknown-KB rejection, not the guidance", async () => {
 		const kernelCalls: unknown[] = [];
 		const read = registeredReadTool(validation(), kernelCalls);
 		const envelope = parse(
 			await read.execute!(
 				"id",
-				{ kb: "recipies" },
+				{ kb: "recipes_projects" },
 				undefined,
 				undefined,
 				ctx2("sess"),
 			),
 		);
 		expect(envelope.status).toBe("refused");
-		expect(String(envelope.message)).toContain("unknown KB 'recipies'");
+		expect(String(envelope.message)).toContain("unknown KB 'recipes_projects'");
 		expect(String(envelope.message)).not.toContain("docId is required");
 	});
 

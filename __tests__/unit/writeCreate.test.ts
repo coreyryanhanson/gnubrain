@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError, SiYuanNetworkError } from "siyuan-kernel-api";
 import { VERIFIED_ROOT_STMT_HEAD } from "../../writeCreate.js";
+import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
 import { type StubConfig, base, setup } from "./writeHarness.js";
 
 describe("guard-stop staging", () => {
@@ -65,6 +66,77 @@ describe("guard-stop staging", () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.docId).toBe("d1");
 		expect(rows[0]!.outline).toBe("");
+	});
+
+	/** Single-row duplicate stop over a doc with a heading and a paragraph —
+	 * the served outline + blockIds rows the seeding legs ride. Per-doc seeds
+	 * (childrenFor, not the create-flow alias childRows) so unseeded walk ids
+	 * stay childless. */
+	const stopChildren = [
+		{ id: "h1", type: "h", subType: "h1", content: "Heading" },
+		{ id: "p1", type: "p", subType: "", content: "served body" },
+	];
+	const seededStopConfig: StubConfig = {
+		...duplicateConfig,
+		childrenFor: { d1: stopChildren, "d-doc": stopChildren },
+	};
+
+	/** Scripted `WHERE id IN` content reads from a live map — the test
+	 * mutates it after the stop to simulate a concurrent kernel-side edit. */
+	function storedContentHarness(stored: Record<string, string>) {
+		const harness = setup({
+			config: {
+				...seededStopConfig,
+				blockRows: [{ id: "p1", content: "served body" }],
+			},
+		});
+		const baseQuery = harness.client.query.bind(harness.client);
+		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+				return ids.flatMap((id) =>
+					id !== undefined && stored[id] !== undefined
+						? [{ id, content: stored[id] }]
+						: [],
+				);
+			}
+			return baseQuery(stmt);
+		};
+		return harness;
+	}
+
+	it("duplicate stop seeds baselines for the served outline + blockIds rows", async () => {
+		const harness = storedContentHarness({ p1: "served body" });
+		const r = await harness.execute({ ...base, markdown: "the draft body" });
+		expect(r.status).toBe("duplicate");
+		const blockIds = r.blockIds as { id: string }[];
+		expect(blockIds.map((b) => b.id)).toContain("p1");
+		// The serve-time snapshot exists — the follow-up edit verifies against
+		// what the agent saw, not against content read at edit time.
+		expect(harness.baselines.servedHash("h1")).toBeDefined();
+		expect(harness.baselines.servedHash("p1")).toBeDefined();
+	});
+
+	it("concurrent change after the duplicate stop → the follow-up edit refuses stale_content", async () => {
+		const stored: Record<string, string> = { p1: "served body" };
+		const harness = storedContentHarness(stored);
+		const stop = await harness.execute({ ...base, markdown: "the draft body" });
+		expect(stop.status).toBe("duplicate");
+		// The user edits the block after the stop served it.
+		stored.p1 = "concurrently rewritten";
+		const edit = await harness.execute({
+			kb: "recipes",
+			mode: "edit",
+			docId: "d-doc",
+			blockId: "p1",
+			markdown: "overwrite",
+		});
+		expect(edit.status).toBe("refused");
+		expect(edit.reason).toBe("stale_content");
+		expect(edit.currentContent).toBe("concurrently rewritten");
+		expect(
+			harness.calls.filter((c) => c.method === "updateBlock"),
+		).toHaveLength(0);
 	});
 
 	it("near-match stop stages inline drafts; candidates stay excerpt-only", async () => {
@@ -150,9 +222,9 @@ describe("verified-create", () => {
 		const r = await execute({ ...base });
 		expect(r.status).toBe("error");
 		expect(r.message).toContain("verified-create failed");
-		// 1 initial read + 3 backoff re-reads, then fail-loud — never a retry
+		// 1 initial read + 5 backoff re-reads, then fail-loud — never a retry
 		// of the create itself.
-		expect(verifiedReads).toBe(4);
+		expect(verifiedReads).toBe(6);
 	});
 
 	it("index lag: blocks row not queryable on the first read appears on a backoff re-read → ok", async () => {

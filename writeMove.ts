@@ -56,12 +56,22 @@ async function isOwnDescendant(
 }
 
 /** Cross-doc block move's `destOutline` (write-result contract): fresh
- * destination outline fetched after the move lands. */
+ * destination outline fetched after the move lands. The walk's heading rows
+ * are served content — seed the baselines so a follow-up edit on a served
+ * destination heading verifies against what the agent saw here, not against
+ * content read at edit time (which launders a concurrent kernel-side change
+ * past the stale_content precondition). */
 async function destOutlinePayload(
+	input: WriteFlowInput,
 	sessionId: string,
 	destWalk: WalkedBlock[],
 ): Promise<Record<string, unknown>> {
-	const outline = renderOutlineFromWalk(sessionId, "kb_write-dest", destWalk);
+	const outline = renderOutlineFromWalk(
+		sessionId,
+		"kb_write-dest",
+		destWalk,
+		input.baselines,
+	);
 	return outline.fullOutlinePath === undefined
 		? { destOutline: outline.outline }
 		: {
@@ -232,7 +242,7 @@ export async function runMoveMode(
 		const movedGoneFromSource = sameDoc || !idSet(postSourceWalk).has(blockId);
 		const destPayload = sameDoc
 			? {}
-			: await destOutlinePayload(sessionId, postDestWalk);
+			: await destOutlinePayload(input, sessionId, postDestWalk);
 		if (!movedInDest || !movedGoneFromSource) {
 			// The move did not land — refresh nothing (the failure tail must
 			// not launder a concurrent change past the precondition).

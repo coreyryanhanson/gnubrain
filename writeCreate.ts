@@ -5,7 +5,7 @@
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
-import type { ContentBaselines } from "./baselines.js";
+import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { rowPayload, sqlString } from "./kernel.js";
 import {
 	renderOutline,
@@ -79,7 +79,16 @@ async function duplicateStop(
 			tolerateVanished: true,
 		});
 		walks.push(walk);
-		const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
+		// The stop serves heading content — seed the baselines so a follow-up
+		// edit on a served heading verifies against what the agent saw here,
+		// not against content read at edit time (which launders a concurrent
+		// kernel-side change past the stale_content precondition).
+		const outline = renderOutlineFromWalk(
+			sessionId,
+			"kb_write",
+			walk,
+			input.baselines,
+		);
 		let markdown = "";
 		try {
 			const md = await kernel.exportMarkdown(docId);
@@ -119,6 +128,9 @@ async function duplicateStop(
 			type: b.type,
 			content: b.content,
 		}));
+		// Same serve-time seeding as the outline above — blockIds is the
+		// payload the agent is invited to edit by id (step 1).
+		rememberServedRows(input.baselines, blocks);
 		const payload = rowPayload(sessionId, "kb_write-blocks", blocks);
 		if (payload.rows !== undefined) {
 			envelope.blockIds = payload.rows;
@@ -207,10 +219,13 @@ function verifiedRootStmt(boxId: string, returnedId: string): string {
  * createDocWithMd resolves when the doc is in the tree, while its blocks
  * row lands via the async index queue (observed live even on an empty DB).
  * Exponential gaps cover the fast-index common case cheaply and tolerate a
- * busy-queue tail (~1s worst case; happy path pays nothing). */
+ * busy-queue tail (~4s worst case; happy path pays nothing — only the
+ * currently-false-failure case pays the extra tail). */
 // ponytail: fixed table, not a backoff policy knob — a live run that
-// still races past 1s is the signal to revisit the delays
-const VERIFY_RETRY_DELAYS_MS = [150, 300, 600];
+// still races past 4s is the signal to add the tree-fallback degradation
+// path (getChildBlocks confirms existence for nested mints; hpath is SQL-only),
+// not to extend the table again
+const VERIFY_RETRY_DELAYS_MS = [150, 300, 600, 1200, 2000];
 
 async function verifiedRoot(
 	kernel: WriteKernelClient,
