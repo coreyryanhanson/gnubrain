@@ -10,7 +10,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { CircuitBreaker } from "./breaker.js";
 import { errorEnvelope, refusedEnvelope, textResult } from "./envelope.js";
-import { gateWriteAttempt, runKbCall } from "./gate.js";
+import {
+	gateWriteAttempt,
+	NOT_READY_KERNEL,
+	NOT_READY_VALIDATION,
+	runKbCall,
+} from "./gate.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	readBodyFile,
@@ -71,11 +76,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 		async execute(_id, params, _signal, _onUpdate, ctx: ExtensionContext) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
-				return textResult(
-					errorEnvelope(
-						"kb tools are not ready — session validation has not run",
-					),
-				);
+				return textResult(errorEnvelope(NOT_READY_VALIDATION));
 			}
 			const kernel = hooks.getKernel();
 			const p = params as WriteParams;
@@ -83,9 +84,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 				{ validation, breaker: hooks.breaker, kb: p.kb, arity: "single" },
 				async (names, contact) => {
 					if (kernel === undefined) {
-						return errorEnvelope(
-							"kb tools are not ready — settings did not load",
-						);
+						return errorEnvelope(NOT_READY_KERNEL);
 					}
 					// Uniform mode-target shape check before anything else —
 					// zero kernel calls, and it covers create too (create's

@@ -33,6 +33,13 @@ export type KbArity = "array" | "single";
 export const EMPTY_SCOPE_MESSAGE =
 	"no KBs in scope — activate one with /kb <name> on, or set gnubrain.defaultKBs";
 
+/** Readiness wording — shared by all four tool registrations so the
+ * discovery-facing strings cannot drift between read and write tools. */
+export const NOT_READY_VALIDATION =
+	"kb tools are not ready — session validation has not run";
+export const NOT_READY_KERNEL =
+	"kb tools are not ready — settings did not load";
+
 function activeList(validation: SessionValidation): string {
 	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
 }

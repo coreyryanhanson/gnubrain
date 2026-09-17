@@ -19,7 +19,12 @@ import {
 	refusedEnvelope,
 	textResult,
 } from "./envelope.js";
-import { EMPTY_SCOPE_MESSAGE, runKbCall } from "./gate.js";
+import {
+	EMPTY_SCOPE_MESSAGE,
+	NOT_READY_KERNEL,
+	NOT_READY_VALIDATION,
+	runKbCall,
+} from "./gate.js";
 import { ownershipStmt, rowPayload, type KernelReadClient } from "./kernel.js";
 import {
 	inlineOrSpill,
@@ -102,20 +107,14 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
-				return textResult(
-					errorEnvelope(
-						"kb tools are not ready — session validation has not run",
-					),
-				);
+				return textResult(errorEnvelope(NOT_READY_VALIDATION));
 			}
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
 				async (names, contact) => {
 					if (kernel === undefined) {
-						return errorEnvelope(
-							"kb tools are not ready — settings did not load",
-						);
+						return errorEnvelope(NOT_READY_KERNEL);
 					}
 					const boxes = names.map((n) => resolveBox(n, validation));
 					const certified = certifySelect(params.sql);
@@ -216,20 +215,14 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
-				return textResult(
-					errorEnvelope(
-						"kb tools are not ready — session validation has not run",
-					),
-				);
+				return textResult(errorEnvelope(NOT_READY_VALIDATION));
 			}
 			const kernel = hooks.getKernel();
 			const envelope = await runKbCall(
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
 				async (names, contact) => {
 					if (kernel === undefined) {
-						return errorEnvelope(
-							"kb tools are not ready — settings did not load",
-						);
+						return errorEnvelope(NOT_READY_KERNEL);
 					}
 					return runSearchFanOut(
 						ctx.sessionManager.getSessionId(),
@@ -373,11 +366,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const validation = hooks.getValidation();
 			if (validation === undefined) {
-				return textResult(
-					errorEnvelope(
-						"kb tools are not ready — session validation has not run",
-					),
-				);
+				return textResult(errorEnvelope(NOT_READY_VALIDATION));
 			}
 			// Discovery short-circuit (kb: "kbs"): ahead of breaker/cooldown —
 			// discovery succeeds while the breaker is tripped or a lockout is
@@ -398,9 +387,7 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "single" },
 				async (names, contact) => {
 					if (kernel === undefined) {
-						return errorEnvelope(
-							"kb tools are not ready — settings did not load",
-						);
+						return errorEnvelope(NOT_READY_KERNEL);
 					}
 					// The missing-docId refusal lives inside the gated op, after
 					// the gate resolved a valid kb: a typo'd kb with no docId must
