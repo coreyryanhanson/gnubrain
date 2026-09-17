@@ -23,6 +23,7 @@ import {
 	EMPTY_SCOPE_MESSAGE,
 	NOT_READY_KERNEL,
 	NOT_READY_VALIDATION,
+	resolveBox,
 	runKbCall,
 } from "./gate.js";
 import { ownershipStmt, rowPayload, type KernelReadClient } from "./kernel.js";
@@ -58,18 +59,6 @@ export interface ReadToolHooks {
 // ---------------------------------------------------------------------------
 // kb_query
 // ---------------------------------------------------------------------------
-
-/** The gate guarantees every resolved name sits in the valid set; this keeps
- * that invariant explicit rather than a non-null assertion. */
-function resolveBox(name: string, validation: SessionValidation): string {
-	const box = validation.validKBs.get(name);
-	if (box === undefined) {
-		throw new Error(
-			`internal: '${name}' passed the gate but left the valid set`,
-		);
-	}
-	return box;
-}
 
 const QUERY_DESCRIPTION = `SQL over the GNUbrain knowledge base (SQLite, executed readonly). Pass kb as an array of KB names; the tool scopes every statement with box IN (...) itself — never write box.
 
@@ -431,10 +420,7 @@ export async function runRead(
 	contact: () => void,
 	baselines: ContentBaselines,
 ): Promise<Envelope> {
-	const boxId = validation.validKBs.get(name);
-	if (boxId === undefined) {
-		return errorEnvelope(`KB '${name}' is not in the valid set`);
-	}
+	const boxId = resolveBox(name, validation);
 	// GFM only, never getDoc. The kernel route takes a bare stmt (no bind
 	// params), so trusted ids ride escaped literals (ownershipStmt).
 	contact();

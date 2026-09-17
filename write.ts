@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { CircuitBreaker } from "./breaker.js";
 import { errorEnvelope, refusedEnvelope, textResult } from "./envelope.js";
+import { resolveBox } from "./gate.js";
 import {
 	gateWriteAttempt,
 	NOT_READY_KERNEL,
@@ -119,10 +120,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 					}
 					// KB resolution: local map lookup, zero kernel calls.
 					const name = names[0] as string;
-					const boxId = validation.validKBs.get(name);
-					if (boxId === undefined) {
-						return errorEnvelope(`KB '${name}' is not in the valid set`);
-					}
+					const boxId = resolveBox(name, validation);
 					// Confirm key + pre-dialog permission before the probe gate:
 					// both are kernel-free, so a denied write costs zero kernel
 					// round-trips. Key/summary are shared with the flows so the

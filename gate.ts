@@ -44,6 +44,22 @@ function activeList(validation: SessionValidation): string {
 	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
 }
 
+/** The gate guarantees every resolved name sits in the valid set; this keeps
+ * that invariant explicit rather than a non-null assertion. Throw, never an
+ * error envelope: ops run inside runKbCall's catch, which renders the message. */
+export function resolveBox(
+	name: string,
+	validation: SessionValidation,
+): string {
+	const box = validation.validKBs.get(name);
+	if (box === undefined) {
+		throw new Error(
+			`internal: '${name}' passed the gate but left the valid set`,
+		);
+	}
+	return box;
+}
+
 /** One rejection vocabulary shared by the tool `kb` param and `/kb`
  * toggles — unknown name vs configured-but-invalid. */
 export function kbNameProblem(
