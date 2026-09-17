@@ -27,27 +27,33 @@ import {
 } from "./writeResult.js";
 import type { WriteParams } from "./writeSchema.js";
 
-export interface WriteFlowInput {
+/** Flow input shared by every mode, create included — one declaration so
+ * the fields (and their contracts) cannot drift between create and the
+ * per-mode flows. */
+export interface WriteFlowBase {
 	sessionId: string;
 	kernel: WriteKernelClient;
 	validation: SessionValidation;
 	/** Resolved KB name + notebook id (the gate already validated both). */
 	name: string;
 	boxId: string;
-	params: WriteParams;
 	/** Captured content body ("" on body-less modes). */
 	body: string;
 	/** Preflight verdict from the kb_write entry: run the interactive
 	 * dialog (true) or skip it for an approved unattended write (false). */
 	dialog: boolean;
-	/** Confirm key — computed once at the kb_write entry. */
-	confirmKey: string;
+	/** Confirm key + dialog summary — computed once at the kb_write entry. */
+	confirmInputs: { key: string; summary: string };
 	confirm: WriteConfirmFn;
 	confirmState: WriteConfirmState;
 	baselines: ContentBaselines;
 	/** Fires at the flow's first kernel call — kernel-free refusals
 	 * (preflight) must not reset the breaker's consecutive count. */
 	contact: () => void;
+}
+
+export interface WriteFlowInput extends WriteFlowBase {
+	params: WriteParams;
 }
 
 export interface DocTarget {
@@ -80,14 +86,14 @@ export async function resolveDocTarget(
 }
 
 export async function confirmGate(
-	input: WriteFlowInput,
+	input: WriteFlowBase,
 	summary: string,
 ): Promise<Envelope | null> {
 	return confirmWrite({
 		confirm: input.confirm,
 		writeConfirmTimeout: input.validation.settings?.writeConfirmTimeout,
 		state: input.confirmState,
-		key: input.confirmKey,
+		key: input.confirmInputs.key,
 		summary,
 	});
 }
