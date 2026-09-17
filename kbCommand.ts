@@ -56,13 +56,7 @@ export function dispatchKbCommand(
 		);
 	}
 	if (parts.length !== 2 || (parts[1] !== "on" && parts[1] !== "off")) {
-		return {
-			message: USAGE,
-			severity: "error",
-			newScope: undefined,
-			newReadsEnabled: undefined,
-			newWritesEnabled: undefined,
-		};
+		return { ...NO_CHANGE, message: USAGE, severity: "error" };
 	}
 	const [name, verb] = parts as [string, "on" | "off"];
 	const turningOn = verb === "on";
@@ -72,11 +66,9 @@ export function dispatchKbCommand(
 		);
 		if (turningOn && fullSet.length === 0) {
 			return {
+				...NO_CHANGE,
 				message: "no valid KBs to activate — nothing changed",
 				severity: "warning",
-				newScope: undefined,
-				newReadsEnabled: undefined,
-				newWritesEnabled: undefined,
 			};
 		}
 		return applyScope(turningOn ? fullSet : [], validation);
@@ -84,13 +76,7 @@ export function dispatchKbCommand(
 
 	const problem = kbNameProblem(name, validation);
 	if (problem !== undefined) {
-		return {
-			message: problem,
-			severity: "error",
-			newScope: undefined,
-			newReadsEnabled: undefined,
-			newWritesEnabled: undefined,
-		};
+		return { ...NO_CHANGE, message: problem, severity: "error" };
 	}
 	let target: string[];
 	if (!turningOn) {
