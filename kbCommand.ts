@@ -178,6 +178,9 @@ function scopeSummary(
 	// bare /kb is the diagnostic surface — never print the degraded scope
 	// without naming why.
 	lines.push(...validation.shapeErrors);
+	// Warn-and-drop reasons (unknown config name, stale/encrypted notebook):
+	// the scope silently shrank, so name what fell out.
+	lines.push(...validation.warnings);
 	const available = (validation.settings?.kbs ?? [])
 		.map((kb) => kb.name)
 		.filter((n) => validation.validKBs.has(n) && !validation.scope.includes(n));

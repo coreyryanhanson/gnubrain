@@ -222,13 +222,36 @@ describe("edit", () => {
 	});
 
 	it("the successful write result refreshes the served-content baseline", async () => {
-		const { execute, baselines } = setup({
+		const harness = setup({
 			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
 		});
-		await execute(editBase);
-		// The post-write walk's content became the baseline — a follow-up
-		// edit on the same block rides it instead of the fallback.
-		expect(baselines.servedHash("b-1")).toBeDefined();
+		// A prior serve seeds the baseline, so the pre-write fallback (which
+		// only fills missing entries) cannot mask the refresh: only the
+		// post-write refresh can move the hash off the original serve.
+		harness.baselines.remember("b-1", "served body");
+		const baseQuery = harness.client.query.bind(harness.client);
+		let contentReads = 0;
+		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+				contentReads += 1;
+				// Read 1 is the pre-write re-check (must match the baseline);
+				// read 2 is the post-write refresh serving the new stored form.
+				return [
+					{
+						id: "b-1",
+						content: contentReads === 1 ? "served body" : "edited body",
+					},
+				];
+			}
+			return baseQuery(stmt);
+		};
+		const result = await harness.execute(editBase);
+		expect(result.status).toBe("ok");
+		// The refresh carried the post-write stored form — a follow-up edit
+		// on the same block compares against it, not the pre-write serve.
+		expect(harness.baselines.servedHash("b-1")).toBe(
+			contentHash("edited body"),
+		);
 	});
 });
 
@@ -378,6 +401,24 @@ const REPLACE_DOC = {
 	h2: [walkBlock("p3", "p", "", "tail")],
 };
 
+const REPLACE_LIST_DOC = {
+	// A section containing a container: the walk slice is [p1, l1, i1, i2],
+	// but the sweep must narrow to the roots [p1, l1] — the kernel cascade
+	// removes the descendants with the container, and sweeping them
+	// explicitly would error (tree not found) behind a fully-successful
+	// replace.
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Goals"),
+		walkBlock("p1", "p", "", "old one"),
+		walkBlock("l1", "l", "", "list"),
+		walkBlock("h2", "h", "h1", "Details"),
+	],
+	l1: [
+		walkBlock("i1", "i", "", "item one"),
+		walkBlock("i2", "i", "", "item two"),
+	],
+};
+
 const replaceParams = {
 	kb: "recipes",
 	mode: "replace-section",
@@ -423,6 +464,66 @@ describe("replace-section", () => {
 		// tree — the swept blocks are gone from it.
 		expect(result.outline).not.toContain("old one");
 		expect(result.outline).not.toContain("old two");
+	});
+
+	it("a container-carrying section sweeps only the forest roots — descendants ride the kernel cascade", async () => {
+		const harness = setup({
+			config: {
+				cascadeDelete: true,
+				childrenFor: REPLACE_LIST_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_LIST_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_LIST_DOC["d-doc"].slice(3),
+					];
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		// A descendant sweep would hit the kernel's cascaded-away ids and
+		// false-report a partial replace — the ok status IS the pin.
+		expect(result.status).toBe("ok");
+		expect(
+			harness.calls
+				.filter((c) => c.method === "deleteBlock")
+				.map((c) => c.args),
+		).toEqual(["p1", "l1"]);
+		// The cascade reached the tree: the list and its items are gone, the
+		// replacement and the boundary survive.
+		expect(
+			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
+		).toEqual(["h1", "b-new", "h2"]);
+	});
+
+	it("a mid-sweep failure's remaining list is an antichain — any delete order finishes the job", async () => {
+		let deletes = 0;
+		const harness = setup({
+			config: {
+				cascadeDelete: true,
+				childrenFor: REPLACE_LIST_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_LIST_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_LIST_DOC["d-doc"].slice(3),
+					];
+				},
+				onDelete: () => {
+					deletes += 1;
+					if (deletes === 2) {
+						throw new SiYuanApiError(500, -1, "kernel gone mid-sweep");
+					}
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.partialReplace).toBe(true);
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		// Roots only: no container paired with its descendants, so the
+		// recovery deletes can run in any order without cascading errors.
+		expect(result.remainingBlockIds).toEqual(["l1"]);
 	});
 
 	it("a failed delete after a successful insert leaves duplication, never loss", async () => {

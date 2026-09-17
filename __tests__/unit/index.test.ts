@@ -7,7 +7,7 @@ import {
 	createFakePi as fakePi,
 } from "../helpers/fakePi.js";
 import { READ_TOOLSET_ID } from "../../tools.js";
-import { WRITE_TOOLSET_ID, WRITE_TOOLSET_PERSIST_KEY } from "../../write.js";
+import { WRITE_TOOLSET_ID } from "../../write.js";
 
 const GLOBAL_SETTINGS = JSON.stringify({
 	gnubrain: {
@@ -388,7 +388,7 @@ describe("read + write toolset wiring", () => {
 		expect([...write!.spec.names]).toEqual(["kb_write"]);
 		expect(write!.spec.requires).toEqual([READ_TOOLSET_ID]);
 		expect(write!.spec.defaultEnabled).toBe(true);
-		expect(write!.spec.persistKey).toBe(WRITE_TOOLSET_PERSIST_KEY);
+		expect(write!.spec.persistKey).toBe("toolset-state:gnubrain.write");
 	});
 
 	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {

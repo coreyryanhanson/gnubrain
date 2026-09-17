@@ -71,6 +71,27 @@ export function sectionDeleteSet(
 }
 
 /**
+ * Delete-sweep targets: the section slice's forest roots. The kernel
+ * cascades a container delete to every tree descendant (a delete of an
+ * already-cascaded descendant is a synchronous tree-not-found error), so
+ * descendants must never be swept explicitly. Within the slice,
+ * `depth <= heading.depth` is exactly the antichain of roots: the walk's
+ * depth axis strictly increases on descent, so every deeper slice member
+ * is a tree-descendant of one kept root and the kernel cascade removes
+ * it. The full slice still drives the confirmation display, the
+ * fresh-content baselines and the invalidRefs check — only the sweep
+ * narrows, which also keeps a mid-sweep failure's remaining list an
+ * antichain (any delete order finishes the job).
+ */
+export function sweepTargets(
+	deleteSet: WalkedBlock[],
+	heading: WalkedBlock,
+): WalkedBlock[] {
+	const headingDepth = heading.depth;
+	return deleteSet.filter((b) => b.depth <= headingDepth);
+}
+
+/**
  * move anchor: the last top-level node of the toHeadingId section,
  * heading-recursed (a section ending in a subheading → after the
  * subsection, not inside it); list/quote containers end at section level —

@@ -108,6 +108,17 @@ plan updated in the same changes):
    behind a success, so the verified-insert machinery is a backstop rather than the
    only line. The design's §4 stale-target record and §10 stale-target/version-refusal
    pins describe both generations.
+6. **Replace-section sweep targets the section slice's forest roots
+   (pre-5b)**: the kernel's delete cascade removes a container's tree
+   descendants from the index with it (`transaction.go`'s
+   `RemoveBlockTreesByIDs`), so sweeping the slice's descendants explicitly
+   would error (synchronous "tree not found") behind a fully-successful
+   replace and false-report a partial apply. The sweep now filters the
+   enumerated slice to blocks at the heading's walk depth or shallower
+   (`sweepTargets`); the full slice still drives the confirmation display,
+   the fresh-content baselines and the invalidRefs check. The mock kernel
+   gained a cascade-faithful delete mode (`cascadeDelete`) so the suite pins
+   this contract against the kernel's actual delete semantics.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 

@@ -14,6 +14,18 @@ describe("dispatchKbCommand", () => {
 		expect(result.message).toContain("scope: (none)");
 	});
 
+	it("bare /kb prints the warn-and-drop reasons — the scope silently shrank, so name what fell out", () => {
+		const result = dispatchKbCommand(
+			"",
+			validation({
+				warnings: ["KB 'stale' is not available — dropped from scope"],
+			}),
+		);
+		expect(result.message).toContain(
+			"KB 'stale' is not available — dropped from scope",
+		);
+	});
+
 	it("verbless /kb <name> prints usage", () => {
 		const result = dispatchKbCommand("recipes", validation());
 		expect(result.severity).toBe("error");

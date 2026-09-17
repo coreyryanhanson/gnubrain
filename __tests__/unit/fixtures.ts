@@ -9,6 +9,7 @@ export function validation(overrides?: {
 	validKBs?: [string, string][];
 	kbs?: { name: string; notebook: string }[];
 	shapeErrors?: string[];
+	warnings?: string[];
 	probe?: SessionValidation["probe"];
 	kernelVersion?: string;
 	/** Extra/overriding settings fields (timeouts, unattended writes, ...). */
@@ -26,6 +27,7 @@ export function validation(overrides?: {
 			...overrides?.settings,
 		},
 		shapeErrors: overrides?.shapeErrors ?? [],
+		warnings: overrides?.warnings ?? [],
 		probe: overrides?.probe ?? "ok",
 		kernelVersion: overrides?.kernelVersion ?? "3.8.4",
 		validKBs: new Map(
@@ -33,7 +35,6 @@ export function validation(overrides?: {
 		),
 		scope: overrides?.scope ?? ["recipes"],
 		defaultKBs: ["recipes", "projects"],
-		warnings: [],
 		authFailed: false,
 		lsNotebooksOk: true,
 	};

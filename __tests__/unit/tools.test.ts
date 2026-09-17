@@ -16,11 +16,7 @@ import {
 	spillFile,
 	spillFileName,
 } from "../../spill.js";
-import {
-	registerReadToolsAndToolset,
-	READ_TOOLSET_ID,
-	READ_TOOLSET_PERSIST_KEY,
-} from "../../tools.js";
+import { registerReadToolsAndToolset, READ_TOOLSET_ID } from "../../tools.js";
 import { getRegisteredToolsets } from "pi-tool-masking";
 import {
 	certifySelect,
@@ -749,7 +745,7 @@ describe("read toolset + descriptions", () => {
 			"kb_search",
 		]);
 		expect(entry!.spec.defaultEnabled).toBe(true);
-		expect(entry!.spec.persistKey).toBe(READ_TOOLSET_PERSIST_KEY);
+		expect(entry!.spec.persistKey).toBe("toolset-state:gnubrain.read");
 	});
 
 	it("the query tool description carries the pinned table schemas, semantics notes, and discovery pattern", () => {

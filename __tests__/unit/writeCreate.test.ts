@@ -68,6 +68,27 @@ describe("guard-stop staging", () => {
 		expect(rows[0]!.outline).toBe("");
 	});
 
+	it("candidate deleted between the walk and the spill read: exportMarkdown degrades to an empty excerpt, the outline survives", async () => {
+		// The walk arm reaches the outline leg only — the exportMarkdown catch
+		// (the guard query matched, the spill read lost the race) needs its
+		// own arm.
+		const { execute, calls } = setup({
+			config: {
+				...duplicateConfig,
+				armExportError: (arm) => arm(new SiYuanApiError(404)),
+			},
+		});
+		const r = await execute({ ...base, markdown: "the draft body" });
+		expect(r.status).toBe("duplicate");
+		const rows = r.rows as Record<string, unknown>[];
+		expect(rows).toHaveLength(1);
+		expect(rows[0]!.docId).toBe("d1");
+		// The walk (and the outline it seeds) succeeded — only the spill read
+		// degraded to an empty body.
+		expect(rows[0]!.outline).not.toBe("");
+		expect(calls.filter((c) => c.method === "exportMarkdown")).toHaveLength(1);
+	});
+
 	/** Single-row duplicate stop over a doc with a heading and a paragraph —
 	 * the served outline + blockIds rows the seeding legs ride. Per-doc seeds
 	 * (childrenFor, not the create-flow alias childRows) so unseeded walk ids

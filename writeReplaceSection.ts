@@ -10,7 +10,11 @@ import {
 	type Envelope,
 	type PartialReplaceState,
 } from "./envelope.js";
-import { deriveAppendAnchor, sectionDeleteSet } from "./writeAnchors.js";
+import {
+	deriveAppendAnchor,
+	sectionDeleteSet,
+	sweepTargets,
+} from "./writeAnchors.js";
 import { walkBlockTree } from "./walk.js";
 import {
 	backlinkSummary,
@@ -109,9 +113,13 @@ export async function runReplaceSectionMode(
 		// Rollback verified — the kernel-returned id is present in the
 		// post-write tree, so the partial-apply evidence can name it.
 		const landedId: string = newBlockId as string;
-		// Deletes ride the pre-enumerated set — a post-insert re-enumeration
-		// would sweep the replacement into the delete set.
-		for (const [i, block] of deleteSet.entries()) {
+		// Deletes ride the pre-enumerated set's forest roots — a post-insert
+		// re-enumeration would sweep the replacement into the delete set, and
+		// the descendants the kernel cascade already removed are never swept
+		// (a delete of a cascaded descendant is a synchronous tree-not-found
+		// error that would false-report a partial replace).
+		const sweep = sweepTargets(deleteSet, heading);
+		for (const [i, block] of sweep.entries()) {
 			try {
 				await kernel.deleteBlock(block.id);
 			} catch (err) {
@@ -119,8 +127,8 @@ export async function runReplaceSectionMode(
 					PartialReplaceState,
 					"deletedBlockIds" | "remainingBlockIds"
 				> => ({
-					deletedBlockIds: deleteSet.slice(0, i).map((b) => b.id),
-					remainingBlockIds: deleteSet.slice(i).map((b) => b.id),
+					deletedBlockIds: sweep.slice(0, i).map((b) => b.id),
+					remainingBlockIds: sweep.slice(i).map((b) => b.id),
 				});
 				if (!(err instanceof SiYuanApiError)) {
 					// Transport-class failures (429, auth, network, timeout) have
@@ -145,7 +153,7 @@ export async function runReplaceSectionMode(
 				return errorEnvelope(
 					`replace partially applied: the new section is in place (block '${landedId}') but the delete of '${block.id}' failed (${err instanceof Error ? err.message : String(err)})` +
 						(i > 0 ? `, and ${i} earlier block(s) were deleted` : "") +
-						` — do NOT re-run; delete the remaining old-section block(s) to finish: ${deleteSet
+						` — do NOT re-run; delete the remaining old-section block(s) to finish: ${sweep
 							.slice(i)
 							.map((b) => b.id)
 							.join(", ")}`,

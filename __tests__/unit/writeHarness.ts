@@ -6,6 +6,7 @@
 // writeConfirm/writeGuard/writeCreate/writeAnchors tests and the full
 // writeModes suite.
 
+import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import {
@@ -76,6 +77,15 @@ export interface StubConfig {
 	/** Arm for deleteBlock — a mid-sweep transport failure (network drop
 	 * on the Nth delete), distinct from the SQL-arm (verification reads). */
 	armDeleteError?: (arm: (err: Error) => void) => void;
+	/** Arm for exportMarkdown — the vanished-candidate race mid-guard-stop
+	 * (the spill read fails after the guard query matched). */
+	armExportError?: (arm: (err: Error) => void) => void;
+	/** Model the kernel's cascading delete: an indexed id is removed together
+	 * with its tree descendants, and a delete of an id no longer in the index
+	 * throws the kernel's synchronous tree-not-found error. Off (default):
+	 * deletes apply nothing — the success no-op generation the stale-target
+	 * tests pin. */
+	cascadeDelete?: boolean;
 }
 
 /** Kernel stub with a SQL router over every write-flow route. Verified rows
@@ -119,6 +129,31 @@ export function writeKernelStub(config: StubConfig = {}) {
 	config.armDeleteError?.((err) => {
 		deleteError = err;
 	});
+	let exportError: Error | undefined;
+	config.armExportError?.((err) => {
+		exportError = err;
+	});
+	/** Remove an indexed block and its tree descendants from the live
+	 * children map — the kernel's delete cascade (an indexed container's
+	 * descendants leave the index with it). Returns false when the id is no
+	 * longer indexed. */
+	const removeIndexed = (id: string): boolean => {
+		let removed = false;
+		for (const rows of Object.values(childrenFor)) {
+			const idx = rows.findIndex((row) => (row as { id?: string }).id === id);
+			if (idx >= 0) {
+				rows.splice(idx, 1);
+				removed = true;
+				break;
+			}
+		}
+		if (!removed) return false;
+		for (const child of (childrenFor[id] ?? []) as { id: string }[]) {
+			removeIndexed(child.id);
+		}
+		delete childrenFor[id];
+		return true;
+	};
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => {
@@ -195,6 +230,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async exportMarkdown(id) {
 			calls.push({ method: "exportMarkdown", args: id });
+			if (exportError) throw exportError;
 			return { hPath: "/doc", content: `# markdown of ${id}\nbody` };
 		},
 		async getChildBlocks(id) {
@@ -226,6 +262,9 @@ export function writeKernelStub(config: StubConfig = {}) {
 			calls.push({ method: "deleteBlock", args: id });
 			config.onDelete?.();
 			if (deleteError) throw deleteError;
+			if (config.cascadeDelete === true && !removeIndexed(String(id))) {
+				throw new SiYuanApiError(-1, -1, "tree not found");
+			}
 			return tx;
 		},
 		async moveBlock(params) {
@@ -318,9 +357,7 @@ export interface WriteSetupResult {
 
 /** The one kb_write harness: a fresh kernel stub, fresh baselines map, and
  * a confirm hook that records its calls (the default approves — the
- * headless default-deny runs in preflight, before the dialog).
- * `mutate` runs inside the confirm callback — the mid-flow kernel-side
- * change the fresh-content legs exercise. */
+ * headless default-deny runs in preflight, before the dialog). */
 export function setup(
 	opts: {
 		config?: StubConfig;
@@ -328,7 +365,6 @@ export function setup(
 		hasUI?: boolean;
 		confirm?: WriteConfirmFn;
 		readBodyFile?: (path: string) => Promise<string>;
-		mutate?: () => void;
 	} = {},
 ): WriteSetupResult {
 	const kernel = writeKernelStub(opts.config ?? {});
@@ -347,7 +383,6 @@ export function setup(
 				confirmOpts: { signal?: AbortSignal },
 			) => {
 				confirmCalls.push({ title, message });
-				opts.mutate?.();
 				return opts.confirm ? opts.confirm(title, message, confirmOpts) : true;
 			},
 			...(opts.readBodyFile !== undefined && {

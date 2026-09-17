@@ -166,6 +166,30 @@ describe("write confirmation", () => {
 		expect(confirm).toHaveBeenCalledTimes(2);
 	});
 
+	it("a thrown dialog call fails closed — refused, never an ok", async () => {
+		const { execute, calls } = setup({
+			confirm: () => {
+				throw new Error("rpc dropped");
+			},
+			hasUI: true,
+		});
+		const r = await execute({ ...base });
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("dialog failed");
+		expect(r.message).toContain("rpc dropped");
+		expect(
+			calls.filter((c) =>
+				[
+					"createDocWithMarkdown",
+					"updateBlock",
+					"insertBlock",
+					"appendBlock",
+					"deleteBlock",
+				].includes(c.method),
+			),
+		).toHaveLength(0);
+	});
+
 	it("timeout 0 issues an untimed confirm", async () => {
 		vi.useFakeTimers();
 		let seenOpts: { signal?: AbortSignal } | undefined;
