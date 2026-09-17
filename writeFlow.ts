@@ -85,6 +85,9 @@ export async function confirmGate(
 	input: WriteFlowBase,
 	summary: string,
 ): Promise<Envelope | null> {
+	// Approved-unattended writes (dialog: false, headless allowUnattendedWrites)
+	// skip the dialog; interactive sessions always gate here.
+	if (!input.dialog) return null;
 	return confirmWrite({
 		confirm: input.confirm,
 		writeConfirmTimeout: input.validation.settings?.writeConfirmTimeout,

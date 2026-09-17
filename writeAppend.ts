@@ -30,10 +30,8 @@ export async function runAppendMode(
 	}
 	const anchor = deriveAppendAnchor(walk, resolvedHeading);
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	if (input.dialog) {
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
-	}
+	const gate = await confirmGate(input, summary);
+	if (gate !== null) return gate;
 	const tx =
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })

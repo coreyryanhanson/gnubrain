@@ -26,10 +26,8 @@ export async function runEditMode(
 		const summary =
 			`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
 			`current content:\n${row.content}`;
-		if (input.dialog) {
-			const gate = await confirmGate(input, summary);
-			if (gate !== null) return gate;
-		}
+		const gate = await confirmGate(input, summary);
+		if (gate !== null) return gate;
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}

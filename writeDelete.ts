@@ -34,10 +34,8 @@ export async function runDeleteMode(
 			`delete set: ${display.deleteSet.count} block(s)\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
 			backlinkSummary(display);
-		if (input.dialog) {
-			const gate = await confirmGate(input, summary);
-			if (gate !== null) return gate;
-		}
+		const gate = await confirmGate(input, summary);
+		if (gate !== null) return gate;
 		await kernel.removeDocByID(doc.rootId);
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the doc may already be gone (finishWrite doc).
@@ -74,10 +72,8 @@ export async function runDeleteMode(
 			`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
 			backlinkSummary(display);
-		if (input.dialog) {
-			const gate = await confirmGate(input, summary);
-			if (gate !== null) return gate;
-		}
+		const gate = await confirmGate(input, summary);
+		if (gate !== null) return gate;
 	}
 	try {
 		await kernel.deleteBlock(blockId);

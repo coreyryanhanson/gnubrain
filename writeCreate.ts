@@ -267,10 +267,8 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	}
 
 	// Write confirmation — after the guard, so a stop costs no dialog.
-	if (input.dialog) {
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
-	}
+	const gate = await confirmGate(input, summary);
+	if (gate !== null) return gate;
 
 	// Submission path from ground truth, never predicted (step 3).
 	input.contact();

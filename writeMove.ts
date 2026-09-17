@@ -109,10 +109,8 @@ export async function runMoveMode(
 			);
 		}
 		const summary = `Move doc '${doc.title}' (${doc.rootId}) to ${destLabel} (KB ${name})`;
-		if (input.dialog) {
-			const gate = await confirmGate(input, summary);
-			if (gate !== null) return gate;
-		}
+		const gate = await confirmGate(input, summary);
+		if (gate !== null) return gate;
 		try {
 			await kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId });
 		} catch (err) {
@@ -181,10 +179,8 @@ export async function runMoveMode(
 		);
 	}
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	if (input.dialog) {
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
-	}
+	const gate = await confirmGate(input, summary);
+	if (gate !== null) return gate;
 	try {
 		if (anchor.kind === "appendRoot") {
 			await kernel.moveBlock({ id: blockId, parentID: dest.rootId });

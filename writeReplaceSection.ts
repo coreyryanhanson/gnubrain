@@ -69,10 +69,8 @@ export async function runReplaceSectionMode(
 		baselines,
 		deleteSet.map((b) => b.id),
 	);
-	if (input.dialog) {
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
-	}
+	const gate = await confirmGate(input, summary);
+	if (gate !== null) return gate;
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,
