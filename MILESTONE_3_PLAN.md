@@ -227,8 +227,11 @@ confirmation gate and the `create` flow end to end. Registered name
    (membership only at runtime — the tool accepts arbitrary markdown it does not
    parse, so the single-block diff-of-exactly-one pin is the live suite's,
    5b item 10); `updateBlock`
-   errors surface verbatim; `delete` no-op reports success with walk-set
-   evidence; silent rollbacks → `{status: error}` with fresh outline attached.
+   errors surface verbatim; `delete` of a missing block answers per the kernel
+   generation — 3.8.3 a success no-op with walk-set evidence, 3.8.4 a
+   synchronous "tree not found" error surfaced verbatim with the fresh outline
+   (unit-pinned both ways); silent rollbacks → `{status: error}` with fresh
+   outline attached.
 4. **Fresh-content precondition (§4)** — baseline content hash per targeted
    block (served content, or confirmation-displayed current content when none
    served); re-check after confirmation approval, before the kernel call;
@@ -276,8 +279,9 @@ confirmation gate and the `create` flow end to end. Registered name
       loss (§10).
 + [ ] Unit: stale-target verification — insert with `newBlockId` absent from the
       post-write walk set → `error`; edit kernel error verbatim; delete no-op
-      success with walk-set evidence; cross-doc move missing from destination
-      walk set → `error` (§10).
+      success with walk-set evidence (3.8.3) / synchronous error surfaced with
+      fresh outline (3.8.4), both pinned; cross-doc move missing from
+      destination walk set → `error` (§10).
 + [ ] Unit: fresh-content precondition — baseline from served content;
       no-baseline fallback reads + displays current content and approval
       establishes the baseline; post-approval change → `stale_content` refusal,
@@ -397,7 +401,9 @@ raw-DELETE case like the rest.
    it doesn't fight the setup's pin-equality assert.
 5. **Stale-target contract pin** — kernel-deleted fixture block: edit error
    verbatim; append's walk-set assertion turns silent rollback into `error`;
-   delete no-op with evidence; move synchronous `-1` surfaced (tree-level-miss
+   delete: 3.8.4 answers a synchronous "tree not found" — surfaced verbatim
+   with fresh outline (unit-pinned; the live pin asserts the error shape);
+   move synchronous `-1` surfaced (tree-level-miss
    branch mocked if no honest live route exists).
 6. **Fresh-content live pin** — kernel-side content change between outline and
    edit → `stale_content` refusal, content untouched; control run applies.

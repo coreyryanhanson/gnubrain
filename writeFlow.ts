@@ -105,8 +105,9 @@ export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
  * null when the id is absent from the kernel. Absence is never refused
  * here: the stale-target record pins each op's own kernel outcome
  * (edit/move surface the synchronous not-found error verbatim; delete
- * is a success no-op) and the live suite watches the kernel, not this
- * pre-read, for contract drift. A block that EXISTS but belongs to a
+ * is a success no-op on 3.8.3 and a synchronous "tree not found" error
+ * on 3.8.4, surfaced the same way) and the live suite watches the
+ * kernel, not this pre-read, for contract drift. A block that EXISTS but belongs to a
  * different doc (cross-doc or cross-KB — kb_query rows carry raw ids
  * across all active KBs) is refused here: the kernel mutates by raw id
  * with no doc scoping of its own, so forwarding it would write outside

@@ -1,9 +1,12 @@
 // The delete flow: block-level deleteBlock (confirmation shows the block's
 // current content + inbound refs) or doc-level removeDocByID (the delete
-// set is the walk set). An absent target is the kernel's success no-op —
-// the walk-set evidence reports the end state, never assumed.
+// set is the walk set). An absent target is answered by the kernel per its
+// generation — 3.8.3 a success no-op (the walk-set evidence reports the end
+// state), 3.8.4 a synchronous "tree not found" error surfaced verbatim with
+// the fresh outline attached, like edit/move.
 
-import { refusedEnvelope, type Envelope } from "./envelope.js";
+import { SiYuanApiError } from "siyuan-kernel-api";
+import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { walkBlockTree } from "./walk.js";
 import {
 	backlinkSummary,
@@ -61,8 +64,9 @@ export async function runDeleteMode(
 	if ("refusal" in row) return refusedEnvelope(row.refusal);
 	if (row.content !== null) {
 		// Confirmation only when there is something to delete — an absent
-		// target is the kernel's success no-op (stale-target record): no
-		// dialog, the walk-set evidence below reports the end state.
+		// target never dialogs (stale-target record): 3.8.3 answers a
+		// success no-op the walk-set evidence below reports; 3.8.4 answers
+		// a synchronous error surfaced verbatim below.
 		const display = await deleteSetDisplay(kernel, sessionId, [
 			{ id: blockId, content: row.content },
 		]);
@@ -75,12 +79,27 @@ export async function runDeleteMode(
 			if (gate !== null) return gate;
 		}
 	}
-	await kernel.deleteBlock(blockId);
+	try {
+		await kernel.deleteBlock(blockId);
+	} catch (err) {
+		if (!(err instanceof SiYuanApiError)) throw err;
+		// 3.8.4 requires an external delete to hit an existing node — a
+		// missing ID (deleted concurrently, or a stale target) is a
+		// synchronous "tree not found" error where 3.8.3 answered a success
+		// no-op. Same stale-target treatment as edit/move: the kernel error
+		// surfaces verbatim, with the fresh outline attached so the agent
+		// re-targets. Network/timeout rethrow — the delete's outcome is
+		// unknown and runKbCall must classify.
+		const postWalk = await walkBlockTree(kernel, doc.rootId);
+		const tail = await echoTail(input, doc, postWalk);
+		return errorEnvelope(err.message, { kb: name, blockId, ...tail });
+	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the delete may already be applied (finishWrite doc).
 	return finishWrite(name, { blockId }, async () => {
-		// Verified, not trusted: a missing ID is a kernel success no-op —
-		// the walk-set evidence (target gone) is the report, never assumed.
+		// Verified, not trusted: on a kernel that no-ops a missing ID (3.8.3)
+		// the walk-set evidence (target gone) is the report, never assumed;
+		// 3.8.4 errors above instead.
 		const postWalk = await walkBlockTree(kernel, doc.rootId);
 		const targetGone = !idSet(postWalk).has(blockId);
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);

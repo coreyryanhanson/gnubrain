@@ -789,9 +789,10 @@ describe("delete", () => {
 		).toEqual(["p1"]);
 	});
 
-	it("a kernel success no-op still reports ok — with the walk-set evidence naming it", async () => {
+	it("a kernel success no-op still reports ok — with the walk-set evidence naming it (3.8.3 kernel)", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
-		// nothing (ErrBlockNotFound → nil, stale-target record).
+		// nothing (ErrBlockNotFound → nil, stale-target record). 3.8.4
+		// instead answers a synchronous error — the pin below.
 		const { execute } = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "survivor" }],
@@ -807,6 +808,30 @@ describe("delete", () => {
 		expect(result.status).toBe("ok");
 		expect(result.targetGone).toBe(false);
 		expect(result.message).toContain("STILL PRESENT");
+	});
+
+	it("3.8.4 delete of a missing block: synchronous error surfaced verbatim with the fresh outline", async () => {
+		// 3.8.4's PerformBlockOperation requires an existing node — the
+		// stale-target record's edit/move treatment, one error class over.
+		const { execute, calls } = setup({
+			config: {
+				onDelete: () => {
+					throw new SiYuanApiError(-1, -1, "tree not found");
+				},
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("tree not found");
+		expect(result.outline).toBeDefined(); // fresh evidence rides the error
+		expect(
+			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
+		).toEqual(["p1"]);
 	});
 
 	it("a foreign blockId (another doc's block) is refused before any dialog or kernel delete", async () => {

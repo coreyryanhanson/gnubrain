@@ -840,6 +840,16 @@ when the ID no longer resolves, verified against source at 3.8.2:
   treats a missing block after a move as normal). Benign — the end state (block absent)
   is what the agent asked for — but the tool must not read the success as evidence the
   delete *did* anything.
+  **3.8.4 update (pin moved, live-verified)**: block writes now execute synchronously
+  through `PerformBlockOperation` (`model/block_operation.go`), which drains the queued
+  transactions first and holds the flush lock — so (a) post-delete evidence reads no
+  longer race the queue ticker (the staleness this record predated is gone: 0/3 stale
+  immediate reads live, was 5/5 on 3.8.3); (b) a missing delete ID is now a
+  **synchronous error** ("tree not found") — delete moves into edit/move's class, and
+  the tool surfaces it verbatim with the fresh outline attached; (c) an
+  `insertBlock`/`appendBlock` whose anchor does not resolve now fails the HTTP call
+  instead of rolling back behind a success — the verified-insert machinery stays as a
+  backstop. `moveBlock` still rides the enqueue+flush pattern.
 - **`moveBlock` straddles both classes, depending on which ID is missing and where it
   is caught** — the handler (`api/block_op.go:474`) checks the blocktree index
   synchronously: a missing source `id` or a missing `previousID`/`parentID` anchor
