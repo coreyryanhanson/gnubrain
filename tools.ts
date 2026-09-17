@@ -165,7 +165,8 @@ function buildQueryEnvelope(
 	// Truncation fires when kept + dropped reaches the limit — a window
 	// filled with out-of-scope rows must still signal in-scope rows beyond it.
 	// The marker counts post-filter rows, never pre-filter ones.
-	if (kept.length + dropped >= limit) {
+	// A negative LIMIT is sqlite's "no limit" — never truncate-flagged.
+	if (limit > 0 && kept.length + dropped >= limit) {
 		const path = spillFile(sessionId, "kb_query", jsonl(kept), "jsonl");
 		envelope.truncated = `${limit} rows — refine the query; full result in ${path}`;
 	}

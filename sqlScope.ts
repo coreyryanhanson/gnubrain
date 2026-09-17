@@ -107,6 +107,18 @@ export function certifySelect(stmt: string): CertResult {
 	return { ok: true, ast: node };
 }
 
+/** The sqlite LIMIT of a parsed select. The comma form (`LIMIT m, n`) puts
+ * the OFFSET in the first slot and the limit in the second; a negative limit
+ * is sqlite's "no limit". Non-finite → undefined (the sqlite grammar only
+ * admits numeric literals here, so this also guards parser-shape drift). */
+function limitOf(limit: Select["limit"]): number | undefined {
+	if (limit === undefined || limit === null || !Array.isArray(limit.value)) {
+		return undefined;
+	}
+	const value = Number(limit.value[limit.seperator === "," ? 1 : 0]?.value);
+	return Number.isFinite(value) ? value : undefined;
+}
+
 /** Hand-built `box IN ('a','b')` AST node (sqlite dialect shape). */
 function boxInAst(boxes: string[]): Binary {
 	return {
@@ -158,10 +170,9 @@ export function rebuildWithScope(
 		} as Binary;
 	}
 	const stmt = parser.sqlify(ast, SQL_DIALECT);
-	const limitValue = Array.isArray(ast.limit?.value)
-		? Number(ast.limit.value[0]?.value)
-		: RESULT_LIMIT;
-	return { stmt, limitInjected, limit: limitValue };
+	// After the injection above the AST always carries a limit; the fallback
+	// only fires if the parser stopped producing the documented node shape.
+	return { stmt, limitInjected, limit: limitOf(ast.limit) ?? RESULT_LIMIT };
 }
 
 const norm = (x: unknown): string => JSON.stringify(x);
@@ -207,9 +218,7 @@ export function verifyRebuilt(
 		const problem = checkBoxIn(where.right as Binary | undefined, boxes);
 		if (problem !== undefined) return problem;
 	}
-	const reLimit = Array.isArray(re.limit?.value)
-		? Number(re.limit.value[0]?.value)
-		: undefined;
+	const reLimit = limitOf(re.limit);
 	if (reLimit !== limit) {
 		return "re-parsed statement lost the LIMIT clause";
 	}

@@ -233,6 +233,35 @@ describe("injected-predicate rebuild + re-parse", () => {
 		expect(rebuilt.stmt).toContain("LIMIT 100000");
 		expect(rebuilt.stmt).toContain("`box` IN");
 	});
+
+	// Parser-shape pins for the non-plain LIMIT forms the sqlite grammar
+	// admits: they parse into the same limit node, so a parser upgrade that
+	// reshuffles slots turns these red instead of silently corrupting the
+	// truncation marker.
+	it("LIMIT m, n: the limit is the second number (the first is the OFFSET)", () => {
+		const { rebuilt, problem } = rebuildAndVerify(
+			"SELECT id FROM blocks LIMIT 2, 10",
+		);
+		expect(problem).toBeUndefined();
+		expect(rebuilt.limit).toBe(10);
+		expect(rebuilt.stmt).toContain("LIMIT 2, 10");
+	});
+
+	it("LIMIT n OFFSET m: the limit is the first number", () => {
+		const { rebuilt, problem } = rebuildAndVerify(
+			"SELECT id FROM blocks LIMIT 5 OFFSET 2",
+		);
+		expect(problem).toBeUndefined();
+		expect(rebuilt.limit).toBe(5);
+	});
+
+	it("LIMIT -1 (sqlite's no-limit) verifies with the limit passed through", () => {
+		const { rebuilt, problem } = rebuildAndVerify(
+			"SELECT id FROM blocks LIMIT -1",
+		);
+		expect(problem).toBeUndefined();
+		expect(rebuilt.limit).toBe(-1);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -529,6 +558,18 @@ describe("query tool", () => {
 		expect(kernelCalls).toHaveLength(1);
 		expect(kernelCalls[0]).toContain("IN ('nb-r')");
 		expect(kernelCalls[0]).toContain("LIMIT 64");
+	});
+
+	it("LIMIT -1 (sqlite's no-limit) is unbounded: a saturated result never truncate-flags", async () => {
+		const rows = Array.from({ length: RESULT_LIMIT }, (_, i) => ({
+			id: `b${i}`,
+			root_id: "d1",
+			box: "nb-r",
+		}));
+		const { run } = await executeQuery(rows);
+		const envelope = await run("SELECT id FROM blocks LIMIT -1");
+		expect(envelope.status).toBe("ok");
+		expect(envelope.truncated).toBeUndefined();
 	});
 
 	it("drops kernel-side contamination with post_filtered: true", async () => {
