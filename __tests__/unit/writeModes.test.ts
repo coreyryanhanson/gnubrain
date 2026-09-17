@@ -956,6 +956,21 @@ describe("block-level move", () => {
 		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
 	});
 
+	it("a toHeadingId absent from the destination walk is refused via the shared headingInWalk pin, before any kernel move", async () => {
+		const harness = moveHarness();
+		const result = await harness.execute({
+			...moveParams,
+			toHeadingId: "oh-gone",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain(
+			"headingId 'oh-gone' is not a heading of doc 'Other doc' (d-other) — stale or foreign target",
+		);
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
 	it("cross-doc: destination anchor, move via previousID, both outlines + movedBlockId", async () => {
 		const harness = moveHarness(() => {
 			harness.childrenFor["d-doc"] = MOVE_DOC["d-doc"].filter(

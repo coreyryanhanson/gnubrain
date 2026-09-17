@@ -15,6 +15,7 @@ import {
 import {
 	confirmGate,
 	echoTail,
+	headingInWalk,
 	PARENT_DOC_STMT_HEAD,
 	resolveDocTarget,
 	type DocTarget,
@@ -158,14 +159,8 @@ export async function runMoveMode(
 		? sourceWalk
 		: await walkBlockTree(kernel, dest.rootId);
 	if (params.toHeadingId !== undefined) {
-		const heading = destWalk.find(
-			(b) => b.id === params.toHeadingId && b.type === "h",
-		);
-		if (heading === undefined) {
-			return errorEnvelope(
-				`toHeadingId '${params.toHeadingId}' is not a heading of destination doc '${dest.title}' (${dest.rootId}) — stale or foreign target; re-fetch the destination outline (kb_read) and re-target`,
-			);
-		}
+		const heading = headingInWalk(destWalk, dest, params.toHeadingId);
+		if ("status" in heading) return heading;
 	}
 	// Anchor: tool-derived, never agent-supplied.
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
