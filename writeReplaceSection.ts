@@ -28,8 +28,6 @@ import {
 export async function runReplaceSectionMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
-	dialog: boolean,
-	confirmKey: string,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, baselines, params } = input;
 	const headingId = params.headingId as string;
@@ -61,8 +59,8 @@ export async function runReplaceSectionMode(
 		baselines,
 		deleteSet.map((b) => b.id),
 	);
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
+	if (input.dialog) {
+		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 	}
 	const stale = await assertFreshContent(

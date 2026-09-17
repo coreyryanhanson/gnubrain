@@ -83,8 +83,6 @@ async function destOutlinePayload(
 export async function runMoveMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
-	dialog: boolean,
-	confirmKey: string,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId, params } = input;
 	if (params.doc === true) {
@@ -109,8 +107,8 @@ export async function runMoveMode(
 			);
 		}
 		const summary = `Move doc '${doc.title}' (${doc.rootId}) to ${destLabel} (KB ${name})`;
-		if (dialog) {
-			const gate = await confirmGate(input, confirmKey, summary);
+		if (input.dialog) {
+			const gate = await confirmGate(input, summary);
 			if (gate !== null) return gate;
 		}
 		try {
@@ -187,8 +185,8 @@ export async function runMoveMode(
 		);
 	}
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
+	if (input.dialog) {
+		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 	}
 	try {

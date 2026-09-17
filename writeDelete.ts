@@ -19,8 +19,6 @@ import { backlinkCheck, finishWrite, idSet } from "./writeResult.js";
 export async function runDeleteMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
-	dialog: boolean,
-	confirmKey: string,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, params } = input;
 	if (params.doc === true) {
@@ -33,8 +31,8 @@ export async function runDeleteMode(
 			`delete set: ${display.deleteSet.count} block(s)\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
 			backlinkSummary(display);
-		if (dialog) {
-			const gate = await confirmGate(input, confirmKey, summary);
+		if (input.dialog) {
+			const gate = await confirmGate(input, summary);
 			if (gate !== null) return gate;
 		}
 		await kernel.removeDocByID(doc.rootId);
@@ -72,8 +70,8 @@ export async function runDeleteMode(
 			`Delete block ${blockId} in '${doc.title}' (KB ${name})\n\n` +
 			`current content:\n${display.deleteSet.contentPreview}\n\n` +
 			backlinkSummary(display);
-		if (dialog) {
-			const gate = await confirmGate(input, confirmKey, summary);
+		if (input.dialog) {
+			const gate = await confirmGate(input, summary);
 			if (gate !== null) return gate;
 		}
 	}

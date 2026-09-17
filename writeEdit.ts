@@ -14,8 +14,6 @@ import { assertFreshContent, finishWrite } from "./writeResult.js";
 export async function runEditMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
-	dialog: boolean,
-	confirmKey: string,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, baselines, params } = input;
 	const blockId = params.blockId as string;
@@ -28,8 +26,8 @@ export async function runEditMode(
 		const summary =
 			`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
 			`current content:\n${row.content}`;
-		if (dialog) {
-			const gate = await confirmGate(input, confirmKey, summary);
+		if (input.dialog) {
+			const gate = await confirmGate(input, summary);
 			if (gate !== null) return gate;
 		}
 		if (baselines.servedHash(blockId) === undefined) {

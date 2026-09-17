@@ -16,8 +16,6 @@ import { finishWrite, idSet, newBlockIdFrom } from "./writeResult.js";
 export async function runAppendMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
-	dialog: boolean,
-	confirmKey: string,
 ): Promise<Envelope> {
 	const { kernel, name, params } = input;
 	// The walk doubles as anchor data AND the pre-write set for verification
@@ -29,8 +27,8 @@ export async function runAppendMode(
 	}
 	const anchor = deriveAppendAnchor(walk, params.headingId);
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	if (dialog) {
-		const gate = await confirmGate(input, confirmKey, summary);
+	if (input.dialog) {
+		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 	}
 	const tx =

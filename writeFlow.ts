@@ -76,14 +76,13 @@ export async function resolveDocTarget(
 
 export async function confirmGate(
 	input: WriteFlowInput,
-	confirmKey: string,
 	summary: string,
 ): Promise<Envelope | null> {
 	return confirmWrite({
 		confirm: input.confirm,
 		writeConfirmTimeout: input.validation.settings?.writeConfirmTimeout,
 		state: input.confirmState,
-		key: confirmKey,
+		key: input.confirmKey,
 		summary,
 	});
 }

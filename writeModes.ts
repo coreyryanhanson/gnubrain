@@ -17,7 +17,6 @@ import { runMoveMode } from "./writeMove.js";
  * once at the kb_write entry (write.ts) — create never reaches here. */
 export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 	const mode = input.params.mode;
-	const confirmKey = input.confirmKey;
 	// Pre-dialog permission (headless default-deny + terminal
 	// confirm_timeout) already ran at the kb_write entry, before the
 	// probe gate — a denied write costs zero kernel round-trips.
@@ -31,15 +30,15 @@ export async function runWriteMode(input: WriteFlowInput): Promise<Envelope> {
 	if ("status" in target) return target;
 	switch (mode) {
 		case "edit":
-			return runEditMode(input, target, input.dialog, confirmKey);
+			return runEditMode(input, target);
 		case "append":
-			return runAppendMode(input, target, input.dialog, confirmKey);
+			return runAppendMode(input, target);
 		case "replace-section":
-			return runReplaceSectionMode(input, target, input.dialog, confirmKey);
+			return runReplaceSectionMode(input, target);
 		case "delete":
-			return runDeleteMode(input, target, input.dialog, confirmKey);
+			return runDeleteMode(input, target);
 		case "move":
-			return runMoveMode(input, target, input.dialog, confirmKey);
+			return runMoveMode(input, target);
 		default:
 			return errorEnvelope(`internal: unhandled write mode '${mode}'`);
 	}
