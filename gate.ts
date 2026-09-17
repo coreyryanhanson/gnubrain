@@ -20,6 +20,7 @@ import {
 	rateLimitRefusalEnvelope,
 	refusedEnvelope,
 	versionRefusalEnvelope,
+	driftWarning,
 	type Envelope,
 } from "./envelope.js";
 import type { KernelProbeClient, SessionValidation } from "./validation.js";
@@ -307,5 +308,19 @@ export async function runKbCall(
 	// A call that actually reached the kernel resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone.
 	if (kernelContact) input.breaker.recordSuccess();
+	// Reads warn and proceed on version drift (§2): the result already
+	// succeeded, so the drift rides the envelope as a payload field. Writes
+	// are separately refused in gateWriteAttempt; the kbs discovery form
+	// (tools.ts) makes zero kernel calls and skips this by design.
+	if (
+		result.status === "ok" &&
+		input.validation.probe === "drift" &&
+		input.validation.kernelVersion !== undefined
+	) {
+		result.drift = driftWarning(
+			input.validation.kernelVersion,
+			PINNED_SIYUAN_VERSION,
+		);
+	}
 	return result;
 }

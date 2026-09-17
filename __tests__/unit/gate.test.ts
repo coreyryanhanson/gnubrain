@@ -157,6 +157,56 @@ describe("guardCall dispatch gate", () => {
 	});
 });
 
+describe("runKbCall version-drift warning", () => {
+	it("read results carry the drift warning when the probe verdict is drift", async () => {
+		const v = validation({ probe: "drift", kernelVersion: "3.8.5" });
+		const envelope = await runKbCall(
+			{
+				validation: v,
+				breaker: new CircuitBreaker(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, contact) => {
+				contact();
+				return { status: "ok", message: "2 rows" };
+			},
+		);
+		// Reads warn and proceed: the result stays ok, the drift rides the
+		// envelope naming both versions and the write refusal.
+		expect(envelope.status).toBe("ok");
+		expect(envelope.drift).toContain("3.8.5");
+		expect(envelope.drift).toContain("3.8.4");
+		expect(envelope.drift).toContain("writes are refused");
+	});
+
+	it("no drift field on a probe-ok session, and gateWriteAttempt still refuses writes statically", async () => {
+		const breaker = new CircuitBreaker();
+		const ok = await runKbCall(
+			{
+				validation: validation(),
+				breaker,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async () => ({ status: "ok", message: "" }),
+		);
+		expect(ok.drift).toBeUndefined();
+
+		const drifted = validation({ probe: "drift", kernelVersion: "3.8.5" });
+		const refusal = await gateWriteAttempt({
+			validation: drifted,
+			kernel: kernelStub(async () => "3.8.5").client,
+			breaker,
+			now: NOW,
+		});
+		expect(refusal?.status).toBe("refused");
+		expect(refusal?.message).toContain("3.8.5");
+	});
+});
+
 describe("runKbCall error classification", () => {
 	it("feeds the breaker on auth failures and refuses locally once tripped", async () => {
 		const breaker = new CircuitBreaker();

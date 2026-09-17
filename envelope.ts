@@ -37,6 +37,20 @@ export function kernelUnreachable(baseUrl: string): Envelope {
 	return errorEnvelope(`SiYuan unreachable at ${baseUrl}`);
 }
 
+/** Read-path version-drift warning — reads warn and proceed (§2): the op
+ * already succeeded, so the drift rides the result as a payload field the
+ * model actually reads, matching the truncated/post_filtered marker pattern. */
+export function driftWarning(
+	kernelVersion: string,
+	pinnedVersion: string,
+): string {
+	return (
+		`kernel version ${kernelVersion} does not match the pinned version ` +
+		`${pinnedVersion} — results may not match pinned-kernel behavior, and ` +
+		`writes are refused until the kernel is re-verified and re-pinned`
+	);
+}
+
 /** version refusal — static text naming the kernel version, the pinned
  * version, and the fix. The one message that fires on any upgrade. */
 export function versionRefusalEnvelope(
