@@ -23,7 +23,7 @@ import {
 	type SessionValidation,
 } from "./validation.js";
 import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
-import { createContentBaselines } from "./baselines.js";
+import { ContentBaselines } from "./baselines.js";
 import { createWriteConfirmState } from "./writeConfirm.js";
 import { type WriteKernelClient } from "./writeResult.js";
 import {
@@ -79,7 +79,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// Session-scoped fresh-content baselines: the read tools feed it where
 	// content is served, the write precondition checks against it (decision
 	// record — empty after resume/fork, the no-baseline fallback applies).
-	const baselines = createContentBaselines();
+	const baselines = ContentBaselines.create();
 
 	// Read tools + toolset: the hooks read the live closure state,
 	// so masking and post-toggle scope compose mid-session.

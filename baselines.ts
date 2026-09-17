@@ -18,6 +18,8 @@ export function contentHash(content: string): string {
 export class ContentBaselines {
 	private hashes = new Map<string, string>();
 
+	private constructor() {}
+
 	remember(blockId: string, content: string): void {
 		this.hashes.set(blockId, contentHash(content));
 	}
@@ -29,10 +31,10 @@ export class ContentBaselines {
 	clear(): void {
 		this.hashes.clear();
 	}
-}
 
-export function createContentBaselines(): ContentBaselines {
-	return new ContentBaselines();
+	static create(): ContentBaselines {
+		return new ContentBaselines();
+	}
 }
 
 /** Seed from rows the tool actually served. Only rows carrying both an id

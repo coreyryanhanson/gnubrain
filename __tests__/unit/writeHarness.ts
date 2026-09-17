@@ -27,10 +27,7 @@ import {
 	ROOT_ECHO_STMT_HEAD,
 	type WriteKernelClient,
 } from "../../writeResult.js";
-import {
-	createContentBaselines,
-	type ContentBaselines,
-} from "../../baselines.js";
+import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import {
 	createWriteConfirmState,
@@ -328,7 +325,7 @@ export function setup(
 ): WriteSetupResult {
 	const kernel = writeKernelStub(opts.config ?? {});
 	const confirmCalls: { title: string; message: string }[] = [];
-	const baselines = createContentBaselines();
+	const baselines = ContentBaselines.create();
 	const { execute: run, tool } = registerKbWrite(
 		{
 			getValidation: () => opts.validation ?? validation(),

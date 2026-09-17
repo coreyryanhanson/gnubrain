@@ -6,7 +6,7 @@ import { type AST, type Binary, Parser } from "node-sql-parser";
 import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
-import { createContentBaselines } from "../../baselines.js";
+import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
 import { walkBlockTree } from "../../walk.js";
 import {
@@ -43,7 +43,7 @@ function fakePiWithTools() {
 		getValidation: () => undefined,
 		getKernel: () => undefined,
 		breaker: new CircuitBreaker(),
-		baselines: createContentBaselines(),
+		baselines: ContentBaselines.create(),
 	};
 	return { tools: toolDefs, pi, hooks };
 }
@@ -489,7 +489,7 @@ describe("query tool", () => {
 					},
 				}) as never,
 			breaker: new CircuitBreaker(),
-			baselines: createContentBaselines(),
+			baselines: ContentBaselines.create(),
 		});
 		const tool = toolDefs.get("kb_query") as unknown as {
 			execute: (...a: unknown[]) => Promise<{ details: unknown }>;
@@ -561,7 +561,7 @@ describe("read tool", () => {
 			"recipes",
 			"foreign-doc",
 			() => {},
-			createContentBaselines(),
+			ContentBaselines.create(),
 		);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("no doc 'foreign-doc'");
@@ -588,7 +588,7 @@ describe("read tool", () => {
 			"recipes",
 			"d1",
 			() => {},
-			createContentBaselines(),
+			ContentBaselines.create(),
 		);
 		const lines = String(result.outline).split("\n");
 		expect(lines).toHaveLength(201); // 200 + the pointer line
@@ -707,7 +707,7 @@ describe("degraded session (shape clause, asserted with the registered tools)", 
 					},
 				}) as never,
 			breaker: new CircuitBreaker(),
-			baselines: createContentBaselines(),
+			baselines: ContentBaselines.create(),
 		});
 		expect(registered.map((t) => t.name)).toEqual([
 			"kb_query",
@@ -771,7 +771,7 @@ describe("read tools seed served-content baselines", () => {
 			on: () => {},
 			events: { emit: () => {} },
 		};
-		const baselines = createContentBaselines();
+		const baselines = ContentBaselines.create();
 		registerReadToolsAndToolset(pi as never, {
 			getValidation: () => validation(),
 			getKernel: () => kernel as never,
@@ -873,7 +873,7 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 					},
 				}) as never,
 			breaker: opts.breaker ?? new CircuitBreaker(),
-			baselines: createContentBaselines(),
+			baselines: ContentBaselines.create(),
 		});
 		return registered.find((t) => t.name === (opts.tool ?? "kb_read"))!;
 	}
