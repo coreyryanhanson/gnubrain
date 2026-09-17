@@ -69,9 +69,10 @@ export interface WalkedBlock {
 	type: string;
 	subType: string;
 	content: string;
-	/** Container depth in the walk (root's direct children = 1). Headings
-	 * are leaf blocks, so their section content sits at the heading's own
-	 * depth — depth is what keeps move-anchor derivation at section level. */
+	/** Container depth in the walk (root's direct children = 1). A heading
+	 * contributes no depth of its own (it is never recursed into), so its
+	 * section content sits at the heading's own depth — depth is what keeps
+	 * move-anchor derivation at section level. */
 	depth: number;
 }
 
@@ -79,8 +80,36 @@ interface NestedBlock extends WalkedBlock {
 	children: NestedBlock[];
 }
 
-/** getChildBlocks walk preserving container structure. Headings are
- * leaves; only real containers (lists, blockquotes, superblocks) nest.
+/** Wire block types whose getChildBlocks returns real tree children: the
+ * kernel's own container set (d/b/l/i/s/callout) plus lute's nested tabs.
+ * The empty type — a block the kernel's abbreviation map does not name, e.g.
+ * a footnote definition — nests too, the fail-safe direction (a type this
+ * set has never heard of travels the same way).
+ *
+ * Heading (`h`) is deliberately absent even though the kernel answers a
+ * heading with its SECTION (following siblings up to the next heading of
+ * same-or-higher level): every one of those blocks is already returned by
+ * the loop over the container that owns the heading, so recursing into `h`
+ * re-emits them at the heading's depth and out of document order. Leaving
+ * headings out is what keeps `depth` a container depth. */
+const CONTAINER_TYPES: ReadonlySet<string> = new Set([
+	"d",
+	"b",
+	"l",
+	"i",
+	"s",
+	"callout",
+	"tabs",
+	"tab",
+]);
+
+function nests(type: string): boolean {
+	return CONTAINER_TYPES.has(type) || type === "";
+}
+
+/** getChildBlocks walk preserving container structure: recursion follows
+ * `nests` (the kernel's container types), so every block is visited exactly
+ * once, in document order.
  *
  * Errors propagate — including SiYuanApiError (unknown/locked block id):
  * this walk is the post-write verification evidence, and a swallowed
@@ -115,12 +144,14 @@ async function walkBlockTreeNested(
 			depth,
 			children: [],
 		};
-		node.children = await walkBlockTreeNested(
-			kernel,
-			node.id,
-			depth + 1,
-			tolerateVanished,
-		);
+		if (nests(node.type)) {
+			node.children = await walkBlockTreeNested(
+				kernel,
+				node.id,
+				depth + 1,
+				tolerateVanished,
+			);
+		}
 		nodes.push(node);
 	}
 	return nodes;
