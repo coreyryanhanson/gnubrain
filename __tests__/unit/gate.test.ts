@@ -16,7 +16,7 @@ import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;
 
-function kernelStub() {
+function kernelStub(getVersion: () => Promise<string> = async () => "3.8.3") {
 	const calls: string[] = [];
 	return {
 		calls,
@@ -24,7 +24,7 @@ function kernelStub() {
 			baseUrl: "http://127.0.0.1:6806",
 			async getVersion() {
 				calls.push("getVersion");
-				return "3.8.3";
+				return getVersion();
 			},
 			async listNotebooks() {
 				calls.push("listNotebooks");
@@ -363,18 +363,8 @@ describe("write gate", () => {
 	});
 
 	it("an unreachable kernel retries the probe per write attempt", async () => {
-		const calls: string[] = [];
 		const v = validation({ probe: "unreachable" });
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => {
-				calls.push("probe");
-				return "3.8.3";
-			},
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel, calls } = kernelStub();
 		// First write attempt retries and heals the cached verdict.
 		expect(
 			await gateWriteAttempt({
@@ -392,20 +382,14 @@ describe("write gate", () => {
 				breaker: new CircuitBreaker(),
 			}),
 		).toBeNull();
-		expect(calls).toEqual(["probe"]);
+		expect(calls).toEqual(["getVersion"]);
 	});
 
 	it("a still-failed probe retry refuses only that write", async () => {
 		const v = validation({ probe: "unreachable" });
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => {
-				throw new SiYuanNetworkError();
-			},
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel } = kernelStub(async () => {
+			throw new SiYuanNetworkError();
+		});
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel,
@@ -421,15 +405,9 @@ describe("write gate", () => {
 	it("a 429 on the probe arms the cooldown instead of reporting unreachable", async () => {
 		const v = validation({ probe: "unreachable" });
 		const breaker = new CircuitBreaker();
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => {
-				throw new SiYuanRateLimitError(429, 90);
-			},
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel } = kernelStub(async () => {
+			throw new SiYuanRateLimitError(429, 90);
+		});
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel,
@@ -452,15 +430,9 @@ describe("write gate", () => {
 	it("a 401 on the probe feeds the breaker's consecutive-failure count", async () => {
 		const v = validation({ probe: "unreachable" });
 		const breaker = new CircuitBreaker();
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => {
-				throw new SiYuanAuthError(401);
-			},
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel } = kernelStub(async () => {
+			throw new SiYuanAuthError(401);
+		});
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel,
@@ -486,13 +458,7 @@ describe("write gate", () => {
 
 	it("version drift after a probe retry fails closed", async () => {
 		const v = validation({ probe: "unreachable" });
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => "4.0.0",
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel } = kernelStub(async () => "4.0.0");
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel,
@@ -508,13 +474,7 @@ describe("write gate", () => {
 		breaker.recordAuthFailure();
 		breaker.recordAuthFailure();
 		const v = validation({ probe: "unreachable" });
-		const kernel = {
-			baseUrl: "http://127.0.0.1:6806",
-			getVersion: async () => "3.8.3",
-			listNotebooks: async () => {
-				throw new Error("not used");
-			},
-		};
+		const { client: kernel } = kernelStub();
 		const envelope = await runKbCall(
 			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
 			async (_names) => {
