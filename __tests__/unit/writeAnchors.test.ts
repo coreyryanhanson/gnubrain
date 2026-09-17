@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import {
 	deriveAppendAnchor,
 	deriveMoveAnchor,
+	landingId,
 	sectionDeleteSet,
+	type MoveAnchor,
 } from "../../writeAnchors.js";
 import { walkBlock } from "./writeHarness.js";
 
@@ -78,6 +80,70 @@ describe("move-anchor derivation", () => {
 		// section makes h2 itself the anchor (after-heading = end-of-section).
 		const anchor = deriveMoveAnchor(walk, "h1");
 		expect(anchor.kind === "move" && anchor.previousID).toBe("h2");
+	});
+});
+
+describe("landingId (kernel placement over the flattened walk)", () => {
+	// The anchor echo is irrelevant to placement — only the kind + id are.
+	const mv = (previousID: string): MoveAnchor => ({
+		kind: "move",
+		previousID,
+		anchor: "",
+	});
+
+	it("leaf anchor: the entry right after it (parity with next-entry indexing)", () => {
+		const walk = [
+			walkBlock("h1", "h", "h1", "A"),
+			walkBlock("p1", "p", "", "one"),
+			walkBlock("p2", "p", "", "two"),
+		];
+		expect(landingId(walk, mv("p1"))).toBe("p2");
+	});
+
+	it("container anchor: the entry after the container's SUBTREE, not its first child", () => {
+		// The bug shape: a list's items trail it in the flattened walk, and
+		// the kernel places the moved block as the list's next SIBLING —
+		// next-entry indexing sees the first item and false-fails.
+		const walk = [
+			walkBlock("h1", "h", "h1", "A"),
+			walkBlock("list", "l", "", "list"),
+			walkBlock("i1", "i", "", "one", 2),
+			walkBlock("i2", "i", "", "two", 2),
+			walkBlock("h2", "h", "h1", "B"),
+		];
+		expect(landingId(walk, mv("list"))).toBe("h2");
+	});
+
+	it("derivation and placement agree: the container section's anchor lands past its own subtree", () => {
+		const walk = [
+			walkBlock("h1", "h", "h1", "A"),
+			walkBlock("p1", "p", "", "mover"),
+			walkBlock("list", "l", "", "list"),
+			walkBlock("i1", "i", "", "one", 2),
+			walkBlock("i2", "i", "", "two", 2),
+			walkBlock("h2", "h", "h1", "B"),
+		];
+		const anchor = deriveMoveAnchor(walk, "h1");
+		expect(anchor.kind === "move" && anchor.previousID).toBe("list");
+		expect(landingId(walk, anchor)).toBe("h2");
+	});
+
+	it("vanished anchor → undefined (the caller falls back to presence)", () => {
+		const walk = [walkBlock("h1", "h", "h1", "A")];
+		expect(landingId(walk, mv("ghost"))).toBeUndefined();
+	});
+
+	it("appendRoot: the last depth-1 block, surviving trailing deep children", () => {
+		const walk = [
+			walkBlock("h1", "h", "h1", "A"),
+			walkBlock("p2", "p", "", "last top-level"),
+			walkBlock("c1", "p", "", "kid", 2),
+		];
+		expect(landingId(walk, { kind: "appendRoot", anchor: "" })).toBe("p2");
+	});
+
+	it("appendRoot on an empty walk → undefined", () => {
+		expect(landingId([], { kind: "appendRoot", anchor: "" })).toBeUndefined();
 	});
 });
 

@@ -7,6 +7,10 @@ import type { WalkedBlock } from "./walk.js";
 /** `appendBlock` on the doc root — the doc-end fallback (anchor echo). */
 const DOC_END_ANCHOR = "appendBlock(root) — no next heading";
 
+export type MoveAnchor =
+	| { kind: "move"; previousID: string; anchor: string }
+	| { kind: "appendRoot"; anchor: string };
+
 /**
  * `append`/replace-section anchor (pinned): `nextID` = the NEXT heading
  * in document order — never a last-block or heading anchor (the list/quote
@@ -78,9 +82,7 @@ export function sectionDeleteSet(
 export function deriveMoveAnchor(
 	destWalk: WalkedBlock[],
 	toHeadingId: string | undefined,
-):
-	| { kind: "move"; previousID: string; anchor: string }
-	| { kind: "appendRoot"; anchor: string } {
+): MoveAnchor {
 	if (toHeadingId === undefined) {
 		return { kind: "appendRoot", anchor: DOC_END_ANCHOR };
 	}
@@ -139,4 +141,32 @@ export function deriveMoveAnchor(
 		previousID: anchor.id,
 		anchor: `previousID=${anchor.id} (end of section)`,
 	};
+}
+
+/**
+ * Kernel placement, stated once: the walk id a block anchored at `anchor`
+ * lands on, or undefined when no entry occupies the landing position (or the
+ * position is unverifiable — vanished anchor). `moveBlock` with previousID=X
+ * inserts as X's next SIBLING, which over the flattened document-order walk
+ * is the entry after X's whole SUBTREE — a container's descendants trail it,
+ * so "the next entry" is the container's first child, not the sibling (the
+ * false-rollback bug this replaces). `appendRoot` appends as the root's last
+ * child: the last depth-1 block, surviving trailing deep children. Both
+ * runMoveMode checks (pre-move no-op refusal, post-move verification) ask
+ * this function — never their own walk arithmetic.
+ */
+export function landingId(
+	walk: WalkedBlock[],
+	anchor: MoveAnchor,
+): string | undefined {
+	if (anchor.kind === "appendRoot") {
+		return walk.findLast((b) => b.depth === 1)?.id;
+	}
+	const idx = walk.findIndex((b) => b.id === anchor.previousID);
+	if (idx < 0) return undefined; // vanished anchor — caller falls back
+	let end = idx;
+	while (end + 1 < walk.length && walk[end + 1]!.depth > walk[idx]!.depth) {
+		end++;
+	}
+	return walk[end + 1]?.id;
 }

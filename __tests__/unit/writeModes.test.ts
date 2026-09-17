@@ -1025,6 +1025,56 @@ describe("block-level move", () => {
 		expect(move?.args).toEqual({ id: "p1", previousID: "oh1" });
 	});
 
+	it("section ending in a list container: the move lands after the container's subtree and verifies", async () => {
+		// The kernel places previousID=list's next SIBLING, but the flattened
+		// walk interleaves the list's items between the container and that
+		// sibling — next-entry verification read the first item and reported
+		// a silent rollback for a move that landed. landingId (subtree end)
+		// is the placement model both checks share.
+		const harness = moveHarness(
+			() => {
+				// The kernel applies: p1 lands as the list's next sibling — the
+				// items stay inside the container (childrenFor["list"]).
+				harness.childrenFor["d-doc"] = [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("list", "l", "", "list"),
+					walkBlock("p1", "p", "", "mover"),
+					walkBlock("h2", "h", "h1", "B"),
+				];
+			},
+			{
+				blockRows: [{ id: "p1", content: "mover" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("p1", "p", "", "mover"),
+						walkBlock("list", "l", "", "list"),
+						walkBlock("h2", "h", "h1", "B"),
+						walkBlock("p9", "p", "", "tail"),
+					],
+					list: [
+						walkBlock("i1", "i", "", "one"),
+						walkBlock("i2", "i", "", "two"),
+					],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
+			},
+		);
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.movedBlockId).toBe("p1");
+		const move = harness.calls.find((c) => c.method === "moveBlock");
+		// The section's last top-level member is the container itself.
+		expect(move?.args).toEqual({ id: "p1", previousID: "list" });
+	});
+
 	it("same-doc self-anchor: the block already ends the destination section → refusal, zero kernel moves", async () => {
 		// MOVE_DOC's h1 section is [p1, p2] — moving p2 to its end would
 		// issue moveBlock({previousID: p2}); the kernel no-ops and the walk
@@ -1195,7 +1245,7 @@ describe("block-level move", () => {
 		});
 		expect(result.status).toBe("error");
 		expect(result.message).toContain(
-			"present but not immediately after the anchor",
+			"present but not at its landing position after the anchor",
 		);
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
 			1,
