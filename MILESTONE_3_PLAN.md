@@ -45,7 +45,7 @@ original item numbers.
 | S1.3 `kb` param contract | Required everywhere; arrays on `kb_query`/`kb_search`, single name on `kb_read`/writes; unknown/not-in-scope/empty-array rejections with pinned messages |
 | S1.4 Scope resolution | Latest `kb-scope` `appendEntry` wins, else `defaultKBs` (project over global); absent key = empty set; full validator on global file, project file supplies `defaultKBs` only (stray key or non-array → degrade; unknown name → warn-and-drop (either file, at scope resolution), no fallback to global `defaultKBs`); injectable settings-load seam |
 | S1.5 Circuit breaker + 429 cooldown | 3 consecutive 401/403 → degraded fail-fast (zero kernel calls); 429 never counted/retried, local cooldown (`Retry-After`, 60 s floor) with pinned message content; `/kb` recovery for the breaker only, cooldown self-heals |
-| S1.6 Status bar slot | Severity-first: unreachable red → never-probed grey → degraded yellow (`config`/`breaker`/`version` cause tags) → healthy capability dot (hollow/blue/green); cleared on `session_shutdown` |
+| S1.6 Status bar slot | Severity-first: unreachable red → degraded yellow (`config`/`breaker`/`version` cause tags — beats never-probed, since a shape failure is always also never-probed) → never-probed grey → healthy capability dot (hollow/blue/green); cleared on `session_shutdown` |
 | S1 seam | Single `register(pi, deps)` entry in `index.ts` |
 | S2.1 Scope persistence | `pi.appendEntry("kb-scope", ...)` full post-toggle snapshot |
 | S2.2 `/kb` command | Bare prints scope; `<name> on\|off` idempotent; `all on\|off`; reserved `all` + `tools` (`writes` deliberately un-reserved — see deviations); verbless prints usage |
@@ -92,9 +92,22 @@ plan updated in the same changes):
    walk to one `getChildBlocks` call per container instead of one per block.
    The `walk.ts`/`DESIGN_v2.md` "headings are leaves" phrasing was a
    *mutation-parent* claim (the kernel's `CheckContainerParent` rejects
-   `parentID=<heading id>`) wrongly carried onto the read path. Confirmed
-   against the live 3.8.3 kernel and pinned by the heading-section fixtures in
+   `parentID=<heading id>`) wrongly carried onto the read path. Confirmed against
+   the live 3.8.4 kernel and pinned by the heading-section fixtures in
    `writeModes.test.ts` and the never-walk-a-heading pin in `tools.test.ts`.
+5. **Kernel re-pin to 3.8.4 (pre-5b)**: the workspace moved to 3.8.4 and the pin
+   followed (`validation.ts`). 3.8.4 executes block writes synchronously
+   (`PerformBlockOperation` drains the tx queue and holds the flush lock), which
+   closes the post-delete staleness the 3.8.3 queue ticker had (live-verified 0/3
+   stale immediate reads, was 5/5) and changes the delete contract the S4/S5 flows
+   were written against: a delete of a missing block is now a synchronous
+   "tree not found" error where 3.8.3 answered a success no-op — the delete flow
+   surfaces it verbatim with the fresh outline attached, the same stale-target
+   treatment edit/move already get (unit-pinned both kernel generations); an
+   insert/append whose anchor does not resolve now errors instead of rolling back
+   behind a success, so the verified-insert machinery is a backstop rather than the
+   only line. The design's §4 stale-target record and §10 stale-target/version-refusal
+   pins describe both generations.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 

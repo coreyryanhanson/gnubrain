@@ -881,10 +881,11 @@ block or several, and a diff-size check would both false-fail multi-block bodies
 false-fail concurrent writes to the same doc (§9 makes those normal usage). The exact
 single-block pin — "a single-block body's diff must be exactly that one ID" — is the
 §10 integration suite's job, where the fixture controls the body (full record on
-`newBlockId`, below). The other targets ride their kernel behavior or an equivalent
 assertion: an `edit` target's synchronous not-found error surfaces verbatim; a `delete`
-target already gone reports success with the target's absence from the unfiltered
-post-write block tree (`targetGone`) as evidence — the same walk-ID set the insert
+target already gone reports per the kernel generation — 3.8.3 a success with the
+target's absence from the unfiltered post-write block tree (`targetGone`) as
+evidence, 3.8.4 a synchronous "tree not found" error surfaced verbatim with the
+fresh outline (stale-target record's 3.8.4 update, above) — the same walk-ID set the insert
 verification uses, since a non-heading target can never appear in the heading-only
 outline (goal state reached either way); a **`move`
 is verified like an insert** — `movedBlockId` must appear in the destination doc's
@@ -1386,8 +1387,10 @@ writes; the opt-out is typed, in settings.
   connectivity/config state. **The text never changes with capability — the dot color
   carries it** (portal precedent: `fg(learn ? "success" : "accent", "●")`); slot text stays
   `● kb: <scope names>`. Precedence is severity-first — health always beats capability
-  display: unreachable → red, never-probed → grey; degraded config → yellow (cause tags
-  below); write toolset enabled → success/green (full capability); write toolset masked,
+  display: unreachable → red; degraded config → yellow (cause tags below — a shape
+  failure is always also never-probed, so yellow must beat grey for the cause tag to be
+  reachable, the status.test.ts pin); never-probed → grey; write toolset enabled →
+  success/green (full capability); write toolset masked,
   read toolset active → accent/blue (read-only); **all kb toolsets masked → `○ kb` hollow**.
   The hollow state is reachable without our toggle: pi-tool-masking's settings tier
   (`toolsetDefaults` pins on `toolset-state:gnubrain.*`), allowlist/focus mode, or an
@@ -1676,8 +1679,10 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     is absent from the post-write block tree (the unfiltered `getChildBlocks` walk set,
     §3 — not the heading-only outline) → `status: error` naming the vanished target,
     never success; an edit target's kernel error surfaces verbatim with the fresh
-    outline; a delete no-op reports success with `targetGone` (absence from the
-    unfiltered post-write walk set) as evidence;
+    outline; a delete of a missing target answers per the kernel generation — 3.8.3 a
+    success no-op with `targetGone` (absence from the unfiltered post-write walk set)
+    as evidence, 3.8.4 a synchronous "tree not found" error surfaced verbatim with the
+    fresh outline (both pinned);
     a cross-doc move whose `movedBlockId` is absent from the destination post-move walk
     set (or still present in the source's) → `status: error`, never a silent no-move
     success;
@@ -1865,8 +1870,10 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     synchronous not-found error surfaces as a failed result naming the block;
     (b) `append` anchored to it → the tool's `newBlockId`-in-block-tree assertion (the
     unfiltered `getChildBlocks` walk set, §3) turns the kernel's silent rollback into
-    `{status: error}` with the fresh outline attached, and no block was inserted; (c) `delete` against it → success with `targetGone` showing
-    the target already absent from the unfiltered walk set (the kernel's success no-op, benign end state); (d) `move`
+    `{status: error}` with the fresh outline attached, and no block was inserted; (c) `delete` against it → per the kernel generation: 3.8.3 answered success with `targetGone` (the
+    no-op, benign end state); **3.8.4 answers a synchronous "tree not found" error** —
+    surfaced verbatim with the fresh outline attached (unit-pinned; the live pin asserts
+    the error shape); (d) `move`
     whose source block was deleted → the handler's synchronous `-1`
     (`block not found`, `api/block_op.go:474` — blocktree-index check) surfaces as a
     failed result; (e) `move` whose destination anchor is deleted between outline-fetch
@@ -1876,10 +1883,11 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     (Mechanism for (e) is open: kernel deletes keep both indexes in sync, so no honest
     live-kernel route to a stale tree-level state is known — if none exists at build
     time, pin the tree-level-miss branch in the mocked suite and let this case cover
-    only the synchronous classes (a)/(d).) A SiYuan
-    upgrade that makes the insert path report its rollback synchronously, changes the
-    `doDelete` no-op, or moves `moveBlock`'s index checks behind the transaction layer,
-    turns this case red;
+    only the synchronous classes (a)/(d).) **The upgrade this case anticipated happened
+    at 3.8.4** — the insert path reports its rollback synchronously and the `doDelete`
+    no-op became an error (the stale-target record's 3.8.4 update); the suite's
+    assertions follow the running kernel's generation, and a future upgrade that moves
+    `moveBlock`'s index checks behind the transaction layer turns this case red;
   - `removeDocByID` (`delete doc: true`, §4): delete a fixture doc that carries an inbound
     block ref from another fixture doc — assert the confirmation surfaced the backlink
     count, the doc is gone from the box's `type='d'` root rows (zero rows to the guard's
@@ -1974,7 +1982,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   - version-refusal contract pin (§2/§5 — the write path's most load-bearing safety
     property, exercised against the real kernel): the mismatch is a relation between the
     kernel's reported version and the extension's pinned expectation, and the test owns
-    the pin — run the suite with the pin deliberately set to a version the real 3.8.3
+    the pin — run the suite with the pin deliberately set to a version the real 3.8.4
     kernel does not report (the same deliberate-misconfiguration move as the bogus-token
     cases: you don't make the kernel lie about auth to test rejection, you supply a wrong
     credential; here you supply a wrong expectation) → assert every write call returns
