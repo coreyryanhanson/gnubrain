@@ -9,7 +9,7 @@ import type { SiYuanRateLimitError } from "siyuan-kernel-api";
 export const BREAKER_THRESHOLD = 3;
 /** floor: the verified first kernel lock is 60s; the served header can
  * understate a lock extended since it was computed, so the deadline is advisory. */
-export const COOLDOWN_FLOOR_SECONDS = 60;
+const COOLDOWN_FLOOR_SECONDS = 60;
 
 export class CircuitBreaker {
 	private consecutive = 0;

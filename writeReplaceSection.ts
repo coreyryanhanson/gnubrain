@@ -76,7 +76,7 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// insert-before-delete: a mid-sequence failure must cost visible
 	// duplication, never loss. Same anchor rule as `append`.
-	const anchor = deriveAppendAnchor(walk, headingId);
+	const anchor = deriveAppendAnchor(walk, heading);
 	const tx =
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })

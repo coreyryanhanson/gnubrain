@@ -20,12 +20,12 @@ export type MoveAnchor =
  */
 export function deriveAppendAnchor(
 	walk: WalkedBlock[],
-	headingId: string | undefined,
+	heading: WalkedBlock | undefined,
 ):
 	| { kind: "insert"; nextID: string; anchor: string }
 	| { kind: "appendRoot"; anchor: string } {
-	if (headingId !== undefined) {
-		const index = walk.findIndex((b) => b.id === headingId && b.type === "h");
+	if (heading !== undefined) {
+		const index = walk.indexOf(heading);
 		if (index >= 0) {
 			const next = walk.slice(index + 1).find((b) => b.type === "h");
 			if (next !== undefined) {

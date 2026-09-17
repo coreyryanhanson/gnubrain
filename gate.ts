@@ -241,7 +241,7 @@ export async function gateWriteAttempt(input: {
 	if (validation.probe === "ok") {
 		return null;
 	}
-	// unreachable / never-probed: per-write-attempt probe retry — never a
+	// unreachable in production; defensive: per-write-attempt probe retry — never a
 	// session-wide loop.
 	try {
 		const version = await kernel.getVersion();

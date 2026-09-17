@@ -3,7 +3,7 @@
 
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { deriveAppendAnchor } from "./writeAnchors.js";
-import { walkBlockTree } from "./walk.js";
+import { walkBlockTree, type WalkedBlock } from "./walk.js";
 import {
 	confirmGate,
 	echoTail,
@@ -22,11 +22,13 @@ export async function runAppendMode(
 	// The walk doubles as anchor data AND the pre-write set for verification
 	// (stale-target record: the same walk the anchor derivation fetches).
 	const walk = await walkBlockTree(kernel, doc.rootId);
+	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
 		const heading = headingInWalk(walk, doc, params.headingId);
 		if ("status" in heading) return heading;
+		resolvedHeading = heading;
 	}
-	const anchor = deriveAppendAnchor(walk, params.headingId);
+	const anchor = deriveAppendAnchor(walk, resolvedHeading);
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	if (input.dialog) {
 		const gate = await confirmGate(input, summary);

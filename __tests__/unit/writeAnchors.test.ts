@@ -173,16 +173,12 @@ describe("sectionDeleteSet (boundary + final-section sweep)", () => {
 
 describe("deriveAppendAnchor", () => {
 	it("nextID = the next heading in document order", () => {
-		expect(
-			deriveAppendAnchor(
-				[
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("p1", "p", "", "x"),
-					walkBlock("h2", "h", "h2", "B"),
-				],
-				"h1",
-			),
-		).toEqual({
+		const walk = [
+			walkBlock("h1", "h", "h1", "A"),
+			walkBlock("p1", "p", "", "x"),
+			walkBlock("h2", "h", "h2", "B"),
+		];
+		expect(deriveAppendAnchor(walk, walk[0])).toEqual({
 			kind: "insert",
 			nextID: "h2",
 			anchor: "nextID=h2 (next heading)",
@@ -190,11 +186,12 @@ describe("deriveAppendAnchor", () => {
 	});
 
 	it("no next heading → appendBlock(root)", () => {
-		const anchor = deriveAppendAnchor([walkBlock("h1", "h", "h1", "A")], "h1");
+		const walk = [walkBlock("h1", "h", "h1", "A")];
+		const anchor = deriveAppendAnchor(walk, walk[0]);
 		expect(anchor.kind).toBe("appendRoot");
 	});
 
-	it("no headingId → appendBlock(root)", () => {
+	it("no heading → appendBlock(root)", () => {
 		const anchor = deriveAppendAnchor(
 			[walkBlock("h1", "h", "h1", "A")],
 			undefined,

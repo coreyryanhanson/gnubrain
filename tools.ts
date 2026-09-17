@@ -463,7 +463,9 @@ export async function runRead(
 		spillPath === undefined
 			? inline
 			: `${inline}\n${spillPointer(doc.content.length - inline.length, spillPath)}`;
-	envelope.fullResultPath = spillPath;
+	if (spillPath !== undefined) {
+		envelope.fullResultPath = spillPath;
+	}
 	return envelope;
 }
 
