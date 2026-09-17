@@ -10,6 +10,17 @@ const CERT_TABLES = new Set(["blocks", "refs"]);
 const parser = new Parser();
 const SQL_DIALECT = { type: "sqlite" } as const;
 
+/** True anywhere in the value tree a parsed subquery node sits. The top-level
+ * FROM loop in certifySelect only sees FROM entries; subqueries also parse
+ * into WHERE, the SELECT list, and ORDER BY, so the scan covers the rest of
+ * the AST. Only a select node carries type "select", so legitimate aggregate
+ * /GROUP BY queries never trip it. */
+function containsNestedSelect(value: unknown): boolean {
+	if (value === null || typeof value !== "object") return false;
+	if ((value as { type?: unknown }).type === "select") return true;
+	return Object.values(value).some(containsNestedSelect);
+}
+
 export type CertResult =
 	| { ok: true; ast: Select }
 	| { ok: false; reason: string };
@@ -88,6 +99,10 @@ export function certifySelect(stmt: string): CertResult {
 			ok: false,
 			reason: `FROM '${table}' is not allowed — only blocks and refs`,
 		};
+	}
+	// The root is itself a select, so the scan starts at its property values.
+	if (Object.values(node).some(containsNestedSelect)) {
+		return { ok: false, reason: "subqueries are not allowed" };
 	}
 	return { ok: true, ast: node };
 }

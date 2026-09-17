@@ -93,6 +93,27 @@ describe("parser certification", () => {
 		expect(!result.ok && result.reason).toContain("subqueries");
 	});
 
+	it("rejects subqueries in WHERE (the rebuild only scopes the outer WHERE)", () => {
+		const inClause = certifySelect(
+			"SELECT id FROM blocks WHERE id IN (SELECT id FROM refs)",
+		);
+		expect(inClause.ok).toBe(false);
+		expect(!inClause.ok && inClause.reason).toContain("subqueries");
+		const exists = certifySelect(
+			"SELECT id FROM blocks WHERE EXISTS (SELECT 1 FROM refs)",
+		);
+		expect(exists.ok).toBe(false);
+		expect(!exists.ok && exists.reason).toContain("subqueries");
+	});
+
+	it("rejects subqueries in the SELECT list", () => {
+		const column = certifySelect(
+			"SELECT (SELECT content FROM blocks LIMIT 1) AS leaked FROM blocks",
+		);
+		expect(column.ok).toBe(false);
+		expect(!column.ok && column.reason).toContain("subqueries");
+	});
+
 	it("rejects UNION (parses as type 'select' with the second arm in _next/set_op — spike pin)", () => {
 		const result = certifySelect(
 			"SELECT id FROM blocks UNION SELECT id FROM refs",
