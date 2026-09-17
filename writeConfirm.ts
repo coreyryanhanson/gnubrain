@@ -23,7 +23,8 @@ export function createWriteConfirmState(): WriteConfirmState {
 
 /** Identifies "that write" for the terminal-timeout rule. */
 export function writeConfirmKey(parts: (string | undefined)[]): string {
-	return parts.map((p) => p ?? "-").join("|");
+	// JSON over |: parts are agent-supplied and may contain the "|" separator.
+	return JSON.stringify(parts);
 }
 
 const DEFAULT_WRITE_CONFIRM_TIMEOUT = 60;
