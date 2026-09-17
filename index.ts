@@ -212,6 +212,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// not inherit a partial or tipped count from the previous one. The 429
 		// cooldown is deliberately untouched — wall-clock and self-healing.
 		breaker.reset();
+		// Same lifecycle: a shape-failed revalidate builds no client, so the
+		// previous session's client must not linger in the closure.
+		kernelClient = undefined;
 		// Same lifecycle class: a confirm_timeout is terminal "in this session"
 		// and baselines are session-scoped — neither may leak across a new
 		// session in the same process.
