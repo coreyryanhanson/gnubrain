@@ -304,7 +304,15 @@ default and the per-KB search `pageSize`) and one helper.
   note the §4 7-level cap is the *doc-tree depth* limit, a different axis: it counts
   `/` separators in the hpath, and the kernel imposes no cap on block-container
   nesting within a doc, so this bound is ours and exists to keep the walk finite) to
-  catch headings nested under lists/quotes. The heading filter applies to rendering only —
+  catch headings nested under lists/quotes. **Heading ids are never recursed into**: the kernel
+  answers `getChildBlocks(headingId)` with the heading's *section* — its following
+  siblings up to the next heading of same-or-higher level (`treenode.HeadingChildren`),
+  a branch that runs before the kernel's container check — and every one of those
+  blocks is already returned by the loop over the container that owns the heading, so
+  recursing into `h` would re-emit them at the heading's depth and out of document
+  order. Recursion follows the kernel's container types (`d/b/l/i/s/callout`, plus
+  lute's `tabs`/`tab`), which is also what keeps the walk at one `getChildBlocks` call
+  per container instead of one per block. The heading filter applies to rendering only —
   the walk visits every child block, and the tool retains the walk's unfiltered ID set as
   the evidence for the §4 stale-target verification. The
   root block ID is the echoed `docId` itself (a SiYuan doc's root block ID *is* its doc
@@ -636,8 +644,10 @@ for the identity property.
      duplication, never loss): insert the new body first with the same anchor rule as
      `append` — `insertBlock` with `nextID` = the next heading's block ID (or
      `appendBlock` on the doc root for the final section); a bare
-     `parentID`=<heading id> insert is rejected by the container check the doc itself
-     documents (headings are leaves) — then `deleteBlock` the old blocks. **The old
+     `parentID=<heading id>` insert is rejected by the container check the doc itself
+     documents (a heading is not a valid insertion *parent* — the kernel's
+     `CheckContainerParent` rejects `parentID=<heading id>`; `getChildBlocks` still
+     answers a heading with its section, §3) — then `deleteBlock` the old blocks. **The old
      section's block IDs are enumerated by the §3 `getChildBlocks` document-order walk
      before the insert, never by SQL** — §3's superseded-outline record proves SQL
      enumeration breaks on edited docs — and this is the *delete set* of the preferred
@@ -677,7 +687,9 @@ for the identity property.
      resolve; refs into the section's content blocks orphan, and the confirmation's
      backlink count plus the result's `invalidRefs` echo (§4 write-result contract)
      make them visible before and after the agent decides.
-   - **`append`** — new fact, new section. Headings are leaf blocks — the kernel's
+   - **`append`** — new fact, new section. Headings cannot be an insertion *parent*
+     (leaf in the mutation sense only — `getChildBlocks` still answers a heading with its
+     section, §3) — the kernel's
      `appendBlock` requires a *container* parent and rejects `parentID=<heading id>`
      outright — so "insert under a heading" is mechanically insert-with-anchor, and the
      anchor rule is pinned: **`insertBlock` with `nextID` = the *next heading's* block ID**

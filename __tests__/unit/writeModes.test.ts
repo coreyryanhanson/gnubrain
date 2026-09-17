@@ -261,12 +261,23 @@ async function setupWithEditMutation(): Promise<{
 // ---------------------------------------------------------------------------
 
 const SECTION_DOC = {
+	// Heading sections are seeded as the kernel returns them (a heading's
+	// getChildBlocks answer is its section: following siblings up to the next
+	// heading of same-or-higher level). The walk never recurses into `h` — it
+	// reaches these blocks through the `d-doc` loop — so these entries are here
+	// to fail the suite if heading recursion is ever reintroduced.
 	"d-doc": [
 		walkBlock("h1", "h", "h1", "Goals"),
 		walkBlock("p1", "p", "", "body one"),
 		walkBlock("h2", "h", "h2", "Details"),
 		walkBlock("p2", "p", "", "body two"),
 	],
+	h1: [
+		walkBlock("p1", "p", "", "body one"),
+		walkBlock("h2", "h", "h2", "Details"),
+		walkBlock("p2", "p", "", "body two"),
+	],
+	h2: [walkBlock("p2", "p", "", "body two")],
 };
 
 describe("append", () => {
@@ -357,6 +368,13 @@ const REPLACE_DOC = {
 		walkBlock("h2", "h", "h1", "Details"),
 		walkBlock("p3", "p", "", "tail"),
 	],
+	// Kernel-shaped heading sections (see SECTION_DOC): the delete set must
+	// stay the enumerated section, never the heading's answer re-emitted.
+	h1: [
+		walkBlock("p1", "p", "", "old one"),
+		walkBlock("p2", "p", "", "old two"),
+	],
+	h2: [walkBlock("p3", "p", "", "tail")],
 };
 
 const replaceParams = {
@@ -894,9 +912,11 @@ describe("block-level move", () => {
 	const MOVE_DOC = {
 		"d-doc": [
 			walkBlock("h1", "h", "h1", "A"),
-			walkBlock("p1", "p", "", "mover"),
+			walkBlock("p1", "l", "u", "mover"),
 			walkBlock("p2", "p", "", "stay"),
 		],
+		// Kernel-shaped heading section (see SECTION_DOC).
+		h1: [walkBlock("p1", "l", "u", "mover"), walkBlock("p2", "p", "", "stay")],
 		"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
 	};
 
@@ -1157,15 +1177,16 @@ describe("block-level move", () => {
 	it("same-doc doc-end move with children: the trailing child doesn't false-fail the position check", async () => {
 		// Flattened document order puts the moved block's child after it —
 		// a "last walk element" shape would false-fail this good move.
-		// Nested depth comes from the walk's recursion (childrenFor[p1]),
-		// not from a depth field on the doc's flat child list.
+		// Nested depth comes from the walk's recursion (childrenFor[p1]; a
+		// container, since only container types nest), not from a depth field
+		// on the doc's flat child list.
 		const harness = moveHarness(() => {
 			harness.childrenFor["d-doc"] = [
 				walkBlock("h1", "h", "h1", "A"),
 				walkBlock("p2", "p", "", "stay"),
-				walkBlock("p1", "p", "", "mover"),
+				walkBlock("p1", "l", "u", "mover"),
 			];
-			harness.childrenFor["p1"] = [walkBlock("c1", "p", "", "kid")];
+			harness.childrenFor["p1"] = [walkBlock("c1", "i", "u", "kid")];
 		});
 		const result = await harness.execute({
 			kb: "recipes",
@@ -1181,16 +1202,16 @@ describe("block-level move", () => {
 	it("doc-end pre-check survives trailing children: block with a child already at doc end refuses, zero kernel moves", async () => {
 		// p2's child c1 is the walk's literal last element; the doc-end
 		// shape is "last top-level block", not "last element". Nested depth
-		// comes from the walk's recursion (childrenFor[p2]).
+		// comes from the walk's recursion (childrenFor[p2]; a container).
 		const harness = moveHarness(undefined, {
 			blockRows: [{ id: "p2", content: "stay" }],
 			childrenFor: {
 				"d-doc": [
 					walkBlock("h1", "h", "h1", "A"),
 					walkBlock("p1", "p", "", "first"),
-					walkBlock("p2", "p", "", "stay"),
+					walkBlock("p2", "l", "u", "stay"),
 				],
-				p2: [walkBlock("c1", "p", "", "kid")],
+				p2: [walkBlock("c1", "i", "u", "kid")],
 				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
 			},
 		});

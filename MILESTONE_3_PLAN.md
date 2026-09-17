@@ -75,6 +75,26 @@ plan updated in the same changes):
    `siyuan-kernel-api/errors.ts` optional-property widening (compat with
    `exactOptionalPropertyTypes`) — recorded as a deliberate change to that
    repo.
+4. **Walk scope correction (pre-5b)**: `walk.ts` recurses only into the
+   kernel's container types (`d/b/l/i/s/callout`, plus lute's `tabs`/`tab`; a
+   type the kernel's abbreviation map does not name nests too). Heading ids are
+   never recursed into: the kernel answers `getChildBlocks(headingId)` with the
+   heading's *section* (`treenode.HeadingChildren` — its following siblings up
+   to the next heading of same-or-higher level; that branch runs before the
+   kernel's container check), and every one of those blocks is already returned
+   by the loop over the container that owns the heading. Recursing into `h`
+   re-emitted each section block at the heading's depth and out of document
+   order: duplicate walk entries, duplicated `kb_read` outline lines for any
+   doc with subheadings, a doubled replace-section delete set (with repeated
+   `deleteBlock` calls), and corrupted move anchors (`nextID` search and
+   `landingId` read the first duplicate). The §3 walk contract is unchanged —
+   every block visited once, in document order — and the fix also drops the
+   walk to one `getChildBlocks` call per container instead of one per block.
+   The `walk.ts`/`DESIGN_v2.md` "headings are leaves" phrasing was a
+   *mutation-parent* claim (the kernel's `CheckContainerParent` rejects
+   `parentID=<heading id>`) wrongly carried onto the read path. Confirmed
+   against the live 3.8.3 kernel and pinned by the heading-section fixtures in
+   `writeModes.test.ts` and the never-walk-a-heading pin in `tools.test.ts`.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 

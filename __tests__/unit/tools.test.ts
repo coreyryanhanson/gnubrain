@@ -653,6 +653,30 @@ describe("read tool", () => {
 		expect(all.map((b) => b.id)).toEqual(["h1", "p1"]);
 	});
 
+	it("never walks a heading id: the section rides the owning container's loop (no duplicate entries, container depth)", async () => {
+		// The kernel answers getChildBlocks(headingId) with the heading's
+		// SECTION, and those blocks are already returned by the loop over the
+		// container that owns the heading — recursing into `h` would re-emit
+		// each one at the heading's depth and out of document order. The stub
+		// throws if the walk ever asks, which is the guard.
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async getChildBlocks(id) {
+				if (id === "d1")
+					return [
+						{ id: "h1", type: "h", subType: "h1", content: "A" },
+						{ id: "p1", type: "p", subType: "", content: "under A" },
+						{ id: "h2", type: "h", subType: "h2", content: "B" },
+						{ id: "p2", type: "p", subType: "", content: "under B" },
+					];
+				throw new Error(`walk recursed into '${id}'`);
+			},
+		};
+		const walk = await walkBlockTree(client, "d1");
+		expect(walk.map((b) => b.id)).toEqual(["h1", "p1", "h2", "p2"]);
+		expect(walk.map((b) => b.depth)).toEqual([1, 1, 1, 1]);
+	});
+
 	it("read walk tolerates a vanished container (SiYuanApiError ends that branch); strict default propagates", async () => {
 		const boom = new SiYuanApiError(500, -1, "locked");
 		const client: KernelReadClient = {
