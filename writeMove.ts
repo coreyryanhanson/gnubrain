@@ -36,7 +36,7 @@ function parentDocStmt(docId: string): string {
  * exactly that move (success, zero moves). Rejected here, never forwarded.
  * ponytail: assumes nested docs chain via parent_id on 'd' rows; if a
  * kernel change breaks the chain only the direct self-move is caught —
- * upgrade if 5b's live pin ever goes red on a nested case. */
+ * tighten the chain walk if the integration suite catches a nested case. */
 async function isOwnDescendant(
 	kernel: WriteKernelClient,
 	sourceRootId: string,
@@ -57,7 +57,7 @@ async function isOwnDescendant(
 	return false;
 }
 
-/** Cross-doc block move's `destOutline` (write-result contract): fresh
+/** Cross-doc block move's `destOutline`: fresh
  * destination outline fetched after the move lands. The walk's heading rows
  * are served content — seed the baselines so a follow-up edit on a served
  * destination heading verifies against what the agent saw here, not against
@@ -188,7 +188,7 @@ export async function runMoveMode(
 			await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
 		}
 	} catch (err) {
-		// stale-target record: moveBlock's blocktree index check rejects a
+		// moveBlock's blocktree index check rejects a
 		// missing source/anchor synchronously — surface verbatim with the
 		// fresh outline attached. Network classes rethrow for runKbCall's
 		// unreachable classification — correct here, the move did not land.

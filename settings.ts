@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// validation step 1 — offline shape validation of the `gnubrain` settings entry.
-// No network, no kernel calls (those are validation steps 2–3).
+// Offline shape validation of the `gnubrain` settings entry —
+// no network, no kernel calls (the probe and notebook listing come later).
 // project-vs-global split: `kbs` + connection keys + interaction dials are
 // global-only; the project file supplies `defaultKBs` names only.
 
@@ -68,7 +68,7 @@ function checkName(name: string, errors: string[]): void {
 // A project settings.json needs no `gnubrain` key at all (other extensions
 // share the file); when present, only `defaultKBs` may live under it.
 export interface ProjectValidation {
-	/** Non-empty = shape failure → the session degrades (step 1). */
+	/** Non-empty = shape failure → the session degrades. */
 	errors: string[];
 	defaultKBs: string[] | undefined;
 }

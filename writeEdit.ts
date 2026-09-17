@@ -41,11 +41,11 @@ export async function runEditMode(
 		if (stale !== null) return stale;
 	}
 	// An absent target is never refused here — updateBlock's synchronous
-	// not-found error surfaces verbatim below (stale-target record).
+	// not-found error surfaces verbatim below.
 	try {
 		await kernel.updateBlock({ id: blockId, data: input.body });
 	} catch (err) {
-		// stale-target record: updateBlock errors synchronously — surface
+		// updateBlock errors synchronously — surface
 		// verbatim with the fresh outline attached. Network classes rethrow
 		// for runKbCall's unreachable classification — correct here, the
 		// mutation itself did not land.

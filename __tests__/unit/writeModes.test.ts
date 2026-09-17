@@ -1,5 +1,5 @@
 // writeModes tests — the tool schema + mode-target shape, the write modes
-// (edit/append/replace-section/delete/move), the write-result contract,
+// (edit/append/replace-section/delete/move), the write-result shape,
 // stale-target verification, the fresh-content precondition, and the
 // description doctrine lines — executed through the registered kb_write
 // definition on a fake-pi harness with a SQL-routed kernel stub.
@@ -126,7 +126,7 @@ describe("mode-target shape (schema table)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// edit — fresh-content precondition (decision record)
+// edit — fresh-content precondition
 // ---------------------------------------------------------------------------
 
 describe("edit", () => {
@@ -188,7 +188,7 @@ describe("edit", () => {
 		expect(refused.outline).toBeDefined();
 	});
 
-	it("a missing blockId reaches the kernel — its synchronous not-found error surfaces verbatim (stale-target record)", async () => {
+	it("a missing blockId reaches the kernel — its synchronous not-found error surfaces verbatim", async () => {
 		const { execute, calls, confirmCalls } = setup({
 			config: {
 				// blockRows route returns [] — the target is already gone.
@@ -419,6 +419,49 @@ const REPLACE_LIST_DOC = {
 	],
 };
 
+// A heading nested inside a container: the slice holds blocks both at and
+// below the heading's own walk depth, and a root's parent chain can exit
+// the slice. Slice from the nested h2 (level h2) to the boundary h3 is
+// [p2, l2, i3, i4]; l2's items ride l2's cascade, but every other member
+// must be swept explicitly — none of them descends from another member.
+const REPLACE_NESTED_HEADING_DOC = {
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Top"),
+		walkBlock("c1", "callout", "", "callout"),
+		walkBlock("l2", "l", "", "after list"),
+		walkBlock("h3", "h", "h1", "Next"),
+	],
+	c1: [
+		walkBlock("h2", "h", "h2", "Nested"),
+		walkBlock("p2", "p", "", "callout body"),
+	],
+	l2: [
+		walkBlock("i3", "i", "", "item three"),
+		walkBlock("i4", "i", "", "item four"),
+	],
+};
+
+// The target heading sits inside a list item: p3 sits at the heading's own
+// walk depth while its parent chain exits the slice (i1 is not a slice
+// member), so it is a root and must be swept explicitly — a filter keyed
+// on the heading's depth alone would strand it and the replace would leave
+// content behind.
+const REPLACE_ITEM_HEADING_DOC = {
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Top"),
+		walkBlock("l1", "l", "", "outer list"),
+		walkBlock("h3", "h", "h1", "Next"),
+	],
+	l1: [
+		walkBlock("i1", "i", "", "item one"),
+		walkBlock("i2", "i", "", "item two"),
+	],
+	i1: [
+		walkBlock("h2", "h", "h2", "Deep heading"),
+		walkBlock("p3", "p", "", "deep body"),
+	],
+};
+
 const replaceParams = {
 	kb: "recipes",
 	mode: "replace-section",
@@ -494,6 +537,168 @@ describe("replace-section", () => {
 		expect(
 			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
 		).toEqual(["h1", "b-new", "h2"]);
+	});
+
+	it("a heading nested in a container sweeps its sibling roots explicitly — a depth-relative filter would strand them", async () => {
+		const harness = setup({
+			config: {
+				cascadeDelete: true,
+				childrenFor: REPLACE_NESTED_HEADING_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_NESTED_HEADING_DOC["d-doc"].slice(0, 2),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_NESTED_HEADING_DOC["d-doc"].slice(2),
+					];
+				},
+			},
+		});
+		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
+		// The slice is [p2, l2, i3, i4]; i3/i4 ride l2's cascade. Sweeping
+		// them explicitly (a depth <= heading.depth filter keeps all four
+		// here) errors tree-not-found behind a fully-successful replace.
+		expect(result.status).toBe("ok");
+		expect(
+			harness.calls
+				.filter((c) => c.method === "deleteBlock")
+				.map((c) => c.args),
+		).toEqual(["p2", "l2"]);
+		expect(
+			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
+		).toEqual(["h1", "c1", "b-new", "h3"]);
+	});
+
+	it("a slice root whose parent chain exits the slice is swept explicitly at the heading’s own depth", async () => {
+		const harness = setup({
+			config: {
+				cascadeDelete: true,
+				childrenFor: REPLACE_ITEM_HEADING_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_ITEM_HEADING_DOC["d-doc"].slice(0, 2),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_ITEM_HEADING_DOC["d-doc"].slice(2),
+					];
+				},
+			},
+		});
+		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
+		// p3 sits deeper than the heading but no slice member is its ancestor,
+		// so dropping it (any depth-relative filter does) strands it and the
+		// replace leaves content behind.
+		expect(result.status).toBe("ok");
+		expect(
+			harness.calls
+				.filter((c) => c.method === "deleteBlock")
+				.map((c) => c.args),
+		).toEqual(["p3", "i2"]);
+		expect(
+			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
+		).toEqual(["h1", "l1", "b-new", "h3"]);
+		expect(
+			((harness.childrenFor["l1"] ?? []) as { id: string }[]).map((b) => b.id),
+		).toEqual(["i1"]);
+		expect(
+			((harness.childrenFor["i1"] ?? []) as { id: string }[]).map((b) => b.id),
+		).toEqual(["h2"]);
+	});
+
+	it("a next heading that is itself a delete-set member at doc level replaces cleanly — the insert lands as its sibling", async () => {
+		// Guard boundary: h_sub (a deeper doc-level heading) IS in the delete
+		// set, but the insert lands BEFORE it as a doc-level sibling, the
+		// heading delete cascades only itself, and p1 is swept explicitly.
+		// Refusing here would reject a legitimate replace.
+		const harness = setup({
+			config: {
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "Top"),
+						walkBlock("h_sub", "h", "h2", "Sub"),
+						walkBlock("p1", "p", "", "old body"),
+						walkBlock("h2", "h", "h1", "Next"),
+					],
+				},
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						{ id: "h1" },
+						walkBlock("b-new", "p", "", "rewritten section"),
+						{ id: "h_sub" },
+						{ id: "p1" },
+						{ id: "h2" },
+					];
+				},
+				onDelete: () => {
+					harness.childrenFor["d-doc"] = (
+						harness.childrenFor["d-doc"] ?? []
+					).filter((b) => !["h_sub", "p1"].includes((b as { id: string }).id));
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("ok");
+		expect(
+			harness.calls
+				.filter((c) => c.method === "deleteBlock")
+				.map((c) => c.args),
+		).toEqual(["h_sub", "p1"]);
+		expect(
+			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
+		).toEqual(["h1", "b-new", "h2"]);
+	});
+
+	it("refuses an anchor heading nested inside a swept container — the cascade would delete the replacement, before any dialog", async () => {
+		const { execute, calls, confirmCalls } = setup({
+			config: {
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "Goals"),
+						walkBlock("b1", "b", "", "quote"),
+						walkBlock("h3", "h", "h1", "Details"),
+					],
+					b1: [
+						walkBlock("p1", "p", "", "quoted line"),
+						walkBlock("h2", "h", "h1", "Inside quote"),
+					],
+				},
+			},
+		});
+		const result = await execute({ ...replaceParams, headingId: "h1" });
+		// The next heading (h2) sits inside b1, a delete-set member: the
+		// insert would land inside b1 and the sweep's cascade would consume
+		// the replacement and h2 both.
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("b1");
+		expect(result.message).toContain("h2");
+		expect(confirmCalls).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "insertBlock")).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+	});
+
+	it("the post-sweep walk must still hold the replacement — a cascade-consumed replacement fails loud, never ok", async () => {
+		const harness = setup({
+			config: {
+				cascadeDelete: true,
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+				// Simulate kernel misbehavior: the delete's cascade consumed
+				// the replacement the insert just landed.
+				onDelete: () => {
+					harness.childrenFor["d-doc"] = (
+						harness.childrenFor["d-doc"] ?? []
+					).filter((b) => (b as { id: string }).id !== "b-new");
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("cascade consumed the replacement");
+		expect(result.message).toContain("do not retry");
 	});
 
 	it("a mid-sweep failure's remaining list is an antichain — any delete order finishes the job", async () => {
@@ -647,7 +852,7 @@ describe("replace-section", () => {
 		expect(message).toContain("the heading ID survives");
 	});
 
-	it("delete-bearing results carry invalidRefs (write-result contract)", async () => {
+	it("delete-bearing results carry invalidRefs", async () => {
 		const harness = setup({
 			config: {
 				childrenFor: REPLACE_DOC,
@@ -932,7 +1137,7 @@ describe("delete", () => {
 
 	it("a kernel success no-op still reports ok — with the walk-set evidence naming it (3.8.3 kernel)", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
-		// nothing (ErrBlockNotFound → nil, stale-target record). 3.8.4
+		// nothing (ErrBlockNotFound → nil, a success no-op). 3.8.4
 		// instead answers a synchronous error — the pin below.
 		const { execute } = setup({
 			config: {
@@ -952,8 +1157,8 @@ describe("delete", () => {
 	});
 
 	it("3.8.4 delete of a missing block: synchronous error surfaced verbatim with the fresh outline", async () => {
-		// 3.8.4's PerformBlockOperation requires an existing node — the
-		// stale-target record's edit/move treatment, one error class over.
+		// 3.8.4's PerformBlockOperation requires an existing node — the same
+		// synchronous not-found treatment as edit/move, one error class over.
 		const { execute, calls } = setup({
 			config: {
 				onDelete: () => {
@@ -1131,7 +1336,7 @@ describe("block-level move", () => {
 		);
 	});
 
-	it("a pre-deleted source block: moveBlock's synchronous not-found error surfaces verbatim (stale-target record)", async () => {
+	it("a pre-deleted source block: moveBlock's synchronous not-found error surfaces verbatim", async () => {
 		const { execute, calls } = moveHarness(() => {
 			throw new SiYuanApiError(-1, -1, "block not found");
 		});

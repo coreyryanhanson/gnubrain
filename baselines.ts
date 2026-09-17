@@ -1,4 +1,4 @@
-// Session-scoped fresh-content baselines (DESIGN §4 decision record):
+// Session-scoped fresh-content baselines:
 // a serve-time snapshot of each block's blocks.content — the exact
 // representation the precondition re-check hashes. Both sides of the tool
 // surface feed it: read tools seed it where content is served to the agent

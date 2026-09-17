@@ -174,8 +174,8 @@ export async function backlinkCheck(
 	};
 }
 
-/** Root row echo (write-result contract): root docId + stored title +
- * real hpath — display plus the echoed target R1 requires. */
+/** Root row echo: root docId + stored title +
+ * real hpath — display plus the echoed target the write contract requires. */
 export async function rootEcho(
 	kernel: WriteKernelClient,
 	boxId: string,
@@ -251,7 +251,7 @@ export async function finishWrite(
 }
 
 /** Fresh outline + root echo + content-baseline refresh — the tail every
- * doc-targeting result shares (write-result contract). One full
+ * doc-targeting result shares. One full
  * unfiltered walk; a pre-fetched walk (the verification evidence the flow
  * already holds) is reused instead of re-traversing. */
 export async function writeEchoTail(input: {

@@ -62,7 +62,7 @@ export async function runDeleteMode(
 	if ("refusal" in row) return refusedEnvelope(row.refusal);
 	if (row.content !== null) {
 		// Confirmation only when there is something to delete — an absent
-		// target never dialogs (stale-target record): 3.8.3 answers a
+		// target never dialogs: 3.8.3 answers a
 		// success no-op the walk-set evidence below reports; 3.8.4 answers
 		// a synchronous error surfaced verbatim below.
 		const display = await deleteSetDisplay(kernel, sessionId, [

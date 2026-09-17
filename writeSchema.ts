@@ -212,5 +212,5 @@ export const writeSchema = Type.Object({
 	),
 });
 export type WriteParams = Static<typeof writeSchema> & {
-	confirmNew?: unknown; // never declared in the schema (decision record)
+	confirmNew?: unknown; // accepted but never declared in the tool schema
 };

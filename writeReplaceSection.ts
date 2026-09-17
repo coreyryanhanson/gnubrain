@@ -1,17 +1,20 @@
 // The replace-section flow: enumerate the section's delete set from the
-// document-order walk → confirm (delete-set display) → insert-before-delete
-// in one call — a mid-sequence failure must cost visible duplication, never
-// loss.
+// document-order walk → refuse an anchor nested inside the delete set →
+// confirm (delete-set display) → insert-before-delete in one call, verified
+// against the post-write tree — a mid-sequence failure must cost visible
+// duplication, never loss.
 
 import { SiYuanApiError, SiYuanKernelError } from "siyuan-kernel-api";
 import {
 	errorEnvelope,
 	markPartialReplace,
+	refusedEnvelope,
 	type Envelope,
 	type PartialReplaceState,
 } from "./envelope.js";
 import {
 	deriveAppendAnchor,
+	enclosingMember,
 	sectionDeleteSet,
 	sweepTargets,
 } from "./writeAnchors.js";
@@ -46,6 +49,24 @@ export async function runReplaceSectionMode(
 	const heading = headingInWalk(walk, doc, headingId);
 	if ("status" in heading) return heading;
 	const deleteSet = sectionDeleteSet(walk, headingId);
+	// The anchor heading must not nest inside a block the sweep deletes: the
+	// kernel inserts before it INSIDE that container, so the container's
+	// delete cascade would consume the replacement and the heading itself.
+	// Refused before the dialog, while the agent can re-target instead.
+	const anchor = deriveAppendAnchor(walk, heading);
+	if (anchor.kind === "insert") {
+		const enclosing = enclosingMember(
+			walk,
+			anchor.nextID,
+			new Set(deleteSet.map((b) => b.id)),
+		);
+		if (enclosing !== undefined) {
+			return refusedEnvelope(
+				`cannot replace the section under heading '${heading.content}': the next heading ('${anchor.nextID}') sits inside block '${enclosing}', which the replace deletes — the sweep's cascade would delete that heading and the new body with it; replace the container's blocks individually instead`,
+				{ kb: name },
+			);
+		}
+	}
 	// The confirmation displays the enumerated delete set — block count,
 	// the trailing blocks' current content (spill budget applies), and the
 	// same backlink visibility `delete` carries.
@@ -83,7 +104,6 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// insert-before-delete: a mid-sequence failure must cost visible
 	// duplication, never loss. Same anchor rule as `append`.
-	const anchor = deriveAppendAnchor(walk, heading);
 	const tx =
 		anchor.kind === "appendRoot"
 			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
@@ -95,7 +115,7 @@ export async function runReplaceSectionMode(
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {
 		const newBlockId = newBlockIdFrom(tx);
 		// Verify the insert landed BEFORE any delete — a silent rollback
-		// must not sweep the old section away (stale-target record).
+		// must not sweep the old section away.
 		const afterInsertWalk = await walkBlockTree(kernel, doc.rootId);
 		const rollback = insertRollbackReason(
 			newBlockId,
@@ -116,7 +136,7 @@ export async function runReplaceSectionMode(
 		// the descendants the kernel cascade already removed are never swept
 		// (a delete of a cascaded descendant is a synchronous tree-not-found
 		// error that would false-report a partial replace).
-		const sweep = sweepTargets(deleteSet, heading);
+		const sweep = sweepTargets(deleteSet);
 		for (const [i, block] of sweep.entries()) {
 			try {
 				await kernel.deleteBlock(block.id);
@@ -165,16 +185,35 @@ export async function runReplaceSectionMode(
 				);
 			}
 		}
-		// invalidRefs (write-result contract): post-write echo over the
+		// invalidRefs: post-write echo over the
 		// enumerated delete set — what actually got orphaned, verified.
 		const invalidRefs = await backlinkCheck(
 			kernel,
 			deleteSet.map((b) => b.id),
 		);
-		// The echo tail re-walks AFTER the deletes: the post-insert walk still
-		// carries the swept blocks, and the outline-freshness contract requires
-		// the post-write tree (write-result contract).
-		const tail = await echoTail(input, doc, undefined, [newBlockId as string]);
+		// Verified, not trusted: the sweep's cascade must never have consumed
+		// the replacement (an anchor nested inside a swept container is
+		// refused before the dialog, so this only fires on kernel
+		// misbehavior) — a silent loss here must not read as ok.
+		const postSweepWalk = await walkBlockTree(kernel, doc.rootId);
+		if (!idSet(postSweepWalk).has(landedId)) {
+			return errorEnvelope(
+				`verified-replace failed: the new section block '${landedId}' is absent from the post-write tree — the delete sweep's cascade consumed the replacement; do not retry`,
+				{
+					kb: name,
+					anchor: anchor.anchor,
+					newBlockId: landedId,
+					partialReplace: true,
+					deletedBlockIds: sweep.map((b) => b.id),
+					remainingBlockIds: [],
+				},
+			);
+		}
+		// The echo tail must reflect the tree AFTER the deletes: the walk
+		// above IS that tree — reused, not re-traversed.
+		const tail = await echoTail(input, doc, postSweepWalk, [
+			newBlockId as string,
+		]);
 		return {
 			status: "ok",
 			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,

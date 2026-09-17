@@ -106,7 +106,7 @@ export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
 /** The target read shared by the blockId-targeting modes — the block's
  * current content (confirmation display + fresh-content baseline), or
  * null when the id is absent from the kernel. Absence is never refused
- * here: the stale-target record pins each op's own kernel outcome
+ * here: each op's own kernel outcome governs the observable behavior
  * (edit/move surface the synchronous not-found error verbatim; delete
  * is a success no-op on 3.8.3 and a synchronous "tree not found" error
  * on 3.8.4, surfaced the same way) and the live suite watches the
@@ -139,7 +139,7 @@ export async function blockInDoc(
 /** The pinned rejection when a heading id is absent from the doc walk.
  * Same class as blockInDoc's foreign-block refusal: a target id that fails
  * the doc's own membership check is refused before any kernel call (doc-
- * level resolution is the `error` case — DESIGN §10's status table). */
+ * level resolution is the `error` case, matching the status table). */
 export function headingInWalk(
 	walk: WalkedBlock[],
 	doc: DocTarget,

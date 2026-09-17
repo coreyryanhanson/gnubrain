@@ -874,7 +874,7 @@ describe("read tools seed served-content baselines", () => {
 		return { baselines, tool: registered.find((t) => t.name === tool)! };
 	}
 
-	it("kb_read records a baseline for each heading the outline serves (§10 outline-sourced pin)", async () => {
+	it("kb_read records a baseline for each heading the outline serves", async () => {
 		const { baselines, tool } = registered("kb_read", {
 			...kernelStub().client,
 			async query(_stmt: string) {

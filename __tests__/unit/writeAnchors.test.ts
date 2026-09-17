@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 import {
 	deriveAppendAnchor,
 	deriveMoveAnchor,
+	enclosingMember,
 	landingId,
 	sectionDeleteSet,
+	sweepTargets,
 	type MoveAnchor,
 } from "../../writeAnchors.js";
 import { walkBlock } from "./writeHarness.js";
@@ -197,5 +199,62 @@ describe("deriveAppendAnchor", () => {
 			undefined,
 		);
 		expect(anchor.kind).toBe("appendRoot");
+	});
+});
+
+describe("sweepTargets (forest roots of the section slice)", () => {
+	it("keeps only blocks with no tree-ancestor inside the slice", () => {
+		const slice = [
+			walkBlock("p1", "p", "", "one", 1),
+			walkBlock("l1", "l", "", "list", 1),
+			walkBlock("i1", "i", "", "item one", 2),
+			walkBlock("i2", "i", "", "item two", 2),
+			walkBlock("s1", "s", "", "super", 2),
+			walkBlock("b1", "b", "", "nested", 3),
+		];
+		expect(sweepTargets(slice).map((b) => b.id)).toEqual(["p1", "l1"]);
+	});
+
+	it("keeps a member at the heading's own depth whose parent chain exits the slice", () => {
+		const slice = [
+			walkBlock("p3", "p", "", "deep body", 3),
+			walkBlock("i2", "i", "", "sibling item", 2),
+		];
+		expect(sweepTargets(slice).map((b) => b.id)).toEqual(["p3", "i2"]);
+	});
+
+	it("empty and single-member slices", () => {
+		expect(sweepTargets([])).toEqual([]);
+		expect(
+			sweepTargets([walkBlock("p1", "p", "", "only", 2)]).map((b) => b.id),
+		).toEqual(["p1"]);
+	});
+});
+
+describe("enclosingMember (nearest slice ancestor of a walk id)", () => {
+	const walk = [
+		walkBlock("h1", "h", "h1", "A", 1),
+		walkBlock("b1", "b", "", "quote", 1),
+		walkBlock("p1", "p", "", "quoted", 2),
+		walkBlock("h2", "h", "h1", "nested heading", 2),
+		walkBlock("p2", "p", "", "after", 1),
+	];
+
+	it("returns the nearest delete-set member the id nests inside", () => {
+		expect(enclosingMember(walk, "h2", new Set(["b1", "p1"]))).toBe("b1");
+	});
+
+	it("a depth-1 id has no walk ancestors — never enclosed", () => {
+		expect(
+			enclosingMember(walk, "p2", new Set(["b1", "p1", "h1"])),
+		).toBeUndefined();
+	});
+
+	it("an id absent from the walk returns undefined", () => {
+		expect(enclosingMember(walk, "gone", new Set(["b1"]))).toBeUndefined();
+	});
+
+	it("no member in the ancestor chain returns undefined", () => {
+		expect(enclosingMember(walk, "h2", new Set(["p2"]))).toBeUndefined();
 	});
 });

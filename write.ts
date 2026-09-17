@@ -51,7 +51,7 @@ export interface WriteToolHooks {
 	breaker: CircuitBreaker;
 	/** Session-scoped confirm_timeout state — same lifecycle class as the breaker. */
 	confirmState: WriteConfirmState;
-	/** Session-scoped fresh-content baselines (decision record) — same
+	/** Session-scoped fresh-content baselines — same
 	 * lifecycle class as the breaker/confirm state. */
 	baselines: ContentBaselines;
 	/** Per-test version-pin override — threaded to the write gate so a

@@ -291,9 +291,10 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			// Offline re-resolution against the cached valid set: no kernel
 			// probe (the status slot reflects the result).
 			const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
-			// A scratch warning sink: nothing renders validation.warnings, and
-			// appending per navigation would accumulate; the drop decisions are
-			// already reflected in the resulting scope (the slot shows it).
+			// A scratch warning sink: bare /kb renders only the session's own
+			// warnings, and appending per navigation would accumulate here; the
+			// drop decisions are already reflected in the resulting scope (the
+			// slot shows it).
 			v.scope = resolveValidatedScope(
 				persisted ?? v.defaultKBs,
 				v.settings,

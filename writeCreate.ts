@@ -97,7 +97,7 @@ async function duplicateStop(
 		rows: detailed,
 	};
 	// Single-row: block IDs with content so the agent can go straight to
-	// `edit` by blockId (step 1) — reuses the outline walk already in hand.
+	// `edit` by blockId — reuses the outline walk already in hand.
 	if (rows.length === 1) {
 		const blocks = walks[0]!.map((b) => ({
 			id: b.id,
@@ -105,7 +105,7 @@ async function duplicateStop(
 			content: b.content,
 		}));
 		// Same serve-time seeding as the outline above — blockIds is the
-		// payload the agent is invited to edit by id (step 1).
+		// payload the agent is invited to edit by id.
 		rememberServedRows(input.baselines, blocks);
 		const payload = rowPayload(sessionId, "kb_write-blocks", blocks);
 		if (payload.rows !== undefined) {
@@ -270,7 +270,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
 
-	// Submission path from ground truth, never predicted (step 3).
+	// Submission path from ground truth, never predicted.
 	input.contact();
 	let path: string;
 	let parentID: string | undefined;
@@ -302,7 +302,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	// Post-mint reads: a network drop during verification must never read
 	// as "unreachable" — the doc may already be minted (finishWrite doc).
 	return finishWrite(input.name, { docId: returnedId }, async () => {
-		// Verified-create (step 4): by-ID asserts on the kernel-returned root
+		// Verified-create: by-ID asserts on the kernel-returned root
 		// ID — fail-loud on shape, never a by-title re-lookup. The bounded
 		// re-read absorbs the kernel's async index lag (verifiedRoot doc).
 		const root = await verifiedRoot(kernel, boxId, returnedId);

@@ -114,11 +114,20 @@ plan updated in the same changes):
    `RemoveBlockTreesByIDs`), so sweeping the slice's descendants explicitly
    would error (synchronous "tree not found") behind a fully-successful
    replace and false-report a partial apply. The sweep now filters the
-   enumerated slice to blocks at the heading's walk depth or shallower
-   (`sweepTargets`); the full slice still drives the confirmation display,
-   the fresh-content baselines and the invalidRefs check. The mock kernel
-   gained a cascade-faithful delete mode (`cascadeDelete`) so the suite pins
-   this contract against the kernel's actual delete semantics.
+   enumerated slice to its forest roots — the members with no tree-ancestor
+   inside the slice (`sweepTargets`), which also covers a target heading
+   nested inside a container, where slice members can sit deeper than the
+   heading or descend from nothing in the slice; the full slice still
+   drives the confirmation display,
+   the fresh-content baselines and the invalidRefs check. Two guards ride
+   the same rule: an anchor heading nested inside a swept container is
+   refused before the dialog (the kernel would insert the replacement
+   INSIDE that container, whose delete cascade would consume the
+   replacement and the heading both), and the sweep verifies the
+   replacement still stands in the post-write walk before reporting ok.
+   The mock kernel gained a cascade-faithful delete mode (`cascadeDelete`)
+   so the suite pins this contract against the kernel's actual delete
+   semantics.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 

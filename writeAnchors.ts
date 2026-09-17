@@ -74,21 +74,65 @@ export function sectionDeleteSet(
  * Delete-sweep targets: the section slice's forest roots. The kernel
  * cascades a container delete to every tree descendant (a delete of an
  * already-cascaded descendant is a synchronous tree-not-found error), so
- * descendants must never be swept explicitly. Within the slice,
- * `depth <= heading.depth` is exactly the antichain of roots: the walk's
- * depth axis strictly increases on descent, so every deeper slice member
- * is a tree-descendant of one kept root and the kernel cascade removes
- * it. The full slice still drives the confirmation display, the
+ * descendants must never be swept explicitly. A slice member is a root
+ * exactly when no other slice member is its tree-ancestor: the walk is
+ * pre-order and its depth axis only ever increments by one or drops, so a
+ * block's parent is the nearest preceding slice block one level shallower,
+ * and a parent chain that exits the slice (blocks serving a target heading
+ * nested inside a container) leaves the block a root however deep it sits.
+ * The full slice still drives the confirmation display, the
  * fresh-content baselines and the invalidRefs check — only the sweep
  * narrows, which also keeps a mid-sweep failure's remaining list an
  * antichain (any delete order finishes the job).
  */
-export function sweepTargets(
-	deleteSet: WalkedBlock[],
-	heading: WalkedBlock,
-): WalkedBlock[] {
-	const headingDepth = heading.depth;
-	return deleteSet.filter((b) => b.depth <= headingDepth);
+export function sweepTargets(deleteSet: WalkedBlock[]): WalkedBlock[] {
+	const parentOf = new Map<number, string>(); // depth → last seen slice block
+	const coveringRoot = new Map<string, string>(); // slice block → its root
+	const roots: WalkedBlock[] = [];
+	for (const block of deleteSet) {
+		const parentId = parentOf.get(block.depth - 1);
+		const root =
+			parentId === undefined ? undefined : coveringRoot.get(parentId);
+		if (root === undefined) {
+			roots.push(block);
+			coveringRoot.set(block.id, block.id);
+		} else {
+			coveringRoot.set(block.id, root);
+		}
+		parentOf.set(block.depth, block.id);
+	}
+	return roots;
+}
+
+/**
+ * The first of `id`'s walk ancestors that appears in `memberIds`, or
+ * undefined when the block's whole ancestor chain lies outside the set.
+ * The walk is pre-order and its depth axis only ever increments by one or
+ * drops, so the nearest preceding block at each shallower depth IS the
+ * ancestor at that depth (a shallower block cannot sit inside a deeper
+ * subtree). Replace-section uses this to refuse an anchor heading nested
+ * inside a block the sweep deletes: the kernel inserts before that heading
+ * INSIDE the doomed container, so the container's delete cascade would
+ * consume the replacement and the heading itself.
+ */
+export function enclosingMember(
+	walk: WalkedBlock[],
+	id: string,
+	memberIds: ReadonlySet<string>,
+): string | undefined {
+	const parentOf = new Map<number, string>(); // depth → last seen block
+	for (const block of walk) {
+		if (block.id === id) {
+			for (let depth = block.depth - 1; depth >= 1; depth--) {
+				const ancestorId = parentOf.get(depth);
+				if (ancestorId === undefined) break;
+				if (memberIds.has(ancestorId)) return ancestorId;
+			}
+			return undefined;
+		}
+		parentOf.set(block.depth, block.id);
+	}
+	return undefined;
 }
 
 /**

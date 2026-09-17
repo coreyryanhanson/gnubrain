@@ -51,8 +51,8 @@ export interface ReadToolHooks {
 	getKernel(): KernelReadClient | undefined;
 	breaker: CircuitBreaker;
 	/** Session-scoped fresh-content baselines — read tools seed it where
-	 * content is served to the agent (DESIGN §4's "as the tool last served
-	 * it"); the write precondition re-checks against the same map. */
+	 * content is served to the agent, so the map holds exactly what the
+	 * tool last served; the write precondition re-checks against it. */
 	baselines: ContentBaselines;
 }
 

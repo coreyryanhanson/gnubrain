@@ -326,7 +326,7 @@ export async function runKbCall(
 	// A call that actually reached the kernel resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone.
 	if (kernelContact) input.breaker.recordSuccess();
-	// Reads warn and proceed on version drift (§2): the result already
+	// Reads warn and proceed on version drift: the result already
 	// succeeded, so the drift rides the envelope as a payload field. Writes
 	// are separately refused in gateWriteAttempt; the kbs discovery form
 	// (tools.ts) makes zero kernel calls and skips this by design.

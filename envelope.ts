@@ -66,7 +66,7 @@ export function kernelUnreachable(baseUrl: string): Envelope {
 	return errorEnvelope(`SiYuan unreachable at ${baseUrl}`);
 }
 
-/** Read-path version-drift warning — reads warn and proceed (§2): the op
+/** Read-path version-drift warning — reads warn and proceed: the op
  * already succeeded, so the drift rides the result as a payload field the
  * model actually reads, matching the truncated/post_filtered marker pattern. */
 export function driftWarning(

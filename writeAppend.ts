@@ -20,7 +20,7 @@ export async function runAppendMode(
 ): Promise<Envelope> {
 	const { kernel, name, params } = input;
 	// The walk doubles as anchor data AND the pre-write set for verification
-	// (stale-target record: the same walk the anchor derivation fetches).
+	// (the same walk the anchor derivation fetches).
 	const walk = await walkBlockTree(kernel, doc.rootId);
 	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
