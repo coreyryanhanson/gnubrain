@@ -963,7 +963,7 @@ describe("block-level move", () => {
 			...moveParams,
 			toHeadingId: "oh-gone",
 		});
-		expect(result.status).toBe("error");
+		expect(result.status).toBe("refused");
 		expect(result.message).toContain(
 			"headingId 'oh-gone' is not a heading of doc 'Other doc' (d-other) — stale or foreign target",
 		);

@@ -3,7 +3,12 @@
 // reads, and the delete-set display — everything the per-mode flow files
 // (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) build on.
 
-import { errorEnvelope, type Envelope, noSuchDocEnvelope } from "./envelope.js";
+import {
+	errorEnvelope,
+	type Envelope,
+	noSuchDocEnvelope,
+	refusedEnvelope,
+} from "./envelope.js";
 import { previewAtNewline, spillFile } from "./spill.js";
 import { ownershipStmt, sqlString } from "./kernel.js";
 import type { WalkedBlock } from "./walk.js";
@@ -125,7 +130,10 @@ export async function blockInDoc(
 			};
 }
 
-/** The pinned rejection when a heading id is absent from the doc walk. */
+/** The pinned rejection when a heading id is absent from the doc walk.
+ * Same class as blockInDoc's foreign-block refusal: a target id that fails
+ * the doc's own membership check is refused before any kernel call (doc-
+ * level resolution is the `error` case — DESIGN §10's status table). */
 export function headingInWalk(
 	walk: WalkedBlock[],
 	doc: DocTarget,
@@ -133,7 +141,7 @@ export function headingInWalk(
 ): WalkedBlock | Envelope {
 	const heading = walk.find((b) => b.id === headingId && b.type === "h");
 	return heading === undefined
-		? errorEnvelope(
+		? refusedEnvelope(
 				`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
 			)
 		: heading;

@@ -1118,7 +1118,7 @@ duplicate doc, never a silent clobber.
   | Guard stop — near-matches found | `near_matches` |
   | Guard stop — exact-title match(es) | `duplicate` |
   | Kernel call failed; verified-create/stale-target assertion failed; guard SQL errored; reads while the kernel is unreachable | `error` |
-  | Every refusal: version gate, circuit breaker / 429 cooldown, unreachable-kernel write refusal (failed probe retry), fresh-content precondition (`stale_content`), scope or `kb`-param rejection, shape validation, headless write default-deny, write-confirmation decline or `confirm_timeout` | `refused` |
+  | Every refusal: version gate, circuit breaker / 429 cooldown, unreachable-kernel write refusal (failed probe retry), fresh-content precondition (`stale_content`), scope or `kb`-param rejection, shape validation, headless write default-deny, write-confirmation decline or `confirm_timeout`, pre-write target membership (a block or heading id that fails the resolved doc's own walk/membership check — foreign or stale, refused before any kernel call) | `refused` |
 
   The `message` distinguishes causes within a class (the 429 cooldown and the breaker
   share `refused` since both mean "no kernel calls will pass" — the message names which).
