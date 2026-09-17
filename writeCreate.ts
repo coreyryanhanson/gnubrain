@@ -5,7 +5,7 @@
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
-import { rememberServedRows, type ContentBaselines } from "./baselines.js";
+import { rememberServedRows } from "./baselines.js";
 import { rowPayload, sqlString } from "./kernel.js";
 import {
 	renderOutline,
@@ -13,13 +13,8 @@ import {
 	walkBlockTree,
 	type WalkedBlock,
 } from "./walk.js";
-import type { SessionValidation } from "./validation.js";
-import {
-	confirmWrite,
-	writeConfirmKey,
-	type WriteConfirmFn,
-	type WriteConfirmState,
-} from "./writeConfirm.js";
+import { writeConfirmKey } from "./writeConfirm.js";
+import { confirmGate, type WriteFlowBase } from "./writeFlow.js";
 import {
 	GUARD_NEAR_CAP,
 	guardExactStmt,
@@ -29,33 +24,13 @@ import {
 } from "./writeGuard.js";
 import { finishWrite, type WriteKernelClient } from "./writeResult.js";
 
-export interface CreateFlowInput {
-	sessionId: string;
-	kernel: WriteKernelClient;
-	validation: SessionValidation;
-	/** Resolved KB name + notebook id (the gate already validated both). */
-	name: string;
-	boxId: string;
+export interface CreateFlowInput extends WriteFlowBase {
 	/** Minted (normalized) title — the kb_write entry validated it. */
 	title: string;
 	parentId?: string | undefined;
-	body: string;
 	/** True when the body came from markdownFile — staging is skipped. */
 	bodyFromFile: boolean;
 	confirmNew: boolean;
-	/** Preflight verdict from the kb_write entry: run the interactive
-	 * dialog (true) or skip it for an approved unattended write (false). */
-	dialog: boolean;
-	/** Confirm key + dialog summary — computed once at the kb_write entry. */
-	confirmInputs: { key: string; summary: string };
-	confirm: WriteConfirmFn;
-	confirmState: WriteConfirmState;
-	/** Session-scoped fresh-content baselines — the create result seeds
-	 * the new doc's outline headings (content the result carried). */
-	baselines: ContentBaselines;
-	/** Fires at the flow's first kernel call — kernel-free refusals
-	 * (preflight, mint) must not reset the breaker's consecutive count. */
-	contact: () => void;
 }
 
 async function duplicateStop(
@@ -273,9 +248,9 @@ export function createConfirmInputs(
  * confirmation and verified-create still apply.
  */
 export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
-	const { kernel, validation, sessionId, name, boxId } = input;
+	const { kernel, sessionId, name, boxId } = input;
 	const title = input.title;
-	const { key: confirmKey, summary } = input.confirmInputs;
+	const { summary } = input.confirmInputs;
 
 	// Pre-dialog permission (headless default-deny + terminal
 	// confirm_timeout) already ran at the kb_write entry, before the
@@ -292,13 +267,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 
 	// Write confirmation — after the guard, so a stop costs no dialog.
 	if (input.dialog) {
-		const gate = await confirmWrite({
-			confirm: input.confirm,
-			writeConfirmTimeout: validation.settings?.writeConfirmTimeout,
-			state: input.confirmState,
-			key: confirmKey,
-			summary,
-		});
+		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 	}
 
