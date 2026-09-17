@@ -1,9 +1,11 @@
-// Shared kernel-facing primitives — the structural read-client type and the
-// SQL-literal/ownership helpers both the read and write modules build on.
+// Shared kernel-facing primitives — the structural read/write client types
+// and the SQL-literal/ownership helpers both tool families build on.
 // Kept out of the tool modules so low-level consumers (walk, write flows)
 // never import from a tool-registration file.
 
+import type { BlockTransaction } from "siyuan-kernel-api";
 import { inlineOrSpill, jsonl } from "./spill.js";
+import type { KernelProbeClient } from "./validation.js";
 
 /** Structural client subset the read tools need (tests stub it). */
 export interface KernelReadClient {
@@ -25,6 +27,38 @@ export interface KernelReadClient {
 	}>;
 	exportMarkdown(id: string): Promise<{ hPath: string; content: string }>;
 	getChildBlocks(id: string): Promise<Record<string, unknown>[]>;
+}
+
+/** Structural client subset the write tools need (tests stub it). */
+export interface WriteKernelClient extends KernelReadClient, KernelProbeClient {
+	createDocWithMarkdown(params: {
+		notebook: string;
+		path: string;
+		markdown: string;
+		parentID?: string;
+	}): Promise<string>;
+	updateBlock(params: {
+		id: string;
+		data: string;
+	}): Promise<BlockTransaction[]>;
+	insertBlock(params: {
+		data: string;
+		nextID?: string;
+		previousID?: string;
+		parentID?: string;
+	}): Promise<BlockTransaction[]>;
+	appendBlock(params: {
+		data: string;
+		parentID: string;
+	}): Promise<BlockTransaction[]>;
+	deleteBlock(id: string): Promise<BlockTransaction[]>;
+	moveBlock(params: {
+		id: string;
+		previousID?: string;
+		parentID?: string;
+	}): Promise<null>;
+	removeDocByID(id: string): Promise<null>;
+	moveDocsByID(params: { fromIDs: string[]; toID: string }): Promise<null>;
 }
 
 /** Single-quote SQL string literal — ids ride the ownership query; agent

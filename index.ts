@@ -25,7 +25,7 @@ import {
 import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import { createWriteConfirmState } from "./writeConfirm.js";
-import { type WriteKernelClient } from "./writeResult.js";
+import { type WriteKernelClient } from "./kernel.js";
 import {
 	registerWriteTool,
 	WRITE_TOOLSET_ID,

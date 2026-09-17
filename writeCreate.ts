@@ -22,7 +22,8 @@ import {
 	toGuardRows,
 	type GuardRow,
 } from "./writeGuard.js";
-import { finishWrite, type WriteKernelClient } from "./writeResult.js";
+import { finishWrite } from "./writeResult.js";
+import type { WriteKernelClient } from "./kernel.js";
 
 export interface CreateFlowInput extends WriteFlowBase {
 	/** Minted (normalized) title — the kb_write entry validated it. */

@@ -19,12 +19,8 @@ import {
 	type WriteConfirmFn,
 	type WriteConfirmState,
 } from "./writeConfirm.js";
-import {
-	backlinkCheck,
-	rootEcho,
-	writeEchoTail,
-	type WriteKernelClient,
-} from "./writeResult.js";
+import { backlinkCheck, rootEcho, writeEchoTail } from "./writeResult.js";
+import type { WriteKernelClient } from "./kernel.js";
 import type { WriteParams } from "./writeSchema.js";
 
 /** Flow input shared by every mode, create included — one declaration so

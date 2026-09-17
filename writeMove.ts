@@ -21,7 +21,8 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import { finishWrite, idSet, type WriteKernelClient } from "./writeResult.js";
+import { finishWrite, idSet } from "./writeResult.js";
+import type { WriteKernelClient } from "./kernel.js";
 
 /** A nested doc's parent doc id (type='d' rows chain via parent_id) — the
  * doc-level self-descendant pre-check walks this. */

@@ -41,7 +41,7 @@ import { runWriteMode } from "./writeModes.js";
 import type { WriteFlowBase } from "./writeFlow.js";
 import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines } from "./baselines.js";
-import type { WriteKernelClient } from "./writeResult.js";
+import type { WriteKernelClient } from "./kernel.js";
 
 export interface WriteToolHooks {
 	/** Live session validation — set by session_start / /kb recovery. */

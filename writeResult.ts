@@ -1,6 +1,6 @@
-// Shared write-result machinery: the structural kernel client the write
-// tools need, and the echo/verification evidence (root echo, backlink
-// check, post-write walk sets) every doc-targeting result shares.
+// Shared write-result machinery: the baseline/fresh-content precondition and
+// the echo/verification evidence (root echo, backlink check, post-write walk
+// sets) every doc-targeting result shares.
 
 import { contentHash, type ContentBaselines } from "./baselines.js";
 import {
@@ -10,45 +10,12 @@ import {
 	type BlockTransaction,
 } from "siyuan-kernel-api";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
-import { sqlString, type KernelReadClient } from "./kernel.js";
+import { sqlString, type WriteKernelClient } from "./kernel.js";
 import {
 	renderOutlineFromWalk,
 	walkBlockTree,
 	type WalkedBlock,
 } from "./walk.js";
-import type { KernelProbeClient } from "./validation.js";
-
-/** Structural client subset the write tools need (tests stub it). */
-export interface WriteKernelClient extends KernelReadClient, KernelProbeClient {
-	createDocWithMarkdown(params: {
-		notebook: string;
-		path: string;
-		markdown: string;
-		parentID?: string;
-	}): Promise<string>;
-	updateBlock(params: {
-		id: string;
-		data: string;
-	}): Promise<BlockTransaction[]>;
-	insertBlock(params: {
-		data: string;
-		nextID?: string;
-		previousID?: string;
-		parentID?: string;
-	}): Promise<BlockTransaction[]>;
-	appendBlock(params: {
-		data: string;
-		parentID: string;
-	}): Promise<BlockTransaction[]>;
-	deleteBlock(id: string): Promise<BlockTransaction[]>;
-	moveBlock(params: {
-		id: string;
-		previousID?: string;
-		parentID?: string;
-	}): Promise<null>;
-	removeDocByID(id: string): Promise<null>;
-	moveDocsByID(params: { fromIDs: string[]; toID: string }): Promise<null>;
-}
 
 interface BaselineView {
 	blockId: string;

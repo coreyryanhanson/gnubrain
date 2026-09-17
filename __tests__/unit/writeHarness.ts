@@ -22,11 +22,11 @@ import { OWNERSHIP_STMT_HEAD } from "../../kernel.js";
 import type { WalkedBlock } from "../../walk.js";
 import {
 	BASELINE_CONTENTS_STMT_HEAD,
+	ROOT_ECHO_STMT_HEAD,
 	REFS_BACKLINK_STMT_HEAD,
 	REFERRING_HPATHS_STMT_HEAD,
-	ROOT_ECHO_STMT_HEAD,
-	type WriteKernelClient,
 } from "../../writeResult.js";
+import type { WriteKernelClient } from "../../kernel.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import {
