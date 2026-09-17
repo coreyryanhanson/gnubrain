@@ -20,6 +20,7 @@ import {
 	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
+import { PARENT_DOC_STMT_HEAD } from "../../writeFlow.js";
 import { contentHash } from "../../baselines.js";
 
 describe("kb_write schema", () => {
@@ -1353,6 +1354,46 @@ describe("block-level move", () => {
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
 		).toHaveLength(0);
+	});
+
+	it("doc-level: a cyclic ancestor chain terminates (bounded hops) and the move proceeds", async () => {
+		// Corrupted kernel state: the destination's parent chain loops
+		// (d-child → d-mid → d-child → …) and never reaches the source doc.
+		// The ancestor walk must give up after its hop budget and treat the
+		// destination as not-a-descendant — not spin on query forever.
+		const harness = moveHarness(undefined, {
+			docRoots: {
+				"d-doc": {
+					content: "Docker Networking",
+					hpath: "/Docker Networking",
+				},
+				"d-child": { content: "Child", hpath: "/Docker Networking/Child" },
+			},
+			parentDocRows: [{ parent_id: "d-mid" }],
+		});
+		const baseQuery = harness.client.query.bind(harness.client);
+		harness.client.query = async (stmt: string) => {
+			// The stub records the call; only the d-mid leg's return is
+			// overridden to close the cycle (d-child → d-mid → d-child).
+			const rows = await baseQuery(stmt);
+			return /id = 'd-mid'/.test(stmt) ? [{ parent_id: "d-child" }] : rows;
+		};
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			doc: true,
+			toDocId: "d-child",
+		});
+		// Not provably a descendant → the move is allowed through.
+		expect(result.status).toBe("ok");
+		const ancestorQueries = harness.calls.filter(
+			(c) =>
+				c.method === "query" &&
+				typeof c.args === "string" &&
+				c.args.startsWith(PARENT_DOC_STMT_HEAD),
+		);
+		expect(ancestorQueries.length).toBeLessThanOrEqual(16);
 	});
 
 	it("doc-level: kernel rejections (the depth cap) surface verbatim", async () => {

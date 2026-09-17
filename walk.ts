@@ -11,7 +11,7 @@ import { OUTLINE_HEADINGS, jsonl, spillFile } from "./spill.js";
 /** Extension-owned recursion bound for the getChildBlocks walk — the kernel
  * imposes no cap on block-container nesting, so this keeps the walk finite
  * (the 7-level cap counts hpath separators, a different axis). */
-const MAX_WALK_DEPTH = 32;
+export const MAX_WALK_DEPTH = 32;
 
 /** Outline ride-along: render from a fresh unfiltered walk of the doc
  * root — the read-path entry point opts into tolerateVanished. */
