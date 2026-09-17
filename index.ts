@@ -155,9 +155,24 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	}
 
 	/** The full validation pass — shared by session_start and /kb recovery
-	 * every /kb dispatch re-runs it; corrected credentials and
-	 * defaultKBs edits take effect mid-session). */
+	 * (every /kb dispatch re-runs it; corrected credentials and defaultKBs
+	 * edits take effect mid-session). Never throws: a settings read error
+	 * (EACCES, EISDIR, ...) degrades here rather than in the callers, so the
+	 * two stay mirrored by construction — a thrown error can never leave the
+	 * previous verdict live. */
 	async function revalidate(ctx: ExtensionContext): Promise<SessionValidation> {
+		try {
+			return await runRevalidate(ctx);
+		} catch (err) {
+			return degradedValidation([
+				`settings load failed: ${err instanceof Error ? err.message : String(err)}`,
+			]);
+		}
+	}
+
+	async function runRevalidate(
+		ctx: ExtensionContext,
+	): Promise<SessionValidation> {
 		const loaded = await loadGnubrainSettings(
 			readFile,
 			globalSettingsPath(deps.homeDir),
@@ -202,17 +217,7 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// session in the same process.
 		confirmState.timedOut.clear();
 		baselines.clear();
-		try {
-			validation = await revalidate(ctx);
-		} catch (err) {
-			// A settings read error (EACCES, EISDIR, ...) must degrade like every
-			// other bad-input path — an unguarded throw would leave a fresh
-			// process silently never-probed and a new session in this process
-			// inheriting the previous session's validation.
-			validation = degradedValidation([
-				`settings load failed: ${err instanceof Error ? err.message : String(err)}`,
-			]);
-		}
+		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
 		if (validation.authFailed) breaker.recordAuthFailure();
 		renderStatus(ctx);
@@ -226,16 +231,9 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|write|off])",
 		handler: async (args, ctx) => {
 			const ui = ctx.ui;
-			try {
-				validation = await revalidate(ctx);
-			} catch (err) {
-				ui.notify(
-					`/kb re-validation failed: ${err instanceof Error ? err.message : String(err)}`,
-					"error",
-				);
-				renderStatus(ctx);
-				return;
-			}
+			// revalidate degrades rather than throwing, so a failed re-check
+			// re-engages all-or-nothing right here.
+			validation = await revalidate(ctx);
 			if (validation.authFailed) {
 				// The re-check's own auth failure feeds the breaker (counting).
 				breaker.recordAuthFailure();

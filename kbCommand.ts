@@ -174,6 +174,10 @@ function scopeSummary(
 	toolsetLines: string[],
 ): string {
 	const lines = [`scope: ${scopeList(validation)}`];
+	// Degradation reasons (shape errors, incl. a revalidate that degraded):
+	// bare /kb is the diagnostic surface — never print the degraded scope
+	// without naming why.
+	lines.push(...validation.shapeErrors);
 	const available = (validation.settings?.kbs ?? [])
 		.map((kb) => kb.name)
 		.filter((n) => validation.validKBs.has(n) && !validation.scope.includes(n));

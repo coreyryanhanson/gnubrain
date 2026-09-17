@@ -79,6 +79,34 @@ describe("index wiring", () => {
 		expect(statuses.at(-1)?.[1]).toBe("● kb: config");
 	});
 
+	it("/kb with a mid-session settings read error degrades instead of keeping the old verdict", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		const base = deps();
+		let readError: Error | undefined;
+		register(pi, {
+			...base,
+			readFile: async (path: string) => {
+				if (readError !== undefined) throw readError;
+				return base.readFile!(path);
+			},
+		});
+		const { ctx, statuses, notifications } = fakeCtx();
+		await fire("session_start", ctx);
+		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+		readError = Object.assign(new Error("permission denied"), {
+			code: "EACCES",
+		});
+		statuses.length = 0;
+		await runCommand("", ctx);
+		// The degraded verdict must replace the previously healthy one — the
+		// slot repaints config and bare /kb names the reason instead of
+		// printing a scope the tools no longer serve.
+		expect(statuses.at(-1)?.[1]).toBe("● kb: config");
+		expect(notifications.at(-1)?.[0]).toContain(
+			"settings load failed: permission denied",
+		);
+	});
+
 	it("session_start validates, resolves scope from defaultKBs, and renders the hollow slot", async () => {
 		const { pi, fire } = fakePi();
 		const d = deps();
