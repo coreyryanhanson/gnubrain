@@ -91,7 +91,7 @@ export function resolveValidatedScope(
 
 /** Degraded all-or-nothing result: the config is unusable → no probe ran,
  * nothing valid, every tool call refused with the problems named. Shared by
- * the shape branch of runSessionValidation and a revalidate() that threw. */
+ * runSessionValidation's fail-closed branches and a revalidate() that threw. */
 export function degradedValidation(errors: string[]): SessionValidation {
 	return {
 		settings: undefined,
@@ -113,7 +113,9 @@ export function degradedValidation(errors: string[]): SessionValidation {
  */
 export async function runSessionValidation(input: {
 	loaded: LoadedSettings;
-	kernel: KernelProbeClient;
+	/** A client exists iff the global settings parsed — undefined means they
+	 * didn't, which the shape gate below refuses before the kernel is touched. */
+	kernel: KernelProbeClient | undefined;
 	/** The version-refusal pin overrides this per-test. */
 	pinnedVersion?: string;
 	/** Latest persisted `kb-scope` snapshot, when the session carries one. */
@@ -133,12 +135,18 @@ export async function runSessionValidation(input: {
 		return degradedValidation(shapeErrors);
 	}
 
+	if (input.kernel === undefined) {
+		// Unreachable: a parsed global settings file always yields a client.
+		return degradedValidation(["validation ran without a kernel client"]);
+	}
+	const kernel = input.kernel;
+
 	// Step 2 — kernel probe: unauthenticated, connectivity + version only.
 	// Strict full-version match; drift fails writes closed, reads proceed.
 	let probe: ProbeVerdict;
 	let kernelVersion: string | undefined;
 	try {
-		kernelVersion = await input.kernel.getVersion();
+		kernelVersion = await kernel.getVersion();
 		probe = kernelVersion === pinnedVersion ? "ok" : "drift";
 	} catch {
 		probe = "unreachable";
@@ -151,7 +159,7 @@ export async function runSessionValidation(input: {
 	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
 	const validKBs = new Map<string, string>();
 	try {
-		const list: NotebookList = await input.kernel.listNotebooks();
+		const list: NotebookList = await kernel.listNotebooks();
 		const byId = new Map(list.notebooks.map((n) => [n.id, n]));
 		for (const kb of settings.kbs) {
 			const notebook = byId.get(kb.notebook);

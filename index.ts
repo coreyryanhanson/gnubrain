@@ -19,7 +19,6 @@ import {
 	latestPersistedScope,
 	resolveValidatedScope,
 	runSessionValidation,
-	type KernelProbeClient,
 	type SessionValidation,
 } from "./validation.js";
 import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
@@ -186,20 +185,12 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 					)
 				: undefined;
 		if (kernel !== undefined) kernelClient = kernel;
-		// A kernel stub is only needed past shape validation; when the shape
-		// failed the pipeline skips the network steps regardless.
 		// Branch-scoped read: only the active branch's scope snapshot counts —
 		// a scope toggle on an abandoned branch must not leak back in.
 		const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
 		return runSessionValidation({
 			loaded,
-			kernel:
-				kernel ??
-				({
-					baseUrl: "",
-					getVersion: () => Promise.reject(new Error("no settings")),
-					listNotebooks: () => Promise.reject(new Error("no settings")),
-				} satisfies KernelProbeClient),
+			kernel,
 			persistedScope: persisted,
 			...(deps.pinnedVersion !== undefined && {
 				pinnedVersion: deps.pinnedVersion,
