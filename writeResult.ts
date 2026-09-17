@@ -283,10 +283,7 @@ export async function writeEchoTail(input: {
 	 * newBlockId, a movedBlockId) — baselined from stored form so a
 	 * follow-up edit compares like-for-like. */
 	refreshBlockIds?: readonly string[] | undefined;
-}): Promise<{
-	walk: WalkedBlock[];
-	envelope: Record<string, unknown>;
-}> {
+}): Promise<Record<string, unknown>> {
 	const { kernel, sessionId, boxId, docId, baselines, refreshBlockIds } = input;
 	const walk = input.walk ?? (await walkBlockTree(kernel, docId));
 	const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
@@ -324,5 +321,5 @@ export async function writeEchoTail(input: {
 			baselines.remember(row.blockId, row.content);
 		}
 	}
-	return { walk, envelope };
+	return envelope;
 }

@@ -149,17 +149,15 @@ export async function echoTail(
 	walk?: WalkedBlock[] | undefined,
 	refreshBlockIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
-	return (
-		await writeEchoTail({
-			kernel: input.kernel,
-			sessionId: input.sessionId,
-			boxId: input.boxId,
-			docId: doc.rootId,
-			baselines: input.baselines,
-			walk,
-			refreshBlockIds,
-		})
-	).envelope;
+	return writeEchoTail({
+		kernel: input.kernel,
+		sessionId: input.sessionId,
+		boxId: input.boxId,
+		docId: doc.rootId,
+		baselines: input.baselines,
+		walk,
+		refreshBlockIds,
+	});
 }
 
 // ---------------------------------------------------------------------------
