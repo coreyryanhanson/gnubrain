@@ -13,6 +13,7 @@ import {
 	deleteSetDisplay,
 	echoTail,
 	headingInWalk,
+	insertRollbackReason,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -88,15 +89,15 @@ export async function runReplaceSectionMode(
 		const newBlockId = newBlockIdFrom(tx);
 		// Verify the insert landed BEFORE any delete — a silent rollback
 		// must not sweep the old section away (stale-target record).
-		const preIds = idSet(walk);
 		const afterInsertWalk = await walkBlockTree(kernel, doc.rootId);
-		const landed =
-			newBlockId !== undefined &&
-			!preIds.has(newBlockId) &&
-			idSet(afterInsertWalk).has(newBlockId);
-		if (!landed) {
+		const rollback = insertRollbackReason(
+			newBlockId,
+			idSet(walk),
+			idSet(afterInsertWalk),
+		);
+		if (rollback !== undefined) {
 			return errorEnvelope(
-				`verified-insert failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; the old section is untouched`,
+				`verified-insert failed: ${rollback} — the transaction rolled back silently behind HTTP success; the old section is untouched`,
 				{ kb: name, anchor: anchor.anchor },
 			);
 		}
@@ -137,7 +138,7 @@ export async function runReplaceSectionMode(
 		// The echo tail re-walks AFTER the deletes: the post-insert walk still
 		// carries the swept blocks, and the outline-freshness contract requires
 		// the post-write tree (write-result contract).
-		const tail = await echoTail(input, doc, undefined, [newBlockId]);
+		const tail = await echoTail(input, doc, undefined, [newBlockId as string]);
 		return {
 			status: "ok",
 			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,

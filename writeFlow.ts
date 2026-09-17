@@ -153,6 +153,22 @@ export function headingInWalk(
 		: heading;
 }
 
+/** Verified, not trusted: a kernel-returned insert id counts as landed
+ * only when it is genuinely new — present in the post-write walk set and
+ * absent from the pre-write set. A miss means the transaction rolled back
+ * silently behind HTTP success. One home so the predicate and its error
+ * wording cannot drift between the insert-bearing modes. */
+export function insertRollbackReason(
+	newBlockId: string | undefined,
+	preIds: ReadonlySet<string>,
+	postIds: ReadonlySet<string>,
+): string | undefined {
+	if (newBlockId === undefined) return "the kernel returned no block id";
+	if (!postIds.has(newBlockId) || preIds.has(newBlockId))
+		return `the kernel returned '${newBlockId}' but it is absent from the post-write tree`;
+	return undefined;
+}
+
 /** writeEchoTail with the flow's fixed identity args bound — call sites
  * pass only an optional pre-fetched verification walk and the write's own
  * block IDs (only on the success paths — a write that did not land

@@ -8,6 +8,7 @@ import {
 	confirmGate,
 	echoTail,
 	headingInWalk,
+	insertRollbackReason,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -38,26 +39,24 @@ export async function runAppendMode(
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert may already be applied (finishWrite doc).
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {
-		// verified, not trusted: the returned id must appear among the
-		// post-write walk set's newly-present ids — a tree-level miss rolls
-		// back silently behind HTTP success. Multi-block: diff-based;
-		// single-block: exactly one id (pinned live).
+		// Multi-block: diff-based; single-block: exactly one id (pinned
+		// live). The landed predicate + rollback wording live in
+		// insertRollbackReason (shared with replace-section).
 		const newBlockId = newBlockIdFrom(tx);
-		const preIds = idSet(walk);
 		const postWalk = await walkBlockTree(kernel, doc.rootId);
-		const postIds = idSet(postWalk);
-		const landed =
-			newBlockId !== undefined &&
-			!preIds.has(newBlockId) &&
-			postIds.has(newBlockId);
-		if (!landed) {
+		const rollback = insertRollbackReason(
+			newBlockId,
+			idSet(walk),
+			idSet(postWalk),
+		);
+		if (rollback !== undefined) {
 			const tail = await echoTail(input, doc, postWalk);
 			return errorEnvelope(
-				`verified-append failed: the kernel returned ${newBlockId === undefined ? "no block id" : `'${newBlockId}'`} but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`,
+				`verified-append failed: ${rollback} — the transaction rolled back silently behind HTTP success; nothing was inserted`,
 				{ kb: name, anchor: anchor.anchor, ...tail },
 			);
 		}
-		const tail = await echoTail(input, doc, postWalk, [newBlockId]);
+		const tail = await echoTail(input, doc, postWalk, [newBlockId as string]);
 		return {
 			status: "ok",
 			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
