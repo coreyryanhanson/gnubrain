@@ -27,7 +27,7 @@ export function validation(overrides?: {
 		},
 		shapeErrors: overrides?.shapeErrors ?? [],
 		probe: overrides?.probe ?? "ok",
-		kernelVersion: overrides?.kernelVersion ?? "3.8.3",
+		kernelVersion: overrides?.kernelVersion ?? "3.8.4",
 		validKBs: new Map(
 			overrides?.validKBs ?? kbs.map(({ name, notebook }) => [name, notebook]),
 		),

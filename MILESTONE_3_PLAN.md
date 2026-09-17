@@ -324,7 +324,7 @@ confirmation gate and the `create` flow end to end. Registered name
 
 ---
 
-## Sprint 5b — Integration suite (runs against live 3.8.3)
+## Sprint 5b — Integration suite (runs against live 3.8.4)
 
 The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
@@ -391,7 +391,7 @@ raw-DELETE case like the rest.
 3. **Tool-path verified-create** — pre-existing title → guard matches first, no
    create call fires, the existing doc's docId returned in the `duplicate`
    stop with the block-ID echo and its spilled markdown (§10).
-4. **Version-refusal contract pin** — pin deliberately set to a version 3.8.3
+4. **Version-refusal contract pin** — pin deliberately set to a version 3.8.4
    doesn't report → every write refused naming both versions, reads proceed;
    the override is per-test config, not a global constant mutation (§10), so
    it doesn't fight the setup's pin-equality assert.
@@ -468,7 +468,7 @@ raw-DELETE case like the rest.
 
 + [ ] Setup asserts kernel version exactly equals the pin (accidental upgrade →
       red suite).
-+ [ ] All cases above green against live 3.8.3 under the fixture policy; the
++ [ ] All cases above green against live 3.8.4 under the fixture policy; the
       teardown itself is asserted (post-teardown notebook count back to
       baseline — zero strays).
 + [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;

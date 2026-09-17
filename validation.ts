@@ -6,7 +6,7 @@
 import { SiYuanAuthError, type NotebookList } from "siyuan-kernel-api";
 import type { GnubrainSettings, LoadedSettings } from "./settings.js";
 
-export const PINNED_SIYUAN_VERSION = "3.8.3";
+export const PINNED_SIYUAN_VERSION = "3.8.4";
 
 /** probe verdict, cached for the session. `never-probed` = the shape
  * check failed before the probe ran (a distinct state from unreachable). */

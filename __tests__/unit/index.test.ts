@@ -42,7 +42,7 @@ function deps(options?: {
 		createClient: () =>
 			({
 				baseUrl: "http://127.0.0.1:6806",
-				getVersion: async () => options?.version ?? "3.8.3",
+				getVersion: async () => options?.version ?? "3.8.4",
 				listNotebooks: () => {
 					notebookCalls++;
 					if (options?.notebooksError) throw options.notebooksError;
@@ -393,7 +393,7 @@ describe("read + write toolset wiring", () => {
 
 	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {
 		const { pi, fire, runTool } = fakePi();
-		const d = deps({ version: "3.8.3" });
+		const d = deps({ version: "3.8.4" });
 		register(pi, { ...d, pinnedVersion: "9.9.9" });
 		const { ctx, statuses } = fakeCtx({
 			hasUI: true,
@@ -411,7 +411,7 @@ describe("read + write toolset wiring", () => {
 			)
 		).details;
 		expect(refused.status).toBe("refused");
-		expect(refused.message).toContain("3.8.3");
+		expect(refused.message).toContain("3.8.4");
 		expect(refused.message).toContain("9.9.9");
 
 		// A drift session never blocks the kbs discovery short-circuit

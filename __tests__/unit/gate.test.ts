@@ -16,7 +16,7 @@ import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;
 
-function kernelStub(getVersion: () => Promise<string> = async () => "3.8.3") {
+function kernelStub(getVersion: () => Promise<string> = async () => "3.8.4") {
 	const calls: string[] = [];
 	return {
 		calls,
@@ -357,7 +357,7 @@ describe("write gate", () => {
 		});
 		expect(envelope?.status).toBe("refused");
 		expect(envelope?.message).toContain("3.9.0");
-		expect(envelope?.message).toContain("3.8.3");
+		expect(envelope?.message).toContain("3.8.4");
 		expect(envelope?.message).toContain("PINNED_SIYUAN_VERSION");
 		expect(calls).toEqual([]); // drift verdict is cached — no extra probe
 	});

@@ -45,7 +45,7 @@ function stubKernel(options?: {
 			async getVersion() {
 				calls.version++;
 				if (options?.probeError) throw options.probeError;
-				return options?.version ?? "3.8.3";
+				return options?.version ?? "3.8.4";
 			},
 			async listNotebooks() {
 				calls.notebooks++;
@@ -116,8 +116,8 @@ describe("startup validation order", () => {
 		expect(result.probe).toBe("unreachable");
 	});
 
-	it("strict full-version match — 3.8.3-dev or 3.8 drifts", async () => {
-		for (const version of ["3.8.3-dev", "3.8", "3.8.4"]) {
+	it("strict full-version match — 3.8.4-dev or 3.8 drifts", async () => {
+		for (const version of ["3.8.4-dev", "3.8", "3.8.5"]) {
 			const { kernel } = stubKernel({ version });
 			const result = await runSessionValidation({
 				loaded: await loaded(globalSettings()),

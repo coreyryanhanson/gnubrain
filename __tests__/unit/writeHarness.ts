@@ -116,7 +116,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => {
 			calls.push({ method: "getVersion", args: undefined });
-			return "3.8.3";
+			return "3.8.4";
 		},
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {
