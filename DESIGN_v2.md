@@ -304,8 +304,8 @@ default and the per-KB search `pageSize`) and one helper.
   note the §4 7-level cap is the *doc-tree depth* limit, a different axis: it counts
   `/` separators in the hpath, and the kernel imposes no cap on block-container
   nesting within a doc, so this bound is ours and exists to keep the walk finite) to
-  catch headings nested under lists/quotes. **Heading ids are never recursed into**: the kernel
-  answers `getChildBlocks(headingId)` with the heading's *section* — its following
+  catch headings nested under lists/quotes. **Heading ids are never recursed into**: the
+  kernel answers `getChildBlocks(headingId)` with the heading's *section* — its following
   siblings up to the next heading of same-or-higher level (`treenode.HeadingChildren`),
   a branch that runs before the kernel's container check — and every one of those
   blocks is already returned by the loop over the container that owns the heading, so

@@ -1186,6 +1186,11 @@ describe("block-level move", () => {
 				walkBlock("p2", "p", "", "stay"),
 				walkBlock("p1", "l", "u", "mover"),
 			];
+			// The kernel's heading answer tracks the moved tree too.
+			harness.childrenFor["h1"] = [
+				walkBlock("p2", "p", "", "stay"),
+				walkBlock("p1", "l", "u", "mover"),
+			];
 			harness.childrenFor["p1"] = [walkBlock("c1", "i", "u", "kid")];
 		});
 		const result = await harness.execute({

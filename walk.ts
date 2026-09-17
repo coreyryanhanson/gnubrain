@@ -83,8 +83,7 @@ interface NestedBlock extends WalkedBlock {
 /** Wire block types whose getChildBlocks returns real tree children: the
  * kernel's own container set (d/b/l/i/s/callout) plus lute's nested tabs.
  * The empty type — a block the kernel's abbreviation map does not name, e.g.
- * a footnote definition — nests too, the fail-safe direction (a type this
- * set has never heard of travels the same way).
+ * a footnote definition — nests too: the fail-safe direction.
  *
  * Heading (`h`) is deliberately absent even though the kernel answers a
  * heading with its SECTION (following siblings up to the next heading of
