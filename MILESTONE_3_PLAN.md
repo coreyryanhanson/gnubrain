@@ -312,9 +312,13 @@ execution order: search-shape first, throttle after all kernel cases, raw-DELETE
 last). **Fixture→settings wiring**: the minted notebook IDs don't exist until
 setup runs, so the suite injects fixture settings in memory through S1's
 settings-load seam — `{baseUrl, apiToken, kbs: [{name: "fixture-a", notebook:
-<minted id>}, {name: "fixture-b", ...}], defaultKBs: [...]}` — with `defaultKBs`
-covering both fixtures wherever a case needs both active (items 9–10's
-saturation/recall pins); the user's settings files are never read or written.
+<minted id>}, {name: "fixture-b", ...}], defaultKBs: [...],
+allowUnattendedWrites: true}` — with `defaultKBs` covering both fixtures
+wherever a case needs both active (items 9–10's saturation/recall pins);
+`allowUnattendedWrites: true` is required in the fixture shape because the
+suite runs UI-less (vitest), and an absent/false value would make
+writeConfirm default-deny every write case before any kernel call (§5's
+headless default-deny); the user's settings files are never read or written.
 Item 11 is the exception: `pi -p` is a separate process that reads the pinned
 global path, so it runs under a temp `HOME` seeded with `.pi/agent/settings.json`
 carrying the same fixture settings — the extension runs unmodified, still
