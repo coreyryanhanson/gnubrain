@@ -647,7 +647,13 @@ for the identity property.
      `parentID=<heading id>` insert is rejected by the container check the doc itself
      documents (a heading is not a valid insertion *parent* — the kernel's
      `CheckContainerParent` rejects `parentID=<heading id>`; `getChildBlocks` still
-     answers a heading with its section, §3) — then `deleteBlock` the old blocks. **The old
+     answers a heading with its section, §3) — then `deleteBlock` the old blocks.
+     **Any mid-sweep failure carries the partial-apply state in the envelope**
+     (`partialReplace`, `newBlockId`, `deletedBlockIds`, `remainingBlockIds`): a
+     kernel error resolves inline; a transport-class error (429, auth, network,
+     timeout) keeps its classification path (cooldown/breaker/`verificationFailed`)
+     but carries the same fields, so no error class can present a half-swept section
+     as retry-safe. **The old
      section's block IDs are enumerated by the §3 `getChildBlocks` document-order walk
      before the insert, never by SQL** — §3's superseded-outline record proves SQL
      enumeration breaks on edited docs — and this is the *delete set* of the preferred

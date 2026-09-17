@@ -73,6 +73,9 @@ export interface StubConfig {
 	 * walk drop (a query-arm doesn't reach it: the walk rides the child
 	 * route, not SQL). */
 	armWalkError?: (arm: (err: Error) => void) => void;
+	/** Arm for deleteBlock — a mid-sweep transport failure (network drop
+	 * on the Nth delete), distinct from the SQL-arm (verification reads). */
+	armDeleteError?: (arm: (err: Error) => void) => void;
 }
 
 /** Kernel stub with a SQL router over every write-flow route. Verified rows
@@ -111,6 +114,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 	let walkError: Error | undefined;
 	config.armWalkError?.((err) => {
 		walkError = err;
+	});
+	let deleteError: Error | undefined;
+	config.armDeleteError?.((err) => {
+		deleteError = err;
 	});
 	const client: WriteKernelClient = {
 		baseUrl: "http://127.0.0.1:6806",
@@ -218,6 +225,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async deleteBlock(id) {
 			calls.push({ method: "deleteBlock", args: id });
 			config.onDelete?.();
+			if (deleteError) throw deleteError;
 			return tx;
 		},
 		async moveBlock(params) {

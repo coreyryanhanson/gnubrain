@@ -9,7 +9,12 @@ import {
 	SiYuanTimeoutError,
 	type BlockTransaction,
 } from "siyuan-kernel-api";
-import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import {
+	errorEnvelope,
+	refusedEnvelope,
+	takePartialReplace,
+	type Envelope,
+} from "./envelope.js";
 import { sqlString, type WriteKernelClient } from "./kernel.js";
 import {
 	renderOutlineFromWalk,
@@ -225,12 +230,22 @@ export async function finishWrite(
 		) {
 			throw err;
 		}
+		const partial = takePartialReplace(err);
+		// A mid-sequence failure (replace-section's delete sweep) attaches its
+		// partial-apply state to the error before it lands here — the envelope
+		// must carry it, or the re-run-invites-duplication hazard the sweep's
+		// own catch guards against re-enters one error class over.
 		return errorEnvelope(
-			`the write call returned success but the post-write verification reads failed: ` +
-				`${err instanceof Error ? err.message : String(err)} — the write's ` +
-				`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
-				`(kb_read) and confirm the write landed before repeating it`,
-			{ ...extra, kb, verificationFailed: true },
+			partial === undefined
+				? `the write call returned success but the post-write verification reads failed: ` +
+						`${err instanceof Error ? err.message : String(err)} — the write's ` +
+						`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
+						`(kb_read) and confirm the write landed before repeating it`
+				: `the write is partially applied — a mid-write step failed: ` +
+						`${err instanceof Error ? err.message : String(err)} — the earlier ` +
+						`steps have landed; do NOT re-run, re-fetch the outline (kb_read) ` +
+						`and reconcile from the payload (deletedBlockIds/remainingBlockIds)`,
+			{ ...extra, ...partial, kb, verificationFailed: true },
 		);
 	}
 }

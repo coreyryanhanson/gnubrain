@@ -3,8 +3,13 @@
 // in one call — a mid-sequence failure must cost visible duplication, never
 // loss.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import { SiYuanApiError, SiYuanKernelError } from "siyuan-kernel-api";
+import {
+	errorEnvelope,
+	markPartialReplace,
+	type Envelope,
+	type PartialReplaceState,
+} from "./envelope.js";
 import { deriveAppendAnchor, sectionDeleteSet } from "./writeAnchors.js";
 import { walkBlockTree } from "./walk.js";
 import {
@@ -101,18 +106,44 @@ export async function runReplaceSectionMode(
 				{ kb: name, anchor: anchor.anchor },
 			);
 		}
+		// Rollback verified — the kernel-returned id is present in the
+		// post-write tree, so the partial-apply evidence can name it.
+		const landedId: string = newBlockId as string;
 		// Deletes ride the pre-enumerated set — a post-insert re-enumeration
 		// would sweep the replacement into the delete set.
 		for (const [i, block] of deleteSet.entries()) {
 			try {
 				await kernel.deleteBlock(block.id);
 			} catch (err) {
-				if (!(err instanceof SiYuanApiError)) throw err;
+				const partialIds = (): Pick<
+					PartialReplaceState,
+					"deletedBlockIds" | "remainingBlockIds"
+				> => ({
+					deletedBlockIds: deleteSet.slice(0, i).map((b) => b.id),
+					remainingBlockIds: deleteSet.slice(i).map((b) => b.id),
+				});
+				if (!(err instanceof SiYuanApiError)) {
+					// Transport-class failures (429, auth, network, timeout) have
+					// their own classification paths — 429/auth flow to runKbCall
+					// (cooldown/breaker), network/timeout land in finishWrite
+					// (verificationFailed). The insert has landed and part of
+					// the old section may be swept, so the partial state rides
+					// the error for the catch sites to merge into whatever
+					// envelope the classifier produces.
+					if (err instanceof SiYuanKernelError) {
+						markPartialReplace(err, {
+							partialReplace: true,
+							newBlockId: landedId,
+							...partialIds(),
+						});
+					}
+					throw err;
+				}
 				// The insert has landed and part of the old section may be
 				// swept — a bare error here invites a re-run that duplicates
 				// the replacement. Surface the partial state instead.
 				return errorEnvelope(
-					`replace partially applied: the new section is in place (block '${newBlockId}') but the delete of '${block.id}' failed (${err instanceof Error ? err.message : String(err)})` +
+					`replace partially applied: the new section is in place (block '${landedId}') but the delete of '${block.id}' failed (${err instanceof Error ? err.message : String(err)})` +
 						(i > 0 ? `, and ${i} earlier block(s) were deleted` : "") +
 						` — do NOT re-run; delete the remaining old-section block(s) to finish: ${deleteSet
 							.slice(i)
@@ -121,10 +152,9 @@ export async function runReplaceSectionMode(
 					{
 						kb: name,
 						anchor: anchor.anchor,
-						newBlockId,
+						newBlockId: landedId,
 						partialReplace: true,
-						deletedBlockIds: deleteSet.slice(0, i).map((b) => b.id),
-						remainingBlockIds: deleteSet.slice(i).map((b) => b.id),
+						...partialIds(),
 					},
 				);
 			}

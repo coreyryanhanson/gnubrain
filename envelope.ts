@@ -32,6 +32,35 @@ export function refusedEnvelope(
 	return { status: "refused", message, ...payload };
 }
 
+/** Payload fields a partially-applied write must carry even when the
+ * triggering error propagates for classification (429 → cooldown, auth →
+ * breaker) or lands in finishWrite (network/timeout → verificationFailed).
+ * Mid-sequence flows (replace-section's delete sweep) attach the state to
+ * the error; the catch sites merge it into their classified envelope. */
+export interface PartialReplaceState {
+	partialReplace: true;
+	newBlockId: string;
+	deletedBlockIds: string[];
+	remainingBlockIds: string[];
+}
+
+export function markPartialReplace(
+	err: unknown,
+	state: PartialReplaceState,
+): void {
+	if (typeof err === "object" && err !== null) {
+		(err as Record<string, unknown>).partialReplaceState = state;
+	}
+}
+
+export function takePartialReplace(
+	err: unknown,
+): PartialReplaceState | undefined {
+	if (typeof err !== "object" || err === null) return undefined;
+	return (err as { partialReplaceState?: PartialReplaceState })
+		.partialReplaceState;
+}
+
 /** Unreachable-kernel error — reads while the kernel is unreachable — `{status: error, message: SiYuan unreachable at <baseUrl>}`. */
 export function kernelUnreachable(baseUrl: string): Envelope {
 	return errorEnvelope(`SiYuan unreachable at ${baseUrl}`);

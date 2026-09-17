@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
 	SiYuanApiError,
 	SiYuanNetworkError,
+	SiYuanRateLimitError,
 	SiYuanTimeoutError,
 } from "siyuan-kernel-api";
 import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
@@ -458,13 +459,13 @@ describe("replace-section", () => {
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 
-	it("mid-sweep drop after landed deletes → verificationFailed, not 'unreachable'", async () => {
+	it("mid-sweep drop after landed deletes → verificationFailed carrying the partial state", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		let deletes = 0;
 		const harness = setup({
 			config: {
 				childrenFor: REPLACE_DOC,
-				armQueryError: (set) => {
+				armDeleteError: (set) => {
 					arm = set;
 				},
 				onInsert: () => {
@@ -484,8 +485,47 @@ describe("replace-section", () => {
 		const result = await harness.execute(replaceParams);
 		expect(result.status).toBe("error");
 		expect(result.verificationFailed).toBe(true);
-		expect(result.message).toContain("post-write verification reads failed");
+		// The sweep failure is a mid-write step, not a verification read — the
+		// envelope must carry the partial-apply state, or a re-run duplicates
+		// the replacement.
+		expect(result.partialReplace).toBe(true);
+		expect(result.newBlockId).toBe("b-new");
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.remainingBlockIds).toEqual(["p2"]);
+		expect(result.message).toContain("partially applied");
+		expect(result.message).toContain("do NOT re-run");
 		expect(result.message).not.toContain("SiYuan unreachable");
+	});
+
+	it("429 mid-sweep → cooldown refusal carrying the partial state", async () => {
+		let deletes = 0;
+		const harness = setup({
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+				onDelete: () => {
+					deletes += 1;
+					if (deletes === 2) throw new SiYuanRateLimitError(429, 30);
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		// The 429 still classifies (cooldown refusal — the lock is armed), but
+		// the partial-apply state rides the envelope so the post-lock recovery
+		// knows the sweep is half-done.
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("rate-limit lockout");
+		expect(result.message).toContain("partially applied");
+		expect(result.partialReplace).toBe(true);
+		expect(result.newBlockId).toBe("b-new");
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 
 	it("the confirmation displays the delete set: count, content, inbound refs + referring hpaths", async () => {

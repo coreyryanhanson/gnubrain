@@ -19,6 +19,7 @@ import {
 	kernelUnreachable,
 	rateLimitRefusalEnvelope,
 	refusedEnvelope,
+	takePartialReplace,
 	versionRefusalEnvelope,
 	driftWarning,
 	type Envelope,
@@ -265,6 +266,23 @@ export async function gateWriteAttempt(input: {
 	}
 }
 
+/** Merge a mid-sequence write's attached partial-apply state into a
+ * classified envelope (429 → cooldown refusal, auth → breaker refusal).
+ * The write may be half-applied — the model must see that even though the
+ * error classified elsewhere, or the post-lock re-run duplicates it. */
+function withPartialState(envelope: Envelope, err: unknown): Envelope {
+	const partial = takePartialReplace(err);
+	if (partial === undefined) return envelope;
+	return {
+		...envelope,
+		message:
+			`${envelope.message} NOTE: a kb_write was partially applied before this ` +
+			`error — do not re-run it; reconcile from the payload ` +
+			`(deletedBlockIds/remainingBlockIds) once kb calls resume`,
+		...partial,
+	};
+}
+
 /**
  * Guard + run + classify. Reads never check the probe verdict: the kernel
  * attempt happens and its failure maps to the error envelope, so reads
@@ -296,7 +314,7 @@ export async function runKbCall(
 	} catch (err) {
 		const now = input.now ?? Date.now();
 		const classified = classifyKernelError(err, input.breaker, now);
-		if (classified !== null) return classified;
+		if (classified !== null) return withPartialState(classified, err);
 		if (
 			err instanceof SiYuanNetworkError ||
 			err instanceof SiYuanTimeoutError
