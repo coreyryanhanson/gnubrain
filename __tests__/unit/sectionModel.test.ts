@@ -656,7 +656,6 @@ describe("refused targets", () => {
 	const doc: DocTarget = {
 		title: "Docker Networking",
 		rootId: "d-doc",
-		hpath: "/Docker Networking",
 	};
 	it("a heading inside a tabs container is refused before any dialog", () => {
 		const walk: WalkedBlock[] = [

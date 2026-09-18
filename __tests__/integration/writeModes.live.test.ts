@@ -543,7 +543,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			const doc: DocTarget = {
 				rootId: docId,
 				title: "L3 refusal walk",
-				hpath: "/L3 refusal walk",
 			};
 			for (const h of walk.filter((b) => b.type === "h")) {
 				expect(headingInWalk(walk, doc, h.id)).toBe(h);

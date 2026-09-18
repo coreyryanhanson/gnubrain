@@ -61,7 +61,6 @@ export interface WriteFlowInput extends WriteFlowBase {
 export interface DocTarget {
 	rootId: string;
 	title: string;
-	hpath: string;
 }
 
 /** Every non-create mode takes docId — an echoed target, ownership-
@@ -84,7 +83,7 @@ export async function resolveDocTarget(
 			`doc '${docId}' has no type='d' root row in KB '${name}'`,
 		);
 	}
-	return { rootId: root.docId, title: root.title, hpath: root.hpath };
+	return { rootId: root.docId, title: root.title };
 }
 
 export async function confirmGate(
