@@ -37,6 +37,8 @@ your workspace, and every write is verified against the kernel afterward.
    ```
 
 2. Run [SiYuan](https://siyuan.b3log.org) and enable its API.
+   GNUbrain requires SiYuan **3.8.4 exactly** — a different kernel version
+   refuses every write and warns on reads.
 3. Add your connection and notebooks to `~/.pi/agent/settings.json`:
 
    ```json
@@ -80,6 +82,10 @@ Scope changes persist across sessions.
 | `defaultKBs` | — | KBs active without any `/kb` toggle (project file may also set this) |
 | `allowUnattendedWrites` | `false` | In headless (`pi -p`) runs, skip the confirmation dialog and allow writes unattended |
 | `writeConfirmTimeout` | `60` | Seconds to wait for a write confirmation (`0` = wait forever) |
+
+> [!NOTE]
+> Requires SiYuan 3.8.4 exactly. Any other kernel version refuses writes and
+> warns on reads (see the status indicator for the reported version).
 
 ## Development
 
