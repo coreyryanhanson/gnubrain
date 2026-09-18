@@ -5,7 +5,7 @@
 
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { sqlString } from "./kernel.js";
-import { deriveMoveAnchor, landingId } from "./writeAnchors.js";
+import { deriveMoveAnchor, inSubtree, landingId } from "./writeAnchors.js";
 import {
 	renderOutlineFromWalk,
 	walkBlockTree,
@@ -188,6 +188,32 @@ export async function runMoveMode(
 	if (sameDoc && alreadyAtDest) {
 		return refusedEnvelope(
 			`block '${blockId}' already sits at the destination position — nothing to move`,
+		);
+	}
+	// Own-subtree guard (mirrors the doc-level self-descendant refusal): a
+	// move anchor places the block as the anchor's next sibling, so an
+	// anchor inside the moved block's own subtree re-parents the block
+	// into itself — the kernel mishandles exactly that ancestor class.
+	// The headingInWalk check above happily accepts a heading inside the
+	// block (it only checks doc membership), so the guard keys on the
+	// anchor the kernel will actually receive. The append kind needs no
+	// guard: its parent is the doc root, never inside the block's subtree.
+	// Cross-doc cannot collide either — the walks are different docs.
+	const anchorBlock =
+		anchor.kind === "move"
+			? destWalk.find((b) => b.id === anchor.previousID)
+			: undefined;
+	if (
+		sameDoc &&
+		anchorBlock !== undefined &&
+		inSubtree(
+			anchorBlock,
+			blockId,
+			new Map(destWalk.map((b) => [b.id, b] as const)),
+		)
+	) {
+		return refusedEnvelope(
+			`cannot move block '${blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
 		);
 	}
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;

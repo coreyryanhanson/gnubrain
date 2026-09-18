@@ -1929,6 +1929,105 @@ describe("block-level move", () => {
 		);
 	});
 
+	it("same-doc move into the block's own subtree is refused pre-dialog, zero kernel moves", async () => {
+		// c1 is a root-level container holding heading h2, whose section is
+		// [p-kid]. Moving c1 anchored after p-kid re-parents the container
+		// into itself — the ancestor class the kernel mishandles and the
+		// doc-level path refuses. headingInWalk accepts h2 (it IS a heading
+		// of the doc); the guard keys on the anchor the kernel receives.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "c1", content: "container" }],
+			childrenFor: {
+				"d-doc": [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("c1", "callout", "", "container"),
+				],
+				c1: [
+					walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
+					walkBlock("p-kid", "p", "", "kid", "c1", "callout"),
+				],
+				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			},
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "c1",
+			toDocId: "d-doc",
+			toHeadingId: "h2",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("inside the block's own subtree");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
+	it("same-doc move to an empty-section heading inside the block refuses too", async () => {
+		// h2 has no members: deriveMoveAnchor's empty-section arm anchors on
+		// the heading itself — which still sits inside c1, so the guard must
+		// fire on the heading-as-anchor shape as well.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "c1", content: "container" }],
+			childrenFor: {
+				"d-doc": [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("c1", "callout", "", "container"),
+				],
+				c1: [walkBlock("h2", "h", "h2", "Nested", "c1", "callout")],
+				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			},
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "c1",
+			toDocId: "d-doc",
+			toHeadingId: "h2",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("inside the block's own subtree");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
+	it("the own-subtree guard is directional: deep destinations outside the moved block proceed", async () => {
+		// h2 lives inside container c1; moving root-level h1 there is a
+		// legal deep move — the guard must not fire. The stub applies
+		// nothing, so the flow's position check reports the miss: proof the
+		// move reached the kernel instead of a false-positive refusal.
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "h1", content: "A" }],
+			childrenFor: {
+				"d-doc": [
+					walkBlock("h1", "h", "h1", "A"),
+					walkBlock("c1", "callout", "", "container"),
+				],
+				c1: [
+					walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
+					walkBlock("p1", "p", "", "kid", "c1", "callout"),
+				],
+				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			},
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "h1",
+			toDocId: "d-doc",
+			toHeadingId: "h2",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("landing position");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			1,
+		);
+	});
+
 	it("same-doc kernel no-op behind HTTP success: position check catches the misplacement", async () => {
 		// h1's section is [p1, p2]: moving p1 to its end anchors on p2. The
 		// stub never applies the move, so the post-move walk is unchanged —

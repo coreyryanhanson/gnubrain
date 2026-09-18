@@ -17,8 +17,10 @@ function headingLevel(block: WalkedBlock): number {
 
 /** True when `block` sits inside `ancestorId`'s subtree (its parent chain
  * reaches the ancestor). Missing parent ids (a vanished container) read as
- * outside — the fail-safe direction for placement checks. */
-function inSubtree(
+ * outside — the fail-safe direction for placement checks. Shared by the
+ * move flow's own-subtree guard: an anchor inside the moved block's own
+ * subtree would re-parent the block into itself. */
+export function inSubtree(
 	block: WalkedBlock,
 	ancestorId: string,
 	byId: ReadonlyMap<string, WalkedBlock>,
