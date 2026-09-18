@@ -26,13 +26,19 @@ your workspace, and every write is verified against the kernel afterward.
 
 ## Setup
 
-1. Run [SiYuan](https://siyuan.b3log.org) and enable its API.
-2. Add your connection and notebooks to `~/.pi/agent/settings.json`:
+1. Install the extension:
+
+   ```sh
+   pi install npm:gnubrain
+   ```
+
+2. Run [SiYuan](https://siyuan.b3log.org) and enable its API.
+3. Add your connection and notebooks to `~/.pi/agent/settings.json`:
 
    ```json
    {
      "gnubrain": {
-       "baseUrl": "http://192.168.100.1:6806",
+       "baseUrl": "http://127.0.0.1:6806",
        "apiToken": "<your API token>",
        "kbs": [
          { "name": "notes", "notebook": "20240101120000-abcdefg" }
@@ -42,9 +48,12 @@ your workspace, and every write is verified against the kernel afterward.
    }
    ```
 
-   `notebook` is the SiYuan notebook ID (shown in SiYuan's settings). You can
-   register multiple notebooks under different names.
-3. Start pi. GNUbrain validates the connection at startup and shows a status
+   `notebook` is the SiYuan notebook ID, found in SiYuan via the notebook's
+   ⋮ (kebab) menu → **Settings**. You can register multiple notebooks under
+   different names. The `apiToken` is found
+   in SiYuan under **Settings → Authentication → API token**. Project-level
+   settings (`.pi/settings.json`) may also set `defaultKBs`.
+4. Start pi. GNUbrain validates the connection at startup and shows a status
    indicator while you work.
 
 ## The `/kb` command
