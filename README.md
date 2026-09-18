@@ -10,6 +10,10 @@ GNUbrain turns a SiYuan workspace into a knowledge base your coding agent can
 query, search, read, and — with your confirmation — write to. Your notes stay
 in SiYuan, in standard notebooks, readable by any other tool.
 
+> [!WARNING]
+> This is the first release of the plugin and is not yet stable. Expect
+> breaking changes to settings and behavior between versions.
+
 ## How it works
 
 The extension registers four tools with pi:
