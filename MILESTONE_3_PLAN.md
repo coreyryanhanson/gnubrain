@@ -30,17 +30,18 @@ Design references below are §-sections of DESIGN_v2.md. Every sprint ends green
 
 ---
 
-## Landed — Sprints 1–3
+## Landed — Sprints 1–5
 
-Sprints 1–3 are complete (all unit ACs green: `npm test`, `npm run typecheck`,
-`npm run lint`; S3's final live-session AC executed successfully against the
-live kernel). This section records what landed and the deviations from the
+Sprints 1–5 are complete (all unit ACs green: `npm test`, `npm run typecheck`,
+`npm run lint`; the landed live pins — the smoke suite and the nine write-mode
+pins — also ran green against the live 3.8.4 kernel in the pre-5b verification).
+This section records what landed and the deviations from the
 original plan; the sprints below reference these deliverables by their
 original item numbers.
 
 | Item | Delivered |
 |---|---|
-| S1.1 Startup validation pipeline | Shape check → `getVersion()` probe (pinned `3.8.3`, strict match, per-test override seam) → `listNotebooks()`; shape failure degrades the session (rejection gate, not a crash); stale notebook warn-and-drop; encrypted-KB rejection (one branch, both lock states); call-level auth failure → empty valid set + breaker, network drop never counts; unreachable kernel → reads error per-call (bypass the cached verdict), writes probe-retry per attempt |
+| S1.1 Startup validation pipeline | Shape check → `getVersion()` probe (strict match, per-test override seam; pinned `3.8.4` — originally `3.8.3`, re-pinned per deviation 5) → `listNotebooks()`; shape failure degrades the session (rejection gate, not a crash); stale notebook warn-and-drop; encrypted-KB rejection (one branch, both lock states); call-level auth failure → empty valid set + breaker, network drop never counts; unreachable kernel → reads error per-call (bypass the cached verdict), writes probe-retry per attempt |
 | S1.2 Error envelope | Shared helper `{status: ok \| near_matches \| duplicate \| error \| refused, message, ...payload}`; `truncated`/`post_filtered` payload markers; success results echo resolved KB name(s) |
 | S1.3 `kb` param contract | Required everywhere; arrays on `kb_query`/`kb_search`, single name on `kb_read`/writes; unknown/not-in-scope/empty-array rejections with pinned messages |
 | S1.4 Scope resolution | Latest `kb-scope` `appendEntry` wins, else `defaultKBs` (project over global); absent key = empty set; full validator on global file, project file supplies `defaultKBs` only (stray key or non-array → degrade; unknown name → warn-and-drop (either file, at scope resolution), no fallback to global `defaultKBs`); injectable settings-load seam |
@@ -55,13 +56,24 @@ original item numbers.
 | S3.3 `kb_search` | Per-KB fan-out (`pageSize = RESULT_LIMIT`), merged in per-KB kernel order, post-filter backstop, `method: 0` tool-owned with aux params schema-rejected, row echo contract (`root_id`/`hpath` renamed from client) |
 | S3.4 Tool descriptions | Query description carries pinned `refs`/`blocks` schemas + semantics notes + include-`hpath` discovery pattern |
 | S3.5 `kb_read` | `exportMarkdown` (GFM only), ownership query doubles as scope check, `getChildBlocks` outline walk (depth-bounded, `OUTLINE_HEADINGS` cap with spill) |
-| S3.6 Read toolset + `/kb tools` | `defineToolset` with `persistKey: "toolset-state:gnubrain.read"`, default-enabled; `/kb tools` dispatcher (state-setter semantics: bare prints, `read` sets read-only, `off` disables; `write` verb falls through to usage until S5); bare `/kb` output carries the toolset-state line; status bar turns accent/blue |
+| S3.6 Read toolset + `/kb tools` | `defineToolset` with `persistKey: "toolset-state:gnubrain.read"`, default-enabled; `/kb tools` dispatcher (state-setter semantics: bare prints, `read` sets read-only, `off` disables; the `write` verb fell through to usage until the write toolset landed, S5.5); bare `/kb` output carries the toolset-state line; status bar turns accent/blue |
 | S3.7 `kbs` discovery name | `RESERVED_KB_NAMES` = `all` + `tools` + `kbs`, name-agnostic reservation message; `kb_read` with `kb: "kbs"` returns the active set with zero kernel calls (short-circuit ahead of breaker/cooldown, shape-refusal still applies); `docId` optional in `kb_read` schema, valid-`kb`/missing-`docId` refused with three-exit guidance; only `kb_read` carries the discovery form — `kb_query`/`kb_search` reject `kb: ["kbs"]` via the unknown-KB rejection |
+| S4.1 Write confirmation (§5) | `ctx.ui.confirm` always on for interactive sessions; headless (`pi -p`) default-deny unless `allowUnattendedWrites: true` (dialog skipped, write proceeds unattended); every confirm carries `writeConfirmTimeout` (default 60 s, `0` = indefinite) — the extension owns the timeout clock via `AbortSignal`, the native dialog auto-dismisses on abort, and `signal.aborted` distinguishes a real timeout from an explicit decline; `confirm_timeout` terminal for that write in that session (re-request → immediate refusal), explicit decline recoverable; every non-answer resolves to `refused` |
+| S4.2 File-path input (§4) | `markdown` XOR `markdownFile`; file read once at call start, the captured string drives guard → confirm → kernel → verify; missing / not-a-regular-file / unreadable → structured error naming the path, no kernel call; both/neither → shape error |
+| S4.3 Title guard (§4 R3) | Exact leg (`LIKE`, pattern from HTML-escaped title, `%`/`_` LIKE-escaped) then near-match scan (space/hyphen/underscore prefix variants, capped at 20 rows with `truncated` marker); single-notebook scope |
+| S4.4 Mint policy (§4) | Trim; structured rephrase-hint rejections (empty, `/`, >512 runes, tab/newline-control); HTML-special chars mint normally via escape parity; submission path built from ground truth (top-level `/<title>`, nested via stored parent hpath + `parentID`); no `confirmNew` in the declared schema |
+| S4.5 Verified-create (§4 R3) | By-ID asserts on the kernel-returned root ID; nested asserts re-read the parent and compare child hpath against the read-back stored title (ground truth, never the submitted title); stale parent → fail-loud structured error |
+| S4.6 Guard stops (§4) | One uniform `duplicate` stop for exact-leg rows, single- or multi-row alike: rows with `updated` + budgeted outlines + per-row full-markdown spill paths (single-row adds the block-ID echo for a straight `edit`) + `stagedPath` draft staging for inline bodies; message names the docIds and the `confirmNew: true` exit; `near_matches` stays excerpt-only (name variants are the clue, 20-row cap bounds the count); `confirmNew: true` bypasses both legs — confirmation + verified-create still apply |
+| S5.1 Modes (§4) | `edit` (`updateBlock` on agent-supplied `blockId`); `append` (boundary anchor: `insertBlock` `nextID` = first same-or-shallower sibling heading, else `appendBlock` to the section's container — the doc root for a doc-level heading; optional `placement: "section-start"` before the section's first deeper sibling heading, falling through to the section-end landing when every subsection sits inside a container); `replace-section` (one call: the section via the `getChildBlocks` document-order walk — never SQL; the sweep deletes the members; the closure (members + descendants) drives the confirmation display, fresh-content baselines and `invalidRefs`; insert-before-delete with the same anchor rule as `append`); `delete` (block or `doc: true` via `removeDocByID`; backlink check over the walk set in the confirmation); `move` (block-level with tool-derived destination anchor from the destination outline — end-of-section placement from the same section rule `append` reads, heading-anchored placement rejected as fold-state-dependent; omitted `toHeadingId` → destination doc end (`parentID` prepends — the defect — so `appendBlock`-on-root only when the destination is empty); `doc: true` via `moveDocsByID`; self-descendant pre-check; doc-level move also covers the un-nest case, omitted `toDocId` → `toID` = notebook ID). Anchors always tool-derived; targets agent-supplied from echoed data; replace-section and delete-bearing confirmations display the §4 delete-set payload (block count, trailing blocks' current content, inbound-ref count + referring hpaths), sharing the fresh-content baseline read |
+| S5.2 Write-result contract (§4) | Every doc-targeting result carries root `docId`, stored title, real `hpath`, fresh `outline` (cap applies to inline rendering only), `anchor` where placement-bearing, `newBlockId` extracted from `data[0].doOperations[0].id`, `invalidRefs` on delete-bearing writes; cross-doc block `move` adds `destOutline` + `movedBlockId` |
+| S5.3 Stale-target verification (§4) | Verified, not trusted: `newBlockId`/`movedBlockId` must appear in the post-write unfiltered walk-set diff (membership only at runtime — the single-block diff-of-exactly-one pin is 5b item 10's); `updateBlock` errors surface verbatim; delete of a missing block answers per kernel generation — 3.8.3 a success no-op with walk-set evidence, 3.8.4 a synchronous "tree not found" error surfaced verbatim with the fresh outline (unit-pinned both); same-doc doc-end move verifies *position* (the last top-level block), not walk-set presence — membership is trivially satisfied by a block already in the walk; silent rollbacks → `error` with fresh outline attached |
+| S5.4 Fresh-content precondition (§4) | Baseline content hash per targeted block (served content, or confirmation-displayed current content when none served); re-check after confirmation approval, before the kernel call; mismatch → `stale_content` refusal with current content + fresh outline, zero kernel write calls. Scope: `edit` and `replace-section` only |
+| S5.5 Write toolset + toggle (§5) | `defineToolset` `gnubrain.write` (`requires: ["gnubrain.read"]`, `defaultEnabled: true`, `persistKey: "toolset-state:gnubrain.write"`) — the dependency cascade makes live write-without-read toggling unrepresentable; settings pins do **not** cascade (pi-tool-masking restore applies each pin per-toolset, so a hand-pinned write-on + read-off is a reachable write-without-read state — accepted, backstopped by confirmation + headless default-deny); `/kb tools write\|read\|off` state-setter verbs (`write` sets read+write with reads cascading on; `read` from read+write lands read-only; `off` disables both; each verb no-ops when already in the target state); bare `/kb` output's toolset-state line covers both toolsets; status-bar healthy dot turns success/green with write enabled → accent/blue (or hollow if read is also masked, e.g. a `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/`restored` and after `session_tree` restore (text unchanged) |
 
 **Deviations from the plan as originally written** (all recorded, design +
 plan updated in the same changes):
 
-1. `/kb writes` (S5 item 5's planned top-level toggle verb) was replaced by
+1. `/kb writes` (S5's originally planned top-level toggle verb) was replaced by
    the `/kb tools` dispatcher (S3 item 6), following pi-lean-portal's `/web`
    state-setter pattern. Consequence: `RESERVED_KB_NAMES` = `all` + `tools`
    + `kbs`; `writes` is a legal KB name again.
@@ -126,248 +138,6 @@ plan updated in the same changes):
    reporting ok. The mock kernel's cascade-faithful delete mode
    (`cascadeDelete`) stays: the suite still pins the contract against the
    kernel's actual delete semantics.
-
-## Sprint 4 — Write-back part 1: confirmation + create flow
-
-The highest-stakes path, split across two sprints. This sprint: the
-confirmation gate and the `create` flow end to end. Registered name
-`kb_write` (§4 schema table pins the param shape: `kb`, `mode`, `markdown` XOR
-`markdownFile`, mode-specific targets).
-
-1. **Write confirmation (§5)** — `ctx.ui.confirm` always on for interactive;
-   headless (`pi -p`) default-deny unless `allowUnattendedWrites: true` (the
-   dialog is skipped; the write proceeds unattended);
-   RPC is not headless; every confirm carries `writeConfirmTimeout` (default
-   60 s, `0` = indefinite), every non-answer resolves to `refused`; timeout
-   expiry = `confirm_timeout`, terminal for that write in that session (re-request
-   → immediate refusal, no new dialog); explicit decline stays recoverable.
-   Timeout mechanism: the extension owns the timeout clock via `AbortSignal` —
-   `setTimeout(() => controller.abort(), writeConfirmTimeout * 1000)` (no timer when `0`),
-   passed as `ctx.ui.confirm(title, msg, { signal: controller.signal })`; the native dialog
-   auto-dismisses on abort, and `controller.signal.aborted` distinguishes a real timeout
-   from an explicit decline (pi's documented pattern — `examples/extensions/timed-confirm.ts`);
-   that `signal` options-bag is load-bearing for the terminal-timeout rule, so
-   smoke-verify `ctx.ui.confirm`'s signature against the installed pi types
-   before Sprint 4 starts (same posture as S3's pi-tool-masking verification):
-   `confirm_timeout` only when the signal fired, never inferring timeout from a `false`
-   resolution.
-2. **File-path input (§4)** — `markdown` XOR `markdownFile`; file read once at
-   call start, the captured string drives guard → confirm → kernel → verify;
-   missing / not-a-regular-file / unreadable → structured error naming the
-   path, no kernel call (§4 trust posture: "must exist, must be a regular
-   file", no path allowlisting); both/neither → shape error.
-3. **Title guard (§4 R3)** — exact leg (`LIKE`, pattern from HTML-escaped title,
-   `%`/`_` LIKE-escaped) then near-match scan (space/hyphen/underscore prefix
-   variants, capped at 20 rows with `truncated` marker); single-notebook scope.
-4. **Mint policy (§4)** — trim; reject empty / `/` / >512 runes /
-   tab-newline-control with structured rephrase-hint errors; HTML-special chars
-   mint normally via escape parity; submission path built from ground truth
-   (top-level `/<title>`; nested via stored parent hpath + `parentID`); no
-   `confirmNew` in the declared schema.
-5. **Verified-create (§4 R3)** — by-ID asserts on the kernel-returned root ID;
-   nested asserts re-read the parent and compare child hpath against the
-   read-back stored title (ground truth, never the submitted title); stale
-   parent → fail-loud structured error.
-6. **Guard stops (§4)** — one uniform `duplicate` stop for exact-leg rows,
-   single- or multi-row alike (per §4 step 1 with step 3's fold — a single exact
-   match is the same decision the agent faces, write into it or mint a
-   conscious sibling):
-   all rows with `updated` + budgeted outlines + per-row full-markdown spill
-   paths (grep-able side-by-side candidates; a single-row response
-   additionally echoes block IDs so the agent can go straight to `edit` by
-   blockId) + `stagedPath` draft staging for inline bodies; the message names
-   the docIds and the `confirmNew: true` exit. `near_matches` stays
-   excerpt-only — name variants are already the clue and the 20-row cap
-   bounds the count: candidates (docId, title, first paragraph, `updated`),
-   `stagedPath` draft staging, and the `confirmNew` message;
-   `confirmNew: true` bypasses both legs, confirmation + verified-create
-   still apply.
-
-### Acceptance criteria
-
-+ [ ] Unit: guard — exact leg matches ASCII-cased variants and HTML-special
-      titles via escape parity; near-match legs incl. the underscore leg; 20-row
-      cap + marker; `confirmNew` skip path; the unified exact-leg stop
-      (single-row and multi-row both return all rows + per-row spill paths;
-      single row adds the block-ID echo); param absent from the declared tool
-      schema (assert on the schema object) (§10).
-+ [ ] Unit: `kb_write` rejects `kbs` via the existing unknown-KB rejection
-      (no special case in the write path — the discovery name is never a
-      write target).
-+ [ ] Unit: mint-policy rejections — each with its message; verified-create
-      asserts incl. simulated stale parent failing loud (§10; §10's
-      guard→create race leg is deliberately folded here rather than given its
-      own case — it is only reachable in the mocked suite and its duplicate
-      lands in the accepted reconcilable class, §4 R3/R4, so verified-create's
-      by-ID asserts are all that observes it).
-+ [ ] Unit: write-confirmation branches — allow/refuse; cancelled and timed-out
-      confirms both refuse; `confirm_timeout` terminal (confirm mock fires
-      exactly once across both calls); explicit decline recoverable; timeout 0
-      issues an untimed confirm (§10).
-+ [ ] Unit: headless write default-deny (§5) — no-UI session with
-      `allowUnattendedWrites` absent or false → `refused` naming the enabling
-      setting, zero confirm calls and zero kernel calls on the request log;
-      `allowUnattendedWrites: true` → the write proceeds unattended (dialog
-      skipped per item 1).
-+ [ ] Unit: file-path input — missing file → error, zero kernel calls (request
-      log); read-once capture under mid-flow file mutation; XOR shape
-      validation on a content-bearing mode (create here; the
-      edit/replace-section/append legs land with Sprint 5's modes —
-      body-less `delete`/`move` carry neither and are valid) (§10).
-+ [ ] Unit: create-success echo — doc-level create results carry root `docId`,
-      stored title, real `hpath`, fresh `outline` (§4 R3 step 5; the full
-      write-result contract generalizes this in Sprint 5 item 2).
-+ [ ] Unit: guard-stop staging — `stagedPath` in the session spill dir,
-      byte-equal content, `markdownFile` retry message; exact-leg stop spills
-      each matching doc's markdown with per-row paths; near-match candidates
-      stay excerpt-only (no candidate spill); no staging when the
-      body already came from a file or on non-guard stops (§10).
-
----
-
-## Sprint 5 — Write-back part 2: remaining modes + write-result contract
-
-1. **Modes (§4)** — `edit` (`updateBlock` on agent-supplied `blockId` target),
-   `append` (tool-derived boundary anchor: `insertBlock` `nextID` = the first
-   same-or-shallower sibling heading, else `appendBlock` to the section's
-   container — the doc root for a doc-level heading; optional `placement`:
-   `section-start` inserts before the section's first deeper sibling heading,
-   falling through to the section-end landing when every subsection sits
-   inside a container), `replace-section` (one call: the section via the
-   `getChildBlocks` document-order walk — never SQL; the sweep deletes the
-   members, the confirmation display, fresh-content baselines and
-   `invalidRefs` read the closure (members + descendants);
-   insert-before-delete with the same anchor rule as `append` (`insertBlock`
-   `nextID` = the boundary, or `appendBlock` to the section's container —
-   headings are leaves, bare `parentID` is rejected); container-bounded
-   membership, same-or-shallower boundary; a doc-level final section sweeps
-   trailing content), `delete` (block or `doc: true` via `removeDocByID`;
-   backlink check over the walk set in the confirmation), `move` (block-level
-   with tool-derived destination anchor from the destination outline — the
-   section's last member (heading-recursed: a member heading with an empty
-   section is the anchor itself), end-of-section placement from the same
-   section rule `append` reads (§4: the section is the heading's following
-   siblings inside its own container, up to the first same-or-shallower sibling
-   heading), not "identical to append" by construction; heading-anchored placement rejected as
-   fold-state-dependent per §4 anchor rule; omitted `toHeadingId` →
-   destination doc end: `moveBlock` after the last root-level block
-   (`parentID` prepends — the defect), `appendBlock`-on-root only when the
-   destination is empty); `doc: true` via
-   `moveDocsByID`; self-descendant pre-check; intra-KB by
-   construction; doc-level move also covers the un-nest case (`toDocId`
-   omitted → `toID` = notebook ID). Anchors always tool-derived; targets
-   agent-supplied from echoed data. Replace-section and delete-bearing
-   confirmations display the §4 delete-set payload (block count, the trailing
-   blocks' current content, inbound-ref count + referring hpaths), sharing the
-   fresh-content baseline read of item 4.
-2. **Write-result contract (§4)** — every doc-targeting result carries root
-   `docId`, stored title, real `hpath`, fresh `outline` (cap applies to inline
-   rendering only), `anchor` where placement-bearing, `newBlockId` extracted
-   from `data[0].doOperations[0].id`, `invalidRefs` on delete-bearing writes;
-   cross-doc block `move` adds `destOutline` + `movedBlockId`.
-3. **Stale-target verification (§4)** — verified, not trusted: `newBlockId` /
-   `movedBlockId` must appear in the post-write unfiltered walk-set diff
-   (membership only at runtime — the tool accepts arbitrary markdown it does not
-   parse, so the single-block diff-of-exactly-one pin is the live suite's,
-   5b item 10); `updateBlock`
-   errors surface verbatim; `delete` of a missing block answers per the kernel
-   generation — 3.8.3 a success no-op with walk-set evidence, 3.8.4 a
-   synchronous "tree not found" error surfaced verbatim with the fresh outline
-   (unit-pinned both ways); silent rollbacks → `{status: error}` with fresh
-   outline attached.
-4. **Fresh-content precondition (§4)** — baseline content hash per targeted
-   block (served content, or confirmation-displayed current content when none
-   served); re-check after confirmation approval, before the kernel call;
-   mismatch → `stale_content` refusal with current content + fresh outline, no
-   kernel write. Scope: `edit` and `replace-section` only.
-5. **Write toolset + toggle (§5 tool-masking record)** — `defineToolset(pi, { id:
-   "gnubrain.write", names: new Set(["kb_write"]),
-   persistKey: "toolset-state:gnubrain.write",
-   defaultEnabled: true, requires: ["gnubrain.read"] })` — the pi-tool-masking
-   dependency cascade makes live write-without-read toggling unrepresentable
-   (enabling writes auto-enables reads; disabling reads cascades to disable
-   dependents). Settings pins do **not** cascade: pi-tool-masking's restore
-   applies each `toolsetDefaults` pin per-toolset without re-running the
-   `requires` cascade, so a hand-pinned write-on + read-off is a reachable
-   write-without-read state — accepted by design; masking is the outer layer
-   and confirmation + headless default-deny still backstop every write (§5).
-   Extends Sprint 3's `/kb tools` dispatcher
-   with the `write` verb: `/kb tools write` sets the read+write state
-   (enabling write cascades reads on via `requires`); `/kb tools read` —
-   already landed in Sprint 3 — gains its write-disable leg, so from the
-   read+write state it lands read-only (the portal `/web on` precedent:
-   enable one, explicitly disable the other); `/kb tools off` disables both
-   via read's disable + cascade. All tool toggling stays under `/kb tools`
-   (supersedes DESIGN §5's `/kb writes` verb — recorded as a deliberate M3
-   change); bare `/kb` output's
-   toolset-state line (landed with Sprint 3's read toolset) extends to the write
-   toolset. Status-bar integration: the
-   healthy dot turns success/green when the write toolset is enabled and back
-   to accent/blue (or hollow if the read toolset is also masked — e.g. a
-   `toolsetDefaults` pin) on mask, repainting on `TOOLSET_EVENTS.changed`/
-   `restored` so `/kb tools` verbs recolor mid-session, and repainting
-   again after `session_tree` restore (§5 status-bar record; text unchanged —
-   `● kb: <scope names>`).
-
-### Acceptance criteria
-
-+ [ ] Unit: move-anchor derivation — end-of-section anchor on a plain section,
-      nested-heading recursion (section ending in a subheading → after the subsection,
-      not inside it), trailing list/quote container anchor (placement at section level,
-      never nested into the container); fold-state independence (folded destination
-      heading does not change the anchor); same-doc move derives the anchor from the
-      already-in-hand outline (no extra kernel call) (§4).
-+ [ ] Unit: replace-section call order — mocked suite asserts insert precedes
-      delete; failed delete after successful insert leaves duplication, never
-      loss (§10).
-+ [ ] Unit: stale-target verification — insert with `newBlockId` absent from the
-      post-write walk set → `error`; edit kernel error verbatim; delete no-op
-      success with walk-set evidence (3.8.3) / synchronous error surfaced with
-      fresh outline (3.8.4), both pinned; cross-doc move missing from
-      destination walk set → `error` (§10).
-+ [ ] Unit: fresh-content precondition — baseline from served content;
-      no-baseline fallback reads + displays current content and approval
-      establishes the baseline; post-approval change → `stale_content` refusal,
-      zero kernel write calls on the request log; matching re-check proceeds;
-      replace-section baselines the delete set and the confirmation displays
-      it (§10).
-+ [ ] Unit: confirmation for a final-section replace displays the enumerated
-      delete set's block count + the trailing blocks' current content + inbound-ref
-      count and referring hpaths;
-      delete-bearing results carry `invalidRefs` (§10).
-+ [ ] Unit: write-result shapes — doc-level `delete` carries only
-      `invalidRefs`; doc-level `move` carries outline + title/hpath echo, no
-      `anchor`/`newBlockId`/`destOutline`; same-doc move collapses to
-      outline + anchor, with `movedBlockId` present (§10 pins it; §4 verifies
-      every move via it).
-+ [ ] Write-tool descriptions carry the pinned doctrine lines ("mint by
-      title… consume by ID", search ownership constraints), the §4
-      replace-first preference (prefer `edit`/`replace-section` over `append`;
-      append is for genuinely new facts), and the `kbs` mirror line ("the
-      discovery name `kbs` is read-only; writes always target a real KB by
-      name"), completing the description work started in Sprint 3 item 7.
-+ [ ] Unit: `/kb tools write` dispatch — sets the read+write state (write on
-      cascades reads on); `/kb tools read` from the read+write state lands
-      read-only (explicit write disable, portal `/web on` precedent);
-      `/kb tools off` disables both; each verb reports a no-op when already in
-      the target state; bare `/kb` output's toolset-state line covers both
-      toolsets (§10's `/kb`-toggle unit list, extended with the `tools` verbs
-      per item 5).
-+ [ ] Unit: write toolset declares `requires: ["gnubrain.read"]` — live-toggle
-      cascade legs: enabling writes cascades reads on; disabling reads cascades
-      writes off. Settings-pin boundary (no cascade at restore, pinned
-      behavior): a `toolsetDefaults` write-on pin with read unpinned leaves
-      both active via read's `defaultEnabled: true` (no cascade involved), and
-      a write-on + read-off pin pair produces the reachable write-without-read
-      state — asserted as the documented boundary, backstopped by
-      confirmation + headless default-deny (§5).
-+ [ ] Unit: status-bar capability colors — healthy + write toolset enabled →
-      success/green, write masked + read active → accent/blue, both masked →
-      `○ kb` hollow (incl. a masked read toolset — `toolsetDefaults` pin /
-      allowlist mode — not only our toggle), text identical across healthy
-      states; degraded (yellow) and unreachable (red) beat the healthy colors
-      in the precedence ladder; glyph repaints on `TOOLSET_EVENTS.changed`/
-      `restored` and after `session_tree` restore (§5).
 
 ---
 
@@ -596,15 +366,13 @@ stale-target contract pin, and real headless `/kb` dispatch.
 ## Dependencies & ordering
 
 ```text
-Sprints 1–3 (LANDED) ──► Sprint 4 (confirm + create) ──► Sprint 5 (write modes)
-Sprints 1–3 (LANDED) ─────────────────────────────────────┼──► Sprint 5b (integration)
-Sprint 5 (write modes) ───────────────────────────────────┘
+Sprints 1–5 (LANDED) ─────────────────────────────────────► Sprint 5b (integration)
 Sprint 5b ──► Sprint 6 (gate)
 (siyuan-kernel-api 0.3.1 already exact-pinned as of M1; its notebook-lifecycle
 and encrypted-notebook methods are exercised first by Sprint 5b's suite)
 ```
 
-Sprints 1–3 landed in sequence: the chassis first (breaker/cooldown gate —
+Sprints 1–5 landed in sequence: the chassis first (breaker/cooldown gate —
 everything else inherits it), then `/kb` + scope persistence and the read
 tools extending the single `register(pi, deps)` seam in `index.ts`, with S3
 item 6's `/kb`-command additions and S3's final live-scope AC gated on S2
