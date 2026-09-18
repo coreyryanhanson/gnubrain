@@ -168,9 +168,7 @@ function preOrderIds(root: FNode[]): { id: string; parentId: string | null }[] {
 type InsertExpect =
 	| { kind: "insert"; nextID: string }
 	| { kind: "append"; containerId: string | null };
-type MoveExpect =
-	| { kind: "move"; previousID: string }
-	| { kind: "append"; containerId: string | null };
+type MoveExpect = { kind: "move"; previousID: string };
 
 interface Row {
 	label: string;
@@ -499,9 +497,6 @@ describe("placement-map corpus", () => {
 			expect(move.kind).toBe(row.move.kind);
 			if (row.move.kind === "move" && move.kind === "move") {
 				expect(move.previousID).toBe(row.move.previousID);
-			}
-			if (row.move.kind === "append" && move.kind === "append") {
-				expect(move.containerId).toBe(row.move.containerId);
 			}
 		});
 	}

@@ -164,7 +164,6 @@ describe("move-anchor derivation", () => {
 		const anchor = deriveMoveAnchor([], undefined);
 		expect(anchor).toEqual({
 			kind: "append",
-			containerId: null,
 			anchor: "appendBlock(root) — doc end",
 		});
 	});
@@ -275,15 +274,11 @@ describe("landingId (kernel placement over the flattened walk)", () => {
 			walkBlock("p2", "p", "", "last top-level"),
 			walkBlock("c1", "p", "", "kid", "p2", "p"),
 		];
-		expect(
-			landingId(walk, { kind: "append", containerId: null, anchor: "" }),
-		).toBe("p2");
+		expect(landingId(walk, { kind: "append", anchor: "" })).toBe("p2");
 	});
 
 	it("append on an empty walk → undefined", () => {
-		expect(
-			landingId([], { kind: "append", containerId: null, anchor: "" }),
-		).toBeUndefined();
+		expect(landingId([], { kind: "append", anchor: "" })).toBeUndefined();
 	});
 });
 

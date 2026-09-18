@@ -114,7 +114,11 @@ export type AppendAnchor =
 
 export type MoveAnchor =
 	| { kind: "move"; previousID: string; anchor: string }
-	| { kind: "append"; containerId: string | null; anchor: string };
+	// Move's doc-end fallback is its own vocabulary: the only append-kind
+	// producer is docEndMoveAnchor's empty-destination branch, which carries
+	// no container — unlike AppendAnchor's append arm. Adding a container
+	// field here is the deliberate widening (and landingId's arm with it).
+	| { kind: "append"; anchor: string };
 
 export type AppendPlacement = "section-end" | "section-start";
 
@@ -201,11 +205,7 @@ export function deriveAppendAnchor(
 function docEndMoveAnchor(destWalk: WalkedBlock[]): MoveAnchor {
 	const lastRoot = destWalk.findLast((b) => b.parentId === null);
 	if (lastRoot === undefined) {
-		return {
-			kind: "append",
-			containerId: null,
-			anchor: DOC_END_ECHO,
-		};
+		return { kind: "append", anchor: DOC_END_ECHO };
 	}
 	return {
 		kind: "move",
@@ -264,21 +264,18 @@ export function deriveMoveAnchor(
  * sibling — the false-rollback bug this replaces); for a heading anchor —
  * which only `deriveMoveAnchor`'s empty-section branch produces — the
  * heading is a leaf, so the landing is the walk entry immediately after it.
- * The `append` kind's landing is the container's last child (null = the
- * document root's last child). Both runMoveMode checks (pre-move no-op
- * refusal, post-move verification) ask this function — never their own
- * walk arithmetic.
+ * The `append` kind's landing is the document root's last child. Both
+ * runMoveMode checks (pre-move no-op refusal, post-move verification) ask
+ * this function — never their own walk arithmetic.
  */
 export function landingId(
 	walk: WalkedBlock[],
 	anchor: MoveAnchor,
 ): string | undefined {
 	if (anchor.kind === "append") {
-		const last =
-			anchor.containerId === null
-				? walk.findLast((b) => b.parentId === null)
-				: walk.findLast((b) => b.parentId === anchor.containerId);
-		return last?.id;
+		// containerId is null by construction (docEndMoveAnchor) — the doc
+		// root's last child IS the end position.
+		return walk.findLast((b) => b.parentId === null)?.id;
 	}
 	const idx = walk.findIndex((b) => b.id === anchor.previousID);
 	if (idx < 0) return undefined; // vanished anchor — caller falls back
