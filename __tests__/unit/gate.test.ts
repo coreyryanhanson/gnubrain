@@ -522,7 +522,12 @@ describe("write gate", () => {
 		});
 		expect(envelope?.status).toBe("error");
 		expect(envelope?.message).toContain("auth rejected the request");
-		expect(breaker.failures).toBe(1);
+		// The probe's own 401 counted toward the threshold — two more
+		// failures trip it, not three.
+		expect(breaker.tripped).toBe(false);
+		breaker.recordAuthFailure();
+		breaker.recordAuthFailure();
+		expect(breaker.tripped).toBe(true);
 		expect(v.probe).toBe("unreachable");
 	});
 

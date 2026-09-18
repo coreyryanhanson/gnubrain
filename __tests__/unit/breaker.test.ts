@@ -80,7 +80,13 @@ describe("CircuitBreaker", () => {
 		breaker.recordRateLimit(new SiYuanRateLimitError(429, 300), NOW);
 		breaker.reset();
 		expect(breaker.tripped).toBe(false);
-		expect(breaker.failures).toBe(0);
+		// reset() cleared the count — it takes a full threshold again to trip.
+		for (let i = 0; i < BREAKER_THRESHOLD - 1; i++) {
+			breaker.recordAuthFailure();
+		}
+		expect(breaker.tripped).toBe(false);
+		breaker.recordAuthFailure();
+		expect(breaker.tripped).toBe(true);
 		// The cooldown self-heals on expiry alone — no /kb recovery for it.
 		expect(breaker.inCooldown(NOW)).toBe(true);
 		expect(breaker.inCooldown(NOW + 300_000)).toBe(false);
