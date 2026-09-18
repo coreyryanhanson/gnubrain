@@ -98,9 +98,6 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		breaker,
 		confirmState,
 		baselines,
-		...(deps.pinnedVersion !== undefined && {
-			pinnedVersion: deps.pinnedVersion,
-		}),
 	});
 
 	// Write toolset (tool-masking record): one tool, all mutation modes;

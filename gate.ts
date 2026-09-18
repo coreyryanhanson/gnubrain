@@ -230,10 +230,11 @@ export async function gateWriteAttempt(input: {
 	kernel: KernelProbeClient;
 	breaker: CircuitBreaker;
 	now?: number;
-	pinnedVersion?: string;
 }): Promise<Envelope | null> {
 	const { validation, kernel } = input;
-	const pinnedVersion = input.pinnedVersion ?? PINNED_SIYUAN_VERSION;
+	// The effective pin rides the validation (runSessionValidation resolves
+	// the per-test override); hand-built validations fall back to the constant.
+	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
 	if (validation.probe === "drift") {
 		return versionRefusalEnvelope(
 			validation.kernelVersion ?? "unknown",
@@ -337,7 +338,7 @@ export async function runKbCall(
 	) {
 		result.drift = driftWarning(
 			input.validation.kernelVersion,
-			PINNED_SIYUAN_VERSION,
+			input.validation.pinnedVersion ?? PINNED_SIYUAN_VERSION,
 		);
 	}
 	return result;

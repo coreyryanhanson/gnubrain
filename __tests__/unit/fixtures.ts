@@ -12,6 +12,8 @@ export function validation(overrides?: {
 	warnings?: string[];
 	probe?: SessionValidation["probe"];
 	kernelVersion?: string;
+	/** Per-test version-pin override — the effective pin rides the validation. */
+	pinnedVersion?: string;
 	/** Extra/overriding settings fields (timeouts, unattended writes, ...). */
 	settings?: Partial<SessionValidation["settings"]>;
 }): SessionValidation {
@@ -30,6 +32,9 @@ export function validation(overrides?: {
 		warnings: overrides?.warnings ?? [],
 		probe: overrides?.probe ?? "ok",
 		kernelVersion: overrides?.kernelVersion ?? "3.8.4",
+		...(overrides?.pinnedVersion !== undefined && {
+			pinnedVersion: overrides.pinnedVersion,
+		}),
 		validKBs: new Map(
 			overrides?.validKBs ?? kbs.map(({ name, notebook }) => [name, notebook]),
 		),

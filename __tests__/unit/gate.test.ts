@@ -181,6 +181,38 @@ describe("runKbCall version-drift warning", () => {
 		expect(envelope.drift).toContain("writes are refused");
 	});
 
+	it("both gates resolve drift against the validation's effective pin override", async () => {
+		const v = validation({
+			probe: "drift",
+			kernelVersion: "3.8.5",
+			pinnedVersion: "9.9.9",
+		});
+		const envelope = await runKbCall(
+			{
+				validation: v,
+				breaker: new CircuitBreaker(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, contact) => {
+				contact();
+				return { status: "ok", message: "2 rows" };
+			},
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.drift).toContain("9.9.9");
+
+		const refusal = await gateWriteAttempt({
+			validation: v,
+			kernel: kernelStub(async () => "3.8.5").client,
+			breaker: new CircuitBreaker(),
+			now: NOW,
+		});
+		expect(refusal?.status).toBe("refused");
+		expect(refusal?.message).toContain("9.9.9");
+	});
+
 	it("no drift field on a probe-ok session, and gateWriteAttempt still refuses writes statically", async () => {
 		const breaker = new CircuitBreaker();
 		const ok = await runKbCall(

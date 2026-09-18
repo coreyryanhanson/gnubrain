@@ -31,7 +31,7 @@ const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
 /** Live round-trips + fixture-mint polling run well past the unit budget. */
 const LIVE_TIMEOUT = 30_000;
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L6)", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () => {
 	const client = new SiYuanKernelClient(BASE_URL, TOKEN);
 	let notebookId = "";
 	let run = 0;
@@ -112,7 +112,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L6)", () =>
 
 	/** Fold state rides the heading's ial (`fold` attr) — invisible to the
 	 * walk, settable via the documented attr endpoint (raw fetch: the typed
-	 * client deliberately keeps the attr surface out, §10 posture). */
+	 * client deliberately keeps the attr surface out). */
 	async function setFold(blockId: string, fold: boolean): Promise<void> {
 		const res = await fetch(`${BASE_URL}/api/attr/setBlockAttrs`, {
 			method: "POST",
@@ -170,7 +170,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L6)", () =>
 	});
 
 	it(
-		"L2 (S5): append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
+		"L2: append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
@@ -232,7 +232,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L6)", () =>
 	);
 
 	it(
-		"L2 (S7): a move into a list-item-nested section lands inside the item; the sibling item survives",
+		"L2: a move into a list-item-nested section lands inside the item; the sibling item survives",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(

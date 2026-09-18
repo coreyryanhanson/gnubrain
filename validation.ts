@@ -41,6 +41,9 @@ export interface SessionValidation {
 	 * recovery resets the breaker only on this (a successful authenticated
 	 * call), not on a network-failed pass. */
 	lsNotebooksOk: boolean;
+	/** The effective version pin (per-test override or module constant) —
+	 * both gates resolve drift against this, never the module constant. */
+	pinnedVersion?: string;
 }
 
 /** scope persistence payload — a complete snapshot of the active set. */
@@ -98,6 +101,7 @@ export function degradedValidation(errors: string[]): SessionValidation {
 		shapeErrors: errors,
 		probe: "never-probed",
 		kernelVersion: undefined,
+		pinnedVersion: PINNED_SIYUAN_VERSION,
 		validKBs: new Map(),
 		scope: [],
 		defaultKBs: [],
@@ -189,6 +193,7 @@ export async function runSessionValidation(input: {
 			shapeErrors,
 			probe,
 			kernelVersion,
+			pinnedVersion,
 			validKBs,
 			scope: [],
 			defaultKBs: configuredDefault,
@@ -211,6 +216,7 @@ export async function runSessionValidation(input: {
 		shapeErrors,
 		probe,
 		kernelVersion,
+		pinnedVersion,
 		validKBs,
 		scope,
 		defaultKBs: configuredDefault,

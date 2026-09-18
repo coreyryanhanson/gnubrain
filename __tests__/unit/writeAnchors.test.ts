@@ -181,7 +181,7 @@ describe("move-anchor derivation", () => {
 	});
 
 	it("a member heading with an empty section is the anchor, even mid-section", () => {
-		// S15 shape: the section ends in a subheading with no content of its
+		// The section ends in a subheading with no content of its
 		// own — anchoring past it IS the end of the parent's section.
 		const walk = [
 			walkBlock("h1", "h", "h1", "A"),
@@ -193,7 +193,7 @@ describe("move-anchor derivation", () => {
 	});
 
 	it("a heading inside a container anchors within that container", () => {
-		// S5 shape: the section is container-local — the anchor is the last
+		// The section is container-local — the anchor is the last
 		// member inside the callout, never the doc-level blocks after it.
 		const walk = [
 			walkBlock("h1", "h", "h1", "Top"),
@@ -343,7 +343,7 @@ describe("deriveAppendAnchor", () => {
 	});
 
 	// placement: "section-start" — before the first deeper sibling heading;
-	// every fallback lands where the default would (S18-S20).
+	// every fallback lands where the default would.
 
 	it("section-start inserts before the first subsection, after the leading run", () => {
 		const walk = [
