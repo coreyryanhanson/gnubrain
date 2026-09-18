@@ -6,7 +6,7 @@ opinions.**
 
 Status: design complete — Milestones 0–2 are done (§11); implementation continues at
 Milestone 3. This document is the successor to DESIGN.md and fully supersedes it; it folds in the addressing, discovery, and title-policy
-revisions agreed in design review (decision records R1–R6, Appendix).
+revisions agreed in design review (decision records R1–R6, Appendix A).
 Provenance: decisions reached via a Socratic design interview plus adversarial review against
 GBrain and SiYuan primary sources (kernel claims verified against ~/siyuan; the
 discovery doctrine anchored against ~/gbrain skills/query + MEMORY_VERBS_v1); rationale
@@ -14,7 +14,7 @@ recorded inline. Client-side behavior claims pinned by the M2 integration profil
 recorded in the `siyuan-kernel-api` repo (client tests + integration.si.test.ts), not
 re-argued here.
 
-Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages) · [3 v1 scope & result budgets](#3-v1-scope--the-lean-agent-driven-loop) · [4 Write-back conventions](#4-write-back-conventions) · [5 Multi-KB config & scope state](#5-multi-kb-config--scope-state) · [6 Named ceilings](#6-named-ceilings-deliberate-simplifications) · [7 Access invariant](#7-access-invariant) · [8 Deployment topology](#8-deployment-topology) · [9 Risks](#9-risks) · [10 Testing posture](#10-testing-posture) · [11 Milestone rollout](#11-milestone-rollout) · [Appendix — decision ledger](#appendix--decision-ledger)
+Contents: [1 Goals](#1-goals) · [2 Architecture](#2-architecture--two-packages) · [3 v1 scope & result budgets](#3-v1-scope--the-lean-agent-driven-loop) · [4 Write-back conventions](#4-write-back-conventions) · [5 Multi-KB config & scope state](#5-multi-kb-config--scope-state) · [6 Named ceilings](#6-named-ceilings-deliberate-simplifications) · [7 Access invariant](#7-access-invariant) · [8 Deployment topology](#8-deployment-topology) · [9 Risks](#9-risks) · [10 Testing posture](#10-testing-posture) · [11 Milestone rollout](#11-milestone-rollout) · [Appendix A — decision ledger](#appendix-a--decision-ledger) · [Appendix B — M3 implementation deviations](#appendix-b--m3-implementation-deviations)
 
 ---
 
@@ -1822,7 +1822,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   live workspace. Two notebooks, not one: the multi-KB pins (multi-element `box IN (...)`,
   two-KB search sweeps, the OR-precedence aggregate) need a deterministic two-KB workspace —
   not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DML probes below touch only
-  fixture-created rows (and since 3.8.4 mutate nothing at all — deviation 9). The opt-in encrypted-notebook case mints its own encrypted +
+  fixture-created rows (and since 3.8.4 mutate nothing at all — Appendix B, deviation 9). The opt-in encrypted-notebook case mints its own encrypted +
   plain fixture pair and removes both via `removeNotebook`, so the post-run baseline
   stays zero strays. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
   typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
@@ -1836,7 +1836,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   **Execution order (summary of the pins scattered below)**: the search-shape case runs
   first (cheapest falsifier of the load-bearing request shape); every other
   kernel-dependent case follows; the auth-throttle case runs after all of them and ends
-  by waiting out the extended lock; the raw-DML hardening pin runs last (M3 plan
+  by waiting out the extended lock; the raw-DML hardening pin runs last (Appendix B,
   deviation 9 — since 3.8.4 it creates no desync; the position is kept as the
   §10-last slot) and follows the throttle's expired backoff; the encrypted-notebook
   case runs on the shared kernel like every other fixture case, gated behind the master
@@ -1986,7 +1986,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     signal, not a safety gate — the agent still decides) — the same test creates a block ref,
     runs the §4 backlink query (`SELECT DISTINCT root_id FROM refs WHERE
     def_block_id = ?`) under a bounded wait, and asserts the inbound ref is visible. The
-    live 5b probes corrected the contract's wording (M3 plan deviation 8): the derived
+    live 5b probes corrected the contract's wording (Appendix B, deviation 8): the derived
     `refs` index and the `blocks` content/hpath columns converge **asynchronously**
     (~2–3 s live), not synchronously — the sync contract holds for the tree endpoints
     (`getChildBlocks`, `exportMarkdown`'s hPath), which is why the doc-level move echo
@@ -2070,7 +2070,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     in-test wait is bounded by the last extension's own `Retry-After` and polling is
     impossible. Implemented and passing on live 3.8.3 in
     `~/siyuan-kernel-api/integration.si.test.ts` (opt-in `SIYUAN_INTEGRATION_THROTTLE=1`);
-  - query read-only end to end (superseded by the 3.8.4 hardening, M3 plan
+  - query read-only end to end (superseded by the 3.8.4 hardening, Appendix B,
     deviation 9): the original premise — a raw `DELETE` via `/api/query/sql`
     without `mode` mutates siyuan.db, requiring a reindex to bound the desync —
     died at 3.8.4: live probes show DML through the query endpoint is a silent
@@ -2155,7 +2155,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 
 ---
 
-## Appendix — decision ledger
+## Appendix A — decision ledger
 
 | Decision | Choice | Rejected alternative | Where |
 | --- | --- | --- | --- |
@@ -2202,6 +2202,142 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Multi-block markdown inserts | `newBlockId` = first insert operation's `id` from the returned transaction array (`data[0].doOperations[0].id`); kernel returns one representative ID; verification = walk-set diff | Membership-only check; asserting the predicted full ID set | §4, §10 |
 | Discovery recency echo | `updated` on every discovery row — data, not ordering | `ORDER BY updated DESC`; no recency signal | §3, §4, §5, §10 |
 | `confirmNew` escape hatch | Hidden from the input schema; bypasses both guard legs; confirmation + verified-create still apply | Declared optional param; exact leg unflaggable; user arbitration | §4, §10 |
+
+---
+
+## Appendix B — M3 implementation deviations
+
+Ledger of deviations taken during Milestone 3's implementation (sprints S1–S5b;
+`S<N>` item numbers refer to the M3 sprint breakdown — historical numbering; the
+sprint plan itself was retired once M3 landed). Each deviation was
+recorded with the design updated in the same change.
+
+1. `/kb writes` (S5's originally planned top-level toggle verb) was replaced by
+   the `/kb tools` dispatcher (S3 item 6), following pi-lean-portal's `/web`
+   state-setter pattern. Consequence: `RESERVED_KB_NAMES` = `all` + `tools`
+   + `kbs`; `writes` is a legal KB name again.
+2. The `kbs` discovery name (S3 item 7) was added post-S3: `kb_read` with
+   `kb: "kbs"` lists active KBs without touching the kernel, so the model
+   never has to guess KB names. The reservation error became name-agnostic.
+3. Implementation decisions worth keeping: `never-probed` is distinct from
+   `unreachable` in probe-verdict caching; `/kb` dispatch logic is a pure
+   function (`kbCommand.ts`) with side effects in the `index.ts` handler;
+   idempotent toggles report no-op and skip the `appendEntry` write;
+   `siyuan-kernel-api/errors.ts` optional-property widening (compat with
+   `exactOptionalPropertyTypes`) — recorded as a deliberate change to that
+   repo.
+4. **Walk scope correction (pre-5b)**: `walk.ts` recurses only into the
+   kernel's container types (`d/b/l/i/s/callout`, plus lute's `tabs`/`tab`; a
+   type the kernel's abbreviation map does not name nests too). Heading ids are
+   never recursed into: the kernel answers `getChildBlocks(headingId)` with the
+   heading's *section* (`treenode.HeadingChildren` — its following siblings up
+   to the next sibling heading of same-or-shallower level; that branch runs before the
+   kernel's container check), and every one of those blocks is already returned
+   by the loop over the container that owns the heading. Recursing into `h`
+   re-emitted each section block at the heading's depth and out of document
+   order: duplicate walk entries, duplicated `kb_read` outline lines for any
+   doc with subheadings, a doubled replace-section delete set (with repeated
+   `deleteBlock` calls), and corrupted move anchors (`nextID` search and
+   `landingId` read the first duplicate). The §3 walk contract is unchanged —
+   every block visited once, in document order — and the fix also drops the
+   walk to one `getChildBlocks` call per container instead of one per block.
+   The original "headings are leaves" phrasing was a
+   *mutation-parent* claim (the kernel's `CheckContainerParent` rejects
+   `parentID=<heading id>`) wrongly carried onto the read path. Confirmed against
+   the live 3.8.4 kernel and pinned by the heading-section fixtures in
+   `writeModes.test.ts` and the never-walk-a-heading pin in `tools.test.ts`.
+5. **Kernel re-pin to 3.8.4 (pre-5b)**: the workspace moved to 3.8.4 and the pin
+   followed (`validation.ts`). 3.8.4 executes block writes synchronously
+   (`PerformBlockOperation` drains the tx queue and holds the flush lock), which
+   closes the post-delete staleness the 3.8.3 queue ticker had (live-verified 0/3
+   stale immediate reads, was 5/5) and changes the delete contract the S4/S5 flows
+   were written against: a delete of a missing block is now a synchronous
+   "tree not found" error where 3.8.3 answered a success no-op — the delete flow
+   surfaces it verbatim with the fresh outline attached, the same stale-target
+   treatment edit/move already get (unit-pinned both kernel generations); an
+   insert/append whose anchor does not resolve now errors instead of rolling back
+   behind a success, so the verified-insert machinery is a backstop rather than the
+   only line. The design's §4 stale-target record and §10 stale-target/version-refusal
+   pins describe both generations.
+6. **Replace-section sweep targets the section's members (superseded by the
+   section primitive)**: the kernel's delete cascade removes a container's
+   tree descendants from the index with it (`transaction.go`'s
+   `RemoveBlockTreesByIDs`), so sweeping the slice's descendants explicitly
+   would error (synchronous "tree not found") behind a fully-successful
+   replace and false-report a partial apply. The interim forest-root filter
+   (`sweepTargets`) and the anchor-inside-swept-container refusal guard are
+   gone: membership is exact parentage (`sectionOf`'s members — the heading's
+   following siblings inside its own container), so every member is already a
+   forest root, and the insert anchor is the boundary (a sibling of the
+   target) or the container (the members' ancestor) — it can never land
+   inside a swept member, so the guard has nothing left to catch. The
+   closure (members plus descendants) still drives the confirmation display,
+   the fresh-content baselines and the invalidRefs check, and the sweep
+   verifies the replacement still stands in the post-write walk before
+   reporting ok. The mock kernel's cascade-faithful delete mode
+   (`cascadeDelete`) stays: the suite still pins the contract against the
+   kernel's actual delete semantics.
+7. **Stored-title form correction (5b)**: the guard's patterns were built
+   from the HTML-escaped title on the recorded premise that the kernel
+   stores the title IAL entity-escaped in `blocks.content`. The 5b title
+   round-trip probe showed the live 3.8.4 kernel stores doc titles
+   **verbatim** in `blocks.content` (`A & B`, `say "hi"`, `a < b > c` all
+   unescaped) — the escaped form lives only in the title IAL
+   (`blocks.ial`), which the guard does not query. Consequence: the escaped
+   exact/near legs never matched adversarial titles live (re-create minted
+   a silent second doc). `writeGuard.ts` now builds both legs from the
+   verbatim title (LIKE-escaping only `%`/`_`/`\`); §4's stored-form
+   record and the unit pins updated in the same change. The apostrophe's
+   verbatim storage (the old parity trap) and the §4 superset claim are
+   unchanged — the 512-rune boundary and HTML-special titles mint and
+   re-find as before, now for the simpler reason.
+8. **Derived-index convergence + doc-move echo correction (5b-c)**: the
+   live probes behind the write-side cases pinned the kernel's actual
+   post-write index behavior, which the original sync-flush phrasing
+   overstated for two columns. (a) The SQL `blocks` columns converge
+   **asynchronously** after block writes — `content` ~1.5–3 s, the derived
+   `refs` index ~2–3 s, `hpath` on doc-level `moveDocsByID` only after the
+   next index pass/reindex — while the tree endpoints (`getChildBlocks`,
+   `exportMarkdown`'s hPath) are synchronous. The fresh-content
+   precondition and the advisory backlink checks read the SQL surface, so
+   their protection window is bounded by that convergence, exactly the
+   TOCTOU class the §4 record already accepts; the pins assert bounded
+   convergence, not literal immediacy. (b) The doc-level move echo's
+   "real hpath" cannot ride the SQL column synchronously, so
+   `writeMove.ts` now sources the doc-level move echo's hpath from
+   `exportMarkdown` (live tree, immediate); (c) the doc-level
+   self-descendant pre-check's `parent_id` chain is a backstop only — live
+   `d` rows carry no `parent_id` (nesting is the hpath chain), and the
+   live kernel rejects ancestor moves synchronously ("Cannot move to this
+   location"), which the live pin asserts verbatim. (d) The kernel's
+   creation depth cap bites at hpath depth 8 both at creation and at
+   move-under-a-depth-7-destination; the live move case builds a 7-chain and pins
+   the move-time rejection.
+9. **Raw-DML hardening + execution-order enforcement (5b-d)**: two live
+   findings re-shaped §10's throttle/raw-DML item. (a) The raw-DELETE case's
+   premise — a raw DELETE via `/api/query/sql` without `mode` mutates
+   `siyuan.db`, requiring the reindex to bound the desync — died at 3.8.4:
+   live probes show DML through the query endpoint is a **silent no-op in
+   every mode** (single statement, `mode: "multiple"`; UPDATE included —
+   `code: 0`, row untouched, even a same-request DELETE-then-COUNT sees the
+   row). The endpoint is no longer a mutation vector, so the desync/reindex
+   machinery has no live trigger; the case now pins the hardening
+   (code-0-but-no-mutation in both modes) plus the tool-side rejection that
+   still holds, and the reindex trigger stays in the raw helper's surface
+   for the upgrade checklist. (b) The cross-file §10 execution order is
+   enforced mechanically: vitest's default sort is cache-driven (unknown
+   files by size, then previous-run duration, longest first), so the
+   ~8-minute throttle file would drift to the front of the queue and arm the
+   lock over the whole suite — `vitest.config.ts` now carries an ordered
+   sequencer pinning the §10 order (smoke → harness → headless → read →
+   write-modes → write-pins → throttle-last). The throttle wait itself was
+   corrected against the observed 3.8.4 ladder (lock starts at the 6th
+   fail, `30 << (FailCount - 5)` seconds, cap 15 min; the arming sequence
+   ends at FailCount 9 → 480s, with each served Retry-After understating
+   the final lock by one generation), and one bounded recovery wait covers
+   an external auth-fail source on the same IP re-arming the shared per-IP
+   lock during the blind wait (observed live once; the environment was
+   transiently noisy — the same run passed clean after the noise stopped).
 
 ---
 

@@ -3,7 +3,7 @@
 // the throttle lock window), the throttle pin runs after all other kernel
 // cases and ends by waiting out the extended lock, and the raw-DML hardening
 // pin runs last (since 3.8.4 it creates no desync — the position is the kept
-// §10-last slot; see MILESTONE_3_PLAN.md deviation 9). The cross-file
+// §10-last slot; see DESIGN_v2.md Appendix B, deviation 9). The cross-file
 // ordering that puts this file last lives in vitest.config.ts (OrderedSequencer).
 //
 // Opt-in: SIYUAN_INTEGRATION=1 for the file; the throttle case additionally
