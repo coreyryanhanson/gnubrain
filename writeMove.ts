@@ -34,9 +34,12 @@ function parentDocStmt(docId: string): string {
  * chain over type='d' rows; the source appearing means the destination is
  * the source or one of its nested descendants — the kernel silently filters
  * exactly that move (success, zero moves). Rejected here, never forwarded.
- * ponytail: assumes nested docs chain via parent_id on 'd' rows; if a
- * kernel change breaks the chain only the direct self-move is caught —
- * tighten the chain walk if the integration suite catches a nested case. */
+ * ponytail: assumes nested docs chain via parent_id on 'd' rows; live
+ * kernels leave parent_id empty on 'd' rows entirely (the hpath chain is the
+ * kernel's own nesting record) and reject ancestor moves synchronously
+ * ("Cannot move to this location"), so this walk is a backstop for a kernel
+ * that silently filters instead of erroring — the live suite pins the
+ * kernel's synchronous refusal. */
 async function isOwnDescendant(
 	kernel: WriteKernelClient,
 	sourceRootId: string,
@@ -123,6 +126,11 @@ export async function runMoveMode(
 		// "unreachable" — the move may already be applied (finishWrite doc).
 		return finishWrite(name, {}, async () => {
 			const tail = await echoTail(input, doc);
+			// blocks.hpath is a derived column the index rebuilds asynchronously
+			// after moveDocsByID (live-verified: still the pre-move value
+			// immediately after the move) — the echoed hpath comes from the live
+			// tree instead, so the "real hpath" contract holds synchronously.
+			const fresh = await kernel.exportMarkdown(doc.rootId);
 			// Pinned shape: outline + title/hpath echo, no anchor/newBlockId/
 			// destOutline (doc-level record).
 			return {
@@ -130,6 +138,7 @@ export async function runMoveMode(
 				message: `moved doc '${doc.title}' to ${destLabel} (KB ${name})`,
 				kb: name,
 				...tail,
+				hpath: fresh.hPath,
 			};
 		});
 	}

@@ -152,6 +152,28 @@ plan updated in the same changes):
    verbatim storage (the old parity trap) and the §4 superset claim are
    unchanged — the 512-rune boundary and HTML-special titles mint and
    re-find as before, now for the simpler reason.
+8. **Derived-index convergence + doc-move echo correction (5b-c)**: the
+   live probes behind the write-side cases pinned the kernel's actual
+   post-write index behavior, which the design's sync-flush phrasing
+   overstated for two columns. (a) The SQL `blocks` columns converge
+   **asynchronously** after block writes — `content` ~1.5–3 s, the derived
+   `refs` index ~2–3 s, `hpath` on doc-level `moveDocsByID` only after the
+   next index pass/reindex — while the tree endpoints (`getChildBlocks`,
+   `exportMarkdown`'s hPath) are synchronous. The fresh-content
+   precondition and the advisory backlink checks read the SQL surface, so
+   their protection window is bounded by that convergence, exactly the
+   TOCTOU class the §4 record already accepts; the pins assert bounded
+   convergence, not literal immediacy. (b) The doc-level move echo's
+   "real hpath" cannot ride the SQL column synchronously, so
+   `writeMove.ts` now sources the doc-level move echo's hpath from
+   `exportMarkdown` (live tree, immediate); (c) the doc-level
+   self-descendant pre-check's `parent_id` chain is a backstop only — live
+   `d` rows carry no `parent_id` (nesting is the hpath chain), and the
+   live kernel rejects ancestor moves synchronously ("Cannot move to this
+   location"), which the live pin asserts verbatim. (d) The kernel's
+   creation depth cap bites at hpath depth 8 both at creation and at
+   move-under-a-depth-7-destination; the 8b case builds a 7-chain and pins
+   the move-time rejection.
 
 ---
 

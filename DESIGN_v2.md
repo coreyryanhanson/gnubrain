@@ -1980,10 +1980,15 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     `refs` freshness: the §4 backlink checks (the `delete` confirmation, the
     `replace-section` confirmation, and the post-write `invalidRefs` echo all read
     the derived `refs` index) could undercount inbound refs under index lag (advisory
-    signal, not a safety gate — the agent still decides) — the same test creates a block ref, immediately
+    signal, not a safety gate — the agent still decides) — the same test creates a block ref,
     runs the §4 backlink query (`SELECT DISTINCT root_id FROM refs WHERE
-    def_block_id = ?`), and asserts the inbound ref is visible, pinning `refs` onto the
-    same sync-flush contract as `blocks`;
+    def_block_id = ?`) under a bounded wait, and asserts the inbound ref is visible. The
+    live 5b probes corrected the contract's wording (M3 plan deviation 8): the derived
+    `refs` index and the `blocks` content/hpath columns converge **asynchronously**
+    (~2–3 s live), not synchronously — the sync contract holds for the tree endpoints
+    (`getChildBlocks`, `exportMarkdown`'s hPath), which is why the doc-level move echo
+    sources its hpath from the export path (§4), and the precondition/backlink pins
+    assert bounded convergence rather than literal immediacy;
   - search scoping: correctly-scoped path (`paths`-derived narrowing, §3) plus a **shape
     assertion** for the backstop — a scoped call's results contain zero out-of-scope boxes
     and set no `post_filtered` flag. With layer-1 injection and `paths` scoping both correct,

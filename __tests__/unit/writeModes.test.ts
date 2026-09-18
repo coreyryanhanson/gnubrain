@@ -1905,7 +1905,10 @@ describe("block-level move", () => {
 		expect(move?.args).toEqual({ fromIDs: ["d-doc"], toID: "nb-r" });
 		expect(result.outline).toBeDefined();
 		expect(result.title).toBe("Docker Networking");
-		expect(result.hpath).toBe("/Docker Networking");
+		// The doc-level echo's hpath is export-sourced (the live kernel rebuilds
+		// the blocks.hpath column asynchronously after moveDocsByID — M3 plan
+		// deviation 8); the stub's exportMarkdown returns "/doc".
+		expect(result.hpath).toBe("/doc");
 		expect(result.anchor).toBeUndefined();
 		expect(result.newBlockId).toBeUndefined();
 		expect(result.movedBlockId).toBeUndefined();
