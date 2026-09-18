@@ -290,9 +290,10 @@ export function walkBlock(
 	type: string,
 	subType: string,
 	content: string,
-	depth = 1,
+	parentId: string | null = null,
+	parentType: string | null = "d",
 ): WalkedBlock {
-	return { id, type, subType, content, depth };
+	return { id, type, subType, content, parentId, parentType };
 }
 
 type Exec = (params: Record<string, unknown>) => Promise<{

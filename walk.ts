@@ -30,11 +30,58 @@ export async function renderOutline(
 	);
 }
 
+/** The container kinds a section-targeted write may anchor in
+ * (d/b/callout/i/l/s/tab) — the kernel's write-parent set
+ * (CheckContainerParent → IsContainerType). Anything else — `tabs`, an
+ * unnamed container — is refused by `headingInWalk` and renders
+ * `(not targetable)` in the outline. Targetability is a property of the
+ * immediate parent only, matching the kernel check it mirrors. */
+export const TARGETABLE_CONTAINER_TYPES: ReadonlySet<string> = new Set([
+	"d",
+	"b",
+	"callout",
+	"i",
+	"l",
+	"s",
+	"tab",
+]);
+
+/** Container prefix for one enclosing block, glued to the level marks:
+ * markdown-native symbols where the container exists in markdown (`>`
+ * quote, `-` list/item), the wire type's letter where SiYuan-specific
+ * (`c` callout, `s` superblock, `t` tab), and a bracketed token for the
+ * refused kinds (`[tabs]`, `[unnamed]`). No token contains `#`, so the
+ * trailing run of `#` before the first space is always the level. */
+function containerPrefix(c: WalkedBlock): string {
+	switch (c.type) {
+		case "b":
+			return ">";
+		case "callout":
+			return "c";
+		case "l":
+		case "i":
+			return "-";
+		case "s":
+			return "s";
+		case "tab":
+			return "t";
+		case "tabs":
+			return "[tabs]";
+		case "d":
+			return "";
+		default:
+			return "[unnamed]";
+	}
+}
+
 /** Outline rendering from a walk already in hand — write flows render the
  * result outline from the verification walk without a second traversal.
  * When baselines is passed, the served heading rows seed the fresh-content
  * baselines: outline lines carry content, and the walk's content IS
- * blocks.content (the kernel builds both via nodeStaticContent). */
+ * blocks.content (the kernel builds both via nodeStaticContent).
+ *
+ * Outline notation: level marks + the container prefix outermost-first +
+ * the `→ <id>` payload + `(not targetable)` on refused kinds. */
 export function renderOutlineFromWalk(
 	sessionId: string,
 	tool: string,
@@ -43,9 +90,32 @@ export function renderOutlineFromWalk(
 ): { outline: string; fullOutlinePath?: string } {
 	const headings = walk.filter((b) => b.type === "h");
 	if (baselines !== undefined) rememberServedRows(baselines, headings);
+	const byId = new Map(walk.map((b) => [b.id, b]));
 	const lines = headings.map((h) => {
 		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
-		return `${"  ".repeat(level - 1)}${h.content} → ${h.id}`;
+		// The enclosing container chain, innermost first, from exact parentage
+		// (headings are never recursed into, so every ancestor is a container).
+		const chain: WalkedBlock[] = [];
+		for (
+			let c = h.parentId ? byId.get(h.parentId) : undefined;
+			c;
+			c = c.parentId ? byId.get(c.parentId) : undefined
+		) {
+			chain.push(c);
+		}
+		// Rendered outermost-first; a list directly wrapping the item renders
+		// through the item's bullet, not a second one. Targetability reads the
+		// immediate parent only — the same block CheckContainerParent validates.
+		const prefixes: string[] = [];
+		for (let i = chain.length - 1; i >= 0; i--) {
+			const c = chain[i];
+			if (!c) continue;
+			// chain is innermost-first: the item inside this list sits at i-1.
+			if (c.type === "l" && chain[i - 1]?.type === "i") continue;
+			prefixes.push(containerPrefix(c));
+		}
+		const targetable = TARGETABLE_CONTAINER_TYPES.has(h.parentType ?? "");
+		return `${prefixes.join("")}${"#".repeat(level)} ${h.content} → ${h.id}${targetable ? "" : " (not targetable)"}`;
 	});
 	if (lines.length > OUTLINE_HEADINGS) {
 		const path = spillFile(
@@ -69,11 +139,11 @@ export interface WalkedBlock {
 	type: string;
 	subType: string;
 	content: string;
-	/** Container depth in the walk (root's direct children = 1). A heading
-	 * contributes no depth of its own (it is never recursed into), so its
-	 * section content sits at the heading's own depth — depth is what keeps
-	 * move-anchor derivation at section level. */
-	depth: number;
+	/** Enclosing block's id — null for the document root's children. The
+	 * exact ancestry fact: no consumer derives parentage from depth. */
+	parentId: string | null;
+	/** Enclosing block's type — "d" for the document root's children. */
+	parentType: string | null;
 }
 
 interface NestedBlock extends WalkedBlock {
@@ -89,8 +159,7 @@ interface NestedBlock extends WalkedBlock {
  * heading with its SECTION (following siblings up to the next heading of
  * same-or-higher level): every one of those blocks is already returned by
  * the loop over the container that owns the heading, so recursing into `h`
- * re-emits them at the heading's depth and out of document order. Leaving
- * headings out is what keeps `depth` a container depth. */
+ * re-emits them out of document order. */
 const CONTAINER_TYPES: ReadonlySet<string> = new Set([
 	"d",
 	"b",
@@ -120,6 +189,8 @@ async function walkBlockTreeNested(
 	rootId: string,
 	depth: number,
 	tolerateVanished: boolean,
+	parentId: string | null,
+	parentType: string | null,
 ): Promise<NestedBlock[]> {
 	if (depth > MAX_WALK_DEPTH) return [];
 	let children: Record<string, unknown>[];
@@ -140,7 +211,8 @@ async function walkBlockTreeNested(
 			type: String(child.type ?? ""),
 			subType: String(child.subType ?? ""),
 			content: String(child.content ?? ""),
-			depth,
+			parentId,
+			parentType,
 			children: [],
 		};
 		if (nests(node.type)) {
@@ -149,6 +221,8 @@ async function walkBlockTreeNested(
 				node.id,
 				depth + 1,
 				tolerateVanished,
+				node.id,
+				node.type,
 			);
 		}
 		nodes.push(node);
@@ -175,14 +249,18 @@ export async function walkBlockTree(
 		}
 	}
 	// Entry depth is always 1 (root's direct children); the recursion drives
-	// it deeper and WalkedBlock.depth feeds the anchor derivation. Exposing
-	// the entry depth would let a caller silently mis-anchor every block.
+	// it deeper and bounds the walk. Exposing it would let a caller silently
+	// truncate every walk. Every entry call roots at a document (the callers
+	// pass doc ids), so the root's children carry the document root's
+	// parentage: null id, type "d".
 	flatten(
 		await walkBlockTreeNested(
 			kernel,
 			rootId,
 			1,
 			opts?.tolerateVanished ?? false,
+			null,
+			"d",
 		),
 	);
 	return flat;

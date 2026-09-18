@@ -1,10 +1,13 @@
-// The replace-section flow: enumerate the section's delete set from the
-// document-order walk → refuse an anchor nested inside the delete set →
-// confirm (delete-set display) → insert-before-delete in one call, verified
-// against the post-write tree — a mid-sequence failure must cost visible
-// duplication, never loss.
+// The replace-section flow: enumerate the section (members + closure) from
+// the document-order walk → confirm (delete-set display) → insert-before-
+// delete in one call, verified against the post-write tree — a mid-sequence
+// failure must cost visible duplication, never loss.
 
-import { SiYuanApiError, SiYuanKernelError } from "siyuan-kernel-api";
+import {
+	SiYuanApiError,
+	SiYuanKernelError,
+	type BlockTransaction,
+} from "siyuan-kernel-api";
 import {
 	errorEnvelope,
 	markPartialReplace,
@@ -12,12 +15,7 @@ import {
 	type Envelope,
 	type PartialReplaceState,
 } from "./envelope.js";
-import {
-	deriveAppendAnchor,
-	enclosingMember,
-	sectionDeleteSet,
-	sweepTargets,
-} from "./writeAnchors.js";
+import { deriveAppendAnchor, sectionOf } from "./writeAnchors.js";
 import { walkBlockTree } from "./walk.js";
 import {
 	backlinkSummary,
@@ -48,29 +46,21 @@ export async function runReplaceSectionMode(
 	const walk = await walkBlockTree(kernel, doc.rootId);
 	const heading = headingInWalk(walk, doc, headingId);
 	if ("status" in heading) return heading;
-	const deleteSet = sectionDeleteSet(walk, headingId);
-	// The anchor heading must not nest inside a block the sweep deletes: the
-	// kernel inserts before it INSIDE that container, so the container's
-	// delete cascade would consume the replacement and the heading itself.
-	// Refused before the dialog, while the agent can re-target instead.
-	const anchor = deriveAppendAnchor(walk, heading);
-	if (anchor.kind === "insert") {
-		const enclosing = enclosingMember(
-			walk,
-			anchor.nextID,
-			new Set(deleteSet.map((b) => b.id)),
+	const deleteSet = sectionOf(walk, headingId);
+	if (deleteSet === undefined) {
+		return refusedEnvelope(
+			`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
 		);
-		if (enclosing !== undefined) {
-			return refusedEnvelope(
-				`cannot replace the section under heading '${heading.content}': the next heading ('${anchor.nextID}') sits inside block '${enclosing}', which the replace deletes — the sweep's cascade would delete that heading and the new body with it; replace the container's blocks individually instead`,
-				{ kb: name },
-			);
-		}
 	}
+	// The anchor is a sibling of the target (the boundary) or the target's
+	// container — never inside a member's subtree, so the insert can never
+	// land inside a block the sweep deletes (the kernel's cascade would
+	// consume the replacement and the heading itself).
+	const anchor = deriveAppendAnchor(walk, heading);
 	// The confirmation displays the enumerated delete set — block count,
 	// the trailing blocks' current content (spill budget applies), and the
 	// same backlink visibility `delete` carries.
-	const display = await deleteSetDisplay(kernel, sessionId, deleteSet);
+	const display = await deleteSetDisplay(kernel, sessionId, deleteSet.closure);
 	const summary =
 		`Replace the section under heading '${heading.content}' in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
 		`delete set: ${display.deleteSet.count} block(s)\n\n` +
@@ -88,14 +78,14 @@ export async function runReplaceSectionMode(
 	await establishBaselines(
 		kernel,
 		baselines,
-		deleteSet.map((b) => b.id),
+		deleteSet.closure.map((b) => b.id),
 	);
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,
-		deleteSet.map((b) => ({
+		deleteSet.closure.map((b) => ({
 			blockId: b.id,
 			baseline: baselines.servedHash(b.id),
 		})),
@@ -103,11 +93,30 @@ export async function runReplaceSectionMode(
 	);
 	if (stale !== null) return stale;
 	// insert-before-delete: a mid-sequence failure must cost visible
-	// duplication, never loss. Same anchor rule as `append`.
-	const tx =
-		anchor.kind === "appendRoot"
-			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
-			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
+	// duplication, never loss. Same anchor rule as `append`. The insert is
+	// the first mutation — a synchronous failure here is NOT a partial
+	// replace; it surfaces verbatim with the fresh outline attached
+	// (mirrors the edit flow), never as a bare error. Network classes
+	// rethrow for runKbCall's unreachable classification — correct here,
+	// the insert did not land.
+	let tx: BlockTransaction[];
+	try {
+		tx =
+			anchor.kind === "append"
+				? await kernel.appendBlock({
+						data: input.body,
+						parentID: anchor.containerId ?? doc.rootId,
+					})
+				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
+	} catch (err) {
+		if (!(err instanceof SiYuanApiError)) throw err;
+		const tail = await echoTail(input, doc);
+		return errorEnvelope(err.message, {
+			kb: name,
+			anchor: anchor.anchor,
+			...tail,
+		});
+	}
 	// Everything from here on is post-mutation — a drop anywhere in the
 	// insert verification, the delete sweep, or the echo must never read
 	// as "unreachable" while the insert has landed and the sweep may be
@@ -131,12 +140,13 @@ export async function runReplaceSectionMode(
 		// Rollback verified — the kernel-returned id is present in the
 		// post-write tree, so the partial-apply evidence can name it.
 		const landedId: string = newBlockId as string;
-		// Deletes ride the pre-enumerated set's forest roots — a post-insert
-		// re-enumeration would sweep the replacement into the delete set, and
-		// the descendants the kernel cascade already removed are never swept
-		// (a delete of a cascaded descendant is a synchronous tree-not-found
-		// error that would false-report a partial replace).
-		const sweep = sweepTargets(deleteSet);
+		// Deletes ride the pre-enumerated section members — a post-insert
+		// re-enumeration would sweep the replacement into the delete set.
+		// The members are siblings, so each is already a forest root: the
+		// kernel's cascade removes a container member's descendants with it,
+		// and sweeping those explicitly would error (tree not found) behind a
+		// fully-successful replace.
+		const sweep = deleteSet.members;
 		for (const [i, block] of sweep.entries()) {
 			try {
 				await kernel.deleteBlock(block.id);
@@ -185,11 +195,11 @@ export async function runReplaceSectionMode(
 				);
 			}
 		}
-		// invalidRefs: post-write echo over the
-		// enumerated delete set — what actually got orphaned, verified.
+		// invalidRefs: post-write echo over the section's closure — what
+		// actually got orphaned, verified.
 		const invalidRefs = await backlinkCheck(
 			kernel,
-			deleteSet.map((b) => b.id),
+			deleteSet.closure.map((b) => b.id),
 		);
 		// Verified, not trusted: the sweep's cascade must never have consumed
 		// the replacement (an anchor nested inside a swept container is
@@ -216,7 +226,10 @@ export async function runReplaceSectionMode(
 		]);
 		return {
 			status: "ok",
-			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
+			// The closure is what left the doc — the members the sweep deleted
+			// explicitly plus the descendants their cascade removed — the same
+			// count the confirmation displayed.
+			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.closure.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
 			kb: name,
 			anchor: anchor.anchor,
 			newBlockId,

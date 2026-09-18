@@ -13,7 +13,7 @@ const MODE_PARAMS: Record<string, string[]> = {
 	create: ["topic", "parentId"],
 	edit: ["docId", "blockId"],
 	"replace-section": ["docId", "headingId"],
-	append: ["docId", "headingId"],
+	append: ["docId", "headingId", "placement"],
 	delete: ["docId", "blockId", "doc"],
 	move: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
 };
@@ -67,6 +67,11 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 	if (p.docId === undefined) {
 		return `mode '${mode}' requires docId — an echoed root_id target`;
 	}
+	if (mode === "append" && p.placement !== undefined) {
+		if (p.placement !== "section-end" && p.placement !== "section-start") {
+			return `placement must be "section-end" or "section-start"`;
+		}
+	}
 	switch (mode) {
 		case "edit":
 			return p.blockId === undefined
@@ -103,7 +108,7 @@ function writeModeSummary(p: WriteParams): string {
 		case "edit":
 			return `Edit block ${p.blockId} in doc ${doc}`;
 		case "append":
-			return `Append to doc ${doc}${p.headingId === undefined ? " at doc end" : ` under heading ${p.headingId}`}`;
+			return `Append to doc ${doc}${p.headingId === undefined ? " at doc end" : ` under heading ${p.headingId}`}${p.placement === "section-start" ? " (section start)" : ""}`;
 		case "replace-section":
 			return `Replace the section under heading ${p.headingId} in doc ${doc}`;
 		case "delete":
@@ -190,6 +195,12 @@ export const writeSchema = Type.Object({
 		Type.String({
 			description:
 				'heading block ID from the outline — mode "replace-section" (required); mode "append" (optional, omitted → doc end)',
+		}),
+	),
+	placement: Type.Optional(
+		Type.String({
+			description:
+				'mode "append" only: "section-end" (default, end of the target section) or "section-start" (after the heading\'s leading content, before its first deeper sibling heading — a heading nested inside a container does not count, and with none the landing is identical to section-end)',
 		}),
 	),
 	doc: Type.Optional(

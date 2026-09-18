@@ -226,7 +226,7 @@ describe("verified-create", () => {
 		expect(r.docId).toBe("d-new");
 		expect(r.title).toBe("Docker Networking");
 		expect(r.hpath).toBe("/Docker Networking");
-		expect(r.outline).toContain("Heading → h1");
+		expect(r.outline).toContain("# Heading → h1");
 	});
 
 	it("child row missing after create → fail-loud after the bounded re-reads", async () => {

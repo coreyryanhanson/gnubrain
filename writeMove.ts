@@ -182,7 +182,9 @@ export async function runMoveMode(
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
 	try {
-		if (anchor.kind === "appendRoot") {
+		if (anchor.kind === "append") {
+			// Empty destination: moveBlock's parentID branch prepends, which
+			// IS the end position when there is nothing to be after.
 			await kernel.moveBlock({ id: blockId, parentID: dest.rootId });
 		} else {
 			await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
@@ -220,7 +222,7 @@ export async function runMoveMode(
 		// the position unverifiable — fall back to presence rather than
 		// false-failing on a check that can no longer run.
 		const anchorPresent =
-			anchor.kind === "appendRoot" ||
+			anchor.kind === "append" ||
 			postSourceWalk.some((b) => b.id === anchor.previousID);
 		// Same-doc with a present anchor: position. Otherwise (cross-doc, or
 		// a vanished anchor — the walk IS the same-doc destination) block IDs
@@ -242,7 +244,7 @@ export async function runMoveMode(
 			if (!postDestIds.has(blockId)) why = "absent from the destination tree";
 			else if (sameDoc && !movedInDest)
 				why =
-					anchor.kind === "appendRoot"
+					anchor.kind === "append"
 						? "present but not the doc's last top-level block"
 						: "present but not at its landing position after the anchor";
 			return errorEnvelope(

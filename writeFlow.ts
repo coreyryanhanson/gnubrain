@@ -11,6 +11,7 @@ import {
 } from "./envelope.js";
 import { previewAtNewline, spillFile } from "./spill.js";
 import { ownershipStmt, sqlString } from "./kernel.js";
+import { TARGETABLE_CONTAINER_TYPES } from "./writeAnchors.js";
 import type { WalkedBlock } from "./walk.js";
 import type { ContentBaselines } from "./baselines.js";
 import type { SessionValidation } from "./validation.js";
@@ -139,18 +140,34 @@ export async function blockInDoc(
 /** The pinned rejection when a heading id is absent from the doc walk.
  * Same class as blockInDoc's foreign-block refusal: a target id that fails
  * the doc's own membership check is refused before any kernel call (doc-
- * level resolution is the `error` case, matching the status table). */
+ * level resolution is the `error` case, matching the status table).
+ *
+ * A heading whose container the kernel does not accept as a write-parent
+ * (appendBlock/moveBlock accept d/b/l/i/s/callout/tab) is refused here too:
+ * a section target inside `tabs` or an unnamed container (wire type "",
+ * e.g. a footnote definition) would place the write in a container the
+ * kernel rejects. */
 export function headingInWalk(
 	walk: WalkedBlock[],
 	doc: DocTarget,
 	headingId: string,
 ): WalkedBlock | Envelope {
 	const heading = walk.find((b) => b.id === headingId && b.type === "h");
-	return heading === undefined
-		? refusedEnvelope(
-				`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-			)
-		: heading;
+	if (heading === undefined) {
+		return refusedEnvelope(
+			`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+		);
+	}
+	if (!TARGETABLE_CONTAINER_TYPES.has(heading.parentType ?? "")) {
+		const container =
+			heading.parentType === "" || heading.parentType === null
+				? "an unnamed container"
+				: `a '${heading.parentType}' container`;
+		return refusedEnvelope(
+			`headingId '${headingId}' (${heading.content}) sits inside ${container}, which the kernel does not accept as a write-parent — not a targetable heading; re-target a heading in the doc, a quote, a list, a superblock, a callout or a tab`,
+		);
+	}
+	return heading;
 }
 
 /** Verified, not trusted: a kernel-returned insert id counts as landed

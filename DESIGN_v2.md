@@ -299,20 +299,34 @@ default and the per-KB search `pageSize`) and one helper.
   documented `/api/block/getChildBlocks` (API.md "Get child blocks") called with the
   doc's root block ID — it walks the kernel's AST and returns `{id, type, subType}`
   children **in document order**, with `subType: h1–h6` supplying heading depth; the
-  extension filters `type = 'h'` and renders indented `content → id` lines, walking
+  extension filters `type = 'h'` and renders level marks + the container prefix
+  outermost-first + the `→ <id>` payload, glued to the level marks (`# Heading → id`;
+  `>` quote, `-` list item, `c` callout, `s` superblock, `t` tab; `[tabs]`/`[unnamed]`
+  are our bracketed notation for the refused kinds, named in the tool description's
+  legend line). The first space divides placement notation from the title — nothing
+  before it is content, and no prefix token contains `#`, so the trailing run of `#`
+  before that space is always the level. Targetability is a property of the
+  **immediate parent only** — the block the kernel's `CheckContainerParent` validates
+  (a heading under `tabs > tab` is targetable; its parent is the pane) — and a heading
+  whose immediate parent is `tabs` or an unnamed container renders `(not targetable)`
+  — the same refusal §4's
+  `headingInWalk` enforces, visible where the agent reads — walking
   container children recursively (bounded by an extension-owned recursion depth —
   note the §4 7-level cap is the *doc-tree depth* limit, a different axis: it counts
   `/` separators in the hpath, and the kernel imposes no cap on block-container
   nesting within a doc, so this bound is ours and exists to keep the walk finite) to
   catch headings nested under lists/quotes. **Heading ids are never recursed into**: the
   kernel answers `getChildBlocks(headingId)` with the heading's *section* — its following
-  siblings up to the next heading of same-or-higher level (`treenode.HeadingChildren`),
+  siblings up to the next sibling heading of same-or-shallower level (`treenode.HeadingChildren`),
   a branch that runs before the kernel's container check — and every one of those
   blocks is already returned by the loop over the container that owns the heading, so
   recursing into `h` would re-emit them at the heading's depth and out of document
   order. Recursion follows the kernel's container types (`d/b/l/i/s/callout`, plus
   lute's `tabs`/`tab`), which is also what keeps the walk at one `getChildBlocks` call
-  per container instead of one per block. The heading filter applies to rendering only —
+  per container instead of one per block. Every walked block carries exact
+  parentage — `parentId`/`parentType`, the enclosing container (the document
+  root's children read `null`/`"d"`) — the ancestry fact the §4 section
+  primitive reads; no consumer re-derives structure from a nesting counter. The heading filter applies to rendering only —
   the walk visits every child block, and the tool retains the walk's unfiltered ID set as
   the evidence for the §4 stale-target verification. The
   root block ID is the echoed `docId` itself (a SiYuan doc's root block ID *is* its doc
@@ -642,8 +656,9 @@ for the identity property.
      **insert-before-delete** (no kernel
      transactions on the documented surface; a mid-sequence failure must cost visible
      duplication, never loss): insert the new body first with the same anchor rule as
-     `append` — `insertBlock` with `nextID` = the next heading's block ID (or
-     `appendBlock` on the doc root for the final section); a bare
+     `append` — `insertBlock` with `nextID` = the section's boundary (the first
+     same-or-shallower sibling heading, inside the target's own container), or
+     `appendBlock` to the section's container when the section runs to its end; a bare
      `parentID=<heading id>` insert is rejected by the container check the doc itself
      documents (a heading is not a valid insertion *parent* — the kernel's
      `CheckContainerParent` rejects `parentID=<heading id>`; `getChildBlocks` still
@@ -657,19 +672,24 @@ for the identity property.
      section's block IDs are enumerated by the §3 `getChildBlocks` document-order walk
      before the insert, never by SQL** — §3's superseded-outline record proves SQL
      enumeration breaks on edited docs — and this is the *delete set* of the preferred
-     write mode. The section slice runs from the
-     target heading to the next heading of same-or-shallower depth: blocks after the
-     target heading up to (not including) that boundary heading — deeper headings (an
-     h3 under an h2 target) belong to the section and are deleted with it. **Final
-     section (no boundary heading): the slice runs to end of doc, so trailing
+     write mode. The section slice is container-bounded: the target heading's
+     following siblings **inside the target's own container**, up to (not including)
+     the first sibling heading of same-or-shallower depth — deeper headings (an
+     h3 under an h2 target) belong to the section and are deleted with it, and
+     blocks past the container are never members. **Final
+     section (no boundary heading): the slice runs to the container's end — the
+     document root for a doc-level heading, so trailing
      non-heading content after the last heading is deleted with the section** — the
      excluded-content alternative is rejected: the replacement would then append at doc
      end *after* the surviving fragments, which sit under a section the agent believes
      it fully rewrote. Because the inline outline is heading-only (§3), trailing content
      is otherwise invisible at decision time — which would make the sweep the one place
      a write destroys content the agent never saw, so the write confirmation displays
-     the enumerated delete set's block count, **the delete set's current content** —
-     including the final section's trailing blocks (one
+     the closure's block count, **the swept content** — the confirmation display, the
+     fresh-content baselines, the backlink checks and the ok echo all read the section's
+     **closure** (members plus every descendant — the delete cascade's full reach: that
+     closure is exactly what leaves the doc) while the
+     sweep itself deletes only the members, including the final section's trailing blocks (one
      content read over the enumerated IDs — the same read the fresh-content
      precondition's baseline uses, below, so the visibility costs no second query;
      display rides the §3 spill budget — content past `PREVIEW_CHARS` spills to the
@@ -677,7 +697,8 @@ for the identity property.
      the same backlink visibility the
      `delete` mode's confirmation carries: the `delete` mode's `refs` query (§4,
      `SELECT DISTINCT root_id FROM refs WHERE def_block_id IN (...)`) runs over every
-     ID in the walk-enumerated delete set, and the confirmation carries the
+     ID in the section's closure (members plus their descendants — the delete
+     cascade's reach), and the confirmation carries the
      inbound-ref count plus referring doc hpaths. The asymmetry this closes: the
      heading ID survives (below), but refs into the section's *content* blocks — the
      same citation surface `edit`'s `blockId` is sourced from — point at IDs the
@@ -698,18 +719,24 @@ for the identity property.
      section, §3) — the kernel's
      `appendBlock` requires a *container* parent and rejects `parentID=<heading id>`
      outright — so "insert under a heading" is mechanically insert-with-anchor, and the
-     anchor rule is pinned: **`insertBlock` with `nextID` = the *next heading's* block ID**
-     (computable from the heading-only outline; the kernel skips the container check when
+     anchor rule is pinned: **`insertBlock` with `nextID` = the section's *boundary* —
+     the first same-or-shallower sibling heading — never the next heading at any
+     level** (a deeper heading belongs to the section; the kernel skips the container
+     check when
      `previousID`/`nextID` is set — `api/block_op.go`). Anchoring `previousID` after a
      section's last block instead would nest the new block *inside* a list/quote ending
-     that section (insert is AST-sibling placement). Final section (no next heading) →
-     `appendBlock` with the doc root as parent. **Divergence from the kernel's own
+     that section (insert is AST-sibling placement). No boundary (the section runs to
+     its container's end) → `appendBlock` to that container — the doc root for a
+     doc-level heading. **Divergence from the kernel's own
      suggestion (deliberate)**: the container-check rejection text (`blocktree.go:511`)
      recommends `previousID=<heading id> or previousID=<last block below the heading>`;
      both are rejected here — the first lands the block *before* the section's existing
-     body (top-of-section placement, wrong for appending), and the last-block variant is
-     not computable from the heading-only outline without a non-heading enumeration per
-     append. `nextID=<next heading>` gives exact end-of-section placement from data the
+     body (top-of-section placement, wrong for appending), and the last-block variant
+     re-derives section membership per append instead of reading the boundary off the
+     one section primitive the walk feeds (§4 anchor rule: the section is the
+     heading's following siblings inside its own container, up to the first
+     same-or-shallower sibling heading).
+     `nextID=<boundary>` gives exact end-of-section placement from data the
      tool already has and sidesteps the list-nesting trap; implementers cross-checking
      kernel source should not "correct" this back to the error text's idiom. This is the second reason the inline
      outline exists: addressing *and* anchoring.
@@ -742,24 +769,32 @@ for the identity property.
      deleted source blocks — the exact §4 no-whole-doc-rewrites hazard at block granularity;
      `moveBlock` preserves block IDs, so provenance survives the move). **Anchor rule
      (decision record, kernel-source verified)**: with a `toHeadingId`, the anchor is
-     the **last top-level node of that heading's section**, derived from the destination
-     outline already in hand — last child is itself a heading → step into it, repeat
-     (§3 recursion bound applies); `moveBlock` with `previousID` = that node → exact
-     end-of-section placement, **semantics identical to `append`'s `nextID` idiom** (§4
-     append anchor rule), so "into a section" means end-of-section for both write
-     vehicles and the agent holds one doctrine. Two reasons not to anchor on the heading
+     the **last node of that heading's section**, derived from the destination
+     outline already in hand — the last member is itself a heading → step into it,
+     repeat until the recursion lands on a heading whose own section is empty (the
+     anchor itself) or a non-heading; `moveBlock` with `previousID` = that node → exact
+     end-of-section placement. This is the same section rule `append`'s boundary
+     anchor reads — one membership/placement definition shared by every mode (the
+     section of a heading is its following siblings inside its own container, up
+     to the first same-or-shallower sibling heading), not two idioms that happen to agree. Two reasons not to anchor on the heading
      itself (`previousID = <heading>`): it places the block *first* under the heading
      (top-of-section), and the kernel's folded-heading branch (`doMove`,
-     `transaction.go:645-650`) silently jumps past the section children when the
-     destination heading is folded — heading-anchored placement is fold-state-dependent,
-     i.e. nondeterministic from data the outline carries. Same-doc moves derive the
+     `transaction.go:663`) silently jumps past the section children when the
+     destination heading is folded **and has children** — heading-anchored placement is fold-state-dependent,
+     i.e. nondeterministic from data the outline carries (a heading with an empty
+     section is the anchor itself: the fold branch has nothing to jump past). Same-doc moves derive the
      anchor from the source doc's own outline (already in hand for the result echo) —
      no extra kernel round-trips. The kernel has no `nextID` for moves (only
      `insertBlock` honors it — `doMove` never reads `operation.NextID`), so the
      insert-style "before next heading" idiom is inexpressible; end-of-section via the
      last-node anchor is the equivalent reachable through `moveBlock`. Omitted
-     `toHeadingId` → destination doc end (`appendBlock`-on-root fallback, same default as
-     `append`).
+     `toHeadingId` → destination doc end: `moveBlock` with `previousID` = the
+     destination's last root-level block (`moveBlock`'s `parentID` branch *prepends* —
+     the defect a doc-end move must avoid), and `appendBlock` on the doc root only
+     when the destination is empty (nothing to anchor after; the prepend IS the end
+     position — a branch the unit suite pins; the live kernel never leaves a doc
+     childless, so a blank destination carries one empty paragraph and the tool
+     anchors `previousID` after it, landing at the doc's end all the same).
    - **`move` with `doc: true` (doc-level, decision record)** — moves the whole source doc
      under a new parent via **`/api/filetree/moveDocsByID`** (`fromIDs: [<sourceRootID>]`,
      `toID: <destination doc's docId>` — a parent doc — or the notebook ID when `toDocId`
@@ -812,7 +847,7 @@ union, one read, and zero tool-side state.
 | `create` | optional `parentId` (echoed docId → nested mint, R3), optional `confirmNew` — **not declared in the tool's input schema** (discovered only via rejection/duplicate response messages, §4 decision record) | flows through flow steps 1–2 (title guard: exact leg + near-match scan) and mint-policy step 4 (verified-create); `confirmNew: true` bypasses the entire guard — both legs, including an exact-title match (a flagged re-mint is a conscious duplicate, the reconcilable class) — write confirmation and verified-create still apply |
 | `edit` | `docId`, `blockId` | `docId` scopes and targets the doc (ownership query); `blockId` is an agent-supplied *target*, read off the inline outline or the `query` tool; a target is not an anchor — `previousID`/`nextID`/`parentID` anchors stay tool-derived (above) |
 | `replace-section` | `docId`, `headingId` | one tool call — the tool enumerates → inserts → deletes internally (above) |
-| `append` | `docId`, optional `headingId` | omitted → doc end (`appendBlock` on the doc root); with a heading → tool derives the `nextID` anchor from the outline |
+| `append` | `docId`, optional `headingId`, optional `placement` (`section-end` default; `section-start` — `append` only) | omitted heading → doc end (`appendBlock` on the doc root); with a heading → the tool derives the anchor from the section (the section-end rule: `nextID` at the boundary, else `appendBlock` to the section's container); `section-start` inserts after the heading's leading run, immediately before its first deeper sibling heading — a subsection nested inside a container is not a sibling, so there it falls through to the section-end landing |
 | `delete` | `docId`, plus `blockId` **or** `doc: true` | block-level = `deleteBlock`; `doc: true` = whole-doc delete via the documented `/api/filetree/removeDocByID` (the by-ID endpoint, no path shapes); the backlink check rides the write confirmation (§4 `delete` mode) |
 | `move` | `docId`, plus `blockId` **or** `doc: true`, `toDocId` (destination doc; omitted on `doc: true` → notebook root), optional `toHeadingId` (block-level only) | destination addressed by echoed docId (ownership-checked like every doc target); same-doc move = `toDocId` naming the source doc; the tool fetches the *destination* outline and derives the anchor — never agent-supplied (§4 `move` decision record); `doc: true` = doc-level move via `/api/filetree/moveDocsByID` (§4 doc-level decision record) |
 
@@ -935,7 +970,8 @@ tool's job — the same verified-not-trusted doctrine as `newBlockId`:
   approved the write with the current bytes in view.
 - **Precondition**: immediately before the kernel call (after confirmation approval),
   the tool re-reads the targeted content and compares hashes — for `edit`, the target
-  block; for `replace-section`, the walk-enumerated delete set's content. Any mismatch →
+  block; for `replace-section`, the section's closure's content (members plus
+  descendants — the delete cascade's reach). Any mismatch →
   `{status: refused, reason: stale_content}` with the current content and fresh
   outline attached, no kernel write fired; the agent re-reads and re-targets. The
   message says the content changed since it was last seen and names the re-read path —
@@ -973,17 +1009,21 @@ every follow-up read/write/move; title and hpath are display only, not an addres
   not an agent discipline rule: a stale outline cannot be relied on because the fresh
   one always arrives with the write result, and chained writes (`append` → `edit` →
   `replace-section`) need zero re-reads between links.
-- **`anchor`** — the placement the tool resolved (e.g. `nextID=<next heading id>` or
-  `appendBlock(root) — no next heading`), present on placement-bearing modes
-  (`append`, `replace-section`, `move`). This makes the doc-end fallback visible at the
+- **`anchor`** — the placement the tool resolved (e.g. `nextID=<boundary id> (next heading)`,
+  `appendBlock(<container>) — end of section`, `appendBlock(root) — doc end`,
+  `previousID=<id> (end of section)`, `previousID=<id> (doc end)`), present on placement-bearing modes
+  (`append`, `replace-section`, `move`). Container-faithful: a section inside a
+  callout/quote/list/superblock/tab appends to its own container, and the echo names
+  it — the container kinds the kernel accepts as a write parent are `d/b/l/i/s/callout/tab`
+  (`blocktree.go:505-530`; `CheckContainerParent`), and a heading whose container is
+  `tabs` or an unnamed container is refused before any dialog. A list-parent
+  `appendBlock` wraps the body in a new list item. This makes the doc-end fallback visible at the
   moment it happens: `append`/`replace-section` on a doc whose last heading has
   trailing non-heading content lands the body at doc end, not directly under that
   heading — on `append` content is preserved and valid; on `replace-section` the trailing
   content is swept into the delete set (the final-section boundary pin, above) — and the
   `anchor` echo shows exactly where
-  it went (accepted placement quirk; the alternative — anchoring `previousID` to the
-  heading's last block — needs a non-heading enumeration for a rare shape and is
-  deliberately not built).
+  it went.
 - **`newBlockId`** — the inserted block's ID (insert/append/replace-section modes); it is
   the ready target for a follow-up `edit` without a `query` round-trip. **Response shape
   (pinned live by the M2 integration profile)**: the insert/append handlers return the
@@ -1001,7 +1041,8 @@ every follow-up read/write/move; title and hpath are display only, not an addres
 
 - **`invalidRefs`** — every delete-bearing write (`replace-section`, block-level
   `delete`, doc-level `delete`) echoes the orphan outcome: the count of distinct
-  referring root docs whose refs point into the walk-enumerated delete set, queried
+  referring root docs whose refs point into the section's closure (members plus
+  descendants), queried
   through the same documented SQL endpoint as the pre-write confirmation check (§4
   `delete` mode), run after the delete lands. Verified, not trusted — the same
   doctrine as `newBlockId`: the post-write echo is what actually got orphaned, not a
@@ -1734,7 +1775,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     set's block count, **the trailing blocks' current content** (the never-unseen-sweep
     pin — the agent sees the exact text the final-section boundary will delete before
     approving), plus the inbound-ref count and referring doc hpaths over the
-    walk-enumerated delete set (the §4 visibility fixes for trailing content the
+    section's closure (members plus descendants — the delete cascade's reach; the §4
+    visibility fixes for trailing content the
     heading-only outline can't show and for refs into section content), and the
     delete-bearing results carry `invalidRefs` (§4 write-result contract);
   - status-slot rendering (glyph per probe state, headless-safe);
@@ -1834,9 +1876,10 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     create call fires, the existing doc's docId is returned), and the guard→create
     race is only reachable in the mocked suite — its duplicate lands in the accepted
     reconcilable class (§4 R3/R4, §9);
-  - `insertBlock` with `nextID=<next heading>` lands where the outline says — including a
-    section ending in a list/quote (the AST-sibling nesting trap, §4) and the
-    final-section `appendBlock`-on-root case;
+  - `insertBlock` with `nextID=<boundary>` lands where the outline says — including a
+    section ending in a list/quote (the AST-sibling nesting trap, §4), a
+    container-nested target (the body lands inside the container, §4), and the
+    final-section `appendBlock`-to-container / doc-root cases;
   - `replace-section` end to end (§4 — the highest-stakes composite write; the
     enumerate→insert→delete machinery and the same-or-shallower boundary rule have no
     other executable pin): replace a section whose body ends in a list/quote, then assert
@@ -1920,7 +1963,14 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     destination (freshness pin — fetched after the move lands), and the source `outline`
     no longer lists it. Provenance survives: a block ref created into the moved block
     before the move still resolves afterward (`listInvalidBlockRefs` returns zero, the same
-    client method as the `updateBlock` case above);
+    client method as the `updateBlock` case above). A doc-end move (no `toHeadingId`)
+    pins the §4 doc-end expectations: into a populated destination the anchor reads
+    `previousID=<last root-level block> (doc end)` and the block lands as the
+    destination's last root-level block; into an empty destination
+    `appendBlock(root) — doc end` (the prepend IS the end position; the unit suite
+    pins that leg — the live kernel never leaves a doc childless, so a blank
+    destination carries one empty paragraph and the tool anchors `previousID`
+    after it, landing at the doc's end all the same);
   - write-after-create read consistency (the block handlers flush synchronously, but §4's
     find-then-write flow depends on that contract, so a test pins it) — extended to the
     §4 write-result contract: the `outline` field riding a write result must match a
@@ -1964,7 +2014,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     round-trip — the load-bearing case, where the superseded SQL outline (rowid-order
     drift; see the §3 decision record) provably broke (freshness pin); plus an
     anchor-echo pin — an `append` on a trailing-content-after-last-heading doc reports
-    `anchor: appendBlock(root)` (the
+    `anchor: appendBlock(root) — doc end` (the
     §4 visibility mechanism for the doc-end fallback), and an insert-bearing write
     result's `newBlockId` resolves via `query` to the inserted content — extended with
     the **multi-block pin (§4)**: an `append` whose markdown parses to several blocks (a
@@ -2127,7 +2177,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Auth lockout | Breaker at 3 consecutive auth failures; 429 is its own class with a local cooldown deadline | Message-only 429 refusal; counting 429s toward the breaker; restart-only recovery | §2, §5, §9, §10 |
 | Encrypted notebooks | Rejected at `session_start` validation — one flag check, both lock states (`lsNotebooks` reports `encrypted: true` for locked boxes too) | Warn-and-proceed; a separate locked-box stale-ID drop branch | §5, §9, §10 |
 | Tool surface for reconciliation | `delete` + `move` modes (block/doc level); tool-fetched destination outline | Defer out of v1; insert-copy+delete for cross-doc moves | §4 |
-| Delete safety | Backlink check over the walk-enumerated delete set via documented SQL on `refs` | Guess from outline; separate backlinks tool | §4 |
+| Delete safety | Backlink check over the section's closure (members plus descendants) via documented SQL on `refs` | Guess from outline; separate backlinks tool | §4 |
 | Replace-section ref visibility | Pre-write refs count in the confirmation + post-write `invalidRefs` echo | Ref-preserving section rewrite (pairing heuristic) | §4, §10 |
 | Final-section trailing sweep | Sweep stays (exclusion leaves incoherent doc-end fragments under a supposedly-rewritten section); trailing content rides the delete-set content display, so it is never destroyed unseen | Excluding trailing content from the delete set; outline redesign to carry trailing blocks | §4, §10 |
 | Write-back tool schema | Targets agent-supplied from echoed data; anchors always tool-derived; `markdown` XOR `markdownFile`; result echoes fresh outline + address | Agent-supplied anchors; multi-call replace-section; inline-only bodies | §4 |

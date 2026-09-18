@@ -305,7 +305,7 @@ export async function runSearchFanOut(
 // kb_read — exportMarkdown (+ the outline ride-along, now walk.ts)
 // ---------------------------------------------------------------------------
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; \`[tabs]\`/\`[unnamed]\` are bracketed notation for containers the kernel refuses as a write target, marked \`(not targetable)\`.`;
 
 /**
  * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns

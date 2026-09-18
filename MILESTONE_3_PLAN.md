@@ -80,7 +80,7 @@ plan updated in the same changes):
    type the kernel's abbreviation map does not name nests too). Heading ids are
    never recursed into: the kernel answers `getChildBlocks(headingId)` with the
    heading's *section* (`treenode.HeadingChildren` — its following siblings up
-   to the next heading of same-or-higher level; that branch runs before the
+   to the next sibling heading of same-or-shallower level; that branch runs before the
    kernel's container check), and every one of those blocks is already returned
    by the loop over the container that owns the heading. Recursing into `h`
    re-emitted each section block at the heading's depth and out of document
@@ -108,26 +108,24 @@ plan updated in the same changes):
    behind a success, so the verified-insert machinery is a backstop rather than the
    only line. The design's §4 stale-target record and §10 stale-target/version-refusal
    pins describe both generations.
-6. **Replace-section sweep targets the section slice's forest roots
-   (pre-5b)**: the kernel's delete cascade removes a container's tree
-   descendants from the index with it (`transaction.go`'s
+6. **Replace-section sweep targets the section's members (superseded by the
+   section primitive)**: the kernel's delete cascade removes a container's
+   tree descendants from the index with it (`transaction.go`'s
    `RemoveBlockTreesByIDs`), so sweeping the slice's descendants explicitly
    would error (synchronous "tree not found") behind a fully-successful
-   replace and false-report a partial apply. The sweep now filters the
-   enumerated slice to its forest roots — the members with no tree-ancestor
-   inside the slice (`sweepTargets`), which also covers a target heading
-   nested inside a container, where slice members can sit deeper than the
-   heading or descend from nothing in the slice; the full slice still
-   drives the confirmation display,
-   the fresh-content baselines and the invalidRefs check. Two guards ride
-   the same rule: an anchor heading nested inside a swept container is
-   refused before the dialog (the kernel would insert the replacement
-   INSIDE that container, whose delete cascade would consume the
-   replacement and the heading both), and the sweep verifies the
-   replacement still stands in the post-write walk before reporting ok.
-   The mock kernel gained a cascade-faithful delete mode (`cascadeDelete`)
-   so the suite pins this contract against the kernel's actual delete
-   semantics.
+   replace and false-report a partial apply. The interim forest-root filter
+   (`sweepTargets`) and the anchor-inside-swept-container refusal guard are
+   gone: membership is exact parentage (`sectionOf`'s members — the heading's
+   following siblings inside its own container), so every member is already a
+   forest root, and the insert anchor is the boundary (a sibling of the
+   target) or the container (the members' ancestor) — it can never land
+   inside a swept member, so the guard has nothing left to catch. The
+   closure (members plus descendants) still drives the confirmation display,
+   the fresh-content baselines and the invalidRefs check, and the sweep
+   verifies the replacement still stands in the post-write walk before
+   reporting ok. The mock kernel's cascade-faithful delete mode
+   (`cascadeDelete`) stays: the suite still pins the contract against the
+   kernel's actual delete semantics.
 
 ## Sprint 4 — Write-back part 1: confirmation + create flow
 
@@ -230,19 +228,31 @@ confirmation gate and the `create` flow end to end. Registered name
 ## Sprint 5 — Write-back part 2: remaining modes + write-result contract
 
 1. **Modes (§4)** — `edit` (`updateBlock` on agent-supplied `blockId` target),
-   `append` (tool-derived `nextID = next heading` anchor; final section →
-   `appendBlock` on doc root), `replace-section` (one call: walk-enumerated
-   delete set via `getChildBlocks` document-order walk — never SQL;
+   `append` (tool-derived boundary anchor: `insertBlock` `nextID` = the first
+   same-or-shallower sibling heading, else `appendBlock` to the section's
+   container — the doc root for a doc-level heading; optional `placement`:
+   `section-start` inserts before the section's first deeper sibling heading,
+   falling through to the section-end landing when every subsection sits
+   inside a container), `replace-section` (one call: the section via the
+   `getChildBlocks` document-order walk — never SQL; the sweep deletes the
+   members, the confirmation display, fresh-content baselines and
+   `invalidRefs` read the closure (members + descendants);
    insert-before-delete with the same anchor rule as `append` (`insertBlock`
-   `nextID` = next heading's ID, or `appendBlock` on the doc root for the
-   final section — headings are leaves, bare `parentID` is rejected);
-   same-or-shallower boundary; final section sweeps trailing content), `delete` (block or `doc: true` via `removeDocByID`;
+   `nextID` = the boundary, or `appendBlock` to the section's container —
+   headings are leaves, bare `parentID` is rejected); container-bounded
+   membership, same-or-shallower boundary; a doc-level final section sweeps
+   trailing content), `delete` (block or `doc: true` via `removeDocByID`;
    backlink check over the walk set in the confirmation), `move` (block-level
-   with tool-derived destination anchor from the destination outline — last top-level
-   node of the `toHeadingId` section (heading-recursed), end-of-section semantics
-   identical to `append`; heading-anchored placement rejected as fold-state-dependent
-   per §4 anchor rule; omitted `toHeadingId` → destination doc end
-   (`appendBlock`-on-root fallback, same default as `append`); `doc: true` via
+   with tool-derived destination anchor from the destination outline — the
+   section's last member (heading-recursed: a member heading with an empty
+   section is the anchor itself), end-of-section placement from the same
+   section rule `append` reads (§4: the section is the heading's following
+   siblings inside its own container, up to the first same-or-shallower sibling
+   heading), not "identical to append" by construction; heading-anchored placement rejected as
+   fold-state-dependent per §4 anchor rule; omitted `toHeadingId` →
+   destination doc end: `moveBlock` after the last root-level block
+   (`parentID` prepends — the defect), `appendBlock`-on-root only when the
+   destination is empty); `doc: true` via
    `moveDocsByID`; self-descendant pre-check; intra-KB by
    construction; doc-level move also covers the un-nest case (`toDocId`
    omitted → `toID` = notebook ID). Anchors always tool-derived; targets
@@ -441,6 +451,9 @@ raw-DELETE case like the rest.
 6. **Fresh-content live pin** — kernel-side content change between outline and
    edit → `stale_content` refusal, content untouched; control run applies.
 7. **replace-section + delete-orphans end to end** — list/quote-ending section,
+   a container-nested target (the sweep is exactly the sibling run — `[p2]`,
+   never `[p2, l2]` — the replacement lands inside the container, and the
+   container's following siblings survive),
    final-section trailing sweep, heading ID survives, the §10 outline-ordering
    pin (headings in document order across a list/quote-ending section,
    re-asserted after the replace-section round-trip — the load-bearing
@@ -455,7 +468,14 @@ raw-DELETE case like the rest.
 8. **move cases** — doc-level (`moveDocsByID`, IDs survive, echo, follow-up
    write by echoed docId, self-descendant rejected, depth-cap error verbatim,
    own-parent no-op), cross-doc block move (`movedBlockId` equality,
-   `destOutline` freshness, provenance survives), same-doc shape pin.
+   `destOutline` freshness, provenance survives), same-doc shape pin, a
+   container-nested target (the block lands inside its container, §4), and
+   the doc-end move (no `toHeadingId`): a populated destination anchors
+   `previousID=<last root-level block>` and the block lands as the
+   destination's last root-level block; the `appendBlock(root) — doc end` leg for
+   an empty destination is unit-pinned (the live kernel never leaves a doc
+   childless — a blank doc carries one empty paragraph, and the tool anchors
+   `previousID` after it, landing at the doc's end all the same).
 9. **Search + query pins** — scoping shape, recall-loop echo assertion (a
    two-fixture search hit's row carries `root_id`, `box`, the per-row resolved
    KB name, and a non-empty `updated` matching `\d{14}`; `read` on that hit's
@@ -464,10 +484,11 @@ raw-DELETE case like the rest.
 10. **Write-result freshness** — write-result `outline` matches a fresh
     post-write query; `refs` sync-flush pin; `newBlockId` response-shape pin;
     anchor-echo pin (§10): `append` onto a trailing-content-after-last-heading
-    doc reports `anchor: appendBlock(root)`; anchor-placement pin (§10):
-    `insertBlock` with `nextID=<next heading>` lands where the outline says —
+    doc reports `anchor: appendBlock(root) — doc end`; anchor-placement pin (§10):
+    `insertBlock` with `nextID=<boundary>` lands where the outline says —
     including a section ending in a list/quote (the AST-sibling nesting trap,
-    §4) and the final-section `appendBlock`-on-root case; multi-block walk-set
+    §4), a container-nested target (the body lands inside the container), and
+    the final-section `appendBlock`-to-container / doc-root cases; multi-block walk-set
     diff pin (§10): multi-block `append` → post-write walk-set diff contains
     every new ID with `newBlockId` among them, single-block → diff of exactly
     one ID.

@@ -8,7 +8,11 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
-import { MAX_WALK_DEPTH, walkBlockTree } from "../../walk.js";
+import {
+	MAX_WALK_DEPTH,
+	renderOutlineFromWalk,
+	walkBlockTree,
+} from "../../walk.js";
 import {
 	inlineOrSpill,
 	PREVIEW_CHARS,
@@ -670,7 +674,68 @@ describe("read tool", () => {
 		};
 		const walk = await walkBlockTree(client, "d1");
 		expect(walk.map((b) => b.id)).toEqual(["h1", "p1", "h2", "p2"]);
-		expect(walk.map((b) => b.depth)).toEqual([1, 1, 1, 1]);
+		expect(walk.map((b) => [b.parentId, b.parentType])).toEqual([
+			[null, "d"],
+			[null, "d"],
+			[null, "d"],
+			[null, "d"],
+		]);
+	});
+
+	it("renders the outline notation: level marks, container prefix outermost-first, the → id payload, and the not-targetable marker", async () => {
+		// One fixture per container kind, composed ones included; the walk feeds
+		// the render so parentage comes from the real walk, not a hand-built map.
+		const byId: Record<string, Record<string, unknown>[]> = {
+			d1: [
+				{ id: "h1", type: "h", subType: "h1", content: "Top" },
+				{ id: "b1", type: "b", subType: "", content: "" },
+				{ id: "l1", type: "l", subType: "u", content: "" },
+				{ id: "c1", type: "callout", subType: "NOTE", content: "" },
+				{ id: "s1", type: "s", subType: "", content: "" },
+				{ id: "t1", type: "tab", subType: "", content: "" },
+				{ id: "tt1", type: "tabs", subType: "", content: "" },
+				{ id: "u1", type: "", subType: "", content: "" },
+				{ id: "b2", type: "b", subType: "", content: "" },
+				// the normal tabbed shape: wrapper > pane > heading — the pane is
+				// the parent, so the heading is targetable despite the wrapper
+				{ id: "tt2", type: "tabs", subType: "", content: "" },
+			],
+			b1: [{ id: "hq", type: "h", subType: "h2", content: "In quote" }],
+			l1: [{ id: "i1", type: "i", subType: "", content: "" }],
+			i1: [{ id: "hi", type: "h", subType: "h2", content: "In item" }],
+			c1: [{ id: "hc", type: "h", subType: "h2", content: "In callout" }],
+			s1: [{ id: "hs", type: "h", subType: "h2", content: "In super" }],
+			t1: [{ id: "ht", type: "h", subType: "h2", content: "In tab" }],
+			tt1: [{ id: "htt", type: "h", subType: "h2", content: "In tabs" }],
+			u1: [{ id: "hu", type: "h", subType: "h2", content: "In unnamed" }],
+			b2: [{ id: "l2", type: "l", subType: "u", content: "" }],
+			l2: [{ id: "i2", type: "i", subType: "", content: "" }],
+			i2: [{ id: "hd", type: "h", subType: "h3", content: "Deep" }],
+			tt2: [{ id: "tb1", type: "tab", subType: "", content: "" }],
+			tb1: [{ id: "htb", type: "h", subType: "h2", content: "In tab pane" }],
+		};
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async getChildBlocks(id) {
+				return byId[id] ?? [];
+			},
+		};
+		const walk = await walkBlockTree(client, "d1");
+		const { outline } = renderOutlineFromWalk("sess-1", "kb_read", walk);
+		expect(outline.split("\n")).toEqual([
+			"# Top → h1",
+			">## In quote → hq",
+			"-## In item → hi",
+			"c## In callout → hc",
+			"s## In super → hs",
+			"t## In tab → ht",
+			"[tabs]## In tabs → htt (not targetable)",
+			"[unnamed]## In unnamed → hu (not targetable)",
+			">-### Deep → hd",
+			// full chain prefix, targetable: the pane (t) is the immediate parent —
+			// what the kernel validates — while the wrapper still shows placement
+			"[tabs]t## In tab pane → htb",
+		]);
 	});
 
 	it("read walk tolerates a vanished container (SiYuanApiError ends that branch); strict default propagates", async () => {
@@ -715,14 +780,16 @@ describe("read tool", () => {
 			...Array.from({ length: MAX_WALK_DEPTH - 1 }, (_, i) => `c${i + 1}`),
 			"leaf",
 		]);
-		expect(full.at(-1)?.depth).toBe(MAX_WALK_DEPTH);
+		expect(full.at(-1)?.parentId).toBe(`c${MAX_WALK_DEPTH - 1}`);
+		expect(full.at(-1)?.parentType).toBe("l");
 		// One level deeper: the leaf would sit past the bound and is cut,
 		// with the deepest in-bound container level intact.
 		const over = await walkBlockTree(chainClient(MAX_WALK_DEPTH), "d1");
 		expect(over.map((b) => b.id)).toEqual(
 			Array.from({ length: MAX_WALK_DEPTH }, (_, i) => `c${i + 1}`),
 		);
-		expect(over.at(-1)?.depth).toBe(MAX_WALK_DEPTH);
+		expect(over.at(-1)?.parentId).toBe(`c${MAX_WALK_DEPTH - 1}`);
+		expect(over.at(-1)?.parentType).toBe("l");
 	});
 });
 

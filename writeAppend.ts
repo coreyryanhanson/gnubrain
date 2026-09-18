@@ -1,8 +1,9 @@
 // The append flow: tool-derived nextID anchor, doc-end fallback; the
 // returned id is verified against the post-write walk set.
 
+import { SiYuanApiError, type BlockTransaction } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
-import { deriveAppendAnchor } from "./writeAnchors.js";
+import { deriveAppendAnchor, type AppendPlacement } from "./writeAnchors.js";
 import { walkBlockTree, type WalkedBlock } from "./walk.js";
 import {
 	confirmGate,
@@ -28,14 +29,37 @@ export async function runAppendMode(
 		if ("status" in heading) return heading;
 		resolvedHeading = heading;
 	}
-	const anchor = deriveAppendAnchor(walk, resolvedHeading);
+	const anchor = deriveAppendAnchor(
+		walk,
+		resolvedHeading,
+		params.placement as AppendPlacement | undefined,
+	);
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
-	const tx =
-		anchor.kind === "appendRoot"
-			? await kernel.appendBlock({ data: input.body, parentID: doc.rootId })
-			: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
+	let tx: BlockTransaction[];
+	try {
+		tx =
+			anchor.kind === "append"
+				? await kernel.appendBlock({
+						data: input.body,
+						parentID: anchor.containerId ?? doc.rootId,
+					})
+				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
+	} catch (err) {
+		// appendBlock/insertBlock error synchronously — a stale anchor
+		// surfaces verbatim with the fresh outline attached, never as a
+		// bare error (mirrors the edit flow). Network classes rethrow for
+		// runKbCall's unreachable classification — correct here, the insert
+		// did not land.
+		if (!(err instanceof SiYuanApiError)) throw err;
+		const tail = await echoTail(input, doc);
+		return errorEnvelope(err.message, {
+			kb: name,
+			anchor: anchor.anchor,
+			...tail,
+		});
+	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert may already be applied (finishWrite doc).
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {
