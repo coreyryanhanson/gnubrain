@@ -21,6 +21,7 @@ const INTEGRATION_ORDER = [
 	"readPins.live.test.ts",
 	"writeModes.live.test.ts",
 	"writePins.live.test.ts",
+	"gate.live.test.ts", // sprint 6 gate — items 1–3 (pi children) + item 5 (in-process breaker)
 	"throttleLive.live.test.ts", // encrypted → throttle (arms the lock) → raw-DML hardening
 ];
 
