@@ -50,7 +50,7 @@ original item numbers.
 | S2.1 Scope persistence | `pi.appendEntry("kb-scope", ...)` full post-toggle snapshot |
 | S2.2 `/kb` command | Bare prints scope; `<name> on\|off` idempotent; `all on\|off`; reserved `all` + `tools` (`writes` deliberately un-reserved — see deviations); verbless prints usage |
 | S2.3 Recovery hook | Every `/kb` dispatch re-runs full validation (both settings files, shape, probe, `lsNotebooks`) before dispatch; success clears degradation + breaker; failed re-check re-engages |
-| S3.1 Spill/budget helper | `SPILL_DIR`/`PREVIEW_CHARS` 8000/`OUTLINE_HEADINGS` 200/`RESULT_LIMIT` 64; per-session temp dir, `{tool}-{sha256-16hex}` file template, JSONL vs `.md`, newline-boundary preview + pointer |
+| S3.1 Spill/budget helper | `PREVIEW_CHARS` 8000/`OUTLINE_HEADINGS` 200/`RESULT_LIMIT` 64; per-session temp dir (`os.tmpdir()/gnubrain/<session-id>/`), `{tool}-{sha256-16hex}` file template, JSONL vs `.md`, newline-boundary preview + pointer |
 | S3.2 `kb_query` | Parser certification (DML/multi-statement/FROM-allowlist/CTE/subquery/UNION/JOIN/bare-`HAVING` rejected); AST `box IN (...)` splice with parenthesization (OR precedence), LIMIT 64 injection iff absent, re-parse-and-verify, readonly client `query()`; agent LIMIT passthrough; post-filter backstop (aggregate-exempt) |
 | S3.3 `kb_search` | Per-KB fan-out (`pageSize = RESULT_LIMIT`), merged in per-KB kernel order, post-filter backstop, `method: 0` tool-owned with aux params schema-rejected, row echo contract (`root_id`/`hpath` renamed from client) |
 | S3.4 Tool descriptions | Query description carries pinned `refs`/`blocks` schemas + semantics notes + include-`hpath` discovery pattern |

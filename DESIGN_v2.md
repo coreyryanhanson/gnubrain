@@ -189,9 +189,11 @@ suffix); `read` spills are raw text (`.md` suffix — the payload is `exportMdCo
 GFM). The inline result keeps an **8000-char newline-boundary preview** plus
 `… N more — full result in <path>`, and the agent extracts what it needs with the native
 `read` (offset/limit) and grep — no paging protocol to invent, nothing is lost, only
-deferred. Four constants (`SPILL_DIR`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`, and the
-shared limit constant `RESULT_LIMIT` — 64, serving as both the injected query LIMIT
-default and the per-KB search `pageSize`) and one helper.
+deferred. Three constants (`PREVIEW_CHARS`, `OUTLINE_HEADINGS`, and the shared limit
+constant `RESULT_LIMIT` — 64, serving as both the injected query LIMIT default and
+the per-KB search `pageSize`) and one helper; the spill dir is not a constant but
+a per-session path, `os.tmpdir()/gnubrain/<session-id>/`, derived from the
+session id.
 
 - **query** — the extension injects `LIMIT` into the statement when the AST shows it
   lacks one (default 64,
@@ -346,7 +348,7 @@ default and the per-KB search `pageSize`) and one helper.
   carries the fresh outline, so a post-write `read` is never needed just to regain
   valid targets and anchors.
 - Where the policy lives: the inline limit and spill mechanism are extension-owned (one
-  shared helper, the four constants above); `siyuan-kernel-api` stays policy-free (§2),
+  shared helper, the three constants above); `siyuan-kernel-api` stays policy-free (§2),
   so §3 owns the entire read budget via preview + spill.
 
 No index, no embeddings, no graph, no background cycles. The agent performs synthesis
