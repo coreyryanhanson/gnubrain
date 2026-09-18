@@ -174,6 +174,31 @@ plan updated in the same changes):
    creation depth cap bites at hpath depth 8 both at creation and at
    move-under-a-depth-7-destination; the 8b case builds a 7-chain and pins
    the move-time rejection.
+9. **Raw-DML hardening + execution-order enforcement (5b-d)**: two live
+   findings re-shaped item 12. (a) The §10 raw-DELETE case's premise — a raw
+   DELETE via `/api/query/sql` without `mode` mutates `siyuan.db`, requiring
+   the reindex to bound the desync — died at 3.8.4: live probes show DML
+   through the query endpoint is a **silent no-op in every mode** (single
+   statement, `mode: "multiple"`; UPDATE included — `code: 0`, row
+   untouched, even a same-request DELETE-then-COUNT sees the row). The
+   endpoint is no longer a mutation vector, so the desync/reindex machinery
+   has no live trigger; the case now pins the hardening (code-0-but-no-mutation
+   in both modes) plus the tool-side rejection that still holds, and the
+   reindex trigger stays in the raw helper's surface for the upgrade
+   checklist. (b) The cross-file §10 execution order is enforced
+   mechanically: vitest's default sort is cache-driven (unknown files by
+   size, then previous-run duration, longest first), so the ~8-minute
+   throttle file would drift to the front of the queue and arm the lock
+   over the whole suite — `vitest.config.ts` now carries an ordered
+   sequencer pinning the §10 order (smoke → harness → headless → read →
+   write-modes → write-pins → throttle-last). The throttle wait itself was
+   corrected against the observed 3.8.4 ladder (lock starts at the 6th
+   fail, `30 << (FailCount - 5)` seconds, cap 15 min; the arming sequence
+   ends at FailCount 9 → 480s, with each served Retry-After understating
+   the final lock by one generation), and one bounded recovery wait covers
+   an external auth-fail source on the same IP re-arming the shared per-IP
+   lock during the blind wait (observed live once; the environment was
+   transiently noisy — the same run passed clean after the noise stopped).
 
 ---
 
@@ -181,8 +206,10 @@ plan updated in the same changes):
 
 The §10 integration profile items M3's gate names, under the fixture policy
 (two disposable notebooks per run, teardown via `removeNotebook`; never in CI;
-execution order: search-shape first, throttle after all kernel cases, raw-DELETE
-last). **Fixture→settings wiring**: the minted notebook IDs don't exist until
+execution order: search-shape first, throttle after all kernel cases, the
+raw-DML hardening pin last — enforced mechanically by an ordered vitest
+sequencer, since the default cache-driven sort would otherwise drift the
+~8-minute throttle file to the front of the queue). **Fixture→settings wiring**: the minted notebook IDs don't exist until
 setup runs, so the suite injects fixture settings in memory through S1's
 settings-load seam — `{baseUrl, apiToken, kbs: [{name: "fixture-a", notebook:
 <minted id>}, {name: "fixture-b", ...}], defaultKBs: [...],
@@ -197,14 +224,14 @@ global path, so it runs under a temp `HOME` seeded with `.pi/agent/settings.json
 carrying the same fixture settings — the extension runs unmodified, still
 reads its fixed path by construction (§5), and no product-side settings
 override mechanism is added. A test-only
-raw-kernel-call helper (direct `fetch`) provides raw DELETE / the kernel
-reindex trigger (raw-DELETE case) and the bogus-token arming requests. All
+raw-kernel-call helper (direct `fetch`) provides raw DML probes (raw-DML
+hardening pin) and the bogus-token arming requests. All
 notebook/doc lifecycle calls (`createNotebook`, `removeNotebook`,
 `renameDocByID` fixtures, `listInvalidBlockRefs`) **and the encrypted-notebook
 machinery** (`createEncryptedNotebook`, `getEncryptedNotebookStatus`,
 `unlockAndOpenNotebook`, lock-via-`closeNotebook`) ride the typed client
 (`siyuan-kernel-api@0.3.1`, exact pin); the remaining helper calls — raw
-DELETE, reindex trigger, bogus-token arming — stay raw: §10 deliberately keeps
+DML probes, bogus-token arming — stay raw: §10 deliberately keeps
 those pins out of the client.
 
 The encrypted-notebook case (item 12) runs on the **same kernel** as the rest
@@ -224,7 +251,7 @@ index removal), so no workspace disposal or stray pre-registration is
 involved. The case is not exempted as a special instance; it is a normal
 kernel-dependent case, and the only ordering constraint is that it must not run
 inside the throttle lock window (it needs the kernel), so it runs before the
-raw-DELETE case like the rest.
+throttle case like the rest.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
    mint; `A & B` / `say "hi"` / apostrophe titles mint and re-find verbatim —
@@ -301,7 +328,7 @@ raw-DELETE case like the rest.
     one ID.
 11. **Headless `/kb` dispatch** — `/kb all off` from `pi -p` (converts the §5
     source-read claim into evidence before M4's harness depends on it).
-12. **Throttle / raw-DELETE / encrypted-notebook cases** —
+12. **Throttle / raw-DML-hardening / encrypted-notebook cases** —
     ordered per §10 (read-consistency is covered by item 10's pins); throttle
     arming (6 bogus-token requests arm the lock — 6th still 401, 7th surfaces
     the distinct 429 — with `Retry-After`) arms the lock via this suite's own
@@ -311,13 +338,14 @@ raw-DELETE case like the rest.
     so the extension suite re-implements the arming, reusing only the flag
     name and the arming shape; the extension-side cooldown leg rides the same armed lock:
     one kb read during the lock → 429 envelope, a second kb call inside the
-    cooldown → local `refused` with zero kernel round-trips, then wait out the
-    lock (bounded by the last served `Retry-After`, ~4 min — any call during an
-    active lock extends it, §5; same profile as the client's throttle test) and
-    assert the post-expiry call succeeds with no recovery step (§5
-    self-healing expiry); the raw-DELETE case then runs on the expired backoff
-    (§10 execution order) and follows the deletes with a kernel reindex to
-    bound `siyuan.db` desync (§10). The encrypted-notebook case runs on the
+cooldown → local `refused` with zero kernel round-trips, then wait out the
+lock (bounded by the last served `Retry-After` plus the extension generation
+it understates — 3.8.4's ladder ends at FailCount 9 → 480s, any call during
+an active lock extends it, §5; one bounded recovery wait covers an external
+auth-fail source on the same IP re-arming the shared lock mid-wait) and
+assert the post-expiry call succeeds with no recovery step (§5
+self-healing expiry); the raw-DML hardening pin then runs last
+(§10 execution order). The encrypted-notebook case runs on the
     shared kernel, gated behind `SIYUAN_ENCRYPTED_PASSWORD` (see preamble):
     create the encrypted fixture (typed `createEncryptedNotebook`, which comes
     back mounted/unlocked) plus one plain fixture, then `lsNotebooks` reports
@@ -338,8 +366,9 @@ raw-DELETE case like the rest.
 + [ ] All cases above green against live 3.8.4 under the fixture policy; the
       teardown itself is asserted (post-teardown notebook count back to
       baseline — zero strays).
-+ [ ] Execution order enforced (search-shape → others → throttle → raw-DELETE;
-      encrypted case runs before raw-DELETE, never inside the throttle lock).
++ [ ] Execution order enforced (search-shape → others → throttle → raw-DML
+      hardening pin; encrypted case runs before the throttle, never inside the
+      throttle lock window) — mechanically, by the ordered vitest sequencer.
 + [ ] Encrypted case: `lsNotebooks` on the shared kernel reports the encrypted
       fixture `encrypted: true` in both lock states → startup rejection names
       the KB while the plain fixture validates clean, zero tool kernel calls

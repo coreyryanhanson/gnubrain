@@ -1821,8 +1821,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   SiYuan's history, where `removeNotebook` copies it before deleting) instead of degrading the
   live workspace. Two notebooks, not one: the multi-KB pins (multi-element `box IN (...)`,
   two-KB search sweeps, the OR-precedence aggregate) need a deterministic two-KB workspace —
-  not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DELETE case below deletes only
-  fixture-created rows. The opt-in encrypted-notebook case mints its own encrypted +
+  not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DML probes below touch only
+  fixture-created rows (and since 3.8.4 mutate nothing at all — deviation 9). The opt-in encrypted-notebook case mints its own encrypted +
   plain fixture pair and removes both via `removeNotebook`, so the post-run baseline
   stays zero strays. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
   typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
@@ -1836,11 +1836,14 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   **Execution order (summary of the pins scattered below)**: the search-shape case runs
   first (cheapest falsifier of the load-bearing request shape); every other
   kernel-dependent case follows; the auth-throttle case runs after all of them and ends
-  by waiting out the extended lock; the raw-DELETE case runs last (it desyncs `siyuan.db`
-  until its reindex) and follows the throttle's expired backoff; the encrypted-notebook
+  by waiting out the extended lock; the raw-DML hardening pin runs last (M3 plan
+  deviation 9 — since 3.8.4 it creates no desync; the position is kept as the
+  §10-last slot) and follows the throttle's expired backoff; the encrypted-notebook
   case runs on the shared kernel like every other fixture case, gated behind the master
   password — the one ordering constraint is that it needs the kernel, so it runs before
-  the raw-DELETE case and never inside the throttle lock window.
+  the throttle case and never inside the throttle lock window. The order is enforced
+  mechanically by an ordered vitest sequencer (the default cache-driven sort would
+  otherwise drift the long throttle file to the front of the queue).
   - title-guard kernel round-trip (§4 R3 — the guard rides `blocks.content`, whose exact
     behavior no unit transcription can prove, so this is the mandatory live pin): create
     docs through the real kernel with adversarial titles — a tab-bearing title must be
@@ -2067,12 +2070,18 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     in-test wait is bounded by the last extension's own `Retry-After` and polling is
     impossible. Implemented and passing on live 3.8.3 in
     `~/siyuan-kernel-api/integration.si.test.ts` (opt-in `SIYUAN_INTEGRATION_THROTTLE=1`);
-  - query read-only end to end: a raw `DELETE` via `/api/query/sql` without `mode`
-    mutates siyuan.db, while the same statement through the tool is parser-rejected and
-    every tool-issued statement carries `mode: "readonly"` (defense-in-depth pin). This
-    case desyncs siyuan.db from blocktree.db until a reindex, so it runs **last**
-    (Execution order above) and follows the deletes with a kernel reindex (the sanctioned
-    rebuild SY-FORMAT.md §0.5 describes), bounding any leakage to its own run;
+  - query read-only end to end (superseded by the 3.8.4 hardening, M3 plan
+    deviation 9): the original premise — a raw `DELETE` via `/api/query/sql`
+    without `mode` mutates siyuan.db, requiring a reindex to bound the desync —
+    died at 3.8.4: live probes show DML through the query endpoint is a silent
+    no-op in every mode (single statement, `mode: "multiple"`; UPDATE included —
+    `code: 0`, row untouched, even a same-request DELETE-then-COUNT sees the
+    row). The endpoint is no longer a mutation vector; the case now pins the
+    hardening (code-0-but-no-mutation in both modes) plus the tool-side
+    parser-rejection that still holds (layer 1 with zero kernel calls), and
+    still runs **last** (Execution order above). The reindex trigger stays in
+    the raw helper's surface for the upgrade checklist; a future kernel that
+    reintroduces raw-DML mutation turns the no-mutation pin red;
   - encrypted-notebook contract pin (§5 — the startup rejection that guards the
     never-silently-wrong invariant rests on a `model/box.go` source-read; this case
     converts it into evidence): runs on the shared workspace with encryption already
