@@ -6,7 +6,7 @@
 // writeConfirm/writeGuard/writeCreate/writeAnchors tests and the full
 // writeModes suite.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
+import { SiYuanApiError, type BlockTransaction } from "siyuan-kernel-api";
 import { CircuitBreaker } from "../../breaker.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import {
@@ -67,6 +67,9 @@ export interface StubConfig {
 	onMove?: () => void;
 	onUpdate?: () => void;
 	onRemoveDoc?: () => void;
+	/** Override the updateBlock response tx — e.g. an ops array without the
+	 * target's id pins the edit flow's "no update operation" verified failure. */
+	updateTx?: BlockTransaction[];
 	/** Captures a setter the test calls from a mutation callback: all
 	 * subsequent query() calls throw — the network drop between a landed
 	 * write and the post-write verification reads. */
@@ -247,7 +250,16 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async updateBlock(params) {
 			calls.push({ method: "updateBlock", args: params });
 			config.onUpdate?.();
-			return tx;
+			// The kernel applies the update and the blocks index converges to
+			// the submitted form (live-pinned) — mirror that in the SQL
+			// fixtures so the edit flow's round-trip verification sees it;
+			// the lagging-window case is pinned by overriding the route.
+			for (const row of config.blockRows ?? []) {
+				if ((row as { id?: string }).id === params.id) {
+					(row as { content: string }).content = params.data;
+				}
+			}
+			return config.updateTx ?? [{ doOperations: [{ id: String(params.id) }] }];
 		},
 		async insertBlock(params) {
 			calls.push({ method: "insertBlock", args: params });

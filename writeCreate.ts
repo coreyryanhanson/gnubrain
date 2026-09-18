@@ -6,7 +6,7 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import { rememberServedRows } from "./baselines.js";
-import { rowPayload, sqlString } from "./kernel.js";
+import { rowPayload, sqlString, VERIFY_RETRY_DELAYS_MS } from "./kernel.js";
 import {
 	renderOutline,
 	renderOutlineFromWalk,
@@ -198,14 +198,8 @@ function verifiedRootStmt(boxId: string, returnedId: string): string {
 /** Verified-create re-reads: the kernel indexes a fresh doc asynchronously —
  * createDocWithMd resolves when the doc is in the tree, while its blocks
  * row lands via the async index queue (observed live even on an empty DB).
- * Exponential gaps cover the fast-index common case cheaply and tolerate a
- * busy-queue tail (~4s worst case; happy path pays nothing — only the
- * currently-false-failure case pays the extra tail). */
-// ponytail: fixed table, not a backoff policy knob — a live run that
-// still races past 4s is the signal to add the tree-fallback degradation
-// path (getChildBlocks confirms existence for nested mints; hpath is SQL-only),
-// not to extend the table again
-const VERIFY_RETRY_DELAYS_MS = [150, 300, 600, 1200, 2000];
+ * VERIFY_RETRY_DELAYS_MS (kernel.ts) is the convergence table shared with
+ * the edit flow's post-update re-read. */
 
 async function verifiedRoot(
 	kernel: WriteKernelClient,

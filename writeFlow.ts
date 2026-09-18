@@ -106,7 +106,7 @@ export async function confirmGate(
 /** SELECT heads the kernel stubs route on — keep builders and heads in
  * sync by construction (each builder concatenates its head constant). */
 export const BLOCK_IN_DOC_STMT_HEAD =
-	"SELECT id, content, root_id FROM blocks WHERE id";
+	"SELECT id, content, root_id, type FROM blocks WHERE id";
 export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
 
 /** The target read shared by the blockId-targeting modes — the block's
@@ -129,14 +129,19 @@ export async function blockInDoc(
 	kernel: WriteKernelClient,
 	doc: DocTarget,
 	blockId: string,
-): Promise<{ content: string | null } | { refusal: string }> {
+): Promise<
+	{ content: string | null; type: string | null } | { refusal: string }
+> {
 	const rows = await kernel.query(
 		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}`,
 	);
-	if (rows[0] === undefined) return { content: null };
+	if (rows[0] === undefined) return { content: null, type: null };
 	const rootId = String(rows[0].root_id ?? "");
 	return rootId === doc.rootId
-		? { content: String(rows[0].content) }
+		? {
+				content: String(rows[0].content),
+				type: String(rows[0].type ?? ""),
+			}
 		: {
 				refusal: `block '${blockId}' belongs to another doc (root ${rootId}), not '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
 			};

@@ -22,7 +22,11 @@ import {
 	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
-import { PARENT_DOC_STMT_HEAD } from "../../writeFlow.js";
+import {
+	BLOCK_IN_DOC_STMT_HEAD,
+	PARENT_DOC_STMT_HEAD,
+} from "../../writeFlow.js";
+import { VERIFY_RETRY_DELAYS_MS } from "../../kernel.js";
 import { contentHash } from "../../baselines.js";
 
 describe("kb_write schema", () => {
@@ -251,6 +255,85 @@ describe("edit", () => {
 		expect(result.message).toContain("d-other");
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
 		expect(confirmCalls).toHaveLength(0);
+	});
+
+	it("verified-edit: an update tx without the target's op fails loud, not ok", async () => {
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				updateTx: [{ doOperations: [] }],
+			},
+		});
+		const result = await execute(editBase);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("verified-edit failed");
+		expect(result.message).toContain("no update operation");
+		expect(result.outline).toBeDefined();
+	});
+
+	it("verified-edit: a silent kernel no-op (ack ok, index never converges) does not read as ok", async () => {
+		// Collapse the convergence window: the index never serves the
+		// submitted body, so the first retry exhausts the table instantly.
+		const delays = VERIFY_RETRY_DELAYS_MS.splice(0);
+		try {
+			const harness = setup({
+				config: {
+					blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				},
+			});
+			// HTTP success + a well-formed ack for the target — the exact
+			// silent-rollback class the insert paths guard against.
+			harness.client.updateBlock = async (p) => {
+				harness.calls.push({ method: "updateBlock", args: p });
+				return [{ doOperations: [{ id: "b-1" }] }];
+			};
+			const result = await harness.execute(editBase);
+			expect(result.status).toBe("error");
+			expect(result.message).toContain("verified-edit failed");
+			expect(result.message).toContain("never moved off the pre-write content");
+			expect(result.message).toContain("do NOT retry blindly");
+			expect(result.outline).toBeDefined();
+		} finally {
+			VERIFY_RETRY_DELAYS_MS.push(...delays);
+		}
+	});
+
+	it("verified-edit tolerates the async index: a stale first read retries inside the window", async () => {
+		const harness = setup({
+			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
+		});
+		const baseQuery = harness.client.query.bind(harness.client);
+		let blockReads = 0;
+		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+				blockReads += 1;
+				const rows = (await baseQuery(stmt)) as {
+					id: string;
+					content: string;
+				}[];
+				// Read 1 is the pre-write target read; read 2 the first
+				// post-write verification read — the index has not converged
+				// yet and still serves the pre-write form; read 3 has it.
+				if (blockReads === 2) {
+					return [{ ...rows[0]!, content: "stale paragraph" }];
+				}
+				return rows;
+			}
+			return baseQuery(stmt);
+		};
+		const result = await harness.execute(editBase);
+		expect(result.status).toBe("ok");
+		expect(blockReads).toBe(3);
+	});
+
+	it("an identical resubmit applies on the tx ack — the unchanged index already equals the body", async () => {
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "same body" }],
+			},
+		});
+		const result = await execute({ ...editBase, markdown: "same body" });
+		expect(result.status).toBe("ok");
 	});
 
 	it("the successful write result refreshes the served-content baseline", async () => {

@@ -61,6 +61,17 @@ export interface WriteKernelClient extends KernelReadClient, KernelProbeClient {
 	moveDocsByID(params: { fromIDs: string[]; toID: string }): Promise<null>;
 }
 
+/** Post-mutation async-index convergence window: the blocks index (content,
+ * hpath, fresh rows) rebuilds asynchronously behind a mutation's HTTP
+ * success, so post-write re-reads retry inside this fixed table.
+ * Exponential gaps cover the fast-index common case cheaply and tolerate a
+ * busy-queue tail (~4s worst case; the happy path pays nothing — only the
+ * currently-false-failure case pays the extra tail).
+ * ponytail: fixed table, not a backoff policy knob — a live run that
+ * still races past 4s is the signal to extend the table (or add a
+ * tree-fallback degradation path), not to make it tunable. */
+export const VERIFY_RETRY_DELAYS_MS = [150, 300, 600, 1200, 2000];
+
 /** Single-quote SQL string literal — ids ride the ownership query; agent
  * input is escaped, never interpolated raw. */
 export function sqlString(value: string): string {
