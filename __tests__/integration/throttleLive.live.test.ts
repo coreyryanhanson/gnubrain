@@ -308,9 +308,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-d item 12 cases", () => {
 
 				// Known-good call on a guarded endpoint: resets the kernel's
 				// fail counter (successes clear it), so the arming sequence
-				// starts from a clean counter.
-				const clean = await rawKernelCall("/api/notebook/lsNotebooks", {});
-				expect(clean.status).toBe(200);
+				// starts from a clean counter. Rides the typed client — the
+				// raw helper is only for the §10-sanctioned raw pins below.
+				await client.listNotebooks();
 
 				// 6 bogus-token requests; the 6th still returns 401. All throttle
 				// legs use a guarded endpoint (lsNotebooks) — an unauthenticated
