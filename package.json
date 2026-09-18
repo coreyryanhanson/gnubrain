@@ -1,7 +1,7 @@
 {
 	"name": "gnubrain",
 	"version": "0.0.3",
-	"description": "GNUbrain's Not Unopinionated gBrain: open-source agent memory for pi with SiYuan as the storage engine.",
+	"description": "Open-source knowledge base for the pi coding agent, built on SiYuan. Register multiple KBs, keep the active set in session state, and let your agent read, search, query, and write with confirmation.",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
