@@ -456,6 +456,15 @@ describe("read + write toolset wiring", () => {
 		await runCommand("tools off", ctx);
 		expect(pi.getActiveTools()).toEqual([]);
 		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
+		// Masked ≠ refused: the off-lines are computed from live toolset
+		// state, so an externally pinned toolset prints its absence too.
+		await runCommand("", ctx);
+		expect(notifications.at(-1)?.[0]).toContain(
+			"read toolset (kb_query, kb_search, kb_read): off — masked",
+		);
+		expect(notifications.at(-1)?.[0]).toContain(
+			"write toolset (kb_write): off — masked",
+		);
 		await runCommand("tools write", ctx);
 		expect([...pi.getActiveTools()].sort()).toEqual([
 			"kb_query",
@@ -463,22 +472,6 @@ describe("read + write toolset wiring", () => {
 			"kb_search",
 			"kb_write",
 		]);
-	});
-
-	it("a masked read toolset turns the healthy slot hollow and prints the absence", async () => {
-		const { pi, fire, runCommand } = fakePi();
-		register(pi, deps());
-		const { ctx, statuses, notifications } = fakeCtx();
-		await fire("session_start", ctx);
-		// Any disabler (toolsetDefaults pin, allowlist mode, external manager)
-		// shows up as removed active tools (glyph reads live state).
-		pi.setActiveTools([]);
-		await fire("session_tree", ctx);
-		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
-		await runCommand("", ctx);
-		expect(notifications.at(-1)?.[0]).toContain(
-			"read toolset (kb_query, kb_search, kb_read): off",
-		);
 	});
 
 	it("TOOLSET_EVENTS repaint the status slot without a ctx-bearing trigger", async () => {
