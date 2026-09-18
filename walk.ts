@@ -74,6 +74,13 @@ function containerPrefix(c: WalkedBlock): string {
 	}
 }
 
+/** The heading level from the subType ("h3" → 3); a missing subType
+ * reads as level 1. One rule shared by the outline and the anchor/section
+ * logic, so the rendered nesting can never diverge from section bounds. */
+export function headingLevel(block: WalkedBlock): number {
+	return Number(String(block.subType).slice(1)) || 1;
+}
+
 /** Outline rendering from a walk already in hand — write flows render the
  * result outline from the verification walk without a second traversal.
  * When baselines is passed, the served heading rows seed the fresh-content
@@ -92,7 +99,7 @@ export function renderOutlineFromWalk(
 	if (baselines !== undefined) rememberServedRows(baselines, headings);
 	const byId = new Map(walk.map((b) => [b.id, b]));
 	const lines = headings.map((h) => {
-		const level = Number(String(h.subType ?? "h1").slice(1)) || 1;
+		const level = headingLevel(h);
 		// The enclosing container chain, innermost first, from exact parentage
 		// (headings are never recursed into, so every ancestor is a container).
 		const chain: WalkedBlock[] = [];

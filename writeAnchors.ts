@@ -7,13 +7,7 @@
 // level (same-or-shallower). Every anchor is a projection of that one
 // Section — no consumer re-derives placement from walk order.
 
-import type { WalkedBlock } from "./walk.js";
-
-/** The heading level from the subType ("h3" → 3); a missing subType reads
- * as level 1. */
-function headingLevel(block: WalkedBlock): number {
-	return Number(String(block.subType).slice(1)) || 1;
-}
+import { headingLevel, type WalkedBlock } from "./walk.js";
 
 /** True when `block` sits inside `ancestorId`'s subtree (its parent chain
  * reaches the ancestor). Missing parent ids (a vanished container) read as
