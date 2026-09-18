@@ -75,6 +75,13 @@ fails writes closed and warns on reads. Change the pin only deliberately — the
 live harness asserts the kernel reports it exactly. Tests override per-run via
 `deps.pinnedVersion` / `runSessionValidation({ pinnedVersion })`.
 
+Kernel behaviors pinned at that version that the code relies on: nested doc
+nesting is the hpath chain — `blocks.parent_id` is empty on `'d'` rows — and
+ancestor/self-subtree doc moves are rejected synchronously ("Cannot move to
+this location"), so no pre-check guards them. DML through `/api/query/sql`
+is a silent no-op. `blocks.content`/`refs`/`hpath` converge 1.5–3 s
+asynchronously after a write (hpath last, after `moveDocsByID`).
+
 ## Settings
 
 - Global `~/.pi/agent/settings.json` carries `baseUrl`, `apiToken`, `kbs`, and

@@ -22,10 +22,7 @@ import {
 	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
-import {
-	BLOCK_IN_DOC_STMT_HEAD,
-	PARENT_DOC_STMT_HEAD,
-} from "../../writeFlow.js";
+import { BLOCK_IN_DOC_STMT_HEAD } from "../../writeFlow.js";
 import { VERIFY_RETRY_DELAYS_MS } from "../../kernel.js";
 import { contentHash } from "../../baselines.js";
 
@@ -2098,7 +2095,7 @@ describe("block-level move", () => {
 		expect(result.destOutline).toBeUndefined();
 	});
 
-	it("doc-level: self-descendant pre-check rejects before the kernel (silent-filter class)", async () => {
+	it("doc-level: moving a doc into itself is refused before the kernel", async () => {
 		const harness = moveHarness();
 		const result = await harness.execute({
 			kb: "recipes",
@@ -2112,76 +2109,6 @@ describe("block-level move", () => {
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
 		).toHaveLength(0);
-	});
-
-	it("doc-level: destination nested inside the source's subtree walks the parent chain and refuses", async () => {
-		const harness = moveHarness(undefined, {
-			docRoots: {
-				"d-doc": {
-					content: "Docker Networking",
-					hpath: "/Docker Networking",
-				},
-				"d-child": {
-					content: "Child",
-					hpath: "/Docker Networking/Child",
-				},
-			},
-			parentDocRows: [{ parent_id: "d-doc" }],
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			doc: true,
-			toDocId: "d-child",
-		});
-		expect(result.status).toBe("refused");
-		// "silently filters" is unique to the descendant arm — the self-move
-		// branch (same-KB refusal) also says "own subtree".
-		expect(result.message).toContain("silently filters");
-		expect(
-			harness.calls.filter((c) => c.method === "moveDocsByID"),
-		).toHaveLength(0);
-	});
-
-	it("doc-level: a cyclic ancestor chain terminates (bounded hops) and the move proceeds", async () => {
-		// Corrupted kernel state: the destination's parent chain loops
-		// (d-child → d-mid → d-child → …) and never reaches the source doc.
-		// The ancestor walk must give up after its hop budget and treat the
-		// destination as not-a-descendant — not spin on query forever.
-		const harness = moveHarness(undefined, {
-			docRoots: {
-				"d-doc": {
-					content: "Docker Networking",
-					hpath: "/Docker Networking",
-				},
-				"d-child": { content: "Child", hpath: "/Docker Networking/Child" },
-			},
-			parentDocRows: [{ parent_id: "d-mid" }],
-		});
-		const baseQuery = harness.client.query.bind(harness.client);
-		harness.client.query = async (stmt: string) => {
-			// The stub records the call; only the d-mid leg's return is
-			// overridden to close the cycle (d-child → d-mid → d-child).
-			const rows = await baseQuery(stmt);
-			return /id = 'd-mid'/.test(stmt) ? [{ parent_id: "d-child" }] : rows;
-		};
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			doc: true,
-			toDocId: "d-child",
-		});
-		// Not provably a descendant → the move is allowed through.
-		expect(result.status).toBe("ok");
-		const ancestorQueries = harness.calls.filter(
-			(c) =>
-				c.method === "query" &&
-				typeof c.args === "string" &&
-				c.args.startsWith(PARENT_DOC_STMT_HEAD),
-		);
-		expect(ancestorQueries.length).toBeLessThanOrEqual(16);
 	});
 
 	it("doc-level: kernel rejections (the depth cap) surface verbatim", async () => {

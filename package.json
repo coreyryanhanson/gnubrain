@@ -15,9 +15,7 @@
 		"type": "git",
 		"url": "git+https://github.com/coreyryanhanson/gnubrain.git"
 	},
-	"files": [
-		"*.ts"
-	],
+	"files": ["*.ts", "!vitest.config.ts"],
 	"pi": {
 		"extensions": [
 			"./index.ts"

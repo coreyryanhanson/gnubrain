@@ -14,10 +14,7 @@ import {
 	VERIFIED_ROOT_STMT_HEAD,
 } from "../../writeCreate.js";
 import { GUARD_STMT_HEAD } from "../../writeGuard.js";
-import {
-	BLOCK_IN_DOC_STMT_HEAD,
-	PARENT_DOC_STMT_HEAD,
-} from "../../writeFlow.js";
+import { BLOCK_IN_DOC_STMT_HEAD } from "../../writeFlow.js";
 import type { WriteParams } from "../../writeSchema.js";
 import { OWNERSHIP_STMT_HEAD } from "../../kernel.js";
 import type { WalkedBlock } from "../../walk.js";
@@ -49,7 +46,6 @@ export interface StubConfig {
 	blockRows?: Record<string, unknown>[];
 	refRows?: Record<string, unknown>[];
 	hpathRows?: Record<string, unknown>[];
-	parentDocRows?: Record<string, unknown>[];
 	/** docId → root row (ownership + echo routes discriminate by id). */
 	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
 	/** docId → child-block rows; the map is live — tests mutate it inside
@@ -188,9 +184,6 @@ export function writeKernelStub(config: StubConfig = {}) {
 					root_id: "d-doc",
 					...r,
 				}));
-			}
-			if (stmt.startsWith(PARENT_DOC_STMT_HEAD)) {
-				return config.parentDocRows ?? [];
 			}
 			if (
 				stmt.startsWith(OWNERSHIP_STMT_HEAD) ||

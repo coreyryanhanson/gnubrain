@@ -107,7 +107,6 @@ export async function confirmGate(
  * sync by construction (each builder concatenates its head constant). */
 export const BLOCK_IN_DOC_STMT_HEAD =
 	"SELECT id, content, root_id, type FROM blocks WHERE id";
-export const PARENT_DOC_STMT_HEAD = "SELECT parent_id FROM blocks";
 
 /** The target read shared by the blockId-targeting modes — the block's
  * current content (confirmation display + fresh-content baseline), or

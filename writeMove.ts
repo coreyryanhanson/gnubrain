@@ -1,10 +1,9 @@
 // The move flow: block-level moveBlock with tool-derived anchors
-// (self-anchor / self-descendant no-ops refused) or doc-level moveDocsByID
+// (self-anchor / own-subtree no-ops refused) or doc-level moveDocsByID
 // (destination doc or notebook root). Every landing is verified against the
 // post-move walk sets — position for same-doc moves, membership cross-doc.
 
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
-import { sqlString } from "./kernel.js";
 import { deriveMoveAnchor, inSubtree, landingId } from "./writeAnchors.js";
 import {
 	renderOutlineFromWalk,
@@ -16,49 +15,11 @@ import {
 	echoTail,
 	headingInWalk,
 	mutationFailed,
-	PARENT_DOC_STMT_HEAD,
 	resolveDocTarget,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite, idSet } from "./writeResult.js";
-import type { WriteKernelClient } from "./kernel.js";
-
-/** A nested doc's parent doc id (type='d' rows chain via parent_id) — the
- * doc-level self-descendant pre-check walks this. */
-function parentDocStmt(docId: string): string {
-	return `${PARENT_DOC_STMT_HEAD} WHERE id = ${sqlString(docId)} AND type = 'd'`;
-}
-
-/** doc-level self-descendant pre-check: walk the destination's ancestor
- * chain over type='d' rows; the source appearing means the destination is
- * the source or one of its nested descendants — the kernel silently filters
- * exactly that move (success, zero moves). Rejected here, never forwarded.
- * ponytail: assumes nested docs chain via parent_id on 'd' rows; live
- * kernels leave parent_id empty on 'd' rows entirely (the hpath chain is the
- * kernel's own nesting record) and reject ancestor moves synchronously
- * ("Cannot move to this location"), so this walk is a backstop for a kernel
- * that silently filters instead of erroring — the live suite pins the
- * kernel's synchronous refusal. */
-async function isOwnDescendant(
-	kernel: WriteKernelClient,
-	sourceRootId: string,
-	destId: string,
-): Promise<boolean> {
-	let current: string | undefined = destId;
-	for (
-		let hops = 0;
-		current !== undefined && current !== "" && hops < 16;
-		hops++
-	) {
-		if (current === sourceRootId) return true;
-		const rows = await kernel.query(parentDocStmt(current));
-		const parent =
-			rows[0] === undefined ? undefined : String(rows[0].parent_id ?? "");
-		current = parent === "" || parent === current ? undefined : parent;
-	}
-	return false;
-}
 
 /** Cross-doc block move's `destOutline`: fresh
  * destination outline fetched after the move lands. The walk's heading rows
@@ -106,19 +67,16 @@ export async function runMoveMode(
 				`cannot move doc '${doc.title}' (${doc.rootId}) into itself — choose a destination outside the doc's own subtree`,
 			);
 		}
-		if (await isOwnDescendant(kernel, doc.rootId, destId)) {
-			return refusedEnvelope(
-				`destination ${destLabel} is inside doc '${doc.title}''s own subtree — the kernel silently filters such moves; choose a destination outside the subtree`,
-			);
-		}
 		const summary = `Move doc '${doc.title}' (${doc.rootId}) to ${destLabel} (KB ${name})`;
 		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 		try {
 			await kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId });
 		} catch (err) {
-			// The 7-level depth cap and other kernel rejections surface
-			// verbatim (doc-level record — no echo tail, the pinned shape).
+			// The 7-level depth cap and self-subtree/ancestor moves surface
+			// verbatim (the kernel rejects ancestor moves synchronously —
+			// "Cannot move to this location"; doc-level record, no echo tail,
+			// the pinned shape).
 			const failed = await mutationFailed(input, err, {
 				docId: doc.rootId,
 			});

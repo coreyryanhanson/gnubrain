@@ -703,10 +703,10 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			expect(self.status).toBe("refused");
 			expect(String(self.message)).toContain("into itself");
 
-			// Own-descendant move: the flow's parent_id-walk pre-check is a
-			// backstop (live 'd' rows carry no parent_id — the hpath chain is
-			// the kernel's nesting record) — the live kernel itself rejects the
-			// ancestor move synchronously, and the rejection surfaces verbatim.
+			// Own-descendant move: the kernel rejects the ancestor move
+			// synchronously (live 'd' rows carry no parent_id — the hpath chain
+			// is the kernel's nesting record) and the rejection surfaces
+			// verbatim.
 			const ownDesc = await w.run({
 				kb: "fixture-a",
 				mode: "move",
