@@ -15,13 +15,7 @@ import {
 	textResult,
 	type Envelope,
 } from "./envelope.js";
-import {
-	gateWriteAttempt,
-	NOT_READY_KERNEL,
-	NOT_READY_VALIDATION,
-	resolveBox,
-	runKbCall,
-} from "./gate.js";
+import { gateWriteAttempt, runGatedTool, resolveBox } from "./gate.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	readBodyFile,
@@ -189,18 +183,12 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 		description: WRITE_DESCRIPTION,
 		parameters: writeSchema,
 		async execute(_id, params, _signal, _onUpdate, ctx: ExtensionContext) {
-			const validation = hooks.getValidation();
-			if (validation === undefined) {
-				return textResult(errorEnvelope(NOT_READY_VALIDATION));
-			}
-			const kernel = hooks.getKernel();
-			const envelope = await runKbCall(
-				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "single" },
-				async (names, contact) => {
-					if (kernel === undefined) {
-						return errorEnvelope(NOT_READY_KERNEL);
-					}
-					return prepareWrite(
+			const envelope = await runGatedTool(
+				hooks,
+				params.kb,
+				"single",
+				(kernel, validation, names, contact) =>
+					prepareWrite(
 						params as WriteParams,
 						hooks,
 						kernel,
@@ -208,8 +196,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						names,
 						contact,
 						ctx,
-					);
-				},
+					),
 			);
 			return textResult(envelope);
 		},

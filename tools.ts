@@ -21,10 +21,9 @@ import {
 } from "./envelope.js";
 import {
 	EMPTY_SCOPE_MESSAGE,
-	NOT_READY_KERNEL,
 	NOT_READY_VALIDATION,
+	runGatedTool,
 	resolveBox,
-	runKbCall,
 } from "./gate.js";
 import { ownershipStmt, rowPayload, type KernelReadClient } from "./kernel.js";
 import {
@@ -94,17 +93,11 @@ export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const validation = hooks.getValidation();
-			if (validation === undefined) {
-				return textResult(errorEnvelope(NOT_READY_VALIDATION));
-			}
-			const kernel = hooks.getKernel();
-			const envelope = await runKbCall(
-				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
-				async (names, contact) => {
-					if (kernel === undefined) {
-						return errorEnvelope(NOT_READY_KERNEL);
-					}
+			const envelope = await runGatedTool(
+				hooks,
+				params.kb,
+				"array",
+				async (kernel, validation, names, contact) => {
 					const boxes = names.map((n) => resolveBox(n, validation));
 					const certified = certifySelect(params.sql);
 					if (!certified.ok) {
@@ -203,26 +196,19 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const validation = hooks.getValidation();
-			if (validation === undefined) {
-				return textResult(errorEnvelope(NOT_READY_VALIDATION));
-			}
-			const kernel = hooks.getKernel();
-			const envelope = await runKbCall(
-				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "array" },
-				async (names, contact) => {
-					if (kernel === undefined) {
-						return errorEnvelope(NOT_READY_KERNEL);
-					}
-					return runSearchFanOut(
+			const envelope = await runGatedTool(
+				hooks,
+				params.kb,
+				"array",
+				(kernel, validation, names, contact) =>
+					runSearchFanOut(
 						ctx.sessionManager.getSessionId(),
 						kernel,
 						validation,
 						names,
 						params.query,
 						contact,
-					);
-				},
+					),
 			);
 			return textResult(envelope);
 		},
@@ -361,8 +347,8 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// Discovery short-circuit (kb: "kbs"): ahead of breaker/cooldown —
 			// discovery succeeds while the breaker is tripped or a lockout is
 			// armed and leaves the breaker state untouched. It cannot route
-			// through guardCall/runKbCall: guardCall's pinned order fuses shape
-			// → breaker → cooldown and cannot stop between them, and
+			// through guardCall/runKbCall/runGatedTool: guardCall's pinned order
+			// fuses shape → breaker → cooldown and cannot stop between them, and
 			// runKbCall's success path would reset the breaker counter. The
 			// shape check is a deliberate duplicate of guardCall's first check —
 			// kept a one-liner so the two cannot drift.
@@ -372,13 +358,11 @@ export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				}
 				return textResult(kbsDiscoveryEnvelope(validation));
 			}
-			const kernel = hooks.getKernel();
-			const envelope = await runKbCall(
-				{ validation, breaker: hooks.breaker, kb: params.kb, arity: "single" },
-				async (names, contact) => {
-					if (kernel === undefined) {
-						return errorEnvelope(NOT_READY_KERNEL);
-					}
+			const envelope = await runGatedTool(
+				hooks,
+				params.kb,
+				"single",
+				(kernel, validation, names, contact) => {
 					// The missing-docId refusal lives inside the gated op, after
 					// the gate resolved a valid kb: a typo'd kb with no docId must
 					// get the unknown-KB rejection, not the guidance. Returned as

@@ -15,6 +15,6 @@
 		"isolatedModules": true,
 		"moduleDetection": "force"
 	},
-	"include": ["*.ts", "src/**/*.ts", "__tests__/**/*.ts"],
+	"include": ["*.ts", "__tests__/**/*.ts"],
 	"exclude": ["node_modules"]
 }

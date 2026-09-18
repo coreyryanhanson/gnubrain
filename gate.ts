@@ -343,3 +343,41 @@ export async function runKbCall(
 	}
 	return result;
 }
+
+/** Tool-level dispatch shared by the kb tool registrations: the two "not
+ * ready" refusals and the runKbCall invocation live here instead of one
+ * copy per tool. The missing-kernel check stays inside the gated op —
+ * hoisting it above runKbCall would report a missing kernel before a
+ * tripped breaker/cooldown, reordering the pinned gate. kb_read's `kb:
+ * "kbs"` discovery form deliberately bypasses this helper (it must run
+ * while the breaker is tripped); see tools.ts. */
+export async function runGatedTool<K>(
+	hooks: {
+		getValidation(): SessionValidation | undefined;
+		getKernel(): K | undefined;
+		breaker: CircuitBreaker;
+	},
+	kb: unknown,
+	arity: KbArity,
+	op: (
+		kernel: K,
+		validation: SessionValidation,
+		names: string[],
+		contact: () => void,
+	) => Promise<Envelope> | Envelope,
+): Promise<Envelope> {
+	const validation = hooks.getValidation();
+	if (validation === undefined) {
+		return errorEnvelope(NOT_READY_VALIDATION);
+	}
+	const kernel = hooks.getKernel();
+	return runKbCall(
+		{ validation, breaker: hooks.breaker, kb, arity },
+		async (names, contact) => {
+			if (kernel === undefined) {
+				return errorEnvelope(NOT_READY_KERNEL);
+			}
+			return op(kernel, validation, names, contact);
+		},
+	);
+}
