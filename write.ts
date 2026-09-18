@@ -15,11 +15,11 @@ import {
 	textResult,
 	type Envelope,
 } from "./envelope.js";
-import { resolveBox } from "./gate.js";
 import {
 	gateWriteAttempt,
 	NOT_READY_KERNEL,
 	NOT_READY_VALIDATION,
+	resolveBox,
 	runKbCall,
 } from "./gate.js";
 import type { SessionValidation } from "./validation.js";
