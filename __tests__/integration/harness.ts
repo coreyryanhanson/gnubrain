@@ -9,8 +9,8 @@
 // 2. Setup pins — kernel version exactly equals the pin (accidental upgrade →
 //    red suite), teardown asserts the notebook count back to baseline
 //    (zero strays).
-// 3. Test-only raw-kernel-call helper — raw DELETE, the reindex trigger, and
-//    bogus-token arming deliberately stay outside the typed client (§10);
+// 3. Test-only raw-kernel-call helper — raw DELETE and bogus-token arming
+//    deliberately stay outside the typed client (§10);
 //    every notebook/doc lifecycle call rides the typed client.
 
 import { spawnSync } from "node:child_process";
@@ -82,17 +82,6 @@ export async function rawKernelCall(
 		// non-JSON body (e.g. a throttle response) — status/headers still speak
 	}
 	return { status: res.status, headers: res.headers, body: parsed };
-}
-
-/** The sanctioned full-index rebuild (`/api/system/rebuildDataIndex` →
- * FullReindex) — bounds the siyuan.db desync the raw-DELETE case leaves.
- * Fire-and-forget at the kernel (task-queued server-side); a case needing
- * convergence polls its own assertions after calling this. */
-export async function reindexKernel(opts?: {
-	token?: string;
-	baseUrl?: string;
-}): Promise<RawKernelResult> {
-	return rawKernelCall("/api/system/rebuildDataIndex", {}, opts);
 }
 
 // --- live-case helpers (shared by the 5b case files) ---
