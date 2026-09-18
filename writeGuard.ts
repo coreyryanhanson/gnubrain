@@ -1,24 +1,15 @@
 // Title mint policy + the guard SQL that stops a create on an existing doc.
-// Patterns are built from the kernel's stored (HTML-escaped) form; the
-// near- match leg scans separator-variant prefixes, capped at GUARD_NEAR_CAP.
+// Patterns are built from the kernel's stored content form — `blocks.content`
+// carries the title verbatim (live-verified against the pinned 3.8.4 kernel:
+// `A & B`, `say "hi"`, `a < b > c` all store unescaped; the HTML-escaped form
+// lives only in the title IAL, `blocks.ial`, which the guard does not query).
+// The near-match leg scans separator-variant prefixes, capped at
+// GUARD_NEAR_CAP.
 
 import { sqlString } from "./kernel.js";
 
-/** The kernel stores title IALs entity-escaped in blocks.content; the guard
- * computes the stored form rather than being blind to it. The mapping is
- * lute's `html.EscapeHTMLStr` — the kernel builds doc content through it
- * (nodeStaticContent): `& < > "` escape, and `'` stores verbatim (the
- * kernel's own entity normalization maps `&#39;` back to a raw `'`). */
-function htmlEscape(title: string): string {
-	return title
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&quot;");
-}
-
-/** LIKE-wildcard escaping for the guard patterns (ESCAPE '\'): the
- * HTML-escaped form contains no % or _, so this composes trivially. */
+/** LIKE-wildcard escaping for the guard patterns (ESCAPE '\\'): a literal
+ * `%`/`_` in a title must not widen the match. */
 function likeEscape(fragment: string): string {
 	return fragment
 		.replaceAll("\\", "\\\\")
@@ -26,22 +17,20 @@ function likeEscape(fragment: string): string {
 		.replaceAll("_", "\\_");
 }
 
-/** Exact-leg pattern: the HTML-escaped submitted title, LIKE-escaped. */
+/** Exact-leg pattern: the submitted title verbatim, LIKE-escaped. */
 export function guardExactPattern(title: string): string {
-	return likeEscape(htmlEscape(title));
+	return likeEscape(title);
 }
 
 /** Near-match prefix variants: the title's separator runs canonicalized
- * to space / hyphen / underscore — built from the HTML-escaped title (same
- * parity as the exact leg); the intentional `_` is LIKE-escaped like any
- * other wildcard (`docker\_networking%`). A separator-only title (no words)
- * has no variant to build, so it falls back to its own escaped prefix —
+ * to space / hyphen / underscore. The intentional `_` is LIKE-escaped like
+ * any other wildcard (`docker\_networking%`). A separator-only title (no
+ * words) has no variant to build, so it falls back to its own prefix —
  * never an empty leg list, which would emit malformed SQL (`AND ()`). */
 export function guardNearPatterns(title: string): string[] {
-	const escaped = htmlEscape(title);
-	const words = escaped.split(/[ \-_]+/).filter((w) => w !== "");
+	const words = title.split(/[ \-_]+/).filter((w) => w !== "");
 	if (words.length === 0) {
-		return [`${likeEscape(escaped)}%`];
+		return [`${likeEscape(title)}%`];
 	}
 	// One-word titles produce three identical legs — dedupe.
 	return [

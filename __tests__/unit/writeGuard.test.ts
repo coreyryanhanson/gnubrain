@@ -1,5 +1,5 @@
-// writeGuard tests — mint policy rejections and the title guard (exact leg
-// escape parity, near-match variants, separator-only fallback, uniform
+// writeGuard tests — mint policy rejections and the title guard (verbatim
+// stored-form patterns, near-match variants, separator-only fallback, uniform
 // duplicate stops, confirmNew bypass) — executed through the registered
 // kb_write tool via the shared harness.
 
@@ -65,28 +65,29 @@ describe("title guard", () => {
 		);
 		expect(String(exact?.args)).toContain("box = 'nb-r'");
 		expect(String(exact?.args)).toContain("type = 'd'");
-		// Escape parity: pattern = HTML-escaped title, % and _ LIKE-escaped.
+		// Escape parity: pattern = the title verbatim (the kernel stores doc
+		// titles unescaped in blocks.content), % and _ LIKE-escaped.
 		expect(String(exact?.args)).toContain(
 			guardExactPattern("Docker Networking"),
 		);
 	});
 
-	it("matches HTML-special titles via escape parity", async () => {
+	it("matches HTML-special titles verbatim — the kernel stores them unescaped", async () => {
 		const { execute, calls } = setup();
 		await execute({ ...base, topic: "R&D" });
 		const exact = calls.find(
 			(c) => c.method === "query" && String(c.args).includes("LIKE"),
 		);
-		expect(String(exact?.args)).toContain("R&amp;D");
+		expect(String(exact?.args)).toContain("R&D");
 	});
 
 	it("escapes % and _ in the guard patterns", () => {
 		expect(guardExactPattern("100%_devops")).toBe("100\\%\\_devops");
 	});
 
-	it('maps the double quote to the kernel\'s "&quot;" entity in both legs', () => {
-		expect(guardExactPattern('a"b')).toBe("a&quot;b");
-		expect(guardNearPatterns('a"b')).toEqual(["a&quot;b%"]);
+	it("leaves double quotes verbatim — the kernel stores content unescaped", () => {
+		expect(guardExactPattern('a"b')).toBe('a"b');
+		expect(guardNearPatterns('a"b')).toEqual(['a"b%']);
 	});
 
 	it("leaves the apostrophe verbatim — the kernel does not escape it", () => {
@@ -102,9 +103,9 @@ describe("title guard", () => {
 		]);
 	});
 
-	it("near-match fragments are built from the HTML-escaped title", () => {
+	it("near-match fragments are built from the verbatim title", () => {
 		// One-word titles dedupe to a single leg.
-		expect(guardNearPatterns("R&D")).toEqual(["R&amp;D%"]);
+		expect(guardNearPatterns("R&D")).toEqual(["R&D%"]);
 	});
 
 	it("separator-only titles still yield a well-formed near leg (no empty parens)", async () => {

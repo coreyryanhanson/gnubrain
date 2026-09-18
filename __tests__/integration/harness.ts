@@ -14,6 +14,7 @@
 //    every notebook/doc lifecycle call rides the typed client.
 
 import { SiYuanKernelClient } from "siyuan-kernel-api";
+import { ownershipStmt } from "../../kernel.js";
 import {
 	globalSettingsPath,
 	loadGnubrainSettings,
@@ -73,6 +74,79 @@ export async function reindexKernel(opts?: {
 	baseUrl?: string;
 }): Promise<RawKernelResult> {
 	return rawKernelCall("/api/system/rebuildDataIndex", {}, opts);
+}
+
+// --- live-case helpers (shared by the 5b case files) ---
+
+/** Poll a condition with a deadline — the bounded-wait shape every
+ * async-index case uses (blocks index, full-text index). */
+export async function pollUntil(
+	label: string,
+	check: () => Promise<boolean>,
+	timeoutMs = 10_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		if (await check()) return;
+		if (Date.now() > deadline) throw new Error(`${label} never became true`);
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+}
+
+/** Poll the SQL blocks index until a minted doc is queryable — the tool
+ * flows' ownership/guard queries ride that index, which lags
+ * createDocWithMarkdown. */
+export async function awaitIndexed(
+	client: SiYuanKernelClient,
+	boxId: string,
+	docId: string,
+	timeoutMs = 10_000,
+): Promise<void> {
+	await pollUntil(
+		`fixture doc ${docId} reaching the blocks index`,
+		async () => (await client.query(ownershipStmt(boxId, docId))).length > 0,
+		timeoutMs,
+	);
+}
+
+/** Mint a fixture doc (path includes the leading `/`) and wait for the
+ * blocks index — the shape every fixture case starts from. */
+export async function mintDoc(
+	client: SiYuanKernelClient,
+	notebookId: string,
+	path: string,
+	markdown: string,
+): Promise<string> {
+	const docId = await client.createDocWithMarkdown({
+		notebook: notebookId,
+		path,
+		markdown,
+	});
+	await awaitIndexed(client, notebookId, docId);
+	return docId;
+}
+
+/** Poll the full-text index until a search term surfaces the expected hit
+ * count across the given boxes (the index lags the blocks index). */
+export async function awaitSearchable(
+	client: SiYuanKernelClient,
+	boxIds: string[],
+	query: string,
+	minHits: number,
+	timeoutMs = 15_000,
+): Promise<void> {
+	await pollUntil(
+		`search index surfacing ${minHits} hits for '${query}'`,
+		async () => {
+			const result = await client.search({
+				query,
+				paths: boxIds,
+				pageSize: 64,
+			});
+			return result.blocks.length >= minHits;
+		},
+		timeoutMs,
+	);
 }
 
 export interface IntegrationFixtures {

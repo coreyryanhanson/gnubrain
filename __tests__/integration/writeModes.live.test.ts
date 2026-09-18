@@ -13,7 +13,6 @@ import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { walkBlockTree, type WalkedBlock } from "../../walk.js";
 import { sectionOf } from "../../writeAnchors.js";
-import { ownershipStmt } from "../../kernel.js";
 import { headingInWalk, type DocTarget } from "../../writeFlow.js";
 import {
 	createWriteConfirmState,
@@ -24,7 +23,14 @@ import {
 	PINNED_SIYUAN_VERSION,
 	type SessionValidation,
 } from "../../validation.js";
-import { BASE_URL, INTEGRATION, LIVE_TIMEOUT, TOKEN } from "./harness.js";
+import {
+	awaitIndexed as hAwaitIndexed,
+	mintDoc as hMintDoc,
+	BASE_URL,
+	INTEGRATION,
+	LIVE_TIMEOUT,
+	TOKEN,
+} from "./harness.js";
 
 describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () => {
 	const client = new SiYuanKernelClient(BASE_URL, TOKEN);
@@ -80,30 +86,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			};
 	}
 
-	/** Poll the SQL blocks index until a freshly minted doc is queryable —
-	 * the write tool's ownership query rides that index, which lags
-	 * createDocWithMarkdown. */
-	async function awaitIndexed(docId: string): Promise<void> {
-		const deadline = Date.now() + 5000;
-		for (;;) {
-			const rows = await client.query(ownershipStmt(notebookId, docId));
-			if (rows.length > 0) return;
-			if (Date.now() > deadline) {
-				throw new Error(`fixture doc ${docId} never reached the blocks index`);
-			}
-			await new Promise((r) => setTimeout(r, 200));
-		}
-	}
-
-	async function mintDoc(title: string, markdown: string): Promise<string> {
-		const docId = await client.createDocWithMarkdown({
-			notebook: notebookId,
-			path: `/${title}-${run}`,
-			markdown,
-		});
-		await awaitIndexed(docId);
-		return docId;
-	}
+	/** Block-index polling + fixture minting ride the shared harness helpers
+	 * (the write tool's ownership/guard queries lag createDocWithMarkdown). */
+	const awaitIndexed = (docId: string) =>
+		hAwaitIndexed(client, notebookId, docId);
+	const mintDoc = (title: string, markdown: string) =>
+		hMintDoc(client, notebookId, `/${title}-${run}`, markdown);
 
 	/** Fold state rides the heading's ial (`fold` attr) — invisible to the
 	 * walk, settable via the documented attr endpoint (raw fetch: the typed

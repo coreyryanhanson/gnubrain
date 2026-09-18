@@ -417,7 +417,7 @@ matches against the kernel's own stored titles on the `type='d'` root rows — k
 truth, never a tool-predicted address:
 
 ```sql
--- exact leg (LIKE is ASCII-case-insensitive; pattern = HTML-escape(title),
+-- exact leg (LIKE is ASCII-case-insensitive; pattern = the title verbatim,
 -- then % and _ LIKE-escaped)
 SELECT id, root_id FROM blocks
 WHERE box = ? AND type = 'd' AND content LIKE ? ESCAPE '\'   -- 'docker networking'
@@ -429,11 +429,12 @@ WHERE box = ? AND type = 'd' AND content LIKE ? ESCAPE '\'   -- 'docker networki
 The exact leg must be `LIKE`, not `=`: `blocks.content` carries the binary (case-sensitive)
 collation, so an `=` guard would send every ASCII-cased variant ("Docker Networking") into
 the near-match scan and the `confirmNew` interruption instead of matching transparently.
-The exact-leg pattern is built from the **HTML-escaped** submitted title (mint policy step
-2, below): the kernel stores the title IAL entity-escaped in `blocks.content`, and entity
-escaping is a deterministic, spec-defined transform, so the guard computes the stored form
-rather than being structurally blind to it. Entity output contains no `%` or `_`, so it
-composes trivially with LIKE-wildcard escaping (order: HTML-escape first, then LIKE-escape).
+The exact-leg pattern is built from the **verbatim** submitted title (mint policy step
+2, below): the kernel stores the title unescaped in `blocks.content` — live-verified
+against the pinned 3.8.4 kernel (`A & B`, `say "hi"`, `a < b > c` all store as submitted;
+the HTML-escaped form lives only in the title IAL, `blocks.ial`, which the guard does not
+query) — so the plain form **is** the stored form. LIKE-wildcard escaping then escapes
+`%`/`_` so a literal wildcard character in a title cannot widen the match.
 Two queries, run in order: the exact leg first; only when it returns no rows does the
 near-match scan run (the scan's `AND` legs are its own query — the `...` above stands for
 the same `box`/`type='d'` filters). The scan is a plain walk over the box's `type='d'` rows
@@ -462,19 +463,16 @@ the kernel stores — it builds the submission path from ground truth:
    contains tab/newline/control characters (their stored form is an unpredictable kernel
    transform — reject at mint with a rephrase hint; user-minted docs with such titles
    stay reachable by docId per R1). HTML-special characters (`& < > "`) are **not**
-   rejected: the stored form in `blocks.content` escapes them (lute's `html.EscapeHTMLStr`
-   — the same function `nodeStaticContent` runs over the title IAL), and escaping is a
-   deterministic transform the tool can apply itself, so the guard matches these titles
-   via escape parity (guard SQL above) instead of rejecting them. The apostrophe is the
-   parity trap: `EscapeHTMLStr` stores `'` **verbatim** (the kernel's own entity
-   normalization maps a produced `&#39;` back to a raw `'` — `kernel/model/search.go`),
-   so the guard must leave it unescaped too. Titles like `R&D`,
+   rejected: the stored form in `blocks.content` is the title verbatim (live-verified
+   against the pinned 3.8.4 kernel — the HTML-escaped form lives only in the title IAL,
+   `blocks.ial`), so the guard matches these titles verbatim (guard SQL above). The
+   apostrophe stores verbatim as well. Titles like `R&D`,
    `O'Reilly`, or "Don't repeat yourself" mint normally — LLM agents are the primary
    minters and such titles are common, so reject-at-mint here would be a recurring
    interruption training agents toward awkward rephrases. The trade: one new assumption
-   (escaping parity), pinned live by the §10 title round-trip; if parity ever breaks,
-   the failure mode is a missed guard → accepted reconcilable duplicate, never a silent
-   clobber.
+   (verbatim stored titles), pinned live by the §10 title round-trip; if the kernel ever
+   escapes, the failure mode is a missed guard → accepted reconcilable duplicate, never a
+   silent clobber.
 3. **Send** the path the kernel will store:
    - *Top level* (no `parentId`): `path = "/" + trimmedTitle` — a single segment, so the
      kernel's parent-matching loop never runs and the doc mints deterministically at top
@@ -537,7 +535,7 @@ of form for identical strings only, and LLMs paraphrase. The taxonomy, stated ex
 | --- | --- |
 | ASCII casing | Title guard exact leg (`LIKE`, ASCII-case-insensitive) |
 | Shared prefix ("docker-networking" vs "docker-networks") | Near-match scan (prefix on title) |
-| Identical string containing HTML-special chars (`& < > "`, and `'` stored verbatim) | Guard exact leg matches via escape parity — the pattern is built from the kernel's stored form (lute's `EscapeHTMLStr` mapping: `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`, `"`→`&quot;`, `'` verbatim), so these titles mint and match normally |
+| Identical string containing HTML-special chars (`& < > "`, and `'`) | Guard exact leg matches verbatim — the kernel stores the title unescaped in `blocks.content` (the escaped form lives only in the title IAL, `blocks.ial`), so the pattern is the submitted title LIKE-escaped |
 | Identical string whose stored form would unpredictably transform (tab/newline/control — rejected at mint, above) | Rejected at mint with a rephrase hint; user-minted docs with such titles fall to the accepted-duplicate path |
 | Paraphrase ("docker-networking" vs "networking-in-docker") | Nothing — accepted duplicate, reconciled later |
 
@@ -583,7 +581,7 @@ for the identity property.
    outline — itself the identity signal.
 2. **No exact row** → near-match scan (space/hyphen/underscore prefix variants on the title, above;
    `%`/`_` escaped in the fragments so a title like `100%_devops` can't widen the scan;
-   fragments are built from the HTML-escaped title, same parity as the exact leg;
+   fragments are built from the verbatim title, same as the exact leg;
    writes take exactly one KB name (§5 `kb` param), so the scan is single-notebook-scoped
    and never surfaces candidates from other notebooks, including user-owned ones; the
    scan returns doc rows, not every block) — **capped at 20 rows with the shared
@@ -1671,8 +1669,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 - **Unit (extension layer)**: the risky logic lives in the extension, not the client, so the
   extension gets its own suite with a mocked `siyuan-kernel-api`, covering:
   - title guard (§4 R3) — the exact leg (ASCII-cased variant matches transparently;
-    HTML-special titles match via escape parity — pattern built from the HTML-escaped
-    title, with `%`/`_` LIKE-escaped so they can't widen the scan), the space/hyphen/underscore
+    HTML-special titles match verbatim — the kernel stores doc titles unescaped in
+    `blocks.content`, so the pattern is the submitted title with `%`/`_` LIKE-escaped so
+    they can't widen the scan), the space/hyphen/underscore
     prefix-variant scan (`docker-networking` vs `docker\_networking` matches the third leg),
     the 20-row candidate cap and its `truncated` marker, and the
     `confirmNew` skip path (guard fires without it; with it, create proceeds past
@@ -1847,8 +1846,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     docs through the real kernel with adversarial titles — a tab-bearing title must be
     **rejected at mint** with the rephrase hint (never forwarded), while HTML-special
     titles (`A & B`, an apostrophe-bearing title) mint normally and the guard's exact
-    leg — built from the HTML-escaped title — re-finds each one (the live escape-parity
-    pin: if kernel IAL storage ever changes, this goes red instead of the guard going
+    leg — built from the verbatim stored form — re-finds each one (the live stored-form
+    pin: if kernel content storage ever changes, this goes red instead of the guard going
     silently blind); clean titles (leading/trailing space → trimmed, Unicode, the
     512-rune boundary) store verbatim **and** yield the expected child hpath — the live
     pin for the §4 superset claim (any mint-policy-surviving title must transform to

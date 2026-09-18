@@ -138,6 +138,20 @@ plan updated in the same changes):
    reporting ok. The mock kernel's cascade-faithful delete mode
    (`cascadeDelete`) stays: the suite still pins the contract against the
    kernel's actual delete semantics.
+7. **Stored-title form correction (5b)**: the guard's patterns were built
+   from the HTML-escaped title on the recorded premise that the kernel
+   stores the title IAL entity-escaped in `blocks.content`. The 5b title
+   round-trip probe showed the live 3.8.4 kernel stores doc titles
+   **verbatim** in `blocks.content` (`A & B`, `say "hi"`, `a < b > c` all
+   unescaped) — the escaped form lives only in the title IAL
+   (`blocks.ial`), which the guard does not query. Consequence: the escaped
+   exact/near legs never matched adversarial titles live (re-create minted
+   a silent second doc). `writeGuard.ts` now builds both legs from the
+   verbatim title (LIKE-escaping only `%`/`_`/`\`); DESIGN §4's stored-form
+   record and the unit pins updated in the same change. The apostrophe's
+   verbatim storage (the old parity trap) and the §4 superset claim are
+   unchanged — the 512-rune boundary and HTML-special titles mint and
+   re-find as before, now for the simpler reason.
 
 ---
 
@@ -191,9 +205,10 @@ inside the throttle lock window (it needs the kernel), so it runs before the
 raw-DELETE case like the rest.
 
 1. **Title-guard kernel round-trip** — adversarial titles (tab rejected at
-   mint; `A & B` / `say "hi"` / apostrophe titles mint and re-find via escape
-   parity — the pin that caught the stored-form mapping: `"`→`&quot;` and
-   `'` verbatim, never `&#30;`/`&#39;`; clean
+   mint; `A & B` / `say "hi"` / apostrophe titles mint and re-find verbatim —
+   the live pin for the stored-form record: `blocks.content` stores doc
+   titles unescaped (the HTML-escaped form lives only in the title IAL,
+   `blocks.ial`, which the guard does not query — see deviation 7); clean
    titles — leading/trailing-space-trimmed, Unicode, and the exactly-512-rune
    boundary — store verbatim + expected hpath (the live pin for §4's superset
    claim); kernel `renameDocByID` mid-test re-finds
