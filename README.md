@@ -89,7 +89,8 @@ The live integration suite (opt-in, runs against a real SiYuan 3.8.4 kernel,
 never in CI):
 
 ```sh
-SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> npx vitest run --project integration
+SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
+  npx vitest run --project integration
 ```
 
 ## License

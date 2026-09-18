@@ -92,7 +92,7 @@ describe("validateGnubrainSettings", () => {
 	it.each([
 		[
 			"baseUrl",
-			" http://192.168.100.1:6806 ",
+			" http://example.com ",
 			"baseUrl is required and must be a non-empty string",
 		],
 		[

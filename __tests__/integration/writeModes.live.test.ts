@@ -33,11 +33,14 @@ import {
 } from "./harness.js";
 
 describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () => {
-	const client = new SiYuanKernelClient(BASE_URL, TOKEN);
+	// Built lazily: a describe body runs during collection even when the suite
+	// is skipped, and BASE_URL/TOKEN are only present in a live run.
+	let client: SiYuanKernelClient;
 	let notebookId = "";
 	let run = 0;
 
 	beforeAll(async () => {
+		client = new SiYuanKernelClient(BASE_URL, TOKEN);
 		const box = await client.createNotebook(
 			`gnubrain-live-pins-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`,
 		);

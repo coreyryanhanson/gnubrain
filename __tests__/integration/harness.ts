@@ -27,11 +27,18 @@ import {
 } from "../../validation.js";
 
 export const INTEGRATION = process.env.SIYUAN_INTEGRATION === "1";
-export const BASE_URL =
-	process.env.SIYUAN_BASE_URL ?? "http://192.168.100.1:6806";
+/** The live kernel origin is operator config — no default is baked in.
+ * Required via SIYUAN_BASE_URL whenever the suite actually runs. */
+export const BASE_URL = process.env.SIYUAN_BASE_URL ?? "";
 export const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
 /** Live round-trips + fixture-mint polling run well past the unit budget. */
 export const LIVE_TIMEOUT = 30_000;
+
+if (INTEGRATION && BASE_URL === "") {
+	throw new Error(
+		"SIYUAN_INTEGRATION=1 requires SIYUAN_BASE_URL (the live kernel origin) — the harness bakes in no default",
+	);
+}
 
 /** Raw direct kernel call — a POST fetch with a Token header, bypassing the
  * typed client entirely. `token` override is what bogus-token arming uses. */
