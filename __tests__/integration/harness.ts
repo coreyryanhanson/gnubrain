@@ -13,6 +13,10 @@
 //    bogus-token arming deliberately stay outside the typed client (§10);
 //    every notebook/doc lifecycle call rides the typed client.
 
+import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { expect } from "vitest";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import { ownershipStmt } from "../../kernel.js";
 import {
@@ -33,6 +37,14 @@ export const BASE_URL = process.env.SIYUAN_BASE_URL ?? "";
 export const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
 /** Live round-trips + fixture-mint polling run well past the unit budget. */
 export const LIVE_TIMEOUT = 30_000;
+
+/** The repo root without a trailing slash — the local path-package entry
+ * the temp-HOME seeded settings.json `packages` list carries: the child pi
+ * loads the extension through the real install mechanism, not a test seam,
+ * so the extension runs unmodified and reads its fixed global path. */
+export const REPO_ROOT = fileURLToPath(
+	new URL("../..", import.meta.url),
+).replace(/\/$/, "");
 
 if (INTEGRATION && BASE_URL === "") {
 	throw new Error(
@@ -154,6 +166,116 @@ export async function awaitSearchable(
 		},
 		timeoutMs,
 	);
+}
+
+// --- headless `pi -p` harness (shared by the gate + headless live files) ---
+
+export interface HeadlessEvent {
+	type: string;
+	entry?: { type: string; customType?: string; data?: unknown };
+	message?: { role?: string };
+}
+
+/** Seed the pinned global settings path under a temp HOME — the exact file
+ * shape the extension reads by construction. */
+export function seedHome(
+	home: string,
+	settings: unknown,
+	packages: string[],
+): void {
+	mkdirSync(`${home}/.pi/agent`, { recursive: true });
+	writeFileSync(
+		`${home}/.pi/agent/settings.json`,
+		JSON.stringify({ packages, gnubrain: settings }),
+	);
+}
+
+let seedSeq = 0;
+
+/** Seed a pi session file with custom entries — the persisted state a
+ * prior session would carry. Needed because pi's flush guard never writes
+ * a session file that saw no assistant message, and pure command dispatches
+ * produce none — so a --session <id> lookup on a command-only child run
+ * finds nothing. The seeded entries use exactly the shapes appendEntry
+ * writes (kb-scope snapshots; toolset-state pins), and the resumed child
+ * runs the real restore machinery unmodified. */
+export function seedSession(
+	home: string,
+	cwd: string,
+	entries: { customType: string; data: unknown }[],
+): string {
+	const path = `${home}/seed-session-${++seedSeq}.jsonl`;
+	const ts = new Date().toISOString();
+	const lines = [
+		JSON.stringify({
+			type: "session",
+			version: 3,
+			id: crypto.randomUUID(),
+			timestamp: ts,
+			cwd,
+		}),
+	];
+	for (const e of entries) {
+		lines.push(
+			JSON.stringify({
+				type: "custom",
+				customType: e.customType,
+				data: e.data,
+				id: crypto.randomUUID().slice(0, 8),
+				parentId: null,
+				timestamp: ts,
+			}),
+		);
+	}
+	writeFileSync(path, `${lines.join("\n")}\n`);
+	return path;
+}
+
+/** Spawn one headless pi run and parse its JSON event stream. PI_TOOLMASKING_DEFER
+ * is stripped: when the suite itself runs under a pi parent (agent-driven
+ * live runs), the parent's child-defer signal would be inherited and the
+ * child would defer toolset-mask enforcement — a test-harness artifact, not
+ * product behavior (an interactive user run has no such var; masking
+ * enforces). Empty string = enforce, per pi-tool-masking's fail-closed
+ * foreign-var check. */
+export function runHeadlessPi(
+	args: string[],
+	env: Record<string, string>,
+	cwd: string,
+	opts: { timeoutMs?: number } = {},
+): { events: HeadlessEvent[] } {
+	const run = spawnSync("pi", ["-p", "--mode", "json", ...args], {
+		env: { ...process.env, ...env, PI_TOOLMASKING_DEFER: "" } as Record<
+			string,
+			string
+		>,
+		cwd,
+		encoding: "utf8",
+		timeout: opts.timeoutMs ?? 120_000,
+	});
+	expect(run.error).toBeUndefined();
+	expect(run.status).toBe(0);
+	expect(run.stderr).not.toMatch(/error/i);
+	const lines = String(run.stdout).split("\n");
+	const header = JSON.parse(lines[0] as string) as { type: string };
+	expect(header.type).toBe("session");
+	const events = lines
+		.slice(1)
+		.filter((line) => line.startsWith("{"))
+		.map((line) => JSON.parse(line) as HeadlessEvent);
+	return { events };
+}
+
+/** The kb-scope snapshots appended during a run, in order. */
+export function scopeEntries(events: HeadlessEvent[]): unknown[] {
+	return events
+		.filter(
+			(e) =>
+				e.type === "entry_appended" &&
+				e.entry?.type === "custom" &&
+				e.entry.customType === "kb-scope",
+		)
+		.map((e) => e.entry?.data);
 }
 
 export interface IntegrationFixtures {

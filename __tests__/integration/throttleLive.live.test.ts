@@ -105,7 +105,7 @@ function readRunner(
 ): (
 	params: Record<string, unknown>,
 ) => Promise<Record<string, unknown> & { status: string }> {
-	const { pi, toolDefs } = createFakePi();
+	const { pi, runToolDetails } = createFakePi();
 	registerReadToolsAndToolset(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernel,
@@ -113,16 +113,7 @@ function readRunner(
 		baselines: ContentBaselines.create(),
 	});
 	const { ctx } = createFakeCtx();
-	return async (params) =>
-		(
-			await (
-				toolDefs.get("kb_read") as unknown as {
-					execute: (...args: unknown[]) => Promise<{
-						details: Record<string, unknown> & { status: string };
-					}>;
-				}
-			).execute("id", params, undefined, undefined, ctx)
-		).details;
+	return async (params) => runToolDetails("kb_read", params, ctx);
 }
 
 /** Teardown that surfaces an active lock instead of cascading extensions

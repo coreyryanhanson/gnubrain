@@ -66,7 +66,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 		} = {},
 	) {
 		const confirms: { title: string; message: string }[] = [];
-		const { pi, toolDefs } = createFakePi();
+		const { pi, runToolDetails } = createFakePi();
 		registerWriteTool(pi, {
 			getValidation: () => fixtures.validation,
 			getKernel: () => client,
@@ -85,28 +85,19 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 		const { ctx } = createFakeCtx({
 			...(opts.hasUI !== undefined && { hasUI: opts.hasUI }),
 		});
-		const run = async (
-			params: Record<string, unknown>,
-		): Promise<Record<string, unknown> & { status: string }> =>
-			(
-				await (
-					toolDefs.get("kb_write") as unknown as {
-						execute: (...args: unknown[]) => Promise<{
-							details: Record<string, unknown> & { status: string };
-						}>;
-					}
-				).execute("id", params, undefined, undefined, ctx)
-			).details;
 		return {
-			run,
 			confirms,
+			run: async (
+				params: Record<string, unknown>,
+			): Promise<Record<string, unknown> & { status: string }> =>
+				runToolDetails("kb_write", params, ctx),
 		};
 	}
 
 	/** kb_read through the tool (the outline path that seeds served
 	 * baselines). */
 	function readSetup(baselines?: ContentBaselines) {
-		const { pi, toolDefs } = createFakePi();
+		const { pi, runToolDetails } = createFakePi();
 		registerReadToolsAndToolset(pi, {
 			getValidation: () => fixtures.validation,
 			getKernel: () => client,
@@ -117,15 +108,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 		return async (
 			params: Record<string, unknown>,
 		): Promise<Record<string, unknown> & { status: string }> =>
-			(
-				await (
-					toolDefs.get("kb_read") as unknown as {
-						execute: (...args: unknown[]) => Promise<{
-							details: Record<string, unknown> & { status: string };
-						}>;
-					}
-				).execute("id", params, undefined, undefined, ctx)
-			).details;
+			runToolDetails("kb_read", params, ctx);
 	}
 
 	const heading = (walk: WalkedBlock[], content: string): WalkedBlock => {

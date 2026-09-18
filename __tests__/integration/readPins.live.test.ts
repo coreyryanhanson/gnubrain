@@ -16,6 +16,7 @@ import { RESULT_LIMIT } from "../../spill.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { guardExactStmt } from "../../writeGuard.js";
 import { registerWriteTool } from "../../write.js";
+import { createWriteConfirmState } from "../../writeConfirm.js";
 import {
 	runSessionValidation,
 	type SessionValidation,
@@ -53,7 +54,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	/** Register the read tools on a fake pi, wired to a validation and the
 	 * live client; returns a details-level runner. */
 	function readSetup(validation: SessionValidation = fixtures.validation) {
-		const { pi, toolDefs } = createFakePi();
+		const { pi, runToolDetails } = createFakePi();
 		registerReadToolsAndToolset(pi, {
 			getValidation: () => validation,
 			getKernel: () => client,
@@ -65,15 +66,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 			name: string,
 			params: Record<string, unknown>,
 		): Promise<Record<string, unknown> & { status: string }> =>
-			(
-				await (
-					toolDefs.get(name) as unknown as {
-						execute: (...args: unknown[]) => Promise<{
-							details: Record<string, unknown> & { status: string };
-						}>;
-					}
-				).execute("id", params, undefined, undefined, ctx)
-			).details;
+			runToolDetails(name, params, ctx);
 	}
 
 	/** Register kb_write over a create-call-counting view of the live client
@@ -88,29 +81,23 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 				return client.createDocWithMarkdown(p);
 			},
 		}) as SiYuanKernelClient;
-		const { pi, toolDefs } = createFakePi();
+		const { pi, runToolDetails } = createFakePi();
 		registerWriteTool(pi, {
 			getValidation: () => validation,
 			getKernel: () => kernel,
 			breaker: new CircuitBreaker(),
-			confirmState: { timedOut: new Set() },
+			confirmState: createWriteConfirmState(),
 			baselines: ContentBaselines.create(),
 			confirm: async () => true,
 		});
 		const { ctx } = createFakeCtx();
-		const run = async (
-			params: Record<string, unknown>,
-		): Promise<Record<string, unknown> & { status: string }> =>
-			(
-				await (
-					toolDefs.get("kb_write") as unknown as {
-						execute: (...args: unknown[]) => Promise<{
-							details: Record<string, unknown> & { status: string };
-						}>;
-					}
-				).execute("id", params, undefined, undefined, ctx)
-			).details;
-		return { run, createCalls };
+		return {
+			createCalls,
+			run: async (
+				params: Record<string, unknown>,
+			): Promise<Record<string, unknown> & { status: string }> =>
+				runToolDetails("kb_write", params, ctx),
+		};
 	}
 
 	/** Envelope rows whether inline or spilled (a >64-row / >8k-char payload

@@ -29,6 +29,31 @@ export function createFakePi() {
 	// this set via setActiveTools.
 	let active: string[] = [];
 	const eventHandlers = new Map<string, Handler[]>();
+	const runToolImpl = async (
+		name: string,
+		params: unknown,
+		ctx: unknown,
+	): Promise<{ details: EnvelopeShape }> => {
+		const tool = toolDefs.get(name);
+		const execute = tool?.execute as
+			| ((...args: unknown[]) => Promise<{ details: EnvelopeShape }>)
+			| undefined;
+		if (tool === undefined || execute === undefined) {
+			throw new Error(`no tool registered: ${name}`);
+		}
+		return await execute("test-id", params, undefined, undefined, ctx);
+	};
+	const runToolDetails = async (
+		name: string,
+		params: unknown,
+		ctx: unknown,
+	): Promise<Record<string, unknown> & { status: string }> =>
+		(await runToolImpl(name, params, ctx)).details as unknown as Record<
+			string,
+			unknown
+		> & {
+			status: string;
+		};
 	const pi = {
 		on(event: string, handler: Handler) {
 			const list = handlers.get(event) ?? [];
@@ -76,16 +101,8 @@ export function createFakePi() {
 			Promise.all((handlers.get(event) ?? []).map((h) => h(event, ctx))),
 		runCommand: async (args: string, ctx: unknown) =>
 			await commands.get("kb")?.handler(args, ctx),
-		runTool: async (name: string, params: unknown, ctx: unknown) => {
-			const tool = toolDefs.get(name);
-			const execute = tool?.execute as
-				| ((...args: unknown[]) => Promise<{ details: EnvelopeShape }>)
-				| undefined;
-			if (tool === undefined || execute === undefined) {
-				throw new Error(`no tool registered: ${name}`);
-			}
-			return await execute("test-id", params, undefined, undefined, ctx);
-		},
+		runTool: runToolImpl,
+		runToolDetails,
 		entries,
 		tools,
 	};

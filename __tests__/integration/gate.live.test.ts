@@ -6,7 +6,7 @@
 //   the fixture settings (the item 11 pattern): a probe extension dumps
 //   pi.getAllTools()/getActiveTools() to a file so the tool-registration and
 //   masking asserts are mechanical, never eyeballed; seeded session files
-//   (seedSession below) put the resumed child through the real restore path.
+//   (harness seedSession) put the resumed child through the real restore path.
 // - Item 5 (auth breaker) runs in-process over the live kernel through the
 //   register(pi, deps) seam, with a token-rotating client wrapper so the
 //   per-call 401s are genuine kernel rejections (the field scenario the
@@ -18,16 +18,8 @@
 //
 // Opt-in with SIYUAN_INTEGRATION=1, never in CI.
 
-import { spawnSync } from "node:child_process";
-import {
-	mkdtempSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
 import register, { type GnubrainDeps } from "../../index.js";
@@ -36,25 +28,16 @@ import {
 	BASE_URL,
 	INTEGRATION,
 	LIVE_TIMEOUT,
+	REPO_ROOT,
 	TOKEN,
 	mintDoc,
+	runHeadlessPi,
+	scopeEntries,
+	seedHome,
+	seedSession,
 	setupFixtures,
 	type IntegrationFixtures,
 } from "./harness.js";
-
-/** The child pi loads extensions through the real install mechanism — the
- * repos listed under `packages` in the seeded settings.json — not a test
- * seam, so the extension runs unmodified and reads its fixed global path. */
-const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url)).replace(
-	/\/$/,
-	"",
-);
-
-interface HeadlessEvent {
-	type: string;
-	entry?: { type: string; customType?: string; data?: unknown };
-	message?: { role?: string };
-}
 
 interface ToolDump {
 	all: { name: string; path: string | null }[];
@@ -81,107 +64,6 @@ export default function (pi) {
 	});
 }
 `;
-
-/** Seed a pi session file with one custom entry — the persisted state a
- * prior session would carry. Needed because pi's flush guard never writes
- * a session file that saw no assistant message, and pure command dispatches
- * (every gate prompt here) produce none — so a --session <id> lookup on a
- * command-only child run finds nothing. The seeded entries use exactly the
- * shapes appendEntry writes (kb-scope snapshots — item 11's stream evidence;
- * toolset-state pins — pi-tool-masking's appendEntry(spec.persistKey,
- * {enabled})); the resumed child runs the real restore machinery unmodified. */
-let seedSeq = 0;
-function seedSession(
-	home: string,
-	cwd: string,
-	entries: { customType: string; data: unknown }[],
-): string {
-	const path = `${home}/seed-session-${++seedSeq}.jsonl`;
-	const ts = new Date().toISOString();
-	const header = {
-		type: "session",
-		version: 3,
-		id: crypto.randomUUID(),
-		timestamp: ts,
-		cwd,
-	};
-	const lines = [JSON.stringify(header)];
-	for (const e of entries) {
-		lines.push(
-			JSON.stringify({
-				type: "custom",
-				customType: e.customType,
-				data: e.data,
-				id: crypto.randomUUID().slice(0, 8),
-				parentId: null,
-				timestamp: ts,
-			}),
-		);
-	}
-	writeFileSync(path, `${lines.join("\n")}\n`);
-	return path;
-}
-
-/** Spawn one headless pi run and parse its JSON event stream. */
-function runPi(
-	args: string[],
-	env: Record<string, string>,
-	cwd: string,
-): { events: HeadlessEvent[] } {
-	const run = spawnSync("pi", ["-p", "--mode", "json", ...args], {
-		env: gateEnv(env),
-		cwd,
-		encoding: "utf8",
-		timeout: 120_000,
-	});
-	expect(run.error).toBeUndefined();
-	expect(run.status).toBe(0);
-	expect(run.stderr).not.toMatch(/error/i);
-	const lines = String(run.stdout).split("\n");
-	const header = JSON.parse(lines[0] as string) as {
-		type: string;
-		id: string;
-	};
-	expect(header.type).toBe("session");
-	const events = lines
-		.slice(1)
-		.filter((line) => line.startsWith("{"))
-		.map((line) => JSON.parse(line) as HeadlessEvent);
-	return { events };
-}
-
-/** The kb-scope snapshots appended during a run, in order. */
-function scopeEntries(events: HeadlessEvent[]): unknown[] {
-	return events
-		.filter(
-			(e) =>
-				e.type === "entry_appended" &&
-				e.entry?.type === "custom" &&
-				e.entry.customType === "kb-scope",
-		)
-		.map((e) => e.entry?.data);
-}
-
-function seedHome(home: string, settings: unknown, packages: string[]): void {
-	mkdirSync(`${home}/.pi/agent`, { recursive: true });
-	writeFileSync(
-		`${home}/.pi/agent/settings.json`,
-		JSON.stringify({ packages, gnubrain: settings }),
-	);
-}
-
-/** Child env for the gate's pi runs. PI_TOOLMASKING_DEFER is stripped: when
- * the suite itself runs under a pi parent (agent-driven gate runs), the
- * parent's child-defer signal would be inherited and the child would defer
- * toolset-mask enforcement — a test-harness artifact, not product behavior
- * (an interactive user run has no such var; masking enforces). Empty string
- * = enforce, per pi-tool-masking's fail-closed foreign-var check. */
-function gateEnv(overrides: Record<string, string>): Record<string, string> {
-	return { ...process.env, ...overrides, PI_TOOLMASKING_DEFER: "" } as Record<
-		string,
-		string
-	>;
-}
 
 describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	let fixtures: IntegrationFixtures;
@@ -217,7 +99,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 				// Run 1: fresh in-memory session — probe the default
 				// registration state (--no-session; a resume seed isn't needed
 				// for the default state: both toolsets default-enable).
-				const first = runPi(["--no-session", "/tools-dump"], env, cwd);
+				const first = runHeadlessPi(["--no-session", "/tools-dump"], env, cwd);
 				const initial = readDump();
 				const names = initial.all.map((t) => t.name);
 				// All four kb tools registered, sourced from this repo (not
@@ -258,7 +140,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 						data: { enabled: false },
 					},
 				]);
-				runPi(["--session", readOffSeed, "/tools-dump"], env, cwd);
+				runHeadlessPi(["--session", readOffSeed, "/tools-dump"], env, cwd);
 				const readOnly = readDump();
 				expect(readOnly.active).not.toContain("kb_write");
 				for (const name of [
@@ -271,11 +153,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 					expect(readOnly.active).toContain(name);
 				}
 
-				runPi(["--session", readOffSeed, "/tools-dump"], env, cwd);
+				runHeadlessPi(["--session", readOffSeed, "/tools-dump"], env, cwd);
 				expect(readDump().active).not.toContain("kb_write");
 
 				const cleanSeed = seedSession(home, cwd, []);
-				runPi(
+				runHeadlessPi(
 					["--session", cleanSeed, "/kb tools write", "/tools-dump"],
 					env,
 					cwd,
@@ -317,7 +199,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 
 				// Resume: re-issue the same toggle. Idempotent no-op — no
 				// snapshot appended, because scope came from the persisted entry.
-				const resumed = runPi(
+				const resumed = runHeadlessPi(
 					["--session", seed, "/kb fixture-a off"],
 					env,
 					cwd,
@@ -327,7 +209,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 				// Control: the still-active KB toggles fine in the same resumed
 				// session (proving the no-op above is scope-derived, not a dead
 				// command path) and appends the full post-toggle snapshot.
-				const toggled = runPi(
+				const toggled = runHeadlessPi(
 					["--session", seed, "/kb fixture-b off"],
 					env,
 					cwd,
@@ -354,7 +236,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 			const cwd = mkdtempSync(`${tmpdir()}/gnubrain-gate-cwd-`);
 			try {
 				seedHome(home, fixtures.settings, [REPO_ROOT]);
-				const { events } = runPi(
+				const { events } = runHeadlessPi(
 					["/kb fixture-a off", "/kb all off", "/kb fixture-a on"],
 					{ HOME: home },
 					cwd,
