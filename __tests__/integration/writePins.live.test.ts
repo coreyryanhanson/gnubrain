@@ -1,10 +1,9 @@
-// Sprint 5b-c: the write-side integration cases — item 5 (stale-target
-// contract pins), item 6 (fresh-content live pin), item 7 (replace-section +
-// delete-orphans end to end), item 8 (move cases), item 10 (write-result
-// freshness). Runs against the live pinned kernel over the 5b-a fixtures;
-// opt-in with SIYUAN_INTEGRATION=1, never in CI.
+// Sprint 5b-c: the write-side integration cases — the §10 stale-target,
+// fresh-content, replace-section + delete-orphans, move, and write-result
+// freshness cases. Runs against the live pinned kernel over the 5b-a
+// fixtures; opt-in with SIYUAN_INTEGRATION=1, never in CI.
 //
-// No-honest-live-route notes (unit-pinned instead, per plan item 5 / §10):
+// No-honest-live-route notes (unit-pinned instead, per §10's stale-target case):
 // append's walk-set rollback branch and move's tree-level-miss branch are
 // unreachable live — 3.8.4 executes block writes synchronously and errors on
 // unresolvable ids/anchors instead of rolling back behind an HTTP success.
@@ -58,7 +57,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	/** kb_write over the live client; `confirm` intercepts the dialog (only
 	 * reached with hasUI — the fixture settings' allowUnattendedWrites only
 	 * skips the dialog for headless sessions). `baselines` lets a case share
-	 * one map between the read and write tools (item 6's served baselines). */
+	 * one map between the read and write tools (the fresh-content case's served baselines). */
 	function writeSetup(
 		opts: {
 			confirm?: WriteConfirmFn;
@@ -167,11 +166,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			.map((b) => b.id);
 
 	// -------------------------------------------------------------------
-	// Item 5 — stale-target contract pins
+	// Stale-target contract pins (§10)
 	// -------------------------------------------------------------------
 
 	it(
-		"item 5a: edit against a kernel-deleted block surfaces the kernel's synchronous error verbatim with the fresh outline",
+		"edit against a kernel-deleted block surfaces the kernel's synchronous error verbatim with the fresh outline",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -202,7 +201,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 5c: delete of a kernel-deleted block surfaces the synchronous 'tree not found' error verbatim with the fresh outline",
+		"delete of a kernel-deleted block surfaces the synchronous 'tree not found' error verbatim with the fresh outline",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -231,11 +230,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Item 6 — fresh-content live pin
+	// Fresh-content live pin (§10)
 	// -------------------------------------------------------------------
 
 	it(
-		"item 6: kernel-side content change between kb_read and edit → stale_content refusal with current content; control run applies",
+		"kernel-side content change between kb_read and edit → stale_content refusal with current content; control run applies",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -337,11 +336,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Item 7 — replace-section + delete-orphans end to end
+	// Replace-section + delete-orphans end to end (§10)
 	// -------------------------------------------------------------------
 
 	it(
-		"item 7a: replace-section on a list/quote-ending section — boundary rule, heading ID survives with its ref, outline ordering re-asserted",
+		"replace-section on a list/quote-ending section — boundary rule, heading ID survives with its ref, outline ordering re-asserted",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -430,7 +429,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 7b: final-section trailing sweep — the trailing block leaves with the section, the replacement lands at doc end, the confirmation showed it",
+		"final-section trailing sweep — the trailing block leaves with the section, the replacement lands at doc end, the confirmation showed it",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -473,7 +472,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 7c: replace-section with a planted ref into a section content block — the confirmation named the inbound ref, the ref reports invalid with the invalidRefs echo",
+		"replace-section with a planted ref into a section content block — the confirmation named the inbound ref, the ref reports invalid with the invalidRefs echo",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -514,7 +513,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 7d: updateBlock preserves block IDs — a ref into the edited block still resolves",
+		"updateBlock preserves block IDs — a ref into the edited block still resolves",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -564,7 +563,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 7e: doc-level delete backlink case — the confirmation surfaced the backlink count and referring hpaths; the ref reports invalid afterward",
+		"doc-level delete backlink case — the confirmation surfaced the backlink count and referring hpaths; the ref reports invalid afterward",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -601,7 +600,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 7f: block-level delete orphan case — planted ref to a single block deleted via the tool → invalidRefs echo",
+		"block-level delete orphan case — planted ref to a single block deleted via the tool → invalidRefs echo",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -633,11 +632,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Item 8 — move cases (doc-level; cross-doc + same-doc block moves)
+	// Move cases (§10): doc-level; cross-doc + same-doc block moves
 	// -------------------------------------------------------------------
 
 	it(
-		"item 8a: doc-level move — IDs survive, echo shows the new hpath, follow-up write by echoed docId, self/own-descendant refused, own-parent no-op",
+		"doc-level move — IDs survive, echo shows the new hpath, follow-up write by echoed docId, self/own-descendant refused, own-parent no-op",
 		async () => {
 			const rootDoc = await mintDoc(
 				client,
@@ -739,7 +738,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 8b: doc-level move past the kernel's depth cap surfaces the error verbatim",
+		"doc-level move past the kernel's depth cap surfaces the error verbatim",
 		async () => {
 			// A depth-7 destination chain (the kernel's creation cap): nesting
 			// under a doc that deep is rejected by the kernel's own depth cap,
@@ -781,7 +780,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 8c: cross-doc block move — movedBlockId equality, destOutline freshness, provenance survives; same-doc shape pin",
+		"cross-doc block move — movedBlockId equality, destOutline freshness, provenance survives; same-doc shape pin",
 		async () => {
 			const srcId = await mintDoc(
 				client,
@@ -849,7 +848,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	// -------------------------------------------------------------------
 
 	it(
-		"item 10a/10f: multi-block append's walk-set diff contains every new ID with newBlockId among them; single-block yields exactly one; the result outline matches a fresh post-write query",
+		"multi-block append's walk-set diff contains every new ID with newBlockId among them; single-block yields exactly one; the result outline matches a fresh post-write query",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -904,7 +903,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 10b: refs index convergence — a write-planted block ref becomes visible to the backlink query within a bounded wait",
+		"refs index convergence — a write-planted block ref becomes visible to the backlink query within a bounded wait",
 		async () => {
 			const hostId = await mintDoc(
 				client,
@@ -948,7 +947,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 10c: newBlockId response-shape — the transaction's doOperations[0].id is the minted ID and resolves to the inserted content",
+		"newBlockId response-shape — the transaction's doOperations[0].id is the minted ID and resolves to the inserted content",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -981,7 +980,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 10d: anchor-echo pin — append onto a trailing-content-after-last-heading doc reports the doc-end anchor",
+		"anchor-echo pin — append onto a trailing-content-after-last-heading doc reports the doc-end anchor",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -1008,7 +1007,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"item 10e: anchor-placement pin — nextID lands where the outline says: a list-ending section (AST-sibling nesting trap) and a final-section container target",
+		"anchor-placement pin — nextID lands where the outline says: a list-ending section (AST-sibling nesting trap) and a final-section container target",
 		async () => {
 			// Section ending in a list: the insert must land at the section's
 			// level (before the boundary heading), never inside the list.

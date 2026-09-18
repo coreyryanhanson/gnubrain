@@ -4,8 +4,8 @@ A pi extension that builds and maintains a knowledge base in SiYuan, modeled on 
 methods but re-grounded: **pi as the harness, SiYuan as the storage engine, zero model/provider
 opinions.**
 
-Status: design complete — Milestones 0–2 are done (§11); implementation continues at
-Milestone 3. This document is the successor to DESIGN.md and fully supersedes it; it folds in the addressing, discovery, and title-policy
+Status: Milestones 0–3 are done (§11); M3 deviations are recorded in Appendix B.
+Next: Milestone 4 (loop validation — recall harness, §10/§11). This document is the successor to DESIGN.md and fully supersedes it; it folds in the addressing, discovery, and title-policy
 revisions agreed in design review (decision records R1–R6, Appendix A).
 Provenance: decisions reached via a Socratic design interview plus adversarial review against
 GBrain and SiYuan primary sources (kernel claims verified against ~/siyuan; the
@@ -88,8 +88,7 @@ repos green, `file:` dependency working):
   `page`/`pageSize` (the kernel's real fields, optional since 0.2.0 — kernel defaults
   page 1 / pageSize 32 apply when omitted); read takes only the doc `id` — so
   result budgets (§3) are entirely extension-owned. Every endpoint method exists in
-  `client.ts` with its request shape pinned by unit and integration tests (§10 M2
-  profile, passed against live 3.8.3).
+  `client.ts` with its request shape pinned by unit and integration tests (§10).
 - **Transport contract (implemented in the client)**: `SiYuanRateLimitError` (429) is
   a *sibling* of `SiYuanAuthError` — the kernel rate-locks IPs, so a 429 can arrive
   with a correct token; the client never retries 401/403/429, gets a single retry on
@@ -430,10 +429,10 @@ The exact leg must be `LIKE`, not `=`: `blocks.content` carries the binary (case
 collation, so an `=` guard would send every ASCII-cased variant ("Docker Networking") into
 the near-match scan and the `confirmNew` interruption instead of matching transparently.
 The exact-leg pattern is built from the **verbatim** submitted title (mint policy step
-2, below): the kernel stores the title unescaped in `blocks.content` — live-verified
-against the pinned 3.8.4 kernel (`A & B`, `say "hi"`, `a < b > c` all store as submitted;
-the HTML-escaped form lives only in the title IAL, `blocks.ial`, which the guard does not
-query) — so the plain form **is** the stored form. LIKE-wildcard escaping then escapes
+2, below): the kernel stores the title unescaped in `blocks.content` (the HTML-escaped
+form lives only in the title IAL, `blocks.ial`, which the guard does not query —
+pinned live by the §10 title-guard round-trip case), so the plain form **is** the
+stored form. LIKE-wildcard escaping then escapes
 `%`/`_` so a literal wildcard character in a title cannot widen the match.
 Two queries, run in order: the exact leg first; only when it returns no rows does the
 near-match scan run (the scan's `AND` legs are its own query — the `...` above stands for
@@ -463,9 +462,8 @@ the kernel stores — it builds the submission path from ground truth:
    contains tab/newline/control characters (their stored form is an unpredictable kernel
    transform — reject at mint with a rephrase hint; user-minted docs with such titles
    stay reachable by docId per R1). HTML-special characters (`& < > "`) are **not**
-   rejected: the stored form in `blocks.content` is the title verbatim (live-verified
-   against the pinned 3.8.4 kernel — the HTML-escaped form lives only in the title IAL,
-   `blocks.ial`), so the guard matches these titles verbatim (guard SQL above). The
+   rejected: the stored form in `blocks.content` is the title verbatim (see the guard
+   SQL above), so the guard matches these titles verbatim. The
    apostrophe stores verbatim as well. Titles like `R&D`,
    `O'Reilly`, or "Don't repeat yourself" mint normally — LLM agents are the primary
    minters and such titles are common, so reject-at-mint here would be a recurring
@@ -881,11 +879,10 @@ when the ID no longer resolves, verified against source at 3.8.2:
   treats a missing block after a move as normal). Benign — the end state (block absent)
   is what the agent asked for — but the tool must not read the success as evidence the
   delete *did* anything.
-  **3.8.4 update (pin moved, live-verified)**: block writes now execute synchronously
+  **3.8.4 update**: block writes now execute synchronously
   through `PerformBlockOperation` (`model/block_operation.go`), which drains the queued
   transactions first and holds the flush lock — so (a) post-delete evidence reads no
-  longer race the queue ticker (the staleness this record predated is gone: 0/3 stale
-  immediate reads live, was 5/5 on 3.8.3); (b) a missing delete ID is now a
+  longer race the queue ticker (the staleness this record predated is gone); (b) a missing delete ID is now a
   **synchronous error** ("tree not found") — delete moves into edit/move's class, and
   the tool surfaces it verbatim with the fresh outline attached; (c) an
   `insertBlock`/`appendBlock` whose anchor does not resolve now fails the HTTP call
@@ -1666,491 +1663,168 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   `siyuan-kernel-api` stays zero-dep.
 - **Unit**: `siyuan-kernel-api` client tested with mocked `fetch` — request shapes, auth header,
   error mapping, version fetch (the core holds no gate — §2 ownership).
-- **Unit (extension layer)**: the risky logic lives in the extension, not the client, so the
-  extension gets its own suite with a mocked `siyuan-kernel-api`, covering:
-  - title guard (§4 R3) — the exact leg (ASCII-cased variant matches transparently;
-    HTML-special titles match verbatim — the kernel stores doc titles unescaped in
-    `blocks.content`, so the pattern is the submitted title with `%`/`_` LIKE-escaped so
-    they can't widen the scan), the space/hyphen/underscore
-    prefix-variant scan (`docker-networking` vs `docker\_networking` matches the third leg),
-    the 20-row candidate cap and its `truncated` marker, and the
-    `confirmNew` skip path (guard fires without it; with it, create proceeds past
-    **both** legs — including an exact-title match — and the param is absent from the
-    tool's declared input schema, §4 decision record); mint-policy
-    rejections — empty after trim, `/` in title, >512 runes, and tab/newline/control
-    characters (each with the rephrase-hint message);
-  - verified-create by-ID asserts (§4 R3) — top-level identity assert; nested assert
-    shape (parent still exists with the used hpath, child `hpath` derived from the
-    read-back child row's stored title — ground truth, never the submitted title); a
-    simulated stale parent (deleted between hpath read-back and create) fails loud with
-    the structured error, never a silent ghost nesting;
-  - parser certification — single top-level SELECT enforcement / DML rejection;
-    multi-statement rejection (pinned to the executed spike: `astify` returns an array
-    rather than throwing, so the cert checks `Array.isArray`); FROM-allowlist violation
-    incl. comma cross-join (`FROM blocks, refs`); CTE rejection (`WITH blocks AS
-    (SELECT 1 AS box) SELECT * FROM blocks` — the kernel's readonly layer permits WITH,
-    so layer 1 is the only line of defense; the pin asserts rejection, never allowlist
-    filtering of CTE refs); subquery rejection; UNION rejection (pinned to the spike:
-    UNION parses as `type: 'select'` with the second arm in `_next`/`set_op`, so
-    rejection keys on those fields, not the type string); JOIN rejection
-    (single-table-FROM policy);
-  - injected-predicate re-parse — OR precedence verified via the re-parse, plus
-    round-trip parity pins for escaped quotes, `LIKE` backslash escapes, clause
-    keywords inside strings, and non-ASCII literals (spike finding: no AST locations
-    exist on any dialect, so the original coords-into-source-text splice plan was
-    replaced by AST rebuild + serializer round-trip);
-  - LIMIT presence read off the AST; an `||`-containing statement (vitess rejects `||`,
-    so the kernel falls to the `queryRawStmt` text-scan path, `sql/block_query.go` —
-    the extension's injected LIMIT must still be present in the executed statement);
-    agent-supplied LIMIT passes through verbatim — a statement with `LIMIT 100000`
-    executes with that limit, never clamped or rejected (the §3 passthrough decision
-    record);
-  - post-filter rules — box-less aggregate rows skip the backstop; the truncation
-    marker fires when `kept + dropped` reaches the limit;
-  - `kb`-param rejection messages, incl. the empty-array rejection (no kernel call
-    fires, `status: refused` names the activation path — §5 status table);
-  - search rejecting agent-supplied `method` and always sending `method: 0`, plus the
-    same ownership rule for the aux params `types`/`orderBy`/`groupBy` (§3);
-  - scope resolution (`persisted → defaultKBs`, reason-agnostic, incl. the absent-key →
-    empty-set branch);
-  - `/kb` toggle writes — bare `/kb`, verbless `/kb <name>` usage output, idempotent
-    re-toggle, `/kb all off` empty-scope write, zero-valid-KB no-op report, the
-    reserved-keyword rejection for a KB named `all`, and the name-grammar rejection for
-    a KB whose name contains whitespace or `/` (the §5 shape-validation constraint);
-  - spill inline-cut/preview/per-session-dir (no-cleanup posture) plus the outline cap
-    (an over-`OUTLINE_HEADINGS` outline inlines the first N lines + spill pointer, and
-    the §4 verification and anchor logic run on the full unfiltered walk set regardless);
-  - replace-section call-order pin (insert-before-delete — the mocked suite asserts the
-    deleteBlock follows the successful insert, so a failed delete leaves visible
-    duplication, never loss; the live-kernel integration case covers the rest);
-  - stale-target verification (§4 stale-target record) — an insert whose `newBlockId`
-    is absent from the post-write block tree (the unfiltered `getChildBlocks` walk set,
-    §3 — not the heading-only outline) → `status: error` naming the vanished target,
-    never success; an edit target's kernel error surfaces verbatim with the fresh
-    outline; a delete of a missing target answers per the kernel generation — 3.8.3 a
-    success no-op with `targetGone` (absence from the unfiltered post-write walk set)
-    as evidence, 3.8.4 a synchronous "tree not found" error surfaced verbatim with the
-    fresh outline (both pinned);
-    a cross-doc move whose `movedBlockId` is absent from the destination post-move walk
-    set (or still present in the source's) → `status: error`, never a silent no-move
-    success;
-  - fresh-content precondition (§4 decision record) — a baseline hash is recorded when
-    the tool serves a target block's content (outline-sourced target); no served
-    content this session → the current content is read at call start and shown in the
-    confirmation, and approval establishes the baseline; a content change after
-    approval → `stale_content` refusal with the current content and fresh outline
-    attached and **no kernel write call fired** (asserted on a request log); a matching
-    re-check proceeds normally; `replace-section` baselines the walk-enumerated delete
-    set's content, and the confirmation displays it;
-  - auth circuit breaker — 3 consecutive auth failures → degraded, zero further kernel
-    calls from tool calls; recovery (a corrected token in settings plus a `/kb` dispatch
-    re-runs the full validation pass, clears the degraded flag and counter, and calls
-    proceed; a failed re-check re-engages degradation all-or-nothing instead of
-    looping, §5);
-  - 429 handling — a 429 with a correct token does not increment the breaker and does
-    not retry; the result names the lockout and its self-healing expiry, a call inside
-    the cooldown window returns the local refusal with no kernel round-trip (zero
-    requests on the test-harness request log), and a post-expiry call succeeds without
-    any recovery step (§5);
-  - settings validation order (shape → probe → notebooks, incl. the
-    project/global read path (global-only `kbs`/connection keys plus
-    `allowUnattendedWrites` and `writeConfirmTimeout` read from the global file
-    specifically; project `defaultKBs`
-    wins over global when present) and the
-    token-failure branch);
-  - encrypted-notebook rejection (§5) — a mocked `lsNotebooks` response carrying an
-    `encrypted: true` row is rejected at `session_start` with the message naming the
-    KB, for **both** lock states (`unlocked: false` and `unlocked: true` — one branch,
-    the §5 one-rejection pin); a plain notebook row passes validation unchanged; no
-    kernel call from the encrypted KB's tools ever fires (the KB left the valid set);
-  - error-envelope shape;
-  - write-confirmation branches — allow/refuse; a cancelled confirm and a timed-out
-    confirm both resolve to refusal (the §5 fail-closed direction; the confirm call
-    carries the timeout so an unresponsive RPC client cannot deadlock the turn); a
-    timed-out confirm carries reason `confirm_timeout`, a re-request of the same write
-    after it returns the terminal refusal immediately with no new confirm call (the
-    mocked suite asserts the confirm mock fires exactly once across both calls — the
-    AFK retry-treadmill pin), and an explicit `confirmed: false` decline stays
-    recoverable `refused`; `writeConfirmTimeout: 0` issues the confirm with no timeout
-    (blocks until answered); a `replace-section` confirmation on a final section displays the enumerated delete
-    set's block count, **the trailing blocks' current content** (the never-unseen-sweep
-    pin — the agent sees the exact text the final-section boundary will delete before
-    approving), plus the inbound-ref count and referring doc hpaths over the
-    section's closure (members plus descendants — the delete cascade's reach; the §4
-    visibility fixes for trailing content the
-    heading-only outline can't show and for refs into section content), and the
-    delete-bearing results carry `invalidRefs` (§4 write-result contract);
-  - status-slot rendering (glyph per probe state, headless-safe);
-  - version-gated write refusal (probe failure must fail closed for writes; also covers
-    a version mismatch from the pinned full version — the refusal path is exercised live
-    by the version-refusal contract pin below);
-  - the per-write-attempt first-write probe retry;
-  - file-path write input (§4 decision record) — a missing/unreadable `markdownFile` →
-    structured `error` naming the path with **no kernel call fired** (asserted on a
-    request log); `markdown` and `markdownFile` both present (or neither, on a
-    content-bearing mode) → shape-validation `error`; and the read-once capture: the
-    mocked flow mutates the file after the guard/confirm step and asserts the kernel
-    call and write confirmation operate on the string captured at call start;
-  - guard-stop draft staging (§4) — a `duplicate`/`near_matches` stop on an inline-body
-    create returns `stagedPath` under the session spill dir, the staged file's content
-    byte-equals the submitted markdown, the message names the `markdownFile` retry path;
-    a `markdownFile`-sourced create returns no `stagedPath` (nothing re-staged); a
-    non-guard stop (successful mint) leaves no draft file.
-- **Integration (opt-in)**: profile against the real host SiYuan at
-  `http://192.168.100.1:6806` (reachable from the dev VM; run manually from the VM —
-  the throttle pin locks the *calling* IP out for ~4 min, so CI never runs the profile:
-  it self-skips without env, decide per-run rather than wiring secrets into CI);
-  skipped by default so CI never needs SiYuan. The encrypted-notebook case is a
-  further-gated sub-case of the same profile (its own `SIYUAN_ENCRYPTED_PASSWORD` gate;
-  see the case bullet below). **Setup asserts the running kernel version exactly equals the pinned version** — an accidental upgrade produces a red suite instead of silently unverified drift; the upgrade checklist is the deliberate path. **Upgrade checklist (the enforcement procedure the §2 strict write gate backs — the gate fires, this checklist is how the re-pin gets earned; a guard no process runs is not a guard)**: on every
-  SiYuan upgrade, run the full integration profile against the new kernel *before*
-  updating the pinned version (the extension-owned `PINNED_SIYUAN_VERSION` constant, §2); a red suite means a behavior pin broke and
-  the affected decision records in this doc need re-verification — the re-pin is a
-  verified conclusion, never a version-number bump. The same procedure gates the parser
-  dependency: on any `node-sql-parser` version bump, re-run the full parser certification
-  matrix (unit) — the CTE-shadow rejection case included, since layer 1 is the *sole*
-  guard against a shadowed allowlisted table (`stmt_validate.go:165` permits WITH
-  kernel-side, so a parser regression here fails silently as mis-scoped rows) — plus the
-  spike's round-trip assertions (§3) against the new version, *before* updating the pin.
-  A parser bump is earned the same way as a kernel re-pin: verified conclusion, never a
-  version-number bump. **Fixture policy**: setup creates **two**
-  disposable notebooks, `gnubrain-test-fixture-a-<timestamp>` and `gnubrain-test-fixture-b-<timestamp>`,
-  via the documented `createNotebook` endpoint and teardown removes them via `removeNotebook` —
-  every write-path case (and every read case that filters by box) operates only inside the
-  fixtures, so a failed run leaves at worst two stray fixture notebooks (recoverable via
-  SiYuan's history, where `removeNotebook` copies it before deleting) instead of degrading the
-  live workspace. Two notebooks, not one: the multi-KB pins (multi-element `box IN (...)`,
-  two-KB search sweeps, the OR-precedence aggregate) need a deterministic two-KB workspace —
-  not fixture + live notebooks, whose expectations would depend on live data and flake. The raw-DML probes below touch only
-  fixture-created rows (and since 3.8.4 mutate nothing at all — Appendix B, deviation 9). The opt-in encrypted-notebook case mints its own encrypted +
-  plain fixture pair and removes both via `removeNotebook`, so the post-run baseline
-  stays zero strays. Fixture lifecycle is test setup code — notebook/doc lifecycle calls ride the
-  typed client as of 0.2.0 (`createNotebook`, `removeNotebook`, `renameDocByID`,
-  `listInvalidBlockRefs`), extended in 0.3.0: the encrypted-notebook machinery
-  (`createEncryptedNotebook`, `getEncryptedNotebookStatus`, `unlockAndOpenNotebook`)
-  and locking an encrypted box (typed `closeNotebook` — on an encrypted box it
-  clears the cached key and closes the per-box db, the kernel's locked state) ride
-  the typed client too; raw DELETE, the reindex trigger, and bogus-token arming
-  stay raw direct kernel calls, and none of it reaches the tool surface. The write path gets
-  dedicated cases here — it is the highest-stakes code in the project.
-  **Execution order (summary of the pins scattered below)**: the search-shape case runs
-  first (cheapest falsifier of the load-bearing request shape); every other
-  kernel-dependent case follows; the auth-throttle case runs after all of them and ends
-  by waiting out the extended lock; the raw-DML hardening pin runs last (Appendix B,
-  deviation 9 — since 3.8.4 it creates no desync; the position is kept as the
-  §10-last slot) and follows the throttle's expired backoff; the encrypted-notebook
-  case runs on the shared kernel like every other fixture case, gated behind the master
-  password — the one ordering constraint is that it needs the kernel, so it runs before
-  the throttle case and never inside the throttle lock window. The order is enforced
-  mechanically by an ordered vitest sequencer (the default cache-driven sort would
-  otherwise drift the long throttle file to the front of the queue).
-  - title-guard kernel round-trip (§4 R3 — the guard rides `blocks.content`, whose exact
-    behavior no unit transcription can prove, so this is the mandatory live pin): create
-    docs through the real kernel with adversarial titles — a tab-bearing title must be
-    **rejected at mint** with the rephrase hint (never forwarded), while HTML-special
-    titles (`A & B`, an apostrophe-bearing title) mint normally and the guard's exact
-    leg — built from the verbatim stored form — re-finds each one (the live stored-form
-    pin: if kernel content storage ever changes, this goes red instead of the guard going
-    silently blind); clean titles (leading/trailing space → trimmed, Unicode, the
-    512-rune boundary) store verbatim **and** yield the expected child hpath — the live
-    pin for the §4 superset claim (any mint-policy-surviving title must transform to
-    itself); a user-retitled doc (client `renameDocByID`
-    mid-test) still re-finds by its new stored title and misses the old one
-    (one guard miss → accepted-duplicate path, asserting no data loss);
-  - nested-mint case (§4 R3): create under an echoed `parentId` → the echo shows the
-    real `/parent/child` hpath → `read` by the echoed docId works → re-create with the
-    same title under the same parent hits the guard; the verified-create nested assert
-    compares the child's hpath against the read-back child row's stored title (ground
-    truth), not the submitted title (§4); the stale-parent race (parent
-    deleted between read-back and create) asserts fail-loud instead of nesting under a
-    ghost (drop the ghost subtree in teardown);
-  - duplicate-disambiguation case (§4 R1 — `duplicate` must have its exit): two
-    same-titled docs in one fixture (UI-created) → create with that title → `duplicate`
-    rows carrying the budgeted heading outline (not just excerpts — §4 flow step 1)
-    → re-create with `confirmNew: true` → a third same-titled doc mints (the
-    conscious-duplicate path, §4 decision record) → `delete {docId, doc: true}` on two
-    → re-create without the flag hits the guard's exact leg and one doc remains;
-  - verified-create, split into two cases (the kernel mints a duplicate on
-    create-on-existing-path, §4, so one test cannot assert both layers): the
-    *kernel-contract pin* is implemented and passing in the client's integration
-    profile (a raw second `createDocWithMd` on an existing path → exactly two doc
-    rows, content in the new doc — catches any upgrade that changes the
-    duplicate-minting behavior); the *tool-path test* (M3) — the extension's create
-    flow against a pre-existing title → the guard's exact leg matches first (no
-    create call fires, the existing doc's docId is returned), and the guard→create
-    race is only reachable in the mocked suite — its duplicate lands in the accepted
-    reconcilable class (§4 R3/R4, §9);
-  - `insertBlock` with `nextID=<boundary>` lands where the outline says — including a
-    section ending in a list/quote (the AST-sibling nesting trap, §4), a
-    container-nested target (the body lands inside the container, §4), and the
-    final-section `appendBlock`-to-container / doc-root cases;
-  - `replace-section` end to end (§4 — the highest-stakes composite write; the
-    enumerate→insert→delete machinery and the same-or-shallower boundary rule have no
-    other executable pin): replace a section whose body ends in a list/quote, then assert
-    the old body is gone, the new body sits directly under the heading, deeper headings
-    under the target went with the section (the boundary rule), the heading ID survives
-    (a block ref into the heading still resolves; `listInvalidBlockRefs` returns zero),
-    and the result carries `outline`/`anchor`/`newBlockId` (§4 write-result contract). A
-    second variant runs the same replacement against a doc with trailing non-heading
-    content after the final heading and asserts the trailing block is deleted with the
-    section (the §4 final-section boundary pin), the new body lands at doc end, and the
-    heading ID survives; a mocked assertion pins that the confirmation for this shape
-    displayed the trailing block's content before the delete (the §4 never-unseen-sweep
-    pin — deletion of never-shown content is the failure this guards). A third variant plants a block ref from another fixture doc
-    into a *content block inside the section* (not the heading — the same citation
-    surface `edit`'s `blockId` is sourced from): the confirmation surfaced the
-    inbound-ref count and referring doc hpath before the replace, and afterward the
-    ref reports invalid via `listInvalidBlockRefs` with the result's `invalidRefs`
-    echo carrying it (the §4 delete-bearing-write contract; the heading-survives
-    assert above covers the resolving half). The
-    insert-before-delete ordering cannot be forced against a live kernel honestly, so it
-    is pinned in the mocked unit suite as call order — a failed `deleteBlock` after a
-    successful insert leaves visible duplication, never loss;
-  - `updateBlock` preserves block IDs — assert zero invalid refs via
-    `/api/search/listInvalidBlockRefs` after an edit (client method `listInvalidBlockRefs`,
-    added in `siyuan-kernel-api@0.2.0`);
-  - `deleteBlock` orphan behavior on a referenced block;
-  - fresh-content precondition live pin (§4): outline a fixture doc through the tool,
-    then change a target block's content directly via the kernel (simulating a
-    concurrent session or a UI hand-edit), then issue the `edit` → the precondition's
-    re-read detects the hash mismatch and refuses with `stale_content` and the current
-    content attached, and the kernel content is untouched (asserted by re-read); a
-    control run with no intervening change applies normally;
-  - stale-target contract pin (§4 — the four block-write ops disagree on missing IDs,
-    and the insert path fails silently behind an HTTP success, so this cannot live in
-    mocks alone): delete a fixture block directly via the kernel (simulating another
-    session's write or a UI hand-edit), then (a) `edit` against it → the kernel's
-    synchronous not-found error surfaces as a failed result naming the block;
-    (b) `append` anchored to it → the tool's `newBlockId`-in-block-tree assertion (the
-    unfiltered `getChildBlocks` walk set, §3) turns the kernel's silent rollback into
-    `{status: error}` with the fresh outline attached, and no block was inserted; (c) `delete` against it → per the kernel generation: 3.8.3 answered success with `targetGone` (the
-    no-op, benign end state); **3.8.4 answers a synchronous "tree not found" error** —
-    surfaced verbatim with the fresh outline attached (unit-pinned; the live pin asserts
-    the error shape); (d) `move`
-    whose source block was deleted → the handler's synchronous `-1`
-    (`block not found`, `api/block_op.go:474` — blocktree-index check) surfaces as a
-    failed result; (e) `move` whose destination anchor is deleted between outline-fetch
-    and move (a tree-level miss, not an index miss) → the kernel rolls back silently
-    behind `code: 0`, and the tool's `movedBlockId`-in-destination assertion turns it
-    into `{status: error}` with both outlines attached, and no block moved.
-    (Mechanism for (e) is open: kernel deletes keep both indexes in sync, so no honest
-    live-kernel route to a stale tree-level state is known — if none exists at build
-    time, pin the tree-level-miss branch in the mocked suite and let this case cover
-    only the synchronous classes (a)/(d).) **The upgrade this case anticipated happened
-    at 3.8.4** — the insert path reports its rollback synchronously and the `doDelete`
-    no-op became an error (the stale-target record's 3.8.4 update); the suite's
-    assertions follow the running kernel's generation, and a future upgrade that moves
-    `moveBlock`'s index checks behind the transaction layer turns this case red;
-  - `removeDocByID` (`delete doc: true`, §4): delete a fixture doc that carries an inbound
-    block ref from another fixture doc — assert the confirmation surfaced the backlink
-    count, the doc is gone from the box's `type='d'` root rows (zero rows to the guard's
-    content scan and to a by-id re-read), and the
-    referring doc's ref now reports invalid via `listInvalidBlockRefs` (§4's documented
-    orphan outcome, pinned rather than assumed);
-  - doc-level `move` (`doc: true`, §4): create a second top-level topic in fixture-a,
-    `move` blocks from the source doc into it, then `move doc: true` to nest it under the
-    source topic — assert block IDs survived (a block ref into a moved block still
-    resolves; `listInvalidBlockRefs` returns zero), the result echoes the stored title
-    and the real `/parent/child` hpath (display only), and **a follow-up write by the
-    echoed docId works after the move** — the docId-targeting assertion (§4 R1),
-    and `destOutline` is
-    absent. Pin the tool-side self-descendant rejection (§4 — the kernel would silently
-    no-op it), that the kernel's depth-cap error surfaces verbatim, and that a re-issue
-    targeting the doc's own parent is the kernel's success no-op (§4 pins it — assert
-    zero blocks moved);
-  - cross-doc `move` (§4 — intra-KB only, §6, so both docs live in fixture-a): move a
-    block from one doc in fixture-a into another doc in fixture-a via
-    the tool's `move` mode and assert the pinned cross-doc result contract — `movedBlockId`
-    equals the source block's pre-move ID (`moveBlock` preserves identity; asserting
-    equality catches any kernel upgrade that starts minting IDs, which would silently
-    sever the source doc's inbound refs), `destOutline` reflects the moved subtree in the
-    destination (freshness pin — fetched after the move lands), and the source `outline`
-    no longer lists it. Provenance survives: a block ref created into the moved block
-    before the move still resolves afterward (`listInvalidBlockRefs` returns zero, the same
-    client method as the `updateBlock` case above). A doc-end move (no `toHeadingId`)
-    pins the §4 doc-end expectations: into a populated destination the anchor reads
-    `previousID=<last root-level block> (doc end)` and the block lands as the
-    destination's last root-level block; into an empty destination
-    `appendBlock(root) — doc end` (the prepend IS the end position; the unit suite
-    pins that leg — the live kernel never leaves a doc childless, so a blank
-    destination carries one empty paragraph and the tool anchors `previousID`
-    after it, landing at the doc's end all the same);
-  - write-after-create read consistency (the block handlers flush synchronously, but §4's
-    find-then-write flow depends on that contract, so a test pins it) — extended to the
-    §4 write-result contract: the `outline` field riding a write result must match a
-    fresh post-write query of the doc (heading IDs and order), pinning outline
-    freshness as the tool's contract rather than agent discipline; extended again to
-    `refs` freshness: the §4 backlink checks (the `delete` confirmation, the
-    `replace-section` confirmation, and the post-write `invalidRefs` echo all read
-    the derived `refs` index) could undercount inbound refs under index lag (advisory
-    signal, not a safety gate — the agent still decides) — the same test creates a block ref,
-    runs the §4 backlink query (`SELECT DISTINCT root_id FROM refs WHERE
-    def_block_id = ?`) under a bounded wait, and asserts the inbound ref is visible. The
-    live 5b probes corrected the contract's wording (Appendix B, deviation 8): the derived
-    `refs` index and the `blocks` content/hpath columns converge **asynchronously**
-    (~2–3 s live), not synchronously — the sync contract holds for the tree endpoints
-    (`getChildBlocks`, `exportMarkdown`'s hPath), which is why the doc-level move echo
-    sources its hpath from the export path (§4), and the precondition/backlink pins
-    assert bounded convergence rather than literal immediacy;
-  - search scoping: correctly-scoped path (`paths`-derived narrowing, §3) plus a **shape
-    assertion** for the backstop — a scoped call's results contain zero out-of-scope boxes
-    and set no `post_filtered` flag. With layer-1 injection and `paths` scoping both correct,
-    the drop path is unreachable against a real kernel, so integration can only pin the
-    shape; the drop behavior itself (contaminated input → filtered, `post_filtered: true`,
-    truncation marker counting post-filter rows) is exercised in the mocked unit suite,
-    where out-of-scope rows can be supplied; plus a **recall-loop echo assertion** (the
-    §3 echo contract): a two-fixture search hit's row carries `root_id`, `box`, the
-    per-row resolved KB name, and a non-empty `updated` matching `\d{14}` — the row
-    JSON, not the Go struct, is the contract the extension consumes, so the §3
-    row-shape claim is pinned against the live kernel like every other shape claim — and
-    `read { kb, docId: root_id }` on that hit succeeds —
-    the `search → read` loop the recall harness rides is mechanically valid, not assumed;
-  - **two-KB search saturation pin** (§3 per-KB fan-out): with both fixtures active, plant a
-    shared query term densely in fixture A (past `RESULT_LIMIT`) and once in fixture B →
-    assert B's hit arrives with no `post_filtered` flag — under a single-call union search
-    this is the row that silently vanishes (the §3 failure mode), so the case proves the
-    fan-out, not the shape (pinned separately above); a second assertion densifies past the
-    limit in *both* fixtures → the aggregate `truncated` marker names both KBs (per-call
-    accounting, merged envelope, §3). Runs on the deterministic two-KB workspace the fixture
-    policy already supplies;
-  - `exportMdContent` block-ID absence pinned: grep the exported markdown for `{: id=` and
-    assert zero matches — the §3 inline-outline mechanism is built on this claim, and the
-    renderer lives in the `88250/lute` dependency (not in local checkouts), so the
-    contract must be pinned by test, not by reading source;
-  - outline ordering pin: the §3 outline source (`getChildBlocks`) returns headings in
-    document order for a doc whose sections end in lists/quotes
-    (the same shape that traps the §4 anchor rule), and again after a `replace-section`
-    round-trip — the load-bearing case, where the superseded SQL outline (rowid-order
-    drift; see the §3 decision record) provably broke (freshness pin); plus an
-    anchor-echo pin — an `append` on a trailing-content-after-last-heading doc reports
-    `anchor: appendBlock(root) — doc end` (the
-    §4 visibility mechanism for the doc-end fallback), and an insert-bearing write
-    result's `newBlockId` resolves via `query` to the inserted content — extended with
-    the **multi-block pin (§4)**: an `append` whose markdown parses to several blocks (a
-    paragraph followed by a list) yields a walk-set diff containing every newly-minted
-    block ID with the kernel-returned `newBlockId` among them, and a single-block body
-    yields a diff of exactly one ID — pinning both the diff-based verification and the
-    kernel's representative-ID choice against the real kernel. The same case pins the
-    **response shape** (§4): `ret.Data` is the transaction array and the returned
-    `data[0].doOperations[0].id` equals the extracted `newBlockId` — if a kernel upgrade
-    changes the payload shape or stops echoing the minted ID, this goes red instead of
-    the extraction silently failing and write verification degrading to trusting `code: 0`;
-  - guard-stop staging round-trip pin (§4): a large-body create stopped by the guard
-    (`near_matches` against a fixture doc), then retried with `markdownFile:
-    <stagedPath>` + `confirmNew: true`, mints successfully — and the doc's content read
-    back via `exportMdContent` matches the staged file's content (normalization aside,
-    the kernel-round-trip form of the unit suite's byte-equality pin); the staged file
-    lives in the session spill dir and needs no cleanup (§3 posture);
-  - same-doc `move` result pin: a `move` whose `toDocId` names the source doc collapses to
-    the standard shape — `outline` + `anchor`, no `destOutline`, `movedBlockId` present
-    (the §4 result-shape rule keyed on whether the two docs differ);
-  - version-refusal contract pin (§2/§5 — the write path's most load-bearing safety
-    property, exercised against the real kernel): the mismatch is a relation between the
-    kernel's reported version and the extension's pinned expectation, and the test owns
-    the pin — run the suite with the pin deliberately set to a version the real 3.8.4
-    kernel does not report (the same deliberate-misconfiguration move as the bogus-token
-    cases: you don't make the kernel lie about auth to test rejection, you supply a wrong
-    credential; here you supply a wrong expectation) → assert every write call returns
-    the version-refusal envelope naming both versions and reads still proceed (the
-    permissive-reads half of the §2 mismatch behavior). Refused writes touch no kernel
-    state, so the case is fixture-neutral; the pin override is per-test config, not a
-    global constant mutation.
-  - auth-throttle contract pin (§5 — the constants the breaker is tuned against are
-    source-read; this case converts them into observed behavior): 6 bogus-token
-    requests arm the lock (the 6th still returns 401), the **7th** surfaces the
-    distinct 429 class with `Retry-After` (the class the breaker deliberately
-    excludes), a correctly-authenticated call during the lock receives the same 429
-    (shared per-IP lock, the §5 two-session 3+3 case exercised for real), a kb tool
-    call inside the cooldown window gets the local `{status: refused}` with **zero
-    kernel requests issued**, and after waiting out the lock the next call succeeds
-    with no recovery step (§5 self-healing expiry). **Runs after all other
-    kernel-dependent cases** (Execution order above — the per-IP lock 429s every
-    other kernel call while active). **Cost: expect ~4 minutes, not the first lock's
-    60 s** — any request during the lock, correct token included, extends it, so the
-    in-test wait is bounded by the last extension's own `Retry-After` and polling is
-    impossible. Implemented and passing on live 3.8.3 in
-    `~/siyuan-kernel-api/integration.si.test.ts` (opt-in `SIYUAN_INTEGRATION_THROTTLE=1`);
-  - query read-only end to end (superseded by the 3.8.4 hardening, Appendix B,
-    deviation 9): the original premise — a raw `DELETE` via `/api/query/sql`
-    without `mode` mutates siyuan.db, requiring a reindex to bound the desync —
-    died at 3.8.4: live probes show DML through the query endpoint is a silent
-    no-op in every mode (single statement, `mode: "multiple"`; UPDATE included —
-    `code: 0`, row untouched, even a same-request DELETE-then-COUNT sees the
-    row). The endpoint is no longer a mutation vector; the case now pins the
-    hardening (code-0-but-no-mutation in both modes) plus the tool-side
-    parser-rejection that still holds (layer 1 with zero kernel calls), and
-    still runs **last** (Execution order above). The reindex trigger stays in
-    the raw helper's surface for the upgrade checklist; a future kernel that
-    reintroduces raw-DML mutation turns the no-mutation pin red;
-  - encrypted-notebook contract pin (§5 — the startup rejection that guards the
-    never-silently-wrong invariant rests on a `model/box.go` source-read; this case
-    converts it into evidence): runs on the shared workspace with encryption already
-    enabled, gated behind the master password (opt-in env var `SIYUAN_ENCRYPTED_PASSWORD`;
-    self-skips when unset).
-    Enabling the key domain is a deliberate one-time user action taken through SiYuan's
-    own UI — the extension never enables, disables, or manages it
-    (`EnableEncryptedNotebook` stays out of the client) — so the case only observes the
-    rejection of an already-enabled workspace. Setup gates on
-    `getEncryptedNotebookStatus().enabled`, then mints one encrypted notebook via
-    `/api/notebook/createEncryptedNotebook` (it comes back mounted and unlocked) and one
-    plain notebook, then asserts: `lsNotebooks` reports `encrypted: true` for the
-    encrypted box while unlocked **and** after it is locked again (locked via the typed
-    client's `closeNotebook`, the kernel's locked state — `unlocked: false`; re-openable
-    with typed `unlockAndOpenNotebook` + the password; the always-present-flag pin — a
-    kernel upgrade that starts hiding locked boxes turns this red instead of the guard
-    going blind); `session_start` validation rejects the configured encrypted KB naming
-    it while the plain KB validates clean; and no SQL query from the extension ever
-    targets the encrypted box. Teardown is the typed `removeNotebook` for both fixtures,
-    like every other case — the kernel's `RemoveBox` removes encrypted boxes directly
-    (unmount + encrypted index removal), so no workspace disposal is involved.
-  - search request shape: `paths`-derived scoping genuinely narrows results (guards the
-    silently-ignored-field degradation, §3). **Runs first** (Execution order above) —
-    the failure mode it guards is silent (whole-workspace results, not an error).
-    Implemented and passing in the client's integration profile, including the
-    wrong-`boxes` degradation observation that converted the §3 assumption into
-    evidence before M3 builds on it;
-  - an OR-precedence aggregate (`SELECT box, COUNT(*) … WHERE a OR b`) with
-    `kb: [fixture-a, fixture-b]` equals the sum of the two fixtures' seeded counts — the
-    parenthesized-injection pin (deterministic because the fixture policy supplies exactly
-    the two notebooks the query touches).
-- **End-to-end (automated recall harness)**: cross-session recall is the product, and the
-  failure class its test guards — a correct answer reconstructed from chat context or
-  session residue instead of read from SiYuan — is indistinguishable from success to a
-  human watching a click-through. So the loop is automated, headless (`pi -p` runs
-  extension commands — verified against pi source, §5 scope-activation record):
-  **(1) Plant** — session A with `allowUnattendedWrites: true`, prompt to remember a fact
-  carrying a fresh random **nonce** (unique per run, so no prompt template, system
-  context, or prior transcript can ever satisfy recall); then assert directly against
-  the kernel — fixture SQL — that the fact actually landed in the fixture KB (the plant
-  itself is verified, not assumed). **(2) Restart** — a brand-new session: fresh chat
-  state, fresh spill dir, scope activated via `/kb` dispatch (the same headless posture
-  §5 pins). **(3) Recall** — ask for the fact back; assert the answer contains the
-  nonce, and assert **kernel-sourcing from the transcript**: at least one
-  `search`/`query`/`read` tool call strictly between the question and the answer (the
-  R1 recall loop observed, not trusted). **(4) Negative control** — delete the planted
-  doc from the kernel, rerun steps 2–3 against the same nonce, and assert recall now
-  *fails*. This is what makes the harness a falsifier rather than a demo: a run that
-  leaks context fails step 4, exactly where a click-through would have scored another
-  false positive. Fixture hygiene: the planted fact exists nowhere except the fixture
-  KB — not in any file under the session cwd, not in config, not in the prompt beyond
-  the plant instruction itself. **What stays manual**: the interactive click-moments
-  automation cannot reach — write-confirmation allow/refuse in a TTY session, status
-  slot visibility, and the M4 real-KB exercise (recipes epub extraction) — folded into
-  a residual checklist whose job shrinks from "prove recall works" to "prove the
-  interactive moments work". The checklist also covers the §5 RPC confirm record's one
-  manual check (the pi source-read deliberately left unpinned by test): at the first
-  real RPC-mode session, the confirm dialog appears, an explicit decline refuses the
-  write, and an ignored/dismissed dialog times out to `confirm_timeout` refused —
-  never an unattended write.
+- **Unit (extension layer)**: a mocked-`siyuan-kernel-api` suite over the extension, pinning
+  every contract this doc names — the test files are the authoritative case inventory;
+  the load-bearing pins:
+  - title guard (§4 R3): exact leg + space/hyphen/underscore prefix-variant scan over the
+    verbatim stored form (`%`/`_` LIKE-escaped so wildcards can't widen it), ASCII-case
+    variants match transparently, 20-row cap with `truncated`, `confirmNew` bypasses both
+    legs; mint-policy rejections (empty, `/`, >512 runes, tab/newline/control) with
+    rephrase hints;
+  - verified-create by-ID asserts (§4 R3), incl. the stale-parent fail-loud branch;
+  - parser certification (§3): DML / multi-statement / FROM-allowlist (incl. comma
+    cross-join) / CTE / subquery / UNION / JOIN rejection — the kernel's readonly layer
+    permits WITH (`stmt_validate.go:165`), so layer 1 is the sole guard against a
+    shadowed allowlisted table; injected-predicate re-parse (OR precedence) plus
+    round-trip parity (escaped quotes, LIKE escapes, keywords in strings, non-ASCII);
+    LIMIT passthrough verbatim, never clamped; post-filter rules;
+  - `kb`-param rejections; search `method: 0` + aux-param ownership (§3); scope
+    resolution (persisted → `defaultKBs`, absent key → empty set); `/kb` toggles incl.
+    reserved names and name grammar; spill/preview/per-session dir and the outline cap
+    (the full unfiltered walk set still drives §4 verification/anchors);
+    replace-section insert-before-delete call order;
+  - stale-target verification (§4): insert `newBlockId` absent from the post-write walk
+    set → `error`; edit errors verbatim; delete/move answered per kernel generation
+    (both 3.8.3 and 3.8.4 pinned); cross-doc move walk-set assert;
+  - fresh-content precondition (§4): baseline hash at serve/confirm,
+    `stale_content` refusal with zero kernel writes (request-log asserted),
+    `replace-section` baselines the delete set;
+  - auth breaker: 3 consecutive auth failures → degraded fail-fast, zero further
+    kernel calls; `/kb` recovery clears or re-engages; 429 never counted/retried,
+    cooldown refusal with zero kernel round-trips, self-healing expiry;
+  - settings validation order + token-failure branch; encrypted-notebook rejection in
+    both lock states, no tool kernel calls to the rejected KB;
+  - write confirmation: allow/refuse; cancel and timeout both resolve `refused`;
+    `confirm_timeout` terminal (confirm fires exactly once across a re-request — the
+    AFK retry-treadmill pin); `writeConfirmTimeout: 0` blocks indefinitely;
+    `replace-section` confirmation displays the delete set's trailing content +
+    inbound refs (the never-unseen-sweep pin);
+  - status-slot rendering (headless-safe); version-gated write refusal (probe failure
+    fails writes closed); per-write-attempt first-write probe retry;
+  - file-path input (§4): missing/unreadable → structured error, no kernel call;
+    `markdown` XOR `markdownFile` shape error; read-once capture; guard-stop staging
+    (`stagedPath` byte-equal to the submission, no restage for file-sourced creates).
+- **Integration (opt-in, never CI)**: profile against the live pinned kernel (§8
+  topology); self-skips without env (`SIYUAN_INTEGRATION=1`; the encrypted case is
+  further gated by `SIYUAN_ENCRYPTED_PASSWORD`). **Setup asserts the running kernel
+  version exactly equals the pin** — an accidental upgrade produces a red suite instead
+  of silently unverified drift. **Upgrade checklist** (the enforcement procedure the
+  §2 strict write gate backs — the re-pin is a verified conclusion, never a
+  version-number bump): on every SiYuan upgrade, run the full profile against the new
+  kernel *before* updating `PINNED_SIYUAN_VERSION` (§2); a red suite means a behavior
+  pin broke and the affected decision records in this doc need re-verification. The
+  same procedure gates `node-sql-parser` bumps: re-run the full parser certification
+  matrix (the CTE case included) against the new version before updating the pin.
+  **Fixture policy**: two disposable notebooks per run (`fixture-a`/`fixture-b`), all
+  notebook/doc lifecycle and encrypted-notebook calls ride the typed client
+  (`createNotebook`, `removeNotebook`, `renameDocByID`, `listInvalidBlockRefs`,
+  `createEncryptedNotebook`, `getEncryptedNotebookStatus`, `unlockAndOpenNotebook`,
+  lock-via-`closeNotebook`); raw DELETE, the reindex trigger, and bogus-token arming
+  stay raw direct kernel calls — none of it reaches the tool surface. Teardown removes
+  both fixtures and asserts the notebook count back to baseline — zero strays. Two
+  notebooks, not one: the multi-KB pins need a deterministic two-KB workspace, not
+  fixture + live data. Settings are injected in memory through the §5 settings-load
+  seam (`allowUnattendedWrites: true` — the suite runs UI-less); item-level exceptions
+  that must read the real path (`pi -p` headless dispatch) run under a temp `HOME`
+  seeded with the same fixture settings.
+  **Execution order (mechanically enforced by an ordered vitest sequencer — the
+  default cache-driven sort would drift the long throttle file to the front)**:
+  search-shape case first (cheapest falsifier of the load-bearing request shape) →
+  every other kernel-dependent case → the encrypted-notebook case (needs the kernel;
+  never inside the throttle lock window) → the auth-throttle case (arms the per-IP
+  lock; ends by waiting out the extended lock, ~4 min) → the raw-DML hardening pin
+  last. Case inventory, one line each — the test files are the record:
+  - title-guard kernel round-trip (§4 R3): adversarial titles through the real kernel
+    (tab rejected at mint; HTML-special titles mint and re-find via escape parity;
+    clean titles store verbatim + expected hpath); `renameDocByID` re-finds by the new
+    stored title — the mandatory live pin that the guard's pattern matches the
+    kernel's actual stored form.
+  - nested-mint + duplicate-disambiguation (§4 R1/R3): echo → read → guard on
+    re-create; stale-parent fail-loud; `duplicate` rows with outlines + spill paths →
+    `confirmNew` third mint → deletes → exact-leg re-hit; guard-stop staging
+    round-trip (`markdownFile: <stagedPath>` + `confirmNew`).
+  - tool-path verified-create (§4 R3): pre-existing title → guard matches first, no
+    create call fires, the existing doc's docId returned.
+  - version-refusal contract pin (§2/§5): per-test pin override (per-test config, not
+    a global constant mutation) → every write refused naming both versions, reads
+    proceed.
+  - stale-target contract pin (§4): kernel-deleted block → edit error verbatim;
+    append's walk-set assertion turns silent rollback into `error`; delete "tree not
+    found" (3.8.4) error shape; move synchronous `-1` surfaced.
+  - fresh-content live pin (§4): kernel-side content change between outline and edit →
+    `stale_content` refusal, content untouched; control run applies.
+  - `replace-section` end to end (§4, highest-stakes composite write): list/quote-ending
+    section, container-nested target (the sweep is exactly the sibling run), final-section
+    trailing sweep, heading ID survives, outline-ordering pin re-asserted after the
+    round-trip, planted content-block ref orphans with `invalidRefs` echo, doc-level
+    delete backlink case, block-level delete orphan case, `updateBlock` preserves IDs
+    (`listInvalidBlockRefs` zero).
+  - `move` cases (§4): doc-level (`moveDocsByID` — IDs survive, echo, follow-up write by
+    echoed docId, self-descendant rejected, depth-cap error verbatim, own-parent no-op);
+    cross-doc block move (`movedBlockId` equality, `destOutline` freshness, provenance
+    survives); same-doc shape pin; container-nested target; doc-end anchor pin
+    (populated destination anchors after the last root-level block; the empty-
+    destination `appendBlock(root)` leg is unit-pinned — the live kernel never leaves
+    a doc childless).
+  - write-result freshness (§4): write-result `outline` matches a fresh post-write
+    query; `refs` bounded-convergence pin (the derived index converges asynchronously,
+    ~seconds — the sync contract holds for the tree endpoints; Appendix B, deviation 8);
+    `newBlockId` response-shape pin (`data[0].doOperations[0].id`); anchor-echo and
+    anchor-placement pins (list/quote-ending sections, container-nested targets, doc
+    end); multi-block walk-set diff (every new ID with `newBlockId` among them;
+    single-block → diff of exactly one).
+  - search/query pins (§3): scoping shape (runs first — the failure it guards is
+    silent); recall-loop echo (a hit's row carries `root_id`, `box`, the per-row KB
+    name, a non-empty `updated`; `read` on that `root_id` succeeds); two-KB saturation
+    (fan-out proof + aggregate `truncated` naming both KBs); OR-precedence aggregate;
+    `exportMarkdown` block-ID absence (lute is not in local checkouts, so pinned by
+    test, not source-reading).
+  - auth-throttle contract pin (§5): 6 bogus-token requests arm the lock (6th still
+    401), the 7th surfaces the distinct 429 class with `Retry-After`; a
+    correctly-authenticated call during the lock receives the same 429 (shared per-IP
+    lock); a kb call inside the cooldown → local `refused` with zero kernel requests;
+    after waiting out the lock the next call succeeds with no recovery step. Opt-in
+    `SIYUAN_INTEGRATION_THROTTLE=1`; expect ~4 minutes (any request during the lock
+    extends it).
+  - raw-DML hardening pin (Appendix B, deviation 9): raw DML via the query endpoint is
+    a silent no-op in every mode (3.8.4 hardening) plus the tool-side parser rejection
+    still holds; runs last; the reindex trigger stays in the raw helper's surface for
+    the upgrade checklist — a future kernel that reintroduces raw-DML mutation turns
+    the no-mutation pin red.
+  - encrypted-notebook contract pin (§5): on the shared workspace (encryption enabled
+    via SiYuan's own UI — a deliberate one-time user action, never the extension's),
+    `lsNotebooks` reports `encrypted: true` in both lock states → startup rejection
+    names the KB while the plain fixture validates clean; no kernel call from the
+    encrypted KB's tools ever fires.
+- **End-to-end (automated recall harness, M4)**: cross-session recall is the product,
+  and the failure class its test guards — a correct answer reconstructed from chat
+  context or session residue instead of read from SiYuan — is indistinguishable from
+  success to a human watching a click-through. So the loop is automated, headless
+  (`pi -p` runs extension commands — verified against pi source, §5): **(1) Plant** —
+  session A with `allowUnattendedWrites: true`, prompt to remember a fact carrying a
+  fresh random nonce; then assert directly against the kernel that the fact landed in
+  the fixture KB (the plant is verified, not assumed). **(2) Restart** — a brand-new
+  session, scope activated via `/kb` dispatch. **(3) Recall** — ask for the fact back;
+  assert the nonce in the answer **and** at least one `search`/`query`/`read` call
+  strictly between question and answer (the R1 recall loop observed, not trusted).
+  **(4) Negative control** — delete the planted doc, rerun steps 2–3, assert recall
+  now *fails*: a run that leaks context fails here, exactly where a click-through
+  would score a false positive. Fixture hygiene: the planted fact exists nowhere but
+  the fixture KB. **What stays manual**: the interactive moments automation cannot
+  reach — write-confirmation allow/refuse in a TTY, status-slot visibility, the M4
+  real-KB exercise — folded into a residual checklist, plus the §5 RPC confirm
+  record's one manual check (at the first real RPC-mode session: the confirm dialog
+  appears, an explicit decline refuses the write, an ignored dialog times out to
+  `confirm_timeout` refused — never an unattended write).
 
 ## 11. Milestone rollout
 
 | # | Milestone | Gate |
 | --- | --- | --- |
-| 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM against `http://192.168.100.1:6806`; pinned kernel version **3.8.3**. See §8 for the deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning. |
-| 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green; extension loads in a real pi session; offline §5 settings validator enforces the full rejection matrix. No build step in either repo — both ship raw `.ts` (`exports` → `index.ts`). |
-| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm as 0.1.0, incremented to 0.2.0 (notebook/doc lifecycle: `createNotebook`, `removeNotebook`, `renameNotebook`, `openNotebook`, `closeNotebook`, `renameDocByID`, `listInvalidBlockRefs`, optional search `page`/`pageSize`) and extended to 0.3.0 for M3 (encrypted-notebook family `createEncryptedNotebook`/`getEncryptedNotebookStatus`/`unlockAndOpenNotebook`; `query()` tightened to `query(stmt)` with `mode: "readonly"` hardcoded; `listNotebooks()` returns the wire envelope); `gnubrain` depends on the exact published version. Endpoint surface, error classes, retry/timeout policy, and design constraints are the repo's record (README + AGENTS.md); unit suite green; integration profile passed against live 3.8.3 (§10 M2 profile). |
-| 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | Tools callable from pi; scope survives session restart; `/kb <name> on` and `/kb all off` land mid-session; write confirmation refuse/allow verified; auth circuit breaker degrades after 3 consecutive auth failures; write-path integration suite green under the fixture policy (§10), incl. the title-guard kernel round-trip pin, the version-refusal contract pin (§2/§5), the stale-target contract pin (§4), and the headless `/kb` dispatch exercised for real (`/kb all off` from `pi -p` — converting the §5 scope-activation source-read claim into evidence before M4's harness depends on it) |
+| 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM; deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning in §8. |
+| 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green, extension loads in a real pi session; §5 settings validator enforces the full rejection matrix; no build step in either repo (both ship raw `.ts`). |
+| 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm, exact-pinned by `gnubrain` (0.2.0 notebook/doc lifecycle; 0.3.0 encrypted-notebook family + `query()` readonly tightening). Endpoint surface, error classes, retry/timeout policy, and design constraints are the client repo's record (README + AGENTS.md). |
+| 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | ✅ **Done.** Gate met: all four tools callable from pi (collision-asserted against the builtins); scope survives session restart; `/kb` toggles land mid-session; write confirmation verified interactively (residual checklist); auth breaker degrades after 3 consecutive auth failures and recovers via `/kb`; write-path integration suite green under the fixture policy (§10), incl. the title-guard, version-refusal (§2/§5), and stale-target (§4) contract pins and the headless `/kb` dispatch. M3 implementation deviations: Appendix B. |
 | 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write confirmation, status slot) |
 
 ---
@@ -2249,8 +1923,7 @@ recorded with the design updated in the same change.
 5. **Kernel re-pin to 3.8.4 (pre-5b)**: the workspace moved to 3.8.4 and the pin
    followed (`validation.ts`). 3.8.4 executes block writes synchronously
    (`PerformBlockOperation` drains the tx queue and holds the flush lock), which
-   closes the post-delete staleness the 3.8.3 queue ticker had (live-verified 0/3
-   stale immediate reads, was 5/5) and changes the delete contract the S4/S5 flows
+   closes the post-delete staleness the 3.8.3 queue ticker had and changes the delete contract the S4/S5 flows
    were written against: a delete of a missing block is now a synchronous
    "tree not found" error where 3.8.3 answered a success no-op — the delete flow
    surfaces it verbatim with the fresh outline attached, the same stale-target
