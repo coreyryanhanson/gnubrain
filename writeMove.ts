@@ -3,7 +3,6 @@
 // (destination doc or notebook root). Every landing is verified against the
 // post-move walk sets — position for same-doc moves, membership cross-doc.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { sqlString } from "./kernel.js";
 import { deriveMoveAnchor, landingId } from "./writeAnchors.js";
@@ -16,6 +15,7 @@ import {
 	confirmGate,
 	echoTail,
 	headingInWalk,
+	mutationFailed,
 	PARENT_DOC_STMT_HEAD,
 	resolveDocTarget,
 	type DocTarget,
@@ -118,9 +118,12 @@ export async function runMoveMode(
 			await kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId });
 		} catch (err) {
 			// The 7-level depth cap and other kernel rejections surface
-			// verbatim (doc-level record).
-			if (!(err instanceof SiYuanApiError)) throw err;
-			return errorEnvelope(err.message, { kb: name, docId: doc.rootId });
+			// verbatim (doc-level record — no echo tail, the pinned shape).
+			const failed = await mutationFailed(input, err, {
+				docId: doc.rootId,
+			});
+			if (failed !== undefined) return failed;
+			throw err;
 		}
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the move may already be applied (finishWrite doc).
@@ -199,17 +202,17 @@ export async function runMoveMode(
 			await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
 		}
 	} catch (err) {
-		// moveBlock's blocktree index check rejects a
-		// missing source/anchor synchronously — surface verbatim with the
-		// fresh outline attached. Network classes rethrow for runKbCall's
-		// unreachable classification — correct here, the move did not land.
-		if (!(err instanceof SiYuanApiError)) throw err;
-		const tail = await echoTail(input, doc);
-		return errorEnvelope(err.message, {
-			kb: name,
-			anchor: anchor.anchor,
-			...tail,
-		});
+		// moveBlock's blocktree index check rejects a missing source/anchor
+		// synchronously — surfaced verbatim with the fresh outline attached
+		// (mutationFailed); transport classes carry the unverified verdict.
+		const failed = await mutationFailed(
+			input,
+			err,
+			{ anchor: anchor.anchor },
+			doc,
+		);
+		if (failed !== undefined) return failed;
+		throw err;
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the move may already be applied (finishWrite doc).

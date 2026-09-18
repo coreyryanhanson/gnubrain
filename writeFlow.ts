@@ -9,6 +9,11 @@ import {
 	noSuchDocEnvelope,
 	refusedEnvelope,
 } from "./envelope.js";
+import {
+	SiYuanApiError,
+	SiYuanNetworkError,
+	SiYuanTimeoutError,
+} from "siyuan-kernel-api";
 import { previewAtNewline, spillFile } from "./spill.js";
 import { ownershipStmt, sqlString } from "./kernel.js";
 import { TARGETABLE_CONTAINER_TYPES } from "./writeAnchors.js";
@@ -186,12 +191,61 @@ export function insertRollbackReason(
 	return undefined;
 }
 
+/** One catch-site for every kernel mutation call. A transport-class throw
+ * (network drop, per-attempt timeout) leaves the mutation's outcome UNKNOWN:
+ * fetch can reject after the request was sent, and a timed-out request was
+ * delivered — so the write may already be applied and the envelope must
+ * never read as runKbCall's "SiYuan unreachable", whose retry invitation
+ * would duplicate an applied write (the same contract finishWrite enforces
+ * for the post-write reads, which this sits upstream of). A synchronous
+ * kernel rejection (SiYuanApiError) is not in-flight: it surfaces verbatim
+ * with the fresh outline attached (no tail when the caller passes no doc —
+ * the pinned doc-level record shape). Auth and rate-limit errors return
+ * undefined — the call site rethrows them for runKbCall's classification
+ * (breaker counting, 429 cooldown). The echo reads run best-effort on the
+ * transport legs: the kernel may still be down, and the unverified verdict
+ * must not depend on them landing. */
+export async function mutationFailed(
+	input: WriteFlowBase,
+	err: unknown,
+	extra: Record<string, unknown> = {},
+	doc?: DocTarget | undefined,
+): Promise<Envelope | undefined> {
+	if (err instanceof SiYuanNetworkError || err instanceof SiYuanTimeoutError) {
+		let tail: Record<string, unknown> = {};
+		if (doc !== undefined) {
+			try {
+				tail = await echoTail(input, doc);
+			} catch {
+				// The kernel may still be down — the verdict rides the message.
+			}
+		}
+		return errorEnvelope(
+			`the write's outcome is unverified: the kernel call failed at the ` +
+				`transport layer (${err instanceof Error ? err.message : String(err)}) — ` +
+				`the request may have been delivered and the write may already be ` +
+				`applied; do NOT retry blindly — re-fetch the outline (kb_read) and ` +
+				`confirm whether it landed before repeating it`,
+			{ kb: input.name, verificationFailed: true, ...extra, ...tail },
+		);
+	}
+	if (err instanceof SiYuanApiError) {
+		const tail = doc === undefined ? {} : await echoTail(input, doc);
+		return errorEnvelope(err.message, {
+			kb: input.name,
+			...extra,
+			...tail,
+		});
+	}
+	return undefined;
+}
+
 /** writeEchoTail with the flow's fixed identity args bound — call sites
  * pass only an optional pre-fetched verification walk and the write's own
  * block IDs (only on the success paths — a write that did not land
  * refreshes nothing, or it would launder a concurrent change). */
 export async function echoTail(
-	input: WriteFlowInput,
+	input: WriteFlowBase,
 	doc: DocTarget,
 	walk?: WalkedBlock[] | undefined,
 	refreshBlockIds?: readonly string[],

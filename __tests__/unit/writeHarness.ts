@@ -66,6 +66,7 @@ export interface StubConfig {
 	onDelete?: () => void;
 	onMove?: () => void;
 	onUpdate?: () => void;
+	onRemoveDoc?: () => void;
 	/** Captures a setter the test calls from a mutation callback: all
 	 * subsequent query() calls throw — the network drop between a landed
 	 * write and the post-write verification reads. */
@@ -274,6 +275,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		},
 		async removeDocByID(id) {
 			calls.push({ method: "removeDocByID", args: id });
+			config.onRemoveDoc?.();
 			return null;
 		},
 		async moveDocsByID(params) {

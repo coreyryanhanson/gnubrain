@@ -1,7 +1,7 @@
 // The append flow: tool-derived nextID anchor, doc-end fallback; the
 // returned id is verified against the post-write walk set.
 
-import { SiYuanApiError, type BlockTransaction } from "siyuan-kernel-api";
+import { type BlockTransaction } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { deriveAppendAnchor, type AppendPlacement } from "./writeAnchors.js";
 import { walkBlockTree, type WalkedBlock } from "./walk.js";
@@ -10,6 +10,7 @@ import {
 	echoTail,
 	headingInWalk,
 	insertRollbackReason,
+	mutationFailed,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -47,18 +48,14 @@ export async function runAppendMode(
 					})
 				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
 	} catch (err) {
-		// appendBlock/insertBlock error synchronously — a stale anchor
-		// surfaces verbatim with the fresh outline attached, never as a
-		// bare error (mirrors the edit flow). Network classes rethrow for
-		// runKbCall's unreachable classification — correct here, the insert
-		// did not land.
-		if (!(err instanceof SiYuanApiError)) throw err;
-		const tail = await echoTail(input, doc);
-		return errorEnvelope(err.message, {
-			kb: name,
-			anchor: anchor.anchor,
-			...tail,
-		});
+		const failed = await mutationFailed(
+			input,
+			err,
+			{ anchor: anchor.anchor },
+			doc,
+		);
+		if (failed !== undefined) return failed;
+		throw err;
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert may already be applied (finishWrite doc).

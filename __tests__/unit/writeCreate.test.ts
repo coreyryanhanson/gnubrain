@@ -8,7 +8,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SiYuanApiError, SiYuanNetworkError } from "siyuan-kernel-api";
+import {
+	SiYuanApiError,
+	SiYuanNetworkError,
+	SiYuanTimeoutError,
+} from "siyuan-kernel-api";
 import { VERIFIED_ROOT_STMT_HEAD } from "../../writeCreate.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
 import { type StubConfig, base, setup } from "./writeHarness.js";
@@ -395,5 +399,43 @@ describe("network drop after a landed create", () => {
 		expect(r.message).toContain("post-write verification reads failed");
 		expect(r.message).not.toContain("SiYuan unreachable");
 		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
+	});
+});
+
+// A transport failure ON the create call itself: the kernel's response
+// never arrived, so the mint may or may not exist — the outcome-unverified
+// verdict, never the retry-inviting "unreachable".
+describe("transport failure on the create call itself", () => {
+	it("timeout on createDocWithMarkdown → outcome unverified, no docId", async () => {
+		const { execute, calls } = setup({
+			config: {
+				onCreate: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({ ...base, topic: "Docker Networking" });
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("outcome is unverified");
+		expect(r.message).toContain("do NOT retry blindly");
+		expect(r.message).not.toContain("SiYuan unreachable");
+		expect(r.docId).toBeUndefined();
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
+	});
+
+	it("network drop on createDocWithMarkdown classifies the same way", async () => {
+		const { execute } = setup({
+			config: {
+				onCreate: () => {
+					throw new SiYuanNetworkError();
+				},
+			},
+		});
+		const r = await execute({ ...base, topic: "Docker Networking" });
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("outcome is unverified");
+		expect(r.message).not.toContain("SiYuan unreachable");
 	});
 });

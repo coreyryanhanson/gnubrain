@@ -1,11 +1,11 @@
 // The edit flow: updateBlock on an agent-supplied blockId target.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
-import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	blockInDoc,
 	confirmGate,
 	echoTail,
+	mutationFailed,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -45,13 +45,9 @@ export async function runEditMode(
 	try {
 		await kernel.updateBlock({ id: blockId, data: input.body });
 	} catch (err) {
-		// updateBlock errors synchronously — surface
-		// verbatim with the fresh outline attached. Network classes rethrow
-		// for runKbCall's unreachable classification — correct here, the
-		// mutation itself did not land.
-		if (!(err instanceof SiYuanApiError)) throw err;
-		const tail = await echoTail(input, doc);
-		return errorEnvelope(err.message, { kb: name, ...tail });
+		const failed = await mutationFailed(input, err, undefined, doc);
+		if (failed !== undefined) return failed;
+		throw err;
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc).

@@ -24,6 +24,7 @@ import {
 	echoTail,
 	headingInWalk,
 	insertRollbackReason,
+	mutationFailed,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -94,11 +95,10 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// insert-before-delete: a mid-sequence failure must cost visible
 	// duplication, never loss. Same anchor rule as `append`. The insert is
-	// the first mutation — a synchronous failure here is NOT a partial
-	// replace; it surfaces verbatim with the fresh outline attached
-	// (mirrors the edit flow), never as a bare error. Network classes
-	// rethrow for runKbCall's unreachable classification — correct here,
-	// the insert did not land.
+	// the first mutation — a synchronous kernel rejection here is NOT a
+	// partial replace; it surfaces verbatim with the fresh outline attached
+	// (mirrors the edit flow). Transport classes carry the unverified
+	// verdict — the insert may have landed even though no tx came back.
 	let tx: BlockTransaction[];
 	try {
 		tx =
@@ -109,13 +109,14 @@ export async function runReplaceSectionMode(
 					})
 				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
 	} catch (err) {
-		if (!(err instanceof SiYuanApiError)) throw err;
-		const tail = await echoTail(input, doc);
-		return errorEnvelope(err.message, {
-			kb: name,
-			anchor: anchor.anchor,
-			...tail,
-		});
+		const failed = await mutationFailed(
+			input,
+			err,
+			{ anchor: anchor.anchor },
+			doc,
+		);
+		if (failed !== undefined) return failed;
+		throw err;
 	}
 	// Everything from here on is post-mutation — a drop anywhere in the
 	// insert verification, the delete sweep, or the echo must never read

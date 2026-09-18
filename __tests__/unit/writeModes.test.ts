@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	SiYuanApiError,
+	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
@@ -2136,5 +2137,201 @@ describe("network drop after a landed write", () => {
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",
 			),
 		).toHaveLength(1);
+	});
+});
+
+// Transport-class failure ON the mutation call itself — the kernel's
+// response never arrived, so the write may or may not have landed. The
+// result must carry the outcome-unverified contract (never runKbCall's
+// "SiYuan unreachable", whose retry invitation would duplicate an applied
+// write), and auth-class failures must still propagate for the breaker.
+describe("transport failure on the mutation call itself", () => {
+	/** Shared assertions: unverified-outcome envelope, no unreachable text. */
+	function expectUnverified(r: Record<string, unknown>): void {
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("outcome is unverified");
+		expect(r.message).toContain("do NOT retry blindly");
+		expect(r.message).not.toContain("SiYuan unreachable");
+	}
+
+	it("edit: timeout on updateBlock → outcome unverified, never 'unreachable'", async () => {
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute(editBase);
+		expectUnverified(r);
+		expect(r.message).toContain("may already be applied");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+	});
+
+	it("edit: network drop on updateBlock classifies the same way (fetch can reject after the request was sent)", async () => {
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanNetworkError();
+				},
+			},
+		});
+		expectUnverified(await execute(editBase));
+	});
+
+	it("append: timeout on insertBlock → outcome unverified", async () => {
+		const { execute, calls } = setup({
+			config: {
+				onInsert: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "append",
+			docId: "d-doc",
+			markdown: "new section",
+		});
+		expectUnverified(r);
+		expect(
+			calls.filter(
+				(c) => c.method === "insertBlock" || c.method === "appendBlock",
+			),
+		).toHaveLength(1);
+	});
+
+	it("replace-section: timeout on the insert → outcome unverified, no partial-replace payload (the sweep never ran)", async () => {
+		const failing = setup({
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await failing.execute(replaceParams);
+		expectUnverified(r);
+		expect(r.partialReplace).toBeUndefined();
+		expect(
+			failing.calls.filter((c) => c.method === "deleteBlock"),
+		).toHaveLength(0);
+	});
+
+	it("delete: timeout on deleteBlock → outcome unverified", async () => {
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "soon gone" }],
+				onDelete: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "b-1",
+		});
+		expectUnverified(r);
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+	});
+
+	it("doc delete: timeout on removeDocByID → outcome unverified", async () => {
+		const { execute, calls } = setup({
+			config: {
+				onRemoveDoc: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			doc: true,
+		});
+		expectUnverified(r);
+		expect(calls.filter((c) => c.method === "removeDocByID")).toHaveLength(1);
+	});
+
+	it("auth failures on a mutation still propagate for breaker counting", async () => {
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanAuthError(401);
+				},
+			},
+		});
+		const r = await execute(editBase);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBeUndefined();
+		expect(r.message).toContain("auth rejected");
+		expect(r.message).not.toContain("outcome is unverified");
+	});
+
+	it("move: timeout on moveBlock → outcome unverified", async () => {
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "mover" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("p1", "l", "u", "mover"),
+						walkBlock("p2", "p", "", "stay"),
+					],
+					h1: [walkBlock("p1", "l", "u", "mover")],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
+				docRoots: {
+					"d-doc": {
+						content: "Docker Networking",
+						hpath: "/Docker Networking",
+					},
+					"d-other": { content: "Other doc", hpath: "/Other doc" },
+				},
+				onMove: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p1",
+			toDocId: "d-other",
+		});
+		expectUnverified(r);
+		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
+	});
+
+	it("doc move: timeout on moveDocsByID → outcome unverified", async () => {
+		const { execute, calls } = setup({
+			config: {
+				childrenFor: { "d-doc": [walkBlock("h1", "h", "h1", "A")] },
+				docRoots: {
+					"d-doc": {
+						content: "Docker Networking",
+						hpath: "/Docker Networking",
+					},
+				},
+				onMove: () => {
+					throw new SiYuanTimeoutError(30_000);
+				},
+			},
+		});
+		const r = await execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			doc: true,
+		});
+		expectUnverified(r);
+		expect(calls.filter((c) => c.method === "moveDocsByID")).toHaveLength(1);
 	});
 });

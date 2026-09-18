@@ -5,8 +5,7 @@
 // state), 3.8.4 a synchronous "tree not found" error surfaced verbatim with
 // the fresh outline attached, like edit/move.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
-import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { refusedEnvelope, type Envelope } from "./envelope.js";
 import { walkBlockTree } from "./walk.js";
 import {
 	backlinkSummary,
@@ -14,6 +13,7 @@ import {
 	confirmGate,
 	deleteSetDisplay,
 	echoTail,
+	mutationFailed,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -36,7 +36,18 @@ export async function runDeleteMode(
 			backlinkSummary(display);
 		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
-		await kernel.removeDocByID(doc.rootId);
+		try {
+			await kernel.removeDocByID(doc.rootId);
+		} catch (err) {
+			const failed = await mutationFailed(
+				input,
+				err,
+				{ docId: doc.rootId },
+				doc,
+			);
+			if (failed !== undefined) return failed;
+			throw err;
+		}
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the doc may already be gone (finishWrite doc).
 		return finishWrite(name, {}, async () => {
@@ -78,17 +89,15 @@ export async function runDeleteMode(
 	try {
 		await kernel.deleteBlock(blockId);
 	} catch (err) {
-		if (!(err instanceof SiYuanApiError)) throw err;
 		// 3.8.4 requires an external delete to hit an existing node — a
 		// missing ID (deleted concurrently, or a stale target) is a
 		// synchronous "tree not found" error where 3.8.3 answered a success
 		// no-op. Same stale-target treatment as edit/move: the kernel error
 		// surfaces verbatim, with the fresh outline attached so the agent
-		// re-targets. Network/timeout rethrow — the delete's outcome is
-		// unknown and runKbCall must classify.
-		const postWalk = await walkBlockTree(kernel, doc.rootId);
-		const tail = await echoTail(input, doc, postWalk);
-		return errorEnvelope(err.message, { kb: name, blockId, ...tail });
+		// re-targets. Transport classes carry the unverified-outcome verdict.
+		const failed = await mutationFailed(input, err, { blockId }, doc);
+		if (failed !== undefined) return failed;
+		throw err;
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the delete may already be applied (finishWrite doc).
