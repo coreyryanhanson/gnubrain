@@ -134,7 +134,6 @@ function boxInAst(boxes: string[]): Binary {
 
 export interface RebuiltStatement {
 	stmt: string;
-	limitInjected: boolean;
 	limit: number;
 }
 
@@ -149,13 +148,11 @@ export function rebuildWithScope(
 	boxes: string[],
 ): RebuiltStatement {
 	const boxIn = boxInAst(boxes);
-	let limitInjected = false;
 	if (ast.limit === undefined || ast.limit === null) {
 		ast.limit = {
 			seperator: "",
 			value: [{ type: "number", value: RESULT_LIMIT }],
 		};
-		limitInjected = true;
 	}
 	if (ast.where === undefined || ast.where === null) {
 		ast.where = boxIn;
@@ -172,7 +169,7 @@ export function rebuildWithScope(
 	const stmt = parser.sqlify(ast, SQL_DIALECT);
 	// After the injection above the AST always carries a limit; the fallback
 	// only fires if the parser stopped producing the documented node shape.
-	return { stmt, limitInjected, limit: limitOf(ast.limit) ?? RESULT_LIMIT };
+	return { stmt, limit: limitOf(ast.limit) ?? RESULT_LIMIT };
 }
 
 const norm = (x: unknown): string => JSON.stringify(x);

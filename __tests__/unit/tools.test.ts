@@ -214,13 +214,12 @@ describe("injected-predicate rebuild + re-parse", () => {
 		const without = certifySelect("SELECT id FROM blocks");
 		if (!without.ok) throw new Error(without.reason);
 		const rebuilt = rebuildWithScope(without.ast, ["nb-r"]);
-		expect(rebuilt.limitInjected).toBe(true);
+		expect(rebuilt.stmt).toContain(`LIMIT ${RESULT_LIMIT}`);
 		expect(rebuilt.limit).toBe(RESULT_LIMIT);
 
 		const withLimit = certifySelect("SELECT id FROM blocks LIMIT 5");
 		if (!withLimit.ok) throw new Error(withLimit.reason);
 		const kept = rebuildWithScope(withLimit.ast, ["nb-r"]);
-		expect(kept.limitInjected).toBe(false);
 		expect(kept.limit).toBe(5);
 		expect(kept.stmt).toContain("LIMIT 5");
 	});
