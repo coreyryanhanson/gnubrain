@@ -6,15 +6,12 @@
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
+import { BASE_URL, INTEGRATION, TOKEN } from "./harness.js";
 import {
 	certifySelect,
 	rebuildWithScope,
 	verifyRebuilt,
 } from "../../sqlScope.js";
-
-const INTEGRATION = process.env.SIYUAN_INTEGRATION === "1";
-const BASE_URL = process.env.SIYUAN_BASE_URL ?? "http://192.168.100.1:6806";
-const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
 
 describe.skipIf(!INTEGRATION)("live kernel smoke (read tools)", () => {
 	const client = new SiYuanKernelClient(BASE_URL, TOKEN);

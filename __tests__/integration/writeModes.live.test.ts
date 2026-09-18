@@ -24,12 +24,7 @@ import {
 	PINNED_SIYUAN_VERSION,
 	type SessionValidation,
 } from "../../validation.js";
-
-const INTEGRATION = process.env.SIYUAN_INTEGRATION === "1";
-const BASE_URL = process.env.SIYUAN_BASE_URL ?? "http://192.168.100.1:6806";
-const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
-/** Live round-trips + fixture-mint polling run well past the unit budget. */
-const LIVE_TIMEOUT = 30_000;
+import { BASE_URL, INTEGRATION, LIVE_TIMEOUT, TOKEN } from "./harness.js";
 
 describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () => {
 	const client = new SiYuanKernelClient(BASE_URL, TOKEN);
