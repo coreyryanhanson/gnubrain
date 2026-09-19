@@ -49,8 +49,10 @@ export async function runAppendMode(
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert may already be applied (finishWrite doc).
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {
-		// Multi-block: diff-based; single-block: exactly one id (pinned
-		// live). The landed predicate + rollback wording live in
+		// A markdown insert lands as exactly one doOperations entry with
+		// the whole body embedded in its data (pinned live: N-paragraph
+		// body → one insert op), so doOperations[0].id covers the whole
+		// payload. The landed predicate + rollback wording live in
 		// insertRollbackReason (shared with replace-section).
 		const newBlockId = newBlockIdFrom(tx);
 		const postWalk = await walkBlockTree(kernel, doc.rootId);
