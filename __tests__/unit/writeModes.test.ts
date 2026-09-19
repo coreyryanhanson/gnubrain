@@ -2186,43 +2186,35 @@ describe("write-tool doctrine lines", () => {
 // reads: the result must never read as "SiYuan unreachable" — that
 // invites the blind retry that duplicates or re-applies the write.
 describe("network drop after a landed write", () => {
-	it("edit: post-write echo-read drop → verificationFailed, not 'unreachable'", async () => {
-		let arm: ((err: Error) => void) | undefined;
-		const { execute, calls } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				armQueryError: (set) => {
-					arm = set;
+	// Both transport classes: a timeout is a response that never arrived,
+	// a fetch reject can fire after the request was sent. Neither answers
+	// the edit, so the verdict is the same verificationFailed envelope.
+	it.each([
+		["network drop", () => new SiYuanNetworkError()],
+		["read timeout", () => new SiYuanTimeoutError(30_000)],
+	])(
+		"edit: post-write echo-read %s → verificationFailed, not 'unreachable'",
+		async (_label, make) => {
+			let arm: ((err: Error) => void) | undefined;
+			const { execute, calls } = setup({
+				config: {
+					blockRows: [{ id: "b-1", content: "stale paragraph" }],
+					armQueryError: (set) => {
+						arm = set;
+					},
+					onUpdate: () => arm?.(make()),
 				},
-				onUpdate: () => arm?.(new SiYuanNetworkError()),
-			},
-		});
-		const r = await execute(editBase);
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("post-write verification reads failed");
-		expect(r.message).toContain("do NOT retry blindly");
-		expect(r.message).not.toContain("SiYuan unreachable");
-		// The mutation itself landed — the failure is in the reads.
-		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
-	});
-
-	it("edit: post-write read timeout classifies the same way", async () => {
-		let arm: ((err: Error) => void) | undefined;
-		const { execute } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				armQueryError: (set) => {
-					arm = set;
-				},
-				onUpdate: () => arm?.(new SiYuanTimeoutError(30_000)),
-			},
-		});
-		const r = await execute(editBase);
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("post-write verification reads failed");
-	});
+			});
+			const r = await execute(editBase);
+			expect(r.status).toBe("error");
+			expect(r.verificationFailed).toBe(true);
+			expect(r.message).toContain("post-write verification reads failed");
+			expect(r.message).toContain("do NOT retry blindly");
+			expect(r.message).not.toContain("SiYuan unreachable");
+			// The mutation itself landed — the failure is in the reads.
+			expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+		},
+	);
 
 	it("append: post-write verification drop → verificationFailed, not 'unreachable'", async () => {
 		let arm: ((err: Error) => void) | undefined;
@@ -2295,32 +2287,29 @@ describe("transport failure on the mutation call itself", () => {
 		expect(r.message).not.toContain("SiYuan unreachable");
 	}
 
-	it("edit: timeout on updateBlock → outcome unverified, never 'unreachable'", async () => {
-		const { execute, calls } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				onUpdate: () => {
-					throw new SiYuanTimeoutError(30_000);
+	// Timeout vs fetch reject — same unverified contract either way: a
+	// timeout means the response never arrived, and a network drop can
+	// reject after the request was sent.
+	it.each([
+		["timeout", () => new SiYuanTimeoutError(30_000)],
+		["network drop", () => new SiYuanNetworkError()],
+	])(
+		"edit: %s on updateBlock → outcome unverified, never 'unreachable'",
+		async (_label, make) => {
+			const { execute, calls } = setup({
+				config: {
+					blockRows: [{ id: "b-1", content: "stale paragraph" }],
+					onUpdate: () => {
+						throw make();
+					},
 				},
-			},
-		});
-		const r = await execute(editBase);
-		expectUnverified(r);
-		expect(r.message).toContain("may already be applied");
-		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
-	});
-
-	it("edit: network drop on updateBlock classifies the same way (fetch can reject after the request was sent)", async () => {
-		const { execute } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				onUpdate: () => {
-					throw new SiYuanNetworkError();
-				},
-			},
-		});
-		expectUnverified(await execute(editBase));
-	});
+			});
+			const r = await execute(editBase);
+			expectUnverified(r);
+			expect(r.message).toContain("may already be applied");
+			expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+		},
+	);
 
 	it("append: timeout on insertBlock → outcome unverified", async () => {
 		const { execute, calls } = setup({
