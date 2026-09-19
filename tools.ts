@@ -458,7 +458,7 @@ export async function runRead(
 // ---------------------------------------------------------------------------
 
 export const READ_TOOLSET_ID = "gnubrain.read";
-export const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
+const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
 /** Register the three read tools and declare the read toolset: the
  * toolset exists so the surface is maskable from day one — default behavior
