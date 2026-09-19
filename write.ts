@@ -1,8 +1,9 @@
 // kb_write registration: the tool surface (schema + description), the
-// hooks the chassis injects, and the write-path probe gate. The flows live
-// in writeCreate.ts / writeModes.ts; shape/schema in writeSchema.ts;
-// confirmation in writeConfirm.ts; guard SQL in writeGuard.ts; anchors in
-// writeAnchors.ts; shared baselines/echo in writeResult.ts.
+// hooks the chassis injects, the write-path probe gate, and the non-create
+// mode dispatch. The create flow lives in writeCreate.ts; shape/schema in
+// writeSchema.ts; confirmation in writeConfirm.ts; guard SQL in
+// writeGuard.ts; anchors in writeAnchors.ts; shared baselines/echo in
+// writeResult.ts.
 
 import type {
 	ExtensionAPI,
@@ -24,6 +25,12 @@ import {
 	type WriteConfirmState,
 } from "./writeConfirm.js";
 import { createConfirmInputs, runCreateFlow } from "./writeCreate.js";
+import { runEditMode } from "./writeEdit.js";
+import { runAppendMode } from "./writeAppend.js";
+import { runReplaceSectionMode } from "./writeReplaceSection.js";
+import { runDeleteMode } from "./writeDelete.js";
+import { runMoveMode } from "./writeMove.js";
+import { resolveDocTarget, type WriteFlowBase } from "./writeFlow.js";
 import {
 	CONTENT_BEARING_MODES,
 	modeConfirmInputs,
@@ -31,8 +38,6 @@ import {
 	writeSchema,
 	type WriteParams,
 } from "./writeSchema.js";
-import { runWriteMode } from "./writeModes.js";
-import type { WriteFlowBase } from "./writeFlow.js";
 import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines } from "./baselines.js";
 import type { WriteKernelClient } from "./kernel.js";
@@ -167,13 +172,30 @@ async function prepareWrite(
 			confirmNew: p.confirmNew === true,
 		});
 	}
-	// Non-create modes: the mode-specific target shape (schema
-	// table) was already validated by modeShapeProblem at the entry
-	// — runWriteMode does not re-validate.
-	return runWriteMode({
-		...flowBase,
-		params: p,
-	});
+	// Non-create modes: dispatch. The mode-specific target shape (schema
+	// table) was already validated by modeShapeProblem at the entry, and
+	// pre-dialog permission (headless default-deny + terminal
+	// confirm_timeout) already ran before the probe gate — a denied write
+	// costs zero kernel round-trips.
+	contact();
+	const target = await resolveDocTarget(kernel, boxId, name, p.docId as string);
+	if ("status" in target) return target;
+	switch (p.mode) {
+		case "edit":
+			return runEditMode({ ...flowBase, params: p }, target);
+		case "append":
+			return runAppendMode({ ...flowBase, params: p }, target);
+		case "replace-section":
+			return runReplaceSectionMode({ ...flowBase, params: p }, target);
+		case "delete":
+			return runDeleteMode({ ...flowBase, params: p }, target);
+		case "move":
+			return runMoveMode({ ...flowBase, params: p }, target);
+		// Unreachable: modeShapeProblem refused any other mode at the entry.
+		// Kept because params.mode is a plain string, so TS needs a return.
+		default:
+			return errorEnvelope(`internal: unhandled write mode '${p.mode}'`);
+	}
 }
 
 export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {

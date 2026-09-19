@@ -58,7 +58,7 @@ tests drive the extension through it instead of touching real files.
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
   `/kb tools read|write|off` toggles them live.
-- **Write flows:** `writeModes.ts` dispatches edit / append / replace-section /
+- **Write flows:** `write.ts` dispatches edit / append / replace-section /
   delete / move; create is `writeCreate.ts`. Schema/shape in `writeSchema.ts`,
   confirmation gate in `writeConfirm.ts`, guard SQL in `writeGuard.ts`.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
