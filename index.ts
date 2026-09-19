@@ -65,7 +65,7 @@ function defaultReadFile(path: string): Promise<string> {
 	return fsReadFile(path, "utf8");
 }
 
-export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
+export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	const readFile = deps.readFile ?? defaultReadFile;
 	const createClient =
 		deps.createClient ??
@@ -333,8 +333,4 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		confirmState.timedOut.clear();
 		baselines.clear();
 	});
-}
-
-export default function (pi: ExtensionAPI, deps: GnubrainDeps = {}) {
-	register(pi, deps);
 }
