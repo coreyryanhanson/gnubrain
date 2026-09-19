@@ -9,7 +9,7 @@ import {
 	blockInDoc,
 	confirmGate,
 	echoTail,
-	mutationFailed,
+	runMutation,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -111,14 +111,10 @@ export async function runEditMode(
 	}
 	// An absent target is never refused here — updateBlock's synchronous
 	// not-found error surfaces verbatim below.
-	let tx: BlockTransaction[];
-	try {
-		tx = await kernel.updateBlock({ id: blockId, data: input.body });
-	} catch (err) {
-		const failed = await mutationFailed(input, err, undefined, doc);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+	const tx = await runMutation(input, {}, doc, () =>
+		kernel.updateBlock({ id: blockId, data: input.body }),
+	);
+	if ("status" in tx) return tx;
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc).
 	return finishWrite(name, {}, async () => {

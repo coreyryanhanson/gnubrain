@@ -13,7 +13,7 @@ import {
 	confirmGate,
 	deleteSetDisplay,
 	echoTail,
-	mutationFailed,
+	runMutation,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -36,18 +36,10 @@ export async function runDeleteMode(
 			backlinkSummary(display);
 		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
-		try {
-			await kernel.removeDocByID(doc.rootId);
-		} catch (err) {
-			const failed = await mutationFailed(
-				input,
-				err,
-				{ docId: doc.rootId },
-				doc,
-			);
-			if (failed !== undefined) return failed;
-			throw err;
-		}
+		const mutation = await runMutation(input, { docId: doc.rootId }, doc, () =>
+			kernel.removeDocByID(doc.rootId),
+		);
+		if (mutation !== null && "status" in mutation) return mutation;
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the doc may already be gone (finishWrite doc).
 		return finishWrite(name, {}, async () => {
@@ -86,19 +78,16 @@ export async function runDeleteMode(
 		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
 	}
-	try {
-		await kernel.deleteBlock(blockId);
-	} catch (err) {
-		// 3.8.4 requires an external delete to hit an existing node — a
-		// missing ID (deleted concurrently, or a stale target) is a
-		// synchronous "tree not found" error where 3.8.3 answered a success
-		// no-op. Same stale-target treatment as edit/move: the kernel error
-		// surfaces verbatim, with the fresh outline attached so the agent
-		// re-targets. Transport classes carry the unverified-outcome verdict.
-		const failed = await mutationFailed(input, err, { blockId }, doc);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+	// 3.8.4 requires an external delete to hit an existing node — a
+	// missing ID (deleted concurrently, or a stale target) is a
+	// synchronous "tree not found" error where 3.8.3 answered a success
+	// no-op. Same stale-target treatment as edit/move: the kernel error
+	// surfaces verbatim, with the fresh outline attached so the agent
+	// re-targets. Transport classes carry the unverified-outcome verdict.
+	const removed = await runMutation(input, { blockId }, doc, () =>
+		kernel.deleteBlock(blockId),
+	);
+	if ("status" in removed) return removed;
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the delete may already be applied (finishWrite doc).
 	return finishWrite(name, { blockId }, async () => {

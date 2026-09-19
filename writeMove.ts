@@ -14,8 +14,8 @@ import {
 	confirmGate,
 	echoTail,
 	headingInWalk,
-	mutationFailed,
 	resolveDocTarget,
+	runMutation,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -70,19 +70,17 @@ export async function runMoveMode(
 		const summary = `Move doc '${doc.title}' (${doc.rootId}) to ${destLabel} (KB ${name})`;
 		const gate = await confirmGate(input, summary);
 		if (gate !== null) return gate;
-		try {
-			await kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId });
-		} catch (err) {
-			// The 7-level depth cap and self-subtree/ancestor moves surface
-			// verbatim (the kernel rejects ancestor moves synchronously —
-			// "Cannot move to this location"; doc-level record, no echo tail,
-			// the pinned shape).
-			const failed = await mutationFailed(input, err, {
-				docId: doc.rootId,
-			});
-			if (failed !== undefined) return failed;
-			throw err;
-		}
+		// The 7-level depth cap and self-subtree/ancestor moves surface
+		// verbatim (the kernel rejects ancestor moves synchronously —
+		// "Cannot move to this location"; doc-level record, no echo tail,
+		// the pinned shape).
+		const mutation = await runMutation(
+			input,
+			{ docId: doc.rootId },
+			undefined,
+			() => kernel.moveDocsByID({ fromIDs: [doc.rootId], toID: destId }),
+		);
+		if (mutation !== null && "status" in mutation) return mutation;
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the move may already be applied (finishWrite doc).
 		return finishWrite(name, {}, async () => {
@@ -177,27 +175,14 @@ export async function runMoveMode(
 	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
-	try {
-		if (anchor.kind === "append") {
-			// Empty destination: moveBlock's parentID branch prepends, which
-			// IS the end position when there is nothing to be after.
-			await kernel.moveBlock({ id: blockId, parentID: dest.rootId });
-		} else {
-			await kernel.moveBlock({ id: blockId, previousID: anchor.previousID });
-		}
-	} catch (err) {
-		// moveBlock's blocktree index check rejects a missing source/anchor
-		// synchronously — surfaced verbatim with the fresh outline attached
-		// (mutationFailed); transport classes carry the unverified verdict.
-		const failed = await mutationFailed(
-			input,
-			err,
-			{ anchor: anchor.anchor },
-			doc,
-		);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+	const moved = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
+		anchor.kind === "append"
+			? // Empty destination: moveBlock's parentID branch prepends, which
+				// IS the end position when there is nothing to be after.
+				kernel.moveBlock({ id: blockId, parentID: dest.rootId })
+			: kernel.moveBlock({ id: blockId, previousID: anchor.previousID }),
+	);
+	if (moved !== null && "status" in moved) return moved;
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the move may already be applied (finishWrite doc).
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {

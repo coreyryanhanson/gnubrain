@@ -1,7 +1,9 @@
-// Shared scaffolding for the non-create write flows: the flow input shape,
-// doc-target ownership resolution, the confirmation gate, the shared target
-// reads, and the delete-set display — everything the per-mode flow files
-// (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) build on.
+// Shared scaffolding for the write flows: the flow input shape, doc-target
+// ownership resolution, the confirmation gate, the shared target reads, the
+// one catch site for kernel mutations, and the delete-set display —
+// everything the per-mode flow files
+// (writeCreate/writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove)
+// build on.
 
 import {
 	errorEnvelope,
@@ -213,7 +215,8 @@ async function errorTail(
 	}
 }
 
-/** One catch-site for every kernel mutation call. A transport-class throw
+/** Classify a failed kernel mutation call (the catch site above this —
+ * runMutation — is the single call point). A transport-class throw
  * (network drop, per-attempt timeout) leaves the mutation's outcome UNKNOWN:
  * fetch can reject after the request was sent, and a timed-out request was
  * delivered — so the write may already be applied and the envelope must
@@ -223,11 +226,11 @@ async function errorTail(
  * kernel rejection (SiYuanApiError) is not in-flight: it surfaces verbatim
  * with the fresh outline attached (no tail when the caller passes no doc —
  * the pinned doc-level record shape). Auth and rate-limit errors return
- * undefined — the call site rethrows them for runKbCall's classification
+ * undefined — runMutation rethrows them for runKbCall's classification
  * (breaker counting, 429 cooldown). The echo reads run best-effort on both
  * legs (errorTail): the verdict — the transport message or the kernel's own
  * error — must not depend on them landing. */
-export async function mutationFailed(
+async function mutationFailed(
 	input: WriteFlowBase,
 	err: unknown,
 	extra: Record<string, unknown> = {},
@@ -253,6 +256,26 @@ export async function mutationFailed(
 		});
 	}
 	return undefined;
+}
+
+/** One catch site for every kernel mutation call: mutationFailed's envelope
+ * (transport-unverified / kernel-verbatim) is returned, and anything it
+ * declines to classify (auth, rate limit) is rethrown for runKbCall's
+ * classification — breaker counting, 429 cooldown. That fork is the policy,
+ * so it lives once here instead of in every mode's catch block. */
+export async function runMutation<T>(
+	input: WriteFlowBase,
+	extra: Record<string, unknown>,
+	doc: DocTarget | undefined,
+	call: () => Promise<T>,
+): Promise<T | Envelope> {
+	try {
+		return await call();
+	} catch (err) {
+		const failed = await mutationFailed(input, err, extra, doc);
+		if (failed !== undefined) return failed;
+		throw err;
+	}
 }
 
 /** writeEchoTail with the flow's fixed identity args bound — call sites

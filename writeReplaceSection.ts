@@ -3,11 +3,7 @@
 // delete in one call, verified against the post-write tree — a mid-sequence
 // failure must cost visible duplication, never loss.
 
-import {
-	SiYuanApiError,
-	SiYuanKernelError,
-	type BlockTransaction,
-} from "siyuan-kernel-api";
+import { SiYuanApiError, SiYuanKernelError } from "siyuan-kernel-api";
 import {
 	errorEnvelope,
 	markPartialReplace,
@@ -24,7 +20,7 @@ import {
 	echoTail,
 	headingInWalk,
 	insertRollbackReason,
-	mutationFailed,
+	runMutation,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -99,25 +95,15 @@ export async function runReplaceSectionMode(
 	// partial replace; it surfaces verbatim with the fresh outline attached
 	// (mirrors the edit flow). Transport classes carry the unverified
 	// verdict — the insert may have landed even though no tx came back.
-	let tx: BlockTransaction[];
-	try {
-		tx =
-			anchor.kind === "append"
-				? await kernel.appendBlock({
-						data: input.body,
-						parentID: anchor.containerId ?? doc.rootId,
-					})
-				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
-	} catch (err) {
-		const failed = await mutationFailed(
-			input,
-			err,
-			{ anchor: anchor.anchor },
-			doc,
-		);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+	const tx = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
+		anchor.kind === "append"
+			? kernel.appendBlock({
+					data: input.body,
+					parentID: anchor.containerId ?? doc.rootId,
+				})
+			: kernel.insertBlock({ data: input.body, nextID: anchor.nextID }),
+	);
+	if ("status" in tx) return tx;
 	// Everything from here on is post-mutation — a drop anywhere in the
 	// insert verification, the delete sweep, or the echo must never read
 	// as "unreachable" while the insert has landed and the sweep may be
@@ -133,6 +119,12 @@ export async function runReplaceSectionMode(
 			idSet(afterInsertWalk),
 		);
 		if (rollback !== undefined) {
+			// No echo tail here, unlike append's rollback refusal: writeEchoTail
+			// refreshes baselines from a post-approval read, and a concurrent
+			// change landing between the stale re-check and this walk would be
+			// laundered into the baseline (the pinned timeline contract). The
+			// refusal wording already carries the evidence that matters — the
+			// old section is untouched.
 			return errorEnvelope(
 				`verified-insert failed: ${rollback} — the transaction rolled back silently behind HTTP success; the old section is untouched`,
 				{ kb: name, anchor: anchor.anchor },

@@ -1,7 +1,6 @@
 // The append flow: tool-derived nextID anchor, doc-end fallback; the
 // returned id is verified against the post-write walk set.
 
-import { type BlockTransaction } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { deriveAppendAnchor, type AppendPlacement } from "./writeAnchors.js";
 import { walkBlockTree, type WalkedBlock } from "./walk.js";
@@ -10,7 +9,7 @@ import {
 	echoTail,
 	headingInWalk,
 	insertRollbackReason,
-	mutationFailed,
+	runMutation,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -38,25 +37,15 @@ export async function runAppendMode(
 	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
 	const gate = await confirmGate(input, summary);
 	if (gate !== null) return gate;
-	let tx: BlockTransaction[];
-	try {
-		tx =
-			anchor.kind === "append"
-				? await kernel.appendBlock({
-						data: input.body,
-						parentID: anchor.containerId ?? doc.rootId,
-					})
-				: await kernel.insertBlock({ data: input.body, nextID: anchor.nextID });
-	} catch (err) {
-		const failed = await mutationFailed(
-			input,
-			err,
-			{ anchor: anchor.anchor },
-			doc,
-		);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+	const tx = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
+		anchor.kind === "append"
+			? kernel.appendBlock({
+					data: input.body,
+					parentID: anchor.containerId ?? doc.rootId,
+				})
+			: kernel.insertBlock({ data: input.body, nextID: anchor.nextID }),
+	);
+	if ("status" in tx) return tx;
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert may already be applied (finishWrite doc).
 	return finishWrite(name, { anchor: anchor.anchor }, async () => {

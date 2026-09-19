@@ -14,11 +14,7 @@ import {
 	type WalkedBlock,
 } from "./walk.js";
 import { writeConfirmKey } from "./writeConfirm.js";
-import {
-	confirmGate,
-	mutationFailed,
-	type WriteFlowBase,
-} from "./writeFlow.js";
+import { confirmGate, runMutation, type WriteFlowBase } from "./writeFlow.js";
 import {
 	GUARD_NEAR_CAP,
 	guardExactStmt,
@@ -293,19 +289,16 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	// The mint may or may not land when the transport fails (mutationFailed
 	// doc) — the kernel-returned id is lost with the response, so the
 	// unverified verdict cannot be narrowed by a re-read here.
-	let returnedId: string;
-	try {
-		returnedId = await kernel.createDocWithMarkdown({
+	const minted = await runMutation(input, {}, undefined, () =>
+		kernel.createDocWithMarkdown({
 			notebook: boxId,
 			path,
 			markdown: input.body,
 			...(parentID !== undefined ? { parentID } : {}),
-		});
-	} catch (err) {
-		const failed = await mutationFailed(input, err);
-		if (failed !== undefined) return failed;
-		throw err;
-	}
+		}),
+	);
+	if (typeof minted === "object") return minted;
+	const returnedId: string = minted;
 
 	// Post-mint reads: a network drop during verification must never read
 	// as "unreachable" — the doc may already be minted (finishWrite doc).
