@@ -17,6 +17,7 @@ import {
 	KB_SCOPE_ENTRY_TYPE,
 	degradedValidation,
 	latestPersistedScope,
+	rateLimitedValidation,
 	resolveValidatedScope,
 	runSessionValidation,
 	type SessionValidation,
@@ -174,6 +175,19 @@ export function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			globalSettingsPath(deps.homeDir),
 			projectSettingsPath(ctx.cwd),
 		);
+		// An armed 429 cooldown means the kernel refuses us per-IP and any call
+		// extends the lock — including these two probes. Skip them: the session
+		// comes up rate-limited, tools refuse locally via the gate, and /kb after
+		// the cooldown re-validates for real. In-process only: restarting pi (or
+		// the kernel) starts fresh by design — do not persist the deadline.
+		if (breaker.inCooldown()) {
+			return rateLimitedValidation({
+				loaded,
+				...(deps.pinnedVersion !== undefined && {
+					pinnedVersion: deps.pinnedVersion,
+				}),
+			});
+		}
 		const kernel =
 			loaded.global.ok && loaded.global.settings
 				? createClient(

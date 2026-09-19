@@ -111,6 +111,41 @@ export function degradedValidation(errors: string[]): SessionValidation {
 	};
 }
 
+/** Rate-limited session: settings parsed, but the kernel is inside a 429 lock
+ * the extension must not extend — validation skipped both kernel calls. Shape
+ * errors stay empty so tool calls reach the gate's cooldown refusal (deadline
+ * + Retry-After) instead of a config-degraded refusal; `/kb` re-validates for
+ * real once the cooldown expires. Config problems still win: a broken settings
+ * file degrades exactly as it would without a lock. */
+export function rateLimitedValidation(input: {
+	loaded: LoadedSettings;
+	pinnedVersion?: string;
+}): SessionValidation {
+	const { global, project } = input.loaded;
+	const shapeErrors = [...(global.ok ? [] : global.errors), ...project.errors];
+	const settings = global.ok ? global.settings : undefined;
+	if (shapeErrors.length > 0 || settings === undefined)
+		return degradedValidation(shapeErrors);
+	return {
+		settings,
+		shapeErrors: [],
+		// Not "never-probed" (that name means the shape gate stopped us) and no
+		// probe ran — "unreachable" is the honest verdict: the kernel cannot
+		// serve this session right now, and a write attempt may re-probe it.
+		probe: "unreachable",
+		kernelVersion: undefined,
+		pinnedVersion: input.pinnedVersion ?? PINNED_SIYUAN_VERSION,
+		validKBs: new Map(),
+		scope: [],
+		defaultKBs: project.defaultKBs ?? settings.defaultKBs ?? [],
+		warnings: [
+			"kernel is rate-limited (429 cooldown) — validation skipped so the lock is not extended; run /kb after the cooldown expires to re-validate",
+		],
+		authFailed: false,
+		lsNotebooksOk: false,
+	};
+}
+
 /**
  * The full startup validation pass. Also the `/kb` recovery hook's body:
  * re-running it re-reads settings and updates every cached verdict.

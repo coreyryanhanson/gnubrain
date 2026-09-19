@@ -1432,6 +1432,37 @@ describe("delete", () => {
 		).toEqual(["p1"]);
 	});
 
+	it("3.8.4 delete with a simultaneous echo failure: the kernel's error still surfaces verbatim, not 'unreachable'", async () => {
+		// The outline re-read rides the walk route; arm it to drop at the same
+		// moment the kernel answers the delete with a synchronous error. The
+		// verdict is the kernel's error — the echo is garnish — and an
+		// unwrapped echo throw would make runKbCall reclassify this call as
+		// "SiYuan unreachable" even though the kernel answered.
+		let arm: ((err: Error) => void) | undefined;
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+				armWalkError: (set) => {
+					arm = set;
+				},
+				onDelete: () => {
+					arm?.(new SiYuanNetworkError());
+					throw new SiYuanApiError(-1, -1, "tree not found");
+				},
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("tree not found");
+		expect(result.message).not.toContain("unreachable");
+	});
+
 	it("a foreign blockId (another doc's block) is refused before any dialog or kernel delete", async () => {
 		const { execute, calls } = setup({
 			config: {

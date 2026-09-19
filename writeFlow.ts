@@ -194,6 +194,25 @@ export function insertRollbackReason(
 	return undefined;
 }
 
+/** Error-path echo reads are garnish: the verdict (the transport message or
+ * the kernel's own error) is already correct without the outline, so a
+ * dropped re-read must not mask it — unwrapped, the echo's transport throw
+ * would escape mutationFailed and runKbCall would reclassify a
+ * kernel-answered call as "SiYuan unreachable". Success-path echoes
+ * (finishWrite) stay loud on purpose: a dropped verification read must read
+ * as unverified, never as success. */
+async function errorTail(
+	input: WriteFlowBase,
+	doc: DocTarget | undefined,
+): Promise<Record<string, unknown>> {
+	if (doc === undefined) return {};
+	try {
+		return await echoTail(input, doc);
+	} catch {
+		return {};
+	}
+}
+
 /** One catch-site for every kernel mutation call. A transport-class throw
  * (network drop, per-attempt timeout) leaves the mutation's outcome UNKNOWN:
  * fetch can reject after the request was sent, and a timed-out request was
@@ -205,9 +224,9 @@ export function insertRollbackReason(
  * with the fresh outline attached (no tail when the caller passes no doc —
  * the pinned doc-level record shape). Auth and rate-limit errors return
  * undefined — the call site rethrows them for runKbCall's classification
- * (breaker counting, 429 cooldown). The echo reads run best-effort on the
- * transport legs: the kernel may still be down, and the unverified verdict
- * must not depend on them landing. */
+ * (breaker counting, 429 cooldown). The echo reads run best-effort on both
+ * legs (errorTail): the verdict — the transport message or the kernel's own
+ * error — must not depend on them landing. */
 export async function mutationFailed(
 	input: WriteFlowBase,
 	err: unknown,
@@ -215,14 +234,7 @@ export async function mutationFailed(
 	doc?: DocTarget | undefined,
 ): Promise<Envelope | undefined> {
 	if (err instanceof SiYuanNetworkError || err instanceof SiYuanTimeoutError) {
-		let tail: Record<string, unknown> = {};
-		if (doc !== undefined) {
-			try {
-				tail = await echoTail(input, doc);
-			} catch {
-				// The kernel may still be down — the verdict rides the message.
-			}
-		}
+		const tail = await errorTail(input, doc);
 		return errorEnvelope(
 			`the write's outcome is unverified: the kernel call failed at the ` +
 				`transport layer (${err instanceof Error ? err.message : String(err)}) — ` +
@@ -233,7 +245,7 @@ export async function mutationFailed(
 		);
 	}
 	if (err instanceof SiYuanApiError) {
-		const tail = doc === undefined ? {} : await echoTail(input, doc);
+		const tail = await errorTail(input, doc);
 		return errorEnvelope(err.message, {
 			kb: input.name,
 			...extra,

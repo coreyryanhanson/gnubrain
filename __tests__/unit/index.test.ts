@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SiYuanAuthError } from "siyuan-kernel-api";
+import { SiYuanAuthError, SiYuanRateLimitError } from "siyuan-kernel-api";
 import { TOOLSET_EVENTS, getRegisteredToolsets } from "pi-tool-masking";
 import register, { type GnubrainDeps } from "../../index.js";
 import {
@@ -298,6 +298,70 @@ describe("index wiring", () => {
 		// The count restarted: a healthy re-check renders the healthy slot,
 		// not the carried breaker tag.
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
+	});
+
+	it("session_start during an armed 429 cooldown makes no kernel calls; /kb after expiry re-validates", async () => {
+		vi.useFakeTimers();
+		try {
+			const { pi, fire, runCommand, runToolDetails } = fakePi();
+			const d = deps();
+			const base = d.createClient!;
+			let locked = false;
+			let versionCalls = 0;
+			d.createClient = () => {
+				const client = base("", "") as unknown as Record<string, unknown>;
+				client.getVersion = () => {
+					versionCalls++;
+					return Promise.resolve("3.8.4");
+				};
+				client.query = () => {
+					if (locked) throw new SiYuanRateLimitError(429, 60);
+					return Promise.resolve([]);
+				};
+				return client as never;
+			};
+			register(pi, d);
+			const { ctx } = fakeCtx();
+			await fire("session_start", ctx);
+			expect(versionCalls).toBe(1);
+			expect(d.notebooks()).toBe(1);
+
+			// A 429 from a read arms the cooldown and refuses with the lockout.
+			locked = true;
+			const hit = await runToolDetails(
+				"kb_query",
+				{ kb: ["dev"], sql: "SELECT id FROM blocks" },
+				ctx,
+			);
+			expect(hit.status).toBe("refused");
+			expect(hit.message).toContain("rate-limit lockout");
+
+			// While the lock is armed, a new session in this process skips both
+			// validation probes — any kernel call would extend the lock.
+			await fire("session_shutdown", ctx);
+			await fire("session_start", ctx);
+			expect(versionCalls).toBe(1);
+			expect(d.notebooks()).toBe(1);
+
+			// Tool calls in the rate-limited session refuse via the gate's
+			// cooldown branch, not a config-degraded refusal.
+			const cooled = await runToolDetails(
+				"kb_query",
+				{ kb: ["dev"], sql: "SELECT id FROM blocks" },
+				ctx,
+			);
+			expect(cooled.status).toBe("refused");
+			expect(cooled.message).toContain("rate-limit lockout");
+
+			// After the lock expires, /kb re-validates for real.
+			locked = false;
+			await vi.advanceTimersByTimeAsync(61_000);
+			await runCommand("all on", ctx);
+			expect(versionCalls).toBe(2);
+			expect(d.notebooks()).toBe(2);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("confirm_timeout does not survive a session restart — the re-request gets a fresh dialog", async () => {
