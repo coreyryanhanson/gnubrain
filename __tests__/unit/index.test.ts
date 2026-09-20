@@ -247,8 +247,14 @@ describe("index wiring", () => {
 		expect(statuses.at(-1)?.[1]).not.toBe("● kb: dev");
 	});
 
-	it("a corrected apiToken takes effect on the next /kb dispatch", async () => {
-		const { pi, fire, runCommand } = fakePi();
+	/** A client whose listNotebooks rejects until cleared — the shared
+	 * apiToken-failure fixture for the breaker-recovery tests. The override
+	 * must be applied before register(): index.ts captures deps.createClient
+	 * at registration time. */
+	function authFailingDeps(): {
+		d: ReturnType<typeof deps>;
+		clearAuthError: () => void;
+	} {
 		const d = deps();
 		const base = d.createClient!;
 		let authError: Error | undefined = new SiYuanAuthError(401);
@@ -259,6 +265,17 @@ describe("index wiring", () => {
 			}
 			return client as never;
 		};
+		return {
+			d,
+			clearAuthError: () => {
+				authError = undefined;
+			},
+		};
+	}
+
+	it("a corrected apiToken takes effect on the next /kb dispatch", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		const { d, clearAuthError } = authFailingDeps();
 		register(pi, d);
 		const { ctx, statuses } = fakeCtx();
 		await fire("session_start", ctx);
@@ -268,7 +285,7 @@ describe("index wiring", () => {
 		await runCommand("all on", ctx);
 		expect(statuses.at(-1)?.[1]).toBe("● kb: breaker");
 
-		authError = undefined; // the token is fixed
+		clearAuthError(); // the token is fixed
 		await runCommand("all on", ctx);
 		// The re-check cleared the breaker and the empty valid set.
 		expect(statuses.at(-1)?.[1]).toBe("● kb: dev");
@@ -276,16 +293,7 @@ describe("index wiring", () => {
 
 	it("a new session does not inherit a tipped breaker count", async () => {
 		const { pi, fire, runCommand } = fakePi();
-		const d = deps();
-		const base = d.createClient!;
-		let authError: Error | undefined = new SiYuanAuthError(401);
-		d.createClient = () => {
-			const client = base("", "") as unknown as Record<string, unknown>;
-			if (authError) {
-				client.listNotebooks = () => Promise.reject(authError!);
-			}
-			return client as never;
-		};
+		const { d, clearAuthError } = authFailingDeps();
 		register(pi, d);
 		const { ctx, statuses } = fakeCtx();
 		await fire("session_start", ctx);
@@ -294,7 +302,7 @@ describe("index wiring", () => {
 		expect(statuses.at(-1)?.[1]).toBe("● kb: breaker");
 
 		await fire("session_shutdown", ctx);
-		authError = undefined; // the token is fixed, but the closure lives on
+		clearAuthError(); // the token is fixed, but the closure lives on
 		await fire("session_start", ctx);
 		// The count restarted: a healthy re-check renders the healthy slot,
 		// not the carried breaker tag.

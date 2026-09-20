@@ -1793,52 +1793,110 @@ describe("block-level move", () => {
 		expect(move?.args).toEqual({ id: "p1", previousID: "list" });
 	});
 
-	it("same-doc self-anchor: the block already ends the destination section → refusal, zero kernel moves", async () => {
+	// The "already there" refusal class: the destination already contains
+	// the block at the position the anchor would produce, so the kernel
+	// would no-op behind HTTP success and the walk-set check would misreport
+	// the move as landed — the pre-check refuses before any moveBlock.
+	type MoveRefusalCase = {
+		name: string;
+		stub: Partial<StubConfig>;
+		params: Record<string, unknown>;
+	};
+	const alreadyThereCases: MoveRefusalCase[] = [
 		// MOVE_DOC's h1 section is [p1, p2] — moving p2 to its end would
-		// issue moveBlock({previousID: p2}); the kernel no-ops and the walk
-		// check would misreport a successful move.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "p2", content: "stay" }],
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p2",
-			toDocId: "d-doc",
-			toHeadingId: "h1",
-		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain(
-			"already sits at the destination position",
-		);
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
-
-	it("same-doc doc-end self-anchor: block already last top-level of its own doc → refusal, zero kernel moves", async () => {
+		// issue moveBlock({previousID: p2}).
+		{
+			name: "same-doc self-anchor: the block already ends the destination section",
+			stub: { blockRows: [{ id: "p2", content: "stay" }] },
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "p2",
+				toDocId: "d-doc",
+				toHeadingId: "h1",
+			},
+		},
 		// p2 is MOVE_DOC's last block; a move to doc end (toHeadingId
 		// omitted → appendBlock-on-root anchor) would no-op on the kernel
 		// and pass the walk-set checks as a successful move.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "p2", content: "stay" }],
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p2",
-			toDocId: "d-doc",
-		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain(
-			"already sits at the destination position",
-		);
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
+		{
+			name: "same-doc doc-end self-anchor: block already last top-level of its own doc",
+			stub: { blockRows: [{ id: "p2", content: "stay" }] },
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "p2",
+				toDocId: "d-doc",
+			},
+		},
+		// p2's child c1 is the walk's literal last element; the doc-end
+		// shape is "last top-level block", not "last element". Nested depth
+		// comes from the walk's recursion (childrenFor[p2]; a container).
+		{
+			name: "doc-end pre-check survives trailing children: block with a child already at doc end",
+			stub: {
+				blockRows: [{ id: "p2", content: "stay" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("p1", "p", "", "first"),
+						walkBlock("p2", "l", "u", "stay"),
+					],
+					p2: [walkBlock("c1", "i", "u", "kid")],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
+			},
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "p2",
+				toDocId: "d-doc",
+			},
+		},
+		// c1 already follows p1, h1's section anchor. The kernel
+		// moveBlock({id: c1, previousID: p1}) would no-op while the walk-set
+		// check ("c1 present") reports a successful move — the generalized
+		// pre-check refuses instead.
+		{
+			name: "same-doc no-op target: block already immediately after the anchor",
+			stub: {
+				blockRows: [{ id: "c1", content: "nested" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("p1", "p", "", "first"),
+						walkBlock("c1", "p", "", "nested", "p1", "p"),
+					],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
+			},
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "c1",
+				toDocId: "d-doc",
+				toHeadingId: "h1",
+			},
+		},
+	];
+	it.each(alreadyThereCases)(
+		"$name → refusal, zero kernel moves",
+		async ({ stub, params }) => {
+			const harness = moveHarness(undefined, stub);
+			const result = await harness.execute(params);
+			expect(result.status).toBe("refused");
+			expect(result.message).toContain(
+				"already sits at the destination position",
+			);
+			expect(
+				harness.calls.filter((c) => c.method === "moveBlock"),
+			).toHaveLength(0);
+		},
+	);
 
 	it("same-doc doc-end move: a silent kernel no-op is caught by the position check", async () => {
 		// p1 is mid-doc; the kernel no-ops behind HTTP success — same-doc
@@ -1888,129 +1946,62 @@ describe("block-level move", () => {
 		expect(result.movedBlockId).toBe("p1");
 	});
 
-	it("doc-end pre-check survives trailing children: block with a child already at doc end refuses, zero kernel moves", async () => {
-		// p2's child c1 is the walk's literal last element; the doc-end
-		// shape is "last top-level block", not "last element". Nested depth
-		// comes from the walk's recursion (childrenFor[p2]; a container).
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "p2", content: "stay" }],
-			childrenFor: {
-				"d-doc": [
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("p1", "p", "", "first"),
-					walkBlock("p2", "l", "u", "stay"),
-				],
-				p2: [walkBlock("c1", "i", "u", "kid")],
-				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+	// The own-subtree guard keys on the anchor the kernel receives: c1's
+	// child section anchors after p-kid (re-parenting the container into
+	// itself), and the empty-section arm anchors on the heading itself —
+	// which still sits inside c1. headingInWalk accepts h2 (it IS a heading
+	// of the doc); the guard fires on the anchor shape.
+	it.each([
+		{
+			name: "same-doc move into the block's own subtree",
+			stub: {
+				blockRows: [{ id: "c1", content: "container" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("c1", "callout", "", "container"),
+					],
+					c1: [
+						walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
+						walkBlock("p-kid", "p", "", "kid", "c1", "callout"),
+					],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
 			},
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p2",
-			toDocId: "d-doc",
-		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain(
-			"already sits at the destination position",
-		);
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
-
-	it("same-doc no-op target: block already immediately after the anchor → refusal, zero kernel moves", async () => {
-		// c1 already follows p1, h1's section anchor. The kernel
-		// moveBlock({id: c1, previousID: p1}) would no-op while the walk-set
-		// check ("c1 present") reports a successful move — the generalized
-		// pre-check refuses instead.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "c1", content: "nested" }],
-			childrenFor: {
-				"d-doc": [
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("p1", "p", "", "first"),
-					walkBlock("c1", "p", "", "nested", "p1", "p"),
-				],
-				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "c1",
+				toDocId: "d-doc",
+				toHeadingId: "h2",
 			},
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "c1",
-			toDocId: "d-doc",
-			toHeadingId: "h1",
-		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain(
-			"already sits at the destination position",
-		);
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
-
-	it("same-doc move into the block's own subtree is refused with zero kernel moves", async () => {
-		// c1 is a root-level container holding heading h2, whose section is
-		// [p-kid]. Moving c1 anchored after p-kid re-parents the container
-		// into itself — the ancestor class the kernel mishandles and the
-		// doc-level path refuses. headingInWalk accepts h2 (it IS a heading
-		// of the doc); the guard keys on the anchor the kernel receives.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "c1", content: "container" }],
-			childrenFor: {
-				"d-doc": [
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("c1", "callout", "", "container"),
-				],
-				c1: [
-					walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
-					walkBlock("p-kid", "p", "", "kid", "c1", "callout"),
-				],
-				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+		},
+		{
+			name: "same-doc move to an empty-section heading inside the block",
+			stub: {
+				blockRows: [{ id: "c1", content: "container" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "A"),
+						walkBlock("c1", "callout", "", "container"),
+					],
+					c1: [walkBlock("h2", "h", "h2", "Nested", "c1", "callout")],
+					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+				},
 			},
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "c1",
-			toDocId: "d-doc",
-			toHeadingId: "h2",
-		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain("inside the block's own subtree");
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
-
-	it("same-doc move to an empty-section heading inside the block refuses too", async () => {
-		// h2 has no members: deriveMoveAnchor's empty-section arm anchors on
-		// the heading itself — which still sits inside c1, so the guard must
-		// fire on the heading-as-anchor shape as well.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "c1", content: "container" }],
-			childrenFor: {
-				"d-doc": [
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("c1", "callout", "", "container"),
-				],
-				c1: [walkBlock("h2", "h", "h2", "Nested", "c1", "callout")],
-				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "c1",
+				toDocId: "d-doc",
+				toHeadingId: "h2",
 			},
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "c1",
-			toDocId: "d-doc",
-			toHeadingId: "h2",
-		});
+		},
+	])("$name is refused with zero kernel moves", async ({ stub, params }) => {
+		const harness = moveHarness(undefined, stub);
+		const result = await harness.execute(params);
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("inside the block's own subtree");
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
@@ -2307,100 +2298,73 @@ describe("transport failure on the mutation call itself", () => {
 		},
 	);
 
-	it("append: timeout on insertBlock → outcome unverified", async () => {
-		const { execute, calls } = setup({
+	// One unverified contract per mutation method: the kernel's response
+	// never arrived, so the write may or may not have landed. replace-
+	// section's timeout fires on the insert, before the sweep, so no
+	// partial-replace payload may exist and no delete ran.
+	type TimeoutCase = {
+		name: string;
+		config: StubConfig;
+		params: Record<string, unknown>;
+		methods: string[];
+		noSweep?: boolean;
+	};
+	const timeoutCases: TimeoutCase[] = [
+		{
+			name: "append: timeout on insertBlock",
 			config: {
 				onInsert: () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
-		});
-		const r = await execute({
-			kb: "recipes",
-			mode: "append",
-			docId: "d-doc",
-			markdown: "new section",
-		});
-		expectUnverified(r);
-		expect(
-			calls.filter(
-				(c) => c.method === "insertBlock" || c.method === "appendBlock",
-			),
-		).toHaveLength(1);
-	});
-
-	it("replace-section: timeout on the insert → outcome unverified, no partial-replace payload (the sweep never ran)", async () => {
-		const failing = setup({
+			params: {
+				kb: "recipes",
+				mode: "append",
+				docId: "d-doc",
+				markdown: "new section",
+			},
+			methods: ["insertBlock", "appendBlock"],
+		},
+		{
+			name: "replace-section: timeout on the insert — the sweep never ran",
 			config: {
 				childrenFor: REPLACE_DOC,
 				onInsert: () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
-		});
-		const r = await failing.execute(replaceParams);
-		expectUnverified(r);
-		expect(r.partialReplace).toBeUndefined();
-		expect(
-			failing.calls.filter((c) => c.method === "deleteBlock"),
-		).toHaveLength(0);
-	});
-
-	it("delete: timeout on deleteBlock → outcome unverified", async () => {
-		const { execute, calls } = setup({
+			params: replaceParams,
+			methods: ["insertBlock", "appendBlock"],
+			noSweep: true,
+		},
+		{
+			name: "delete: timeout on deleteBlock",
 			config: {
 				blockRows: [{ id: "b-1", content: "soon gone" }],
 				onDelete: () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
-		});
-		const r = await execute({
-			kb: "recipes",
-			mode: "delete",
-			docId: "d-doc",
-			blockId: "b-1",
-		});
-		expectUnverified(r);
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
-	});
-
-	it("doc delete: timeout on removeDocByID → outcome unverified", async () => {
-		const { execute, calls } = setup({
+			params: {
+				kb: "recipes",
+				mode: "delete",
+				docId: "d-doc",
+				blockId: "b-1",
+			},
+			methods: ["deleteBlock"],
+		},
+		{
+			name: "doc delete: timeout on removeDocByID",
 			config: {
 				onRemoveDoc: () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
-		});
-		const r = await execute({
-			kb: "recipes",
-			mode: "delete",
-			docId: "d-doc",
-			doc: true,
-		});
-		expectUnverified(r);
-		expect(calls.filter((c) => c.method === "removeDocByID")).toHaveLength(1);
-	});
-
-	it("auth failures on a mutation still propagate for breaker counting", async () => {
-		const { execute } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				onUpdate: () => {
-					throw new SiYuanAuthError(401);
-				},
-			},
-		});
-		const r = await execute(editBase);
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBeUndefined();
-		expect(r.message).toContain("auth rejected");
-		expect(r.message).not.toContain("outcome is unverified");
-	});
-
-	it("move: timeout on moveBlock → outcome unverified", async () => {
-		const { execute, calls } = setup({
+			params: { kb: "recipes", mode: "delete", docId: "d-doc", doc: true },
+			methods: ["removeDocByID"],
+		},
+		{
+			name: "move: timeout on moveBlock",
 			config: {
 				blockRows: [{ id: "p1", content: "mover" }],
 				childrenFor: {
@@ -2423,20 +2387,17 @@ describe("transport failure on the mutation call itself", () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
-		});
-		const r = await execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p1",
-			toDocId: "d-other",
-		});
-		expectUnverified(r);
-		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
-	});
-
-	it("doc move: timeout on moveDocsByID → outcome unverified", async () => {
-		const { execute, calls } = setup({
+			params: {
+				kb: "recipes",
+				mode: "move",
+				docId: "d-doc",
+				blockId: "p1",
+				toDocId: "d-other",
+			},
+			methods: ["moveBlock"],
+		},
+		{
+			name: "doc move: timeout on moveDocsByID",
 			config: {
 				childrenFor: { "d-doc": [walkBlock("h1", "h", "h1", "A")] },
 				docRoots: {
@@ -2449,14 +2410,37 @@ describe("transport failure on the mutation call itself", () => {
 					throw new SiYuanTimeoutError(30_000);
 				},
 			},
+			params: { kb: "recipes", mode: "move", docId: "d-doc", doc: true },
+			methods: ["moveDocsByID"],
+		},
+	];
+	it.each(timeoutCases)(
+		"$name → outcome unverified, never 'unreachable'",
+		async ({ config, params, methods, noSweep }) => {
+			const { execute, calls } = setup({ config });
+			const r = await execute(params);
+			expectUnverified(r);
+			expect(calls.filter((c) => methods.includes(c.method))).toHaveLength(1);
+			if (noSweep) {
+				expect(r.partialReplace).toBeUndefined();
+				expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+			}
+		},
+	);
+
+	it("auth failures on a mutation still propagate for breaker counting", async () => {
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanAuthError(401);
+				},
+			},
 		});
-		const r = await execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			doc: true,
-		});
-		expectUnverified(r);
-		expect(calls.filter((c) => c.method === "moveDocsByID")).toHaveLength(1);
+		const r = await execute(editBase);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBeUndefined();
+		expect(r.message).toContain("auth rejected");
+		expect(r.message).not.toContain("outcome is unverified");
 	});
 });

@@ -423,49 +423,37 @@ describe("runKbCall error classification", () => {
 		expect(breaker.tripped).toBe(true);
 	});
 
-	it("a network drop maps to the error envelope and never counts toward the breaker", async () => {
-		const breaker = new CircuitBreaker();
-		for (let i = 0; i < 5; i++) {
-			const envelope = await runKbCall(
-				{
-					validation: validation(),
-					breaker,
-					kb: "recipes",
-					arity: "single",
-					now: NOW,
-				},
-				async () => {
-					throw new SiYuanNetworkError();
-				},
-			);
-			expect(envelope.status).toBe("error");
-			expect(envelope.message).toBe(
-				"SiYuan unreachable at http://127.0.0.1:6806",
-			);
-		}
-		expect(breaker.tripped).toBe(false);
-	});
-
-	it("a timeout maps to the same unreachable error envelope and never counts toward the breaker", async () => {
-		const breaker = new CircuitBreaker();
-		const envelope = await runKbCall(
-			{
-				validation: validation(),
-				breaker,
-				kb: "recipes",
-				arity: "single",
-				now: NOW,
-			},
-			async () => {
-				throw new SiYuanTimeoutError(30_000);
-			},
-		);
-		expect(envelope.status).toBe("error");
-		expect(envelope.message).toBe(
-			"SiYuan unreachable at http://127.0.0.1:6806",
-		);
-		expect(breaker.tripped).toBe(false);
-	});
+	// Network drop vs timeout — both mean the response never arrived, so
+	// both map to the unreachable envelope and neither counts toward the
+	// breaker's consecutive-auth-failure count (network drops never feed it).
+	it.each([
+		["a network drop", () => new SiYuanNetworkError()],
+		["a timeout", () => new SiYuanTimeoutError(30_000)],
+	])(
+		"%s maps to the unreachable error envelope and never counts toward the breaker",
+		async (_label, make) => {
+			const breaker = new CircuitBreaker();
+			for (let i = 0; i < 5; i++) {
+				const envelope = await runKbCall(
+					{
+						validation: validation(),
+						breaker,
+						kb: "recipes",
+						arity: "single",
+						now: NOW,
+					},
+					async () => {
+						throw make();
+					},
+				);
+				expect(envelope.status).toBe("error");
+				expect(envelope.message).toBe(
+					"SiYuan unreachable at http://127.0.0.1:6806",
+				);
+			}
+			expect(breaker.tripped).toBe(false);
+		},
+	);
 });
 
 describe("write gate", () => {

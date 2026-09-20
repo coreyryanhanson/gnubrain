@@ -1070,18 +1070,22 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	const parse = (r: { content: { text: string }[] }) =>
 		JSON.parse(r.content[0]!.text) as Record<string, unknown>;
 
-	it("returns the active set with zero kernel calls", async () => {
+	// docId is meaningless to discovery — the scope branch ignores it.
+	it.each([
+		{
+			name: "returns the active set with zero kernel calls",
+			params: { kb: "kbs" },
+		},
+		{
+			name: "a discovery call carrying a docId still returns the scope branch (docId ignored)",
+			params: { kb: "kbs", docId: "20260101-x" },
+		},
+	])("$name", async ({ params }) => {
 		const { tool: read, kernelCalls } = registeredReadTool({
 			validation: validation(),
 		});
 		const envelope = parse(
-			await read.execute!(
-				"id",
-				{ kb: "kbs" },
-				undefined,
-				undefined,
-				ctx2("sess"),
-			),
+			await read.execute!("id", params, undefined, undefined, ctx2("sess")),
 		);
 		expect(envelope.status).toBe("ok");
 		expect(envelope.kb).toBe("kbs");
@@ -1173,60 +1177,31 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 		expect(kernelCalls).toHaveLength(0);
 	});
 
-	it("a discovery call carrying a docId still returns the scope branch (docId ignored)", async () => {
+	// One refusal path for a missing docId — the tool normalizes "" to
+	// missing (tools.ts `docId === undefined || docId === ""`) — so both
+	// shapes get the three-exit guidance inside the gated op.
+	it.each([
+		{
+			name: "valid kb with docId absent is refused with the three-exit guidance inside the gated op",
+			params: { kb: "recipes" },
+		},
+		{
+			name: "empty-string docId counts as missing",
+			params: { kb: "recipes", docId: "" },
+		},
+	])("$name", async ({ params }) => {
 		const { tool: read, kernelCalls } = registeredReadTool({
 			validation: validation(),
 		});
 		const envelope = parse(
-			await read.execute!(
-				"id",
-				{ kb: "kbs", docId: "20260101-x" },
-				undefined,
-				undefined,
-				ctx2("sess"),
-			),
-		);
-		expect(envelope.status).toBe("ok");
-		expect(envelope.kb).toBe("kbs");
-		expect(envelope.names).toEqual(["recipes", "projects"]);
-		expect(kernelCalls).toHaveLength(0);
-	});
-
-	it("valid kb with docId absent is refused with the three-exit guidance inside the gated op", async () => {
-		const { tool: read, kernelCalls } = registeredReadTool({
-			validation: validation(),
-		});
-		const envelope = parse(
-			await read.execute!(
-				"id",
-				{ kb: "recipes" },
-				undefined,
-				undefined,
-				ctx2("sess"),
-			),
+			await read.execute!("id", params, undefined, undefined, ctx2("sess")),
 		);
 		expect(envelope.status).toBe("refused");
 		const message = String(envelope.message);
+		expect(message).toContain("docId is required");
 		expect(message).toContain("kb_query");
 		expect(message).toContain('kb: "kbs"');
 		expect(message).not.toContain("rows"); // never a doc listing or metrics
-		expect(kernelCalls).toHaveLength(0);
-	});
-
-	it("empty-string docId counts as missing", async () => {
-		const { tool: read, kernelCalls } = registeredReadTool({
-			validation: validation(),
-		});
-		const envelope = parse(
-			await read.execute!(
-				"id",
-				{ kb: "recipes", docId: "" },
-				undefined,
-				undefined,
-				ctx2("sess"),
-			),
-		);
-		expect(envelope.status).toBe("refused");
 		expect(kernelCalls).toHaveLength(0);
 	});
 
