@@ -105,6 +105,14 @@ export async function blockInDoc(
 		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}`,
 	);
 	if (rows[0] === undefined) return { content: null, type: null };
+	// A document row's content is its title, not a body — an id confusion
+	// here would rename the doc and verify against the title hash. Doc ids
+	// never target block-level ops.
+	if (String(rows[0].type ?? "") === "d") {
+		return {
+			refusal: `'${blockId}' is a document id, not a block — use a doc-level op or re-target a block from the outline (kb_read)`,
+		};
+	}
 	const rootId = String(rows[0].root_id ?? "");
 	return rootId === doc.rootId
 		? {

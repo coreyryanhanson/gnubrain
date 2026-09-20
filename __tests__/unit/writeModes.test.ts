@@ -254,6 +254,21 @@ describe("edit", () => {
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
 	});
 
+	it("a document id in the blockId slot is refused before any kernel write", async () => {
+		const { execute, calls } = setup({
+			config: {
+				// The doc's own 'd' row: root_id === docId, content is the title.
+				blockRows: [
+					{ id: "d-doc", content: "Doc Title", root_id: "d-doc", type: "d" },
+				],
+			},
+		});
+		const result = await execute({ ...editBase, blockId: "d-doc" });
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("is a document id, not a block");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
+	});
+
 	it("verified-edit: an update tx without the target's op fails loud, not ok", async () => {
 		const { execute } = setup({
 			config: {
