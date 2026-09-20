@@ -61,7 +61,7 @@ export function certifySelect(stmt: string): CertResult {
 		return { ok: false, reason: "UNION / compound queries are not allowed" };
 	}
 	if (node.having !== undefined && node.having !== null) {
-		return { ok: false, reason: "bare HAVING is not allowed (v1 policy)" };
+		return { ok: false, reason: "HAVING is not allowed (v1 policy)" };
 	}
 	const from = node.from;
 	if (!Array.isArray(from) || from.length === 0) {

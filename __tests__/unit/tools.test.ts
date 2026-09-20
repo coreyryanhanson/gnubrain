@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { rmSync, statSync } from "node:fs";
+import { readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
@@ -32,6 +32,15 @@ import {
 import type { KernelReadClient } from "../../kernel.js";
 import type { SessionValidation } from "../../validation.js";
 import { validation as makeValidation } from "./fixtures.js";
+
+/** Read a spill file back as JSONL — the unit suite's only byte-level check
+ * that spills hold the full payload, never a capped slice. */
+function readSpilledJsonl<T>(path: string): T[] {
+	return readFileSync(path, "utf8")
+		.split("\n")
+		.filter((l) => l.length > 0)
+		.map((l) => JSON.parse(l) as T);
+}
 
 // These tests exercise the full scope, unlike the shared fixture's default.
 const validation = () => makeValidation({ scope: ["recipes", "projects"] });
@@ -131,7 +140,7 @@ describe("parser certification", () => {
 		expect(!result.ok && result.reason).toContain("JOINs");
 	});
 
-	it("rejects bare HAVING (v1 policy)", () => {
+	it("rejects HAVING (v1 policy)", () => {
 		const result = certifySelect(
 			"SELECT box, COUNT(*) FROM blocks GROUP BY box HAVING COUNT(*) > 1",
 		);
@@ -582,6 +591,30 @@ describe("query tool", () => {
 		expect(envelope.post_filtered).toBe(true);
 		expect(envelope.count).toBe(1);
 	});
+
+	it("an oversized payload spills the full rows: preview + path in the envelope, bytes in the file", async () => {
+		const rows = Array.from({ length: 10 }, (_, i) => ({
+			id: `b${i}`,
+			root_id: "d1",
+			box: "nb-r",
+			content: "y".repeat(1000),
+		}));
+		const { run } = await executeQuery(rows);
+		const envelope = await run("SELECT id, root_id, box, content FROM blocks");
+		expect(envelope.rows).toBeUndefined();
+		// Oversized but under the injected LIMIT: spilling fires, the
+		// truncation marker does not — the two mechanisms stay independent.
+		expect(envelope.truncated).toBeUndefined();
+		expect(String(envelope.preview).length).toBeLessThanOrEqual(
+			PREVIEW_CHARS + 1,
+		);
+		const path = String(envelope.fullResultPath);
+		expect(path).toMatch(/kb_query-[0-9a-f]{16}\.jsonl$/);
+		// The spill holds every row, untruncated — the mechanism's core promise.
+		const spilled = readSpilledJsonl<{ id: string; content: string }>(path);
+		expect(spilled).toHaveLength(10);
+		expect(spilled[4]).toMatchObject({ id: "b4", content: "y".repeat(1000) });
+	});
 });
 
 describe("read tool", () => {
@@ -635,6 +668,13 @@ describe("read tool", () => {
 		expect(lines).toHaveLength(201); // 200 + the pointer line
 		expect(lines.at(-1)).toContain("50 more");
 		expect(result.fullOutlinePath).toBeDefined();
+		// The spill holds every heading, not the capped 200.
+		const spilled = readSpilledJsonl<{ id: string }>(
+			String(result.fullOutlinePath),
+		);
+		expect(spilled).toHaveLength(250);
+		expect(spilled[0]?.id).toBe("h0");
+		expect(spilled.at(-1)?.id).toBe("h249");
 	});
 
 	it("verification runs on the full walk set, not the capped outline", async () => {
@@ -1282,10 +1322,12 @@ describe("inline-cut preview", () => {
 		expect(content.startsWith(inline)).toBe(true);
 		expect(content.slice(inline.length, inline.length + 1)).toBe("\n");
 		expect(spillPath).toMatch(/kb_read-[0-9a-f]{16}\.md$/);
+		if (spillPath === undefined) throw new Error("expected a spill path");
+		// The spill holds the full text, not the preview slice.
+		expect(readFileSync(spillPath, "utf8")).toBe(content);
 		// Spills carry full KB content — private at creation (0700 dir / 0600
 		// file), not umask-default. POSIX stat fields only. A fresh session id
 		// is required: mode applies only when the dir is created.
-		if (spillPath === undefined) throw new Error("expected a spill path");
 		const dir = join(tmpdir(), "gnubrain", sessionId);
 		expect(statSync(dir).mode & 0o777).toBe(0o700);
 		expect(statSync(spillPath).mode & 0o777).toBe(0o600);

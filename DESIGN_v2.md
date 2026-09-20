@@ -836,7 +836,7 @@ guard, write grant, kernel call, verification — operates on**; file edits betw
 capture and apply never apply (one sentence kills the whole mid-flow race class). Missing
 or unreadable file → structured `error` naming the path, **no kernel call fires** (the
 read is the call's first content step, before any guard query); passing both `markdown`
-and `markdownFile` (or neither, on a content-bearing mode) → shape-validation `error`.
+and `markdownFile` (or neither, on a content-bearing mode) → shape validation → `refused`.
 Trust posture matches §6's soft-scope ceiling: the path is agent-controlled in a
 single-user VM holding an admin token — pin "must exist, must be a regular file" and stop;
 no path allowlisting machinery. Inline `markdown` stays the primary path for normal-sized

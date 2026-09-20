@@ -74,7 +74,7 @@ Tables:
 
 Discovery pattern: include hpath in discovery SELECTs — SELECT id, root_id, box, hpath, updated FROM blocks WHERE ... — every row then carries the docId (root_id) that kb_read and the write tools consume, its per-row KB attribution (box), and its recency (updated).
 
-Rules: exactly one top-level SELECT; FROM blocks or refs only; single-table FROM (no JOINs, subqueries, CTEs, UNION, or bare HAVING). LIMIT is injected as 64 when absent; an agent-supplied LIMIT passes through uncapped. Aggregate queries (COUNT/GROUP BY) are allowed — their rows carry no box and are exempt from re-scoping.`;
+Rules: exactly one top-level SELECT; FROM blocks or refs only; single-table FROM (no JOINs, subqueries, CTEs, UNION, or HAVING). LIMIT is injected as 64 when absent; an agent-supplied LIMIT passes through uncapped. Aggregate queries (COUNT/GROUP BY) are allowed — their rows carry no box and are exempt from re-scoping.`;
 
 export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 	pi.registerTool({
