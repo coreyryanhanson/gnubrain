@@ -145,4 +145,7 @@ vite.config.ts.timestamp-*
 # Vitest cache
 .vitest/
 
+# Pi cache
+.pi
+
 /.husky/_
