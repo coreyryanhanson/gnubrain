@@ -47,9 +47,11 @@ export function spillFile(
 	ext: "jsonl" | "md",
 ): string {
 	const dir = sessionSpillDir(sessionId);
-	mkdirSync(dir, { recursive: true });
+	// mode applies only at creation (content-hash names dedupe onto existing
+	// files) and is umask-masked — 0o700/0o600 survive the default umask.
+	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	const path = join(dir, spillFileName(tool, content, ext));
-	writeFileSync(path, content, "utf8");
+	writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
 	return path;
 }
 

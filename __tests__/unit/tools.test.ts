@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
@@ -1269,11 +1270,25 @@ describe("inline-cut preview", () => {
 	it("cuts long content at a newline boundary within PREVIEW_CHARS and spills the full text", () => {
 		const line = "x".repeat(1000);
 		const content = Array.from({ length: 12 }, () => line).join("\n");
-		const { inline, spillPath } = inlineOrSpill("s", "kb_read", content, "md");
+		const sessionId = "perm-" + randomUUID();
+		const { inline, spillPath } = inlineOrSpill(
+			sessionId,
+			"kb_read",
+			content,
+			"md",
+		);
 		expect(inline.length).toBeLessThanOrEqual(PREVIEW_CHARS + 1);
 		// The cut lands on the newline boundary, not mid-line.
 		expect(content.startsWith(inline)).toBe(true);
 		expect(content.slice(inline.length, inline.length + 1)).toBe("\n");
 		expect(spillPath).toMatch(/kb_read-[0-9a-f]{16}\.md$/);
+		// Spills carry full KB content — private at creation (0700 dir / 0600
+		// file), not umask-default. POSIX stat fields only. A fresh session id
+		// is required: mode applies only when the dir is created.
+		if (spillPath === undefined) throw new Error("expected a spill path");
+		const dir = join(tmpdir(), "gnubrain", sessionId);
+		expect(statSync(dir).mode & 0o777).toBe(0o700);
+		expect(statSync(spillPath).mode & 0o777).toBe(0o600);
+		rmSync(dir, { recursive: true, force: true });
 	});
 });

@@ -174,7 +174,10 @@ truncated away. Mechanism adopted from the proven shape in `~/pi-browser`
 written to `os.tmpdir()/gnubrain/<session-id>/{tool}-{sha256-16hex}.jsonl|.md` — per-session
 subdirectory, so concurrent sessions querying the same KB never collide — hash =
 first 16 hex chars of the SHA-256 of the full spilled content, so identical payloads
-dedupe and names never collide. **No cleanup machinery** (decision record):
+dedupe and names never collide. The session dir and spill files are created
+`0700`/`0600` — the mode applies only at creation (a hash-dedupe re-write keeps
+the first creation's mode), so full KB content is never world-readable even on
+multi-user hosts. **No cleanup machinery** (decision record):
 `session_shutdown` also fires on resume/fork, where the resumed transcript still quotes
 the spill paths — any cleanup there deletes files the agent is about to grep, and the
 reason set (`quit`/`reload`/`new`/`resume`/`fork`) has no safe terminal subset that
