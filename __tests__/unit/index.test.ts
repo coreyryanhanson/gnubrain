@@ -8,6 +8,7 @@ import {
 } from "../helpers/fakePi.js";
 import { READ_TOOLSET_ID } from "../../tools.js";
 import { WRITE_TOOLSET_ID } from "../../write.js";
+import { GRANT_SESSION, GRANT_YES } from "../../writeConfirm.js";
 
 const GLOBAL_SETTINGS = JSON.stringify({
 	gnubrain: {
@@ -364,60 +365,125 @@ describe("index wiring", () => {
 		}
 	});
 
-	it("confirm_timeout does not survive a session restart — the re-request gets a fresh dialog", async () => {
-		vi.useFakeTimers();
-		try {
-			// writeConfirmTimeout: 1 so the dialog's abort timer is one fake tick.
-			const settings = JSON.stringify({
-				gnubrain: {
-					baseUrl: "http://127.0.0.1:6806",
-					apiToken: "token",
-					kbs: [{ name: "dev", notebook: "nb-1" }],
-					defaultKBs: ["dev"],
-					writeConfirmTimeout: 1,
-				},
-			});
+	it("a terminal write denial does not survive a session restart — the re-request gets a fresh dialog", async () => {
+		const settings = JSON.stringify({
+			gnubrain: {
+				baseUrl: "http://127.0.0.1:6806",
+				apiToken: "token",
+				kbs: [{ name: "dev", notebook: "nb-1" }],
+				defaultKBs: ["dev"],
+			},
+		});
+		const { pi, fire, runTool } = fakePi();
+		const d = deps({ global: settings });
+		const base = d.createClient!;
+		d.createClient = () =>
+			({ ...base("", ""), query: async () => [] }) as never;
+		register(pi, d);
+		// First dialog answers undefined — pi's native timeout/ESC dismissal,
+		// indistinguishable from an abort and terminal under one arm.
+		let selectCalls = 0;
+		let answer: string | undefined = undefined;
+		const { ctx } = fakeCtx({
+			hasUI: true,
+			select: async () => {
+				selectCalls++;
+				return answer;
+			},
+		});
+		await fire("session_start", ctx);
+		const params = { kb: "dev", mode: "create", topic: "T", markdown: "b" };
+		const first = await runTool("kb_write", params, ctx);
+		expect(first.details.status).toBe("refused");
+		expect(first.details.reason).toBe("write_denied");
+
+		// Same session: the refusal is terminal — no new dialog.
+		const retried = await runTool("kb_write", params, ctx);
+		expect(retried.details.reason).toBe("write_denied");
+		expect(selectCalls).toBe(1);
+
+		// New session in the same process: the denial is forgotten — the
+		// re-request reaches a fresh dialog, and a Yes lets the write proceed
+		// past the grant gate (the stub's empty kernel fails it later — the
+		// point here is that it is no longer the terminal refusal).
+		await fire("session_shutdown", ctx);
+		await fire("session_start", ctx);
+		answer = "Yes";
+		const fresh = await runTool("kb_write", params, ctx);
+		expect(selectCalls).toBe(2);
+		expect(fresh.details.message).not.toContain("no write grant");
+	});
+
+	it("agent_settled re-arms the interaction boundary — a Yes re-prompts, 'Always this session' survives", async () => {
+		const setup = async (answer: string) => {
 			const { pi, fire, runTool } = fakePi();
-			const d = deps({ global: settings });
+			const d = deps();
 			const base = d.createClient!;
 			d.createClient = () =>
 				({ ...base("", ""), query: async () => [] }) as never;
 			register(pi, d);
-			// First dialog hangs until the abort, then answers false —
-			// the timed-out path, not an explicit decline.
-			let hangDialog = true;
+			let selectCalls = 0;
 			const { ctx } = fakeCtx({
 				hasUI: true,
-				confirm: (_t, _m, opts) =>
-					new Promise<boolean>((resolve) => {
-						if (!hangDialog) resolve(false);
-						else opts?.signal?.addEventListener("abort", () => resolve(false));
-					}),
+				select: async () => {
+					selectCalls++;
+					return answer;
+				},
 			});
 			await fire("session_start", ctx);
 			const params = { kb: "dev", mode: "create", topic: "T", markdown: "b" };
-			const first = runTool("kb_write", params, ctx);
-			await vi.advanceTimersByTimeAsync(1000);
-			const timedOut = (await first).details;
-			expect(timedOut.status).toBe("refused");
-			expect(timedOut.reason).toBe("confirm_timeout");
+			return { fire, runTool, ctx, params, selectCalls: () => selectCalls };
+		};
 
-			// Same session: the refusal is terminal — no new dialog.
-			const retried = await runTool("kb_write", params, ctx);
-			expect(retried.details.reason).toBe("confirm_timeout");
+		// A Yes is a turn grant: once the interaction settles, the next write
+		// to the KB opens a fresh dialog instead of riding the spent approval.
+		const turn = await setup(GRANT_YES);
+		await turn.runTool("kb_write", turn.params, turn.ctx);
+		expect(turn.selectCalls()).toBe(1);
+		await turn.fire("agent_settled", turn.ctx);
+		const next = await turn.runTool("kb_write", turn.params, turn.ctx);
+		expect(turn.selectCalls()).toBe(2);
+		expect(next.details.message).not.toContain("no write grant");
 
-			// New session in the same process: the timeout is forgotten —
-			// the re-request reaches a fresh dialog (explicit decline, not
-			// the terminal refusal).
-			await fire("session_shutdown", ctx);
-			await fire("session_start", ctx);
-			hangDialog = false;
-			const fresh = await runTool("kb_write", params, ctx);
-			expect(fresh.details.status).toBe("refused");
-			expect(fresh.details.message).toContain("declined by the user");
-		} finally {
-			vi.useRealTimers();
-		}
+		// "Always this session" is not an interaction grant: the same settle
+		// leaves it standing and no second dialog opens.
+		const held = await setup(GRANT_SESSION);
+		await held.runTool("kb_write", held.params, held.ctx);
+		await held.fire("agent_settled", held.ctx);
+		const still = await held.runTool("kb_write", held.params, held.ctx);
+		expect(held.selectCalls()).toBe(1);
+		expect(still.details.message).not.toContain("no write grant");
+	});
+
+	it("session_start clears session grants — 'Always this session' re-prompts in a new session", async () => {
+		const { pi, fire, runTool } = fakePi();
+		const d = deps();
+		const base = d.createClient!;
+		d.createClient = () =>
+			({ ...base("", ""), query: async () => [] }) as never;
+		register(pi, d);
+		let selectCalls = 0;
+		const { ctx } = fakeCtx({
+			hasUI: true,
+			select: async () => {
+				selectCalls++;
+				return GRANT_SESSION;
+			},
+		});
+		await fire("session_start", ctx);
+		const params = { kb: "dev", mode: "create", topic: "T", markdown: "b" };
+		await runTool("kb_write", params, ctx);
+		expect(selectCalls).toBe(1);
+
+		// Same session: the session grant holds — no new dialog.
+		await runTool("kb_write", params, ctx);
+		expect(selectCalls).toBe(1);
+
+		// New session in the same process: the session grant is forgotten —
+		// session_start alone sweeps it (no shutdown fired in between).
+		await fire("session_start", ctx);
+		await runTool("kb_write", params, ctx);
+		expect(selectCalls).toBe(2);
 	});
 });
 
@@ -440,8 +506,8 @@ describe("read + write toolset wiring", () => {
 	// pi-tool-masking's own suite; what gnubrain owns is the spec shape
 	// (asserted here) and the live-toggle cascade (the /kb tools verbs
 	// below), plus the backstop record: masking is the outer layer, and
-	// confirmation + headless default-deny remain in force on every write
-	// regardless of how the toolset state was reached.
+	// the grant gate + headless default-deny remain in force on every
+	// write regardless of how the toolset state was reached.
 	it("the write toolset spec: single kb_write member, read-requiring, default-enabled, pinned persist key", () => {
 		const { pi } = fakePi();
 		register(pi, deps());
@@ -461,7 +527,7 @@ describe("read + write toolset wiring", () => {
 		register(pi, { ...d, pinnedVersion: "9.9.9" });
 		const { ctx, statuses } = fakeCtx({
 			hasUI: true,
-			confirm: async () => true,
+			select: async () => "Yes",
 		});
 		await fire("session_start", ctx);
 		// The drift verdict drives the status cause tag; the write refusal

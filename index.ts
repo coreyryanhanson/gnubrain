@@ -24,7 +24,11 @@ import {
 } from "./validation.js";
 import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
-import { createWriteConfirmState } from "./writeConfirm.js";
+import {
+	clearInteractionGrants,
+	clearSessionGrants,
+	createWriteGrantState,
+} from "./writeConfirm.js";
 import { type WriteKernelClient } from "./kernel.js";
 import {
 	registerWriteTool,
@@ -35,8 +39,8 @@ import {
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
 // /kb command (scope toggles + recovery), the read tools (kb_query /
-// kb_search / kb_read) and read toolset, kb_write (write confirmation
-// gate + create flow), and the write toolset (requires the read toolset —
+// kb_search / kb_read) and read toolset, kb_write (per-KB write grant gate
+// + create flow), and the write toolset (requires the read toolset —
 // live-toggle cascade), the /kb tools write verb, the fresh-content
 // baselines, and the write-mode dispatch (over the
 // writeSchema/writeFlow/writeEdit/... files).
@@ -90,14 +94,14 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		baselines,
 	});
 
-	// Write tool: rides the same gate + probe verdict. The confirm state is
+	// Write tool: rides the same gate + probe verdict. The grant state is
 	// session-scoped machinery, same lifecycle class as the breaker.
-	const confirmState = createWriteConfirmState();
+	const grantState = createWriteGrantState();
 	registerWriteTool(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernelClient,
 		breaker,
-		confirmState,
+		grantState,
 		baselines,
 	});
 
@@ -105,8 +109,8 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// requires the read toolset — enabling writes cascades reads on,
 	// disabling reads cascades writes off (live toggles only; the settings
 	// tier applies pins per-toolset without the cascade — the documented
-	// write-without-read boundary, backstopped by confirmation + headless
-	// default-deny).
+	// write-without-read boundary, backstopped by the per-KB write grant +
+	// headless default-deny).
 	const writeToolset: Toolset = defineToolset(pi, {
 		id: WRITE_TOOLSET_ID,
 		label: "GNUbrain KB writes",
@@ -217,10 +221,12 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// Same lifecycle: a shape-failed revalidate builds no client, so the
 		// previous session's client must not linger in the closure.
 		kernelClient = undefined;
-		// Same lifecycle class: a confirm_timeout is terminal "in this session"
-		// and baselines are session-scoped — neither may leak across a new
-		// session in the same process.
-		confirmState.timedOut.clear();
+		// Same lifecycle class: grants and denials are terminal within their
+		// scope and baselines are session-scoped — none may leak across a new
+		// session in the same process (session grants are the only ones that
+		// need this hook, but all three sets are swept: a stale denial must
+		// not survive a session replacement).
+		clearSessionGrants(grantState);
 		baselines.clear();
 		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
@@ -319,6 +325,16 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		renderStatus(ctx);
 	});
 
+	// Interaction boundary: turn grants and the turn-denial set clear once
+	// nothing is left in this interaction (no retry, compaction, or queued
+	// follow-up pending) — the dialog re-arms for the next message. Session
+	// grants survive. agent_settled, not agent_end: the latter fires per
+	// low-level run, and clearing there would re-prompt mid-conversation
+	// when a retry or follow-up continues the same interaction.
+	pi.on("agent_settled", () => {
+		clearInteractionGrants(grantState);
+	});
+
 	pi.on("session_shutdown", async (_event, ctx) => {
 		try {
 			ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -330,7 +346,7 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		// A later toolset event must not repaint the cleared slot against a
 		// dead ctx — drop the render anchor with the session.
 		lastRenderCtx = undefined;
-		confirmState.timedOut.clear();
+		clearSessionGrants(grantState);
 		baselines.clear();
 	});
 }

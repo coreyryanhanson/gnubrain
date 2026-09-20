@@ -1,6 +1,6 @@
 // The `kb_write` create flow: title guard (exact leg, then near-match
-// scan) → write confirmation → submission path from ground truth →
-// verified-create by-ID asserts → echo, with guard-stop draft staging.
+// scan) → submission path from ground truth → verified-create by-ID asserts
+// → echo, with guard-stop draft staging.
 
 import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
@@ -13,8 +13,7 @@ import {
 	walkBlockTree,
 	type WalkedBlock,
 } from "./walk.js";
-import { writeConfirmKey } from "./writeConfirm.js";
-import { confirmGate, runMutation, type WriteFlowBase } from "./writeFlow.js";
+import { runMutation, type WriteFlowBase } from "./writeFlow.js";
 import {
 	GUARD_NEAR_CAP,
 	guardExactStmt,
@@ -221,35 +220,16 @@ async function verifiedRoot(
 	}
 }
 
-/** Confirm key + preflight summary for create — shared by the kb_write
- * entry (preflight precedes the probe gate) and the dialog so the terminal
- * confirm_timeout key can't drift. */
-export function createConfirmInputs(
-	name: string,
-	title: string,
-	bodyLen: number,
-): { key: string; summary: string } {
-	return {
-		key: writeConfirmKey([name, "create", title]),
-		summary: `Create '${title}' in KB '${name}' (${bodyLen} chars)`,
-	};
-}
-
 /**
  * The `create` flow: title guard (exact leg, then near-match scan) →
- * write confirmation → submission path built from ground truth →
- * verified-create by-ID asserts → echo (root docId, stored title, real
- * hpath, fresh outline). `confirmNew: true` bypasses both guard legs; the
- * confirmation and verified-create still apply.
+ * submission path built from ground truth → verified-create by-ID asserts →
+ * echo (root docId, stored title, real hpath, fresh outline).
+ * `confirmNew: true` bypasses both guard legs; the per-KB grant (resolved
+ * at the kb_write entry) and verified-create still apply.
  */
 export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId } = input;
 	const title = input.title;
-	const { summary } = input.confirmInputs;
-
-	// Pre-dialog permission (headless default-deny + terminal
-	// confirm_timeout) already ran at the kb_write entry, before the
-	// probe gate — a denied write costs zero kernel round-trips.
 
 	// Guard — exact leg first; only an empty exact leg runs the scan.
 	if (!input.confirmNew) {
@@ -259,10 +239,6 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		const near = toGuardRows(await kernel.query(guardNearStmt(boxId, title)));
 		if (near.length > 0) return nearMatchStop(input, title, near);
 	}
-
-	// Write confirmation — after the guard, so a stop costs no dialog.
-	const gate = await confirmGate(input, summary);
-	if (gate !== null) return gate;
 
 	// Submission path from ground truth, never predicted.
 	input.contact();

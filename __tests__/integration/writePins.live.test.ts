@@ -23,10 +23,7 @@ import { sectionOf } from "../../writeAnchors.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { walkBlockTree, type WalkedBlock } from "../../walk.js";
 import { registerWriteTool } from "../../write.js";
-import {
-	createWriteConfirmState,
-	type WriteConfirmFn,
-} from "../../writeConfirm.js";
+import { createWriteGrantState } from "../../writeConfirm.js";
 import { REFS_BACKLINK_STMT_HEAD } from "../../writeResult.js";
 import {
 	INTEGRATION,
@@ -54,39 +51,25 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 		await fixtures.teardown();
 	}, LIVE_TIMEOUT);
 
-	/** kb_write over the live client; `confirm` intercepts the dialog (only
-	 * reached with hasUI — the fixture settings' allowUnattendedWrites only
-	 * skips the dialog for headless sessions). `baselines` lets a case share
-	 * one map between the read and write tools (the fresh-content case's served baselines). */
+	/** kb_write over the live client. `baselines` lets a case share one map
+	 * between the read and write tools (the fresh-content case's served
+	 * baselines). The grant dialog is skipped via allowUnattendedWrites —
+	 * the live suite drives the flows, not the dialog. */
 	function writeSetup(
 		opts: {
-			confirm?: WriteConfirmFn;
-			hasUI?: boolean;
 			baselines?: ContentBaselines;
 		} = {},
 	) {
-		const confirms: { title: string; message: string }[] = [];
 		const { pi, runToolDetails } = createFakePi();
 		registerWriteTool(pi, {
 			getValidation: () => fixtures.validation,
 			getKernel: () => client,
 			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
+			grantState: createWriteGrantState(),
 			baselines: opts.baselines ?? ContentBaselines.create(),
-			// Default: record the dialog summary and approve — the capture
-			// surface the confirmation-display pins assert on.
-			confirm:
-				opts.confirm ??
-				(async (title, message) => {
-					confirms.push({ title, message });
-					return true;
-				}),
 		});
-		const { ctx } = createFakeCtx({
-			...(opts.hasUI !== undefined && { hasUI: opts.hasUI }),
-		});
+		const { ctx } = createFakeCtx({ select: async () => "Yes" });
 		return {
-			confirms,
 			run: async (
 				params: Record<string, unknown>,
 			): Promise<Record<string, unknown> & { status: string }> =>
@@ -412,7 +395,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"final-section trailing sweep — the trailing block leaves with the section, the replacement lands at doc end, the confirmation showed it",
+		"final-section trailing sweep — the trailing block leaves with the section, the replacement lands at doc end, the delete receipt itemizes it",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -425,7 +408,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				"Last Sec",
 			).id;
 
-			const w = writeSetup({ hasUI: true });
+			const w = writeSetup();
 			const result = await w.run({
 				kb: "fixture-a",
 				mode: "replace-section",
@@ -434,14 +417,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				markdown: "replacement body",
 			});
 			expect(result.status).toBe("ok");
-			// The confirmation displayed the trailing block's content before
-			// the delete (the never-unseen-sweep pin, live).
-			expect(w.confirms).toHaveLength(1);
-			const summary = w.confirms[0]!.message;
-			expect(summary).toContain("trailing para");
-			expect(summary).toContain("body one");
 			// Final section → no boundary → the doc-end anchor echo.
 			expect(result.anchor).toBe("appendBlock(root) — doc end");
+			// The receipt: the swept closure's ids + walk content — the
+			// visibility the pre-write grant dialog does not carry.
+			expect(result.deletedBlocks).toEqual([
+				{ id: expect.any(String), content: "body one" },
+				{ id: expect.any(String), content: "trailing para" },
+			]);
 			const after = await walkBlockTree(client, docId);
 			expect(after.some((b) => b.content === "trailing para")).toBe(false);
 			expect(after.some((b) => b.content === "body one")).toBe(false);
@@ -455,7 +438,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"replace-section with a planted ref into a section content block — the confirmation named the inbound ref, the ref reports invalid with the invalidRefs echo",
+		"replace-section with a planted ref into a section content block — the ref reports invalid with the invalidRefs echo",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -473,7 +456,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				`# Ref Replace Referrer\n\ncite: ((${p1} "cite"))\n`,
 			);
 
-			const w = writeSetup({ hasUI: true });
+			const w = writeSetup();
 			const result = await w.run({
 				kb: "fixture-a",
 				mode: "replace-section",
@@ -482,10 +465,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				markdown: "replacement body",
 			});
 			expect(result.status).toBe("ok");
-			// The confirmation surfaced the inbound-ref count + referring hpath.
-			expect(w.confirms).toHaveLength(1);
-			expect(w.confirms[0]!.message).toContain("inbound refs: 1");
-			expect(w.confirms[0]!.message).toContain(referrerPath);
 			// The ref is orphaned: the echo carries it, and the kernel's own
 			// invalid-ref report names the deleted def block.
 			expect(result.invalidRefs).toEqual({ count: 1, hpaths: [referrerPath] });
@@ -546,7 +525,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	it(
-		"doc-level delete backlink case — the confirmation surfaced the backlink count and referring hpaths; the ref reports invalid afterward",
+		"doc-level delete backlink case — the invalidRefs echo shows the backlink count and referring hpaths; the ref reports invalid afterward",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -563,7 +542,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				`# Doc Delete Referrer\n\ncite: ((${delBlock} "cite"))\n`,
 			);
 
-			const w = writeSetup({ hasUI: true });
+			const w = writeSetup();
 			const result = await w.run({
 				kb: "fixture-a",
 				mode: "delete",
@@ -571,11 +550,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				doc: true,
 			});
 			expect(result.status).toBe("ok");
-			expect(w.confirms).toHaveLength(1);
-			expect(w.confirms[0]!.message).toContain("inbound refs: 1");
-			expect(w.confirms[0]!.message).toContain(referrerPath);
-			// Pinned shape: only invalidRefs — no doc left to outline.
+			// invalidRefs + the deletedBlocks receipt, both built over the
+			// pre-delete walk set — no doc left to outline.
 			expect(result.invalidRefs).toEqual({ count: 1, hpaths: [referrerPath] });
+			expect(result.deletedBlocks).toContainEqual(
+				expect.objectContaining({ content: "del body" }),
+			);
 			const invalid = await client.listInvalidBlockRefs();
 			expect(JSON.stringify(invalid)).toContain(delBlock);
 		},

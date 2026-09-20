@@ -7,7 +7,7 @@ Open-source agent memory for the [pi coding agent](https://pi.dev) — built on
 no vendor, no closed-source note app, no model lock-in.
 
 GNUbrain turns a SiYuan workspace into a knowledge base your coding agent can
-query, search, read, and — with your confirmation — write to. Your notes stay
+query, search, read, and — with your approval — write to. Your notes stay
 in SiYuan, in standard notebooks, readable by any other tool.
 
 > [!WARNING]
@@ -23,10 +23,25 @@ The extension registers four tools with pi:
 | `kb_read` | Read a document (markdown + heading outline) from an active KB |
 | `kb_search` | Full-text search across active KBs |
 | `kb_query` | Read-only SQL against the KB index (scoped and safety-checked) |
-| `kb_write` | Create, edit, append, replace-section, move, or delete — always behind your confirmation |
+| `kb_write` | Create, edit, append, replace-section, move, or delete — approved once per KB per interaction |
 
-Writes go through an interactive confirmation dialog before anything touches
-your workspace, and every write is verified against the kernel afterward.
+Writes are approved once per KB per interaction: the first `kb_write` targeting a
+KB opens a dialog naming that KB (writes may include deletes). **Yes** approves
+writes to it for the interaction, **Always this session** for the whole session,
+any other answer denies that KB until the interaction ends. Every landed write is
+itemized in its result afterward and verified against the kernel; delete-bearing
+writes also carry a receipt of the removed blocks (ids + content), so a Data
+History lookup has something to search for.
+
+> [!WARNING]
+> **Back up your data. Agents are non-deterministic.**
+> SiYuan's Data History (SiYuan → Data History) offers searchable document history
+> with one-click whole-doc rollback, within the retention window (default 30 days),
+> where the last snapshot is at most 10 minutes old. **It is not a backup**: content
+> written after the last snapshot, by you or by the agent, exists in no snapshot
+> and cannot be recovered, and a whole-doc rollback also discards your own edits
+> made after the snapshot. Perform your own backups of KB notebooks to ensure data
+> integrity.
 
 ## Setup
 
@@ -80,8 +95,8 @@ Scope changes persist across sessions.
 | Setting | Default | Meaning |
 |---|---|---|
 | `defaultKBs` | — | KBs active without any `/kb` toggle (project file may also set this) |
-| `allowUnattendedWrites` | `false` | In headless (`pi -p`) runs, skip the confirmation dialog and allow writes unattended |
-| `writeConfirmTimeout` | `60` | Seconds to wait for a write confirmation (`0` = wait forever) |
+| `allowUnattendedWrites` | `false` | Skip the approval dialog and allow writes unattended; headless (`pi -p`) runs deny writes unless this is set |
+| `writeConfirmTimeout` | `60` | Seconds the per-KB approval dialog waits before dismissing (`0` = wait forever); a dismissal denies that KB for the interaction |
 
 > [!NOTE]
 > Requires SiYuan 3.8.4 exactly. Any other kernel version refuses writes and

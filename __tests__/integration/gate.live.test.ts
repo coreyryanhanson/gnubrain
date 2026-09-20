@@ -1,5 +1,5 @@
 // Sprint 6 gate — the scripted live checks for items 1, 2, 3 and 5 (the
-// manual residuals — TTY write-confirm, status-slot visibility — stay with
+// manual residuals — TTY write-grant, status-slot visibility — stay with
 // the operator by design, §10). Two layers:
 //
 // - Items 1–3 run real `pi -p` child sessions under a temp HOME seeded with

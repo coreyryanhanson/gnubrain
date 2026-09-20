@@ -51,16 +51,18 @@ command, status slot, and both toolsets. `deps` is the injectable test seam
 tests drive the extension through it instead of touching real files.
 
 - **Every kb tool call routes through `gate.ts`.** Reads use `runKbCall`;
-  writes run `gateWriteAttempt` then a flow. The gate order is pinned (shape →
-  breaker → 429 cooldown → `kb` param) and refuses locally with zero kernel
-  calls before the op runs. Never call the kernel client outside this path.
+  writes run the per-KB grant gate (after `guardCall`, before
+  `gateWriteAttempt`), then `gateWriteAttempt`, then a flow. The gate
+  order is pinned (shape → breaker → 429 cooldown → `kb` param) and
+  refuses locally with zero kernel calls before the op runs. Never call
+  the kernel client outside this path.
 - **Toolsets** via `pi-tool-masking`: `gnubrain.read` (registered in
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
   `/kb tools read|write|off` toggles them live.
 - **Write flows:** `write.ts` dispatches edit / append / replace-section /
   delete / move; create is `writeCreate.ts`. Schema/shape in `writeSchema.ts`,
-  confirmation gate in `writeConfirm.ts`, guard SQL in `writeGuard.ts`.
+  grant gate in `writeConfirm.ts`, guard SQL in `writeGuard.ts`.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
   only single-table `SELECT` from `blocks`/`refs`; scope is spliced into the
   AST and re-parsed for verification.

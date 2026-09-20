@@ -70,8 +70,8 @@ export async function establishBaselines(
 }
 
 /**
- * precondition, re-checked after confirmation approval, before any kernel
- * write: the current content must still hash to the baseline. A mismatch →
+ * precondition, checked right before the kernel write: the current content
+ * must still hash to the baseline. A mismatch →
  * `stale_content` refusal with the current content and fresh outline, no
  * kernel write fired (the message names the re-read path, never a retry).
  */
@@ -149,7 +149,8 @@ function refsBacklinkStmt(ids: string[]): string {
 	return `${REFS_BACKLINK_STMT_HEAD} (${ids.map(sqlString).join(", ")})`;
 }
 
-/** Referring docs' display paths — the confirmation's "who cites this" list. */
+/** Referring docs' display paths — the landed envelope's "who cites this"
+ * list. */
 function referringHpathsStmt(rootIds: string[]): string {
 	return (
 		`${REFERRING_HPATHS_STMT_HEAD} ` + `(${rootIds.map(sqlString).join(", ")})`

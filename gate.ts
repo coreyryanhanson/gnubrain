@@ -213,6 +213,25 @@ function classifyKernelError(
 	return null;
 }
 
+/** The static (cached, kernel-free) half of the write-path version gate:
+ * probe === "drift" refuses from session state alone, so it may run before
+ * the grant dialog — a drifted session prompts never, for any KB, for as
+ * long as the drift persists. One home for the pinned-version resolution:
+ * the write entry calls this ahead of the dialog, and gateWriteAttempt
+ * delegates to it first, so the two call sites cannot drift. */
+export function staticDriftRefusal(
+	validation: SessionValidation,
+): Envelope | null {
+	if (validation.probe !== "drift") return null;
+	// The effective pin rides the validation (runSessionValidation resolves
+	// the per-test override); hand-built validations fall back to the constant.
+	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
+	return versionRefusalEnvelope(
+		validation.kernelVersion ?? "unknown",
+		pinnedVersion,
+	);
+}
+
 /**
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
@@ -232,20 +251,16 @@ export async function gateWriteAttempt(input: {
 	now?: number;
 }): Promise<Envelope | null> {
 	const { validation, kernel } = input;
-	// The effective pin rides the validation (runSessionValidation resolves
-	// the per-test override); hand-built validations fall back to the constant.
-	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
-	if (validation.probe === "drift") {
-		return versionRefusalEnvelope(
-			validation.kernelVersion ?? "unknown",
-			pinnedVersion,
-		);
-	}
+	const drift = staticDriftRefusal(validation);
+	if (drift !== null) return drift;
 	if (validation.probe === "ok") {
 		return null;
 	}
 	// unreachable in production; defensive: per-write-attempt probe retry — never a
 	// session-wide loop.
+	// The effective pin rides the validation (runSessionValidation resolves
+	// the per-test override); hand-built validations fall back to the constant.
+	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
 	try {
 		const version = await kernel.getVersion();
 		validation.kernelVersion = version;

@@ -28,8 +28,10 @@ import type { WriteKernelClient } from "../../kernel.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import {
-	createWriteConfirmState,
-	type WriteConfirmFn,
+	createWriteGrantState,
+	GRANT_YES,
+	type GrantSelectFn,
+	type GrantSelectOptions,
 } from "../../writeConfirm.js";
 import { registerWriteTool, type WriteToolHooks } from "../../write.js";
 import { validation } from "./fixtures.js";
@@ -46,6 +48,11 @@ export interface StubConfig {
 	blockRows?: Record<string, unknown>[];
 	refRows?: Record<string, unknown>[];
 	hpathRows?: Record<string, unknown>[];
+	/** BASELINE_CONTENTS route rows ({id, content}) — the raw current-
+	 * content read the fresh-content re-check and the write-result
+	 * refresh ride; [] (the default) means vanished targets, re-check
+	 * skipped. */
+	baselineRows?: Record<string, unknown>[];
 	/** docId → root row (ownership + echo routes discriminate by id). */
 	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
 	/** docId → child-block rows; the map is live — tests mutate it inside
@@ -175,7 +182,8 @@ export function writeKernelStub(config: StubConfig = {}) {
 			}
 			// BASELINE_CONTENTS' head is a prefix-superset of BLOCK_IN_DOC's
 			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) return [];
+			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD))
+				return config.baselineRows ?? [];
 			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
 				// blockRows fixtures are rows of the default doc ("d-doc") —
 				// the stub fills root_id; a foreign-block test pins root_id
@@ -308,25 +316,36 @@ type Exec = (params: Record<string, unknown>) => Promise<{
 	details: Record<string, unknown> & { status: string; message: string };
 }>;
 
+export interface GrantCall {
+	title: string;
+	options: string[];
+	opts?: GrantSelectOptions;
+}
+
 /** Register kb_write on a fake pi and return the registered tool plus an
- * execute() bound to an interactive ctx (the default dialog confirms —
- * tests inject overrides via hooks). */
+ * execute() bound to an interactive ctx (the default select grants the
+ * turn — tests inject overrides via ctx). `signal` rides the tool's third
+ * argument, exactly where pi forwards the run's signal. */
 export function registerKbWrite(
 	hooks: WriteToolHooks,
-	opts: { hasUI?: boolean | undefined } = {},
+	opts: {
+		hasUI?: boolean | undefined;
+		signal?: AbortSignal | undefined;
+		select?: GrantSelectFn;
+	} = {},
 ) {
 	const { pi, toolDefs } = createFakePi();
 	registerWriteTool(pi, hooks);
-	// The default dialog confirms; tests inject overrides via hooks.
+	// The default dialog grants the turn; tests inject overrides via ctx.
 	const { ctx } = createFakeCtx({
 		hasUI: opts.hasUI ?? true,
-		confirm: async () => true,
+		select: opts.select ?? (async () => GRANT_YES),
 	});
 	const tool = toolDefs.get("kb_write") as unknown as {
 		execute: (
 			id: string,
 			params: WriteParams,
-			s: undefined,
+			s: AbortSignal | undefined,
 			o: undefined,
 			c: unknown,
 		) => Promise<{
@@ -340,7 +359,7 @@ export function registerKbWrite(
 		tool.execute(
 			"id",
 			params as WriteParams,
-			undefined,
+			opts.signal,
 			undefined,
 			ctx,
 		)) as Exec;
@@ -358,46 +377,57 @@ export interface WriteSetupResult {
 	tool: { parameters: unknown; description?: string };
 	client: WriteKernelClient;
 	calls: { method: string; args: unknown }[];
-	confirmCalls: { title: string; message: string }[];
+	/** The grant dialogs the write entry opened (title + options + the
+	 * opts the production code passed — signal, native timeout). */
+	grantCalls: GrantCall[];
+	grantState: ReturnType<typeof createWriteGrantState>;
 	childrenFor: Record<string, unknown[]>;
 	baselines: ContentBaselines;
 }
 
 /** The one kb_write harness: a fresh kernel stub, fresh baselines map, and
- * a confirm hook that records its calls (the default approves — the
- * headless default-deny runs in preflight, before the dialog). */
+ * a select seam that records its calls (the default grants the turn — the
+ * headless default-deny and the turn-denial fast path are local decisions
+ * that precede the dialog). `abortController`'s signal rides the tool's signal argument,
+ * the way pi forwards the run's signal. */
 export function setup(
 	opts: {
 		config?: StubConfig;
 		validation?: SessionValidation;
 		hasUI?: boolean;
-		confirm?: WriteConfirmFn;
+		select?: GrantSelectFn;
+		abortController?: AbortController;
 		readBodyFile?: (path: string) => Promise<string>;
 	} = {},
 ): WriteSetupResult {
 	const kernel = writeKernelStub(opts.config ?? {});
-	const confirmCalls: { title: string; message: string }[] = [];
+	const grantCalls: GrantCall[] = [];
+	const grantState = createWriteGrantState();
 	const baselines = ContentBaselines.create();
+	const recordedSelect: GrantSelectFn = async (title, options, selectOpts) => {
+		grantCalls.push({
+			title,
+			options,
+			...(selectOpts !== undefined ? { opts: selectOpts } : {}),
+		});
+		return opts.select ? opts.select(title, options, selectOpts) : GRANT_YES;
+	};
 	const { execute: run, tool } = registerKbWrite(
 		{
 			getValidation: () => opts.validation ?? validation(),
 			getKernel: () => kernel.client,
 			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
+			grantState,
 			baselines,
-			confirm: async (
-				title: string,
-				message: string,
-				confirmOpts: { signal?: AbortSignal },
-			) => {
-				confirmCalls.push({ title, message });
-				return opts.confirm ? opts.confirm(title, message, confirmOpts) : true;
-			},
 			...(opts.readBodyFile !== undefined && {
 				readBodyFile: opts.readBodyFile,
 			}),
-		} as WriteToolHooks,
-		{ hasUI: opts.hasUI },
+		},
+		{
+			hasUI: opts.hasUI,
+			signal: opts.abortController?.signal,
+			select: recordedSelect,
+		},
 	);
 	const execute: WriteExec = async (params) => (await run(params)).details;
 	return {
@@ -405,7 +435,8 @@ export function setup(
 		tool,
 		client: kernel.client,
 		calls: kernel.calls,
-		confirmCalls,
+		grantCalls,
+		grantState,
 		childrenFor: kernel.childrenFor,
 		baselines,
 	};

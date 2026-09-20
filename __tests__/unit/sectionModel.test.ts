@@ -476,7 +476,7 @@ describe("placement-map corpus", () => {
 			expect(heading).toBeDefined();
 			const section = sectionOf(walk, row.target);
 			expect(section).toBeDefined();
-			// The sweep reads members; the display/baselines read closure —
+			// The sweep reads members; the baselines read closure —
 			// pinned separately below, so the members assert covers both
 			// corpus columns that list the sibling run.
 			expect(section!.members.map((m) => m.id)).toEqual(row.members);
@@ -652,7 +652,7 @@ describe("refused targets", () => {
 		title: "Docker Networking",
 		rootId: "d-doc",
 	};
-	it("a heading inside a tabs container is refused before any dialog", () => {
+	it("a heading inside a tabs container is refused", () => {
 		const walk: WalkedBlock[] = [
 			{
 				id: "tabs1",

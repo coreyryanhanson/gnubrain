@@ -5,7 +5,6 @@ import { errorEnvelope, type Envelope } from "./envelope.js";
 import { deriveAppendAnchor, type AppendPlacement } from "./writeAnchors.js";
 import { walkBlockTree, type WalkedBlock } from "./walk.js";
 import {
-	confirmGate,
 	echoTail,
 	headingInWalk,
 	insertRollbackReason,
@@ -34,9 +33,6 @@ export async function runAppendMode(
 		resolvedHeading,
 		params.placement as AppendPlacement | undefined,
 	);
-	const summary = `Append ${input.body.length} chars to '${doc.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	const gate = await confirmGate(input, summary);
-	if (gate !== null) return gate;
 	const tx = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
 		anchor.kind === "append"
 			? kernel.appendBlock({

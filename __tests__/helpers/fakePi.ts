@@ -114,11 +114,13 @@ export function createFakeCtx(options?: {
 	/** Active-branch entries; defaults to `entries` (no branching). */
 	branch?: { type: string; customType?: string; data?: unknown }[];
 	hasUI?: boolean;
-	confirm?: (
+	/** The grant-dialog seam (pi's ctx.ui.select): title, exact option
+	 * labels, and the opts the production code passes (signal, timeout). */
+	select?: (
 		title: string,
-		message: string,
-		opts?: { signal?: AbortSignal },
-	) => Promise<boolean>;
+		options: string[],
+		opts?: { signal?: AbortSignal; timeout?: number },
+	) => Promise<string | undefined>;
 }) {
 	const statuses: [string, string | undefined][] = [];
 	const notifications: [string, string | undefined][] = [];
@@ -132,7 +134,7 @@ export function createFakeCtx(options?: {
 					notifications.push([message, severity]);
 				},
 				theme: { fg: (_c: string, t: string) => t },
-				confirm: options?.confirm,
+				...(options?.select !== undefined && { select: options.select }),
 			},
 			hasUI: options?.hasUI,
 			cwd: options?.cwd ?? "/project",

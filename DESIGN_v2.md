@@ -117,7 +117,7 @@ repos green, `file:` dependency working):
   `gnubrain.` namespacing at tool granularity; short names remain the internal labels
   used throughout this document).
 - Owns all pi API surface: `session_start`/`session_shutdown`, `pi.appendEntry` scope state,
-  write confirmation.
+  the write grant.
 - Reads multi-KB config from settings.json; validates `kb` params against it.
 
 ---
@@ -161,7 +161,7 @@ Curated pi tools (one set, not per-KB):
    body (spill budget below) plus the outline ride-along (below); the recall loop is
    `search/query → read {kb, docId}` (§4).
 4. **write-back** — create/update/reconcile distilled knowledge in KB notebooks
-   (interactive write confirmation, always on). Write modes and collision handling are
+   (per-KB write grant, always on). Write modes and collision handling are
    pinned in §4 (echoed-docId targeting, create-by-title with the stored-title
    existence guard, replace-first preference, `delete`/`move` for reconciliation — no
    whole-doc rewrites).
@@ -610,7 +610,7 @@ for the identity property.
    is already on disk — `stagedPath` absent, message unchanged). No size threshold
    (staging a 3-line body is cheaper than a knob to decide whether to), no cleanup (the
    §3 no-cleanup spill posture covers it), deterministic name (same hash → same file, the
-   resumed-agent property). Upgrade path: extend staging to `confirm_timeout` write
+   resumed-agent property). Upgrade path: extend staging to `write_denied` write
    refusals if resend frequency ever shows up on the write path.
 
    **`confirmNew` (decision record)**: the flag is **not declared in the write tool's
@@ -625,7 +625,7 @@ for the identity property.
    layer. A flagged re-mint of an exact match is a **conscious duplicate**: two
    same-titled docs, the accepted reconcilable class — the failure mode of a wrong
    judgment is a visible duplicate the user merges, never silent clobbering. What the
-   flag does NOT bypass: the write confirmation and verified-create (§4 R3) — a
+   flag does NOT bypass: the write grant and verified-create (§4 R3) — a
    flagged create is still a verified mint. The near-match candidates keep
    first-paragraph excerpts rather than outlines (up to 20 rows — excerpts scan
    cheaply; the outline upgrade is reserved for the exact-leg stop, where rows are
@@ -645,8 +645,8 @@ for the identity property.
      (`SELECT id FROM blocks WHERE root_id = ? AND …`) — the outline deliberately does not
      carry every block ID (context bloat). Because `updateBlock` overwrites content
      wholesale, the fresh-content precondition (decision record, below) rides every
-     `edit`: the block's current content is re-checked against the baseline hash after
-     confirmation approval, and a concurrent rewrite surfaces as a `stale_content`
+     `edit`: the block's current content is re-checked against the baseline hash
+     immediately before the apply, and a concurrent rewrite surfaces as a `stale_content`
      refusal — never a silent clobber of content the agent last saw in an older state.
    - **`replace-section`** — swap a section's body **in one tool call** (the tool
      enumerates → inserts → deletes internally; agent-orchestrated multi-call sequencing
@@ -681,37 +681,36 @@ for the identity property.
      excluded-content alternative is rejected: the replacement would then append at doc
      end *after* the surviving fragments, which sit under a section the agent believes
      it fully rewrote. Because the inline outline is heading-only (§3), trailing content
-     is otherwise invisible at decision time — which would make the sweep the one place
-     a write destroys content the agent never saw, so the write confirmation displays
-     the closure's block count, **the swept content** — the confirmation display, the
-     fresh-content baselines, the backlink checks and the ok echo all read the section's
-     **closure** (members plus every descendant — the delete cascade's full reach: that
-     closure is exactly what leaves the doc) while the
-     sweep itself deletes only the members, including the final section's trailing blocks (one
-     content read over the enumerated IDs — the same read the fresh-content
-     precondition's baseline uses, below, so the visibility costs no second query;
-     display rides the §3 spill budget — content past `PREVIEW_CHARS` spills to the
-     session dir with a pointer, same posture as every oversized result) — and
-     the same backlink visibility the
-     `delete` mode's confirmation carries: the `delete` mode's `refs` query (§4,
+     is otherwise invisible at decision time — which makes the sweep the one place a
+     write destroys content the agent never saw. The write grant carries no op detail
+     (§5 decision record): there is **no pre-write display** of the swept closure — the
+     confirmation display this record once specified is removed, an owned loss: a
+     replace riding a per-KB grant itemizes nothing up front. What remains
+     load-bearing reads the
+     section's **closure** (members plus every descendant — the delete cascade's full
+     reach: that closure is exactly what leaves the doc): the fresh-content baseline,
+     the post-write `invalidRefs` echo, and the `deletedBlocks` receipt that itemizes
+     the closure after the write lands (§4 write-result contract) — the `delete`
+     mode's `refs` query (§4,
      `SELECT DISTINCT root_id FROM refs WHERE def_block_id IN (...)`) runs over every
      ID in the section's closure (members plus their descendants — the delete
-     cascade's reach), and the confirmation carries the
-     inbound-ref count plus referring doc hpaths. The asymmetry this closes: the
+     cascade's reach) after the write lands, reporting the
+     inbound-ref count plus referring doc hpaths. The asymmetry that survives: the
      heading ID survives (below), but refs into the section's *content* blocks — the
      same citation surface `edit`'s `blockId` is sourced from — point at IDs the
-     replace deletes and re-mints, so the preferred, highest-stakes write must show
-     what it orphans, not just the rarer single-block `delete`. Advisory, same
-     semantics as `delete`: the agent has seen the refs and decides. The new body
+     replace deletes and re-mints, so the preferred, highest-stakes write still
+     reports what it orphans, not just the rarer single-block `delete` — after the
+     fact, via the `invalidRefs` echo. The new body
      lands under the same heading (the anchor rule), so an enumeration issued after the
      insert would sweep the replacement into the delete set and silently empty the
      section.
      Block IDs inside
      the section are minted fresh, but the heading ID survives (the new body lands
      under the same heading, which the anchor preserves) — refs into the heading
-     resolve; refs into the section's content blocks orphan, and the confirmation's
-     backlink count plus the result's `invalidRefs` echo (§4 write-result contract)
-     make them visible before and after the agent decides.
+     resolve; refs into the section's content blocks orphan, and the result's
+     `invalidRefs` echo (§4 write-result contract) makes them visible after the fact —
+     no pre-write display exists (the owned loss above), and the `deletedBlocks`
+     receipt itemizes the closure's ids plus content in the same envelope.
    - **`append`** — new fact, new section. Headings cannot be an insertion *parent*
      (leaf in the mutation sense only — `getChildBlocks` still answers a heading with its
      section, §3) — the kernel's
@@ -742,16 +741,17 @@ for the identity property.
      `/api/filetree/removeDocByID` (`doc: true` + `docId` — the by-ID endpoint, no path
      shapes). The
      reconciliation vehicle for `duplicate` status (step 1) and conscious section removal.
-     Before deleting, the tool runs a backlink check through the documented SQL endpoint —
+     The `refs` query through the documented SQL endpoint —
      `SELECT DISTINCT root_id FROM refs WHERE def_block_id IN (...)` (the kernel's `refs`
-     table in siyuan.db, queryable via `/api/query/sql` — no new tool surface) — and the
-     confirmation carries the inbound-ref count plus referring doc hpaths, so the agent
-     decides with the refs in view instead of guessing from the outline. The `IN (...)`
-     set is the walk-enumerated delete set — the target block for block-level deletes,
-     the whole doc's `getChildBlocks` walk for `doc: true` (the §3 SQL-vs-walk
-     precedent: enumeration never rides SQL on a live doc). Inbound refs to a
-     deleted block are orphaned — the agent has seen them and decides; doc-level deletes go
-     through write confirmation.
+     table in siyuan.db, queryable via `/api/query/sql` — no new tool surface) — runs
+     over the walk-enumerated delete set after the write lands (the target block for
+     block-level deletes, the whole doc's `getChildBlocks` walk for `doc: true` — the
+     §3 SQL-vs-walk precedent: enumeration never rides SQL on a live doc), and the
+     result's `invalidRefs` echo carries the inbound-ref count plus referring doc
+     hpaths, and the `deletedBlocks` receipt itemizes what left — ids plus content,
+     from the same walk the refs query rides (§4 write-result contract). Inbound refs
+     to a deleted block are orphaned — the landed echo names them; there is no
+     pre-delete display — an owned loss of the per-KB write grant (§5).
    - **`move`** — `/api/block/moveBlock`; the restructure vehicle for same-doc reordering
      and cross-doc block relocation (the doc-tree growth vehicles are nested `create`
      and the doc-level flavor, below). **Destination addressing (decision record)**: the
@@ -829,8 +829,8 @@ nested mint); **every other mode takes `docId`** (echoed target) instead of `top
 **File-path input (decision record)**: `markdownFile` lets a large body travel by path
 (~25 tokens) instead of inline (a 500-line draft is the whole payload per call). The tool
 **reads the file once, at call start, and the captured string is what the entire flow —
-guard, write confirmation, kernel call, verification — operates on**; file edits between
-confirm and apply never apply (one sentence kills the whole mid-flow race class). Missing
+guard, write grant, kernel call, verification — operates on**; file edits between
+capture and apply never apply (one sentence kills the whole mid-flow race class). Missing
 or unreadable file → structured `error` naming the path, **no kernel call fires** (the
 read is the call's first content step, before any guard query); passing both `markdown`
 and `markdownFile` (or neither, on a content-bearing mode) → shape-validation `error`.
@@ -842,11 +842,11 @@ union, one read, and zero tool-side state.
 
 | mode | extra params | notes |
 | --- | --- | --- |
-| `create` | optional `parentId` (echoed docId → nested mint, R3), optional `confirmNew` — **not declared in the tool's input schema** (discovered only via rejection/duplicate response messages, §4 decision record) | flows through flow steps 1–2 (title guard: exact leg + near-match scan) and mint-policy step 4 (verified-create); `confirmNew: true` bypasses the entire guard — both legs, including an exact-title match (a flagged re-mint is a conscious duplicate, the reconcilable class) — write confirmation and verified-create still apply |
+| `create` | optional `parentId` (echoed docId → nested mint, R3), optional `confirmNew` — **not declared in the tool's input schema** (discovered only via rejection/duplicate response messages, §4 decision record) | flows through flow steps 1–2 (title guard: exact leg + near-match scan) and mint-policy step 4 (verified-create); `confirmNew: true` bypasses the entire guard — both legs, including an exact-title match (a flagged re-mint is a conscious duplicate, the reconcilable class) — the write grant and verified-create still apply |
 | `edit` | `docId`, `blockId` | `docId` scopes and targets the doc (ownership query); `blockId` is an agent-supplied *target*, read off the inline outline or the `query` tool; a target is not an anchor — `previousID`/`nextID`/`parentID` anchors stay tool-derived (above) |
 | `replace-section` | `docId`, `headingId` | one tool call — the tool enumerates → inserts → deletes internally (above) |
 | `append` | `docId`, optional `headingId`, optional `placement` (`section-end` default; `section-start` — `append` only) | omitted heading → doc end (`appendBlock` on the doc root); with a heading → the tool derives the anchor from the section (the section-end rule: `nextID` at the boundary, else `appendBlock` to the section's container); `section-start` inserts after the heading's leading run, immediately before its first deeper sibling heading — a subsection nested inside a container is not a sibling, so there it falls through to the section-end landing |
-| `delete` | `docId`, plus `blockId` **or** `doc: true` | block-level = `deleteBlock`; `doc: true` = whole-doc delete via the documented `/api/filetree/removeDocByID` (the by-ID endpoint, no path shapes); the backlink check rides the write confirmation (§4 `delete` mode) |
+| `delete` | `docId`, plus `blockId` **or** `doc: true` | block-level = `deleteBlock`; `doc: true` = whole-doc delete via the documented `/api/filetree/removeDocByID` (the by-ID endpoint, no path shapes); the orphaned-ref echo rides the result (§4 `delete` mode) |
 | `move` | `docId`, plus `blockId` **or** `doc: true`, `toDocId` (destination doc; omitted on `doc: true` → notebook root), optional `toHeadingId` (block-level only) | destination addressed by echoed docId (ownership-checked like every doc target); same-doc move = `toDocId` naming the source doc; the tool fetches the *destination* outline and derives the anchor — never agent-supplied (§4 `move` decision record); `doc: true` = doc-level move via `/api/filetree/moveDocsByID` (§4 doc-level decision record) |
 
 The split the table encodes: **targets** (which doc or block to touch) are agent-supplied,
@@ -962,10 +962,13 @@ tool's job — the same verified-not-trusted doctrine as `newBlockId`:
   persisted (after resume/fork the map is empty and the fallback below applies).
 - **No served content this session** (target from an older spill file, hand-off
   context, or a fresh session): the tool reads the target's **current** content at
-  call start (read-once, the file-path input record's pattern), shows it in the write
-  confirmation, and the confirmation approval establishes the baseline — the agent
-  approved the write with the current bytes in view.
-- **Precondition**: immediately before the kernel call (after confirmation approval),
+  call start (read-once, the file-path input record's pattern) and establishes the
+  baseline from those bytes — there is no display to approve; the grant covered the
+  KB. The check cannot protect what the session never saw: the baseline is the same
+  current content the re-check compares against, so it only fires inside the small
+  window between that read and the apply — a near-zero race, owned as residue
+  below.
+- **Precondition**: immediately before the kernel call,
   the tool re-reads the targeted content and compares hashes — for `edit`, the target
   block; for `replace-section`, the section's closure's content (members plus
   descendants — the delete cascade's reach). Any mismatch →
@@ -984,13 +987,13 @@ tool's job — the same verified-not-trusted doctrine as `newBlockId`:
   by definition (the agent asked for the block to be gone) — accepted last-writer-wins
   at delete granularity, consistent with §9.
 
-Cost: one content read per overwrite-bearing write plus one re-read after the
-confirmation — both single SQL reads over IDs already in hand. Pinned by unit cases
+Cost: one content read per overwrite-bearing write plus one re-read before the
+apply — both single SQL reads over IDs already in hand. Pinned by unit cases
 and a live integration case (§10).
 
 **Write-result contract (pinned)**: every doc-targeting write result carries the fields
 below — `outline`/`anchor`/`newBlockId` on every result that has a doc to outline,
-`invalidRefs` on delete-bearing writes — all built from data the write flow already has
+`invalidRefs` and the `deletedBlocks` receipt on delete-bearing writes — all built from data the write flow already has
 in hand; the added round-trip is the outline fetch (documented `getChildBlocks`, the
 same call the §3 `read` outline uses, same spill budget, same helper) — the contract's
 only second round-trip is the cross-doc `move`'s `destOutline`. Every create and
@@ -1040,19 +1043,34 @@ every follow-up read/write/move; title and hpath are display only, not an addres
   `delete`, doc-level `delete`) echoes the orphan outcome: the count of distinct
   referring root docs whose refs point into the section's closure (members plus
   descendants), queried
-  through the same documented SQL endpoint as the pre-write confirmation check (§4
-  `delete` mode), run after the delete lands. Verified, not trusted — the same
-  doctrine as `newBlockId`: the post-write echo is what actually got orphaned, not a
-  prediction, closing the loop the confirmation opens (decision input in, outcome
-  evidence out) and giving real-usage telemetry on how often rewrites touch cited
+  through the documented SQL endpoint (§4 `delete` mode's `refs` query), run after
+  the delete lands. Verified, not trusted — the same doctrine as `newBlockId`: the
+  post-write echo is what actually got orphaned, not a prediction. It is also the
+  only orphan visibility: the write grant carries no op detail, so no pre-write
+  display opens that loop anymore (an owned loss of the write grant) — the echo is
+  decision input
+  for the next step, outcome evidence for the last one, and real-usage telemetry on
+  how often rewrites touch cited
   content. Advisory like the pre-write check: the derived `refs` index can lag (§9),
   so a zero count is evidence, not proof. Non-delete-bearing writes omit the field;
   doc-level `delete` (no doc left to outline) still carries it — the refs query rides
   the pre-delete walk set, not the vanished doc.
+- **`deletedBlocks`** — every delete-bearing write (`replace-section`, block-level
+  `delete`, doc-level `delete`) also itemizes what left: block ids plus their walk
+  content, riding the walk/closure the flow already holds — zero extra kernel calls.
+  Same budget discipline as `outline`: inline within the shared preview cap; overflow
+  spills the full JSONL and the envelope keeps a `deletedBlocksPreview` newline-boundary
+  cut plus a `deletedBlocksPath` pointer instead (the same split as
+  `preview`/`fullResultPath`). This is the post-write half of the
+  confirmation display the grant model dropped: the result that proves the write
+  landed also names the destroyed blocks and their content, so a Data History lookup
+  has something to search for. The walk content is `blocks.content` verbatim (the
+  same representation the baseline hashes); a `null` content serializes as `null`.
 
 `delete` with `doc: true` carries none of `outline`/`anchor`/`newBlockId` (no doc left
-to outline, no anchor to place, no root row left to echo) — only `invalidRefs`, queried
-over the pre-delete walk set (§4 `delete` mode); doc-level
+to outline, no anchor to place, no root row left to echo) — `invalidRefs` plus the
+`deletedBlocks` receipt, both built over the pre-delete walk set (§4
+`delete` mode); doc-level
 `move` carries `outline` + the stored-title/`hpath` echo but no `anchor`/`newBlockId`/`destOutline` (§4
 doc-level decision record); block-level `delete`, `move`, and `edit` results carry the
 outline (edit/move also the other fields where applicable).
@@ -1122,8 +1140,8 @@ duplicate doc, never a silent clobber.
   `name` is the human-facing primary key (the `kb` tool param and `/kb` operate on names);
   names must be non-empty single tokens — no whitespace or `/` (shape validation rejects them, the
   `/kb <name> on|off` grammar is unparseable otherwise, §5 validation step 1);
-  `writeConfirmTimeout` (seconds, default 60) is the write-confirmation dialog timeout —
-  `0` waits indefinitely (§5 write-confirmation record);
+  `writeConfirmTimeout` (seconds, default 60) is the per-KB write-grant dialog timeout —
+  `0` waits indefinitely (§5 write-grant record);
   `notebook` is the SiYuan notebook ID. Nothing is hardcoded: `siyuan-kernel-api` receives
   `baseUrl` + `token` as constructor args and has zero knowledge of IPs, env, or pi; the
   extension is the only layer that reads settings.json and injects them.
@@ -1185,7 +1203,7 @@ duplicate doc, never a silent clobber.
   | Guard stop — near-matches found | `near_matches` |
   | Guard stop — exact-title match(es) | `duplicate` |
   | Kernel call failed; verified-create/stale-target assertion failed; guard SQL errored; reads while the kernel is unreachable | `error` |
-  | Every refusal: version gate, circuit breaker / 429 cooldown, unreachable-kernel write refusal (failed probe retry), fresh-content precondition (`stale_content`), scope or `kb`-param rejection, shape validation, headless write default-deny, write-confirmation decline or `confirm_timeout`, pre-write target membership (a block or heading id that fails the resolved doc's own walk/membership check — foreign or stale, refused before any kernel call) | `refused` |
+  | Every refusal: version gate, circuit breaker / 429 cooldown, unreachable-kernel write refusal (failed probe retry), fresh-content precondition (`stale_content`), scope or `kb`-param rejection, shape validation, headless write default-deny, write-grant denial (`write_denied`), pre-write target membership (a block or heading id that fails the resolved doc's own walk/membership check — foreign or stale, refused before any kernel call) | `refused` |
 
   The `message` distinguishes causes within a class (the 429 cooldown and the breaker
   share `refused` since both mean "no kernel calls will pass" — the message names which).
@@ -1193,39 +1211,52 @@ duplicate doc, never a silent clobber.
   and the fix (run the §10 upgrade checklist against the new kernel, re-pin, then start
   a new session) — under the strict full-version gate (§2) this is the one message that
   fires on any upgrade.
-- **Write confirmation across modes (decision record)**: interactive sessions always
-  confirm writes via `ctx.ui.confirm`; sessions with no UI at all (`pi -p`) require
-  `gnubrain.allowUnattendedWrites: true` (default false = default-deny: no UI ⇒ write
-  refused). **RPC mode (`pi --mode rpc`) is NOT headless for this rule** (pi source-read,
-  deliberately not pinned by test): `ctx.ui.confirm` in RPC mode emits an
-  `extension_ui_request` (`method: "confirm"`) over stdout and blocks until the client
-  answers with an `extension_ui_response` (`confirmed: true/false`) — pi sets
+- **Write grant across modes (decision record)**: writes are approved once per KB per
+  interaction, not once per write. The first `kb_write` targeting an ungranted KB in
+  an interaction opens a tri-state `ctx.ui.select` dialog that names the KB only —
+  **no per-write summary**: one grant covers every later write to that KB, including
+  deletes that look nothing like the first op, so itemizing only the first write
+  would imply a per-op approval the design deliberately does not give (the landed
+  envelopes itemize every write after the fact; the dropped delete-set display is an
+  owned loss of this grant model). **Yes** grants for the interaction, **Always
+  this session** grants for the session (cleared at `session_start`/
+  `session_shutdown`), and **every other answer denies that KB until the interaction
+  ends** — the literal No, an ESC's `undefined`, a native-timeout dismissal, an
+  unknown or renamed label, a thrown `select` — one terminal arm,
+  `reason: "write_denied"`, no cause-split. Grant polarity is `=== label`, so
+  nothing that is not an exact grant label can ever grant. Turn grants and denials
+  clear at `agent_settled` (pi's interaction boundary — `agent_end` fires per
+  low-level run and would re-prompt mid-conversation on a retry, compaction, or
+  queued follow-up); the grant is per-KB per interaction and a refusal does not
+  consume it, so in-turn retries cost no second dialog. A process-wide dialog lock
+  serializes concurrent `kb_write` calls (pi's interactive selector is single-slot);
+  concurrent writes to the same ungranted KB open exactly one dialog and inherit the
+  verdict. Sessions with no UI at all (`pi -p`) default-deny unless
+  `gnubrain.allowUnattendedWrites: true`; the flag skips the dialog in interactive
+  sessions too (the user's outlet for unattended writes). **RPC mode (`pi --mode
+  rpc`) is NOT headless for this rule**: `ctx.ui.select` in RPC mode emits an
+  `extension_ui_request` over stdout and blocks until the client answers — pi sets
   `ctx.hasUI: true` in RPC mode because the dialog methods are functional via that
-  sub-protocol. The safety property does not rest on that source-read: **every confirm
-  carries a timeout and every non-answer — an ignored request, a dismissal, a thrown
-  dialog call, a timeout expiry — auto-resolves to refused** (fail-closed by
-  construction, and never a deadlocked turn on a blocking dialog), so even if the
-  sub-protocol claim is wrong or drifts, an RPC write degrades to refused, never to
-  unattended writes — a full client behaves like an interactive session with a remote
-confirm UI, a minimal one degrades to refused writes. The sub-protocol behavior is
-checked once, manually, at first real RPC use (§10 residual checklist). The timeout value is the
-  **`gnubrain.writeConfirmTimeout`** setting (seconds, default 60 — pinned, not invented
-  per implementer; this is the disruption-vs-oversight dial, so it is user-owned rather
-  than a constant): `0` waits **indefinitely** (the dialog blocks the write until
-  answered — the right value for a user who is usually at the keyboard; no tokens burn
-  while blocked). A timeout expiry resolves to refused with reason **`confirm_timeout`**,
-  which is **terminal for that write in that session**: a re-request of the *same* write
-  returns the terminal refusal immediately (no new dialog) with a message instructing
-  the agent not to retry, to stop, and to report the pending write — without this pin,
-  an AFK user + a retrying agent is an unbounded confirm/timeout/refuse loop burning
-  tokens on refusals (the exact retry-treadmill class the 429 cooldown exists to
-  prevent, §5/§9). An *explicit* decline (`confirmed: false`) stays ordinary recoverable
-  `refused` — the user answered, so re-asking a rephrased variant is legitimate. The two
-  settings stay orthogonal: `writeConfirmTimeout` is how long to hold the dialog,
-  `allowUnattendedWrites` is whether to ask at all (headless); never-asked is a typed
-  opt-out in settings, never a side effect of a timeout value. The rejected-write message
-names the enabling setting or the interactive path. Silence never grants unattended
-writes; the opt-out is typed, in settings.
+  sub-protocol. An auto-cancelling client's `{cancelled: true}` resolves
+  `undefined`, indistinguishable from an ESC — which is terminal for the
+  interaction, so a program can no longer loop the dialog (fail-closed by
+  construction, never a deadlocked turn on a blocking dialog). A thrown `select`
+  lands in the same terminal denial with a `(dialog failed: …)` suffix — RPC
+  breakage stays diagnosable and degrades to refused, never to unattended writes.
+  The sub-protocol behavior is checked once, manually, at first real RPC use (§10
+  residual checklist). The dialog's only time bound is the
+  **`gnubrain.writeConfirmTimeout`** setting (seconds, default 60 — pinned, not
+  invented per implementer; the disruption-vs-oversight dial, user-owned rather than
+  a constant), passed as pi's **native** dialog `timeout`: `0` waits
+  **indefinitely** (the right value for a user usually at the keyboard; no tokens
+  burn while blocked). A native-timeout dismissal resolves the same `undefined` as
+  an ESC and lands in the same terminal denial — the value bounds how long the
+  dialog waits, never the refusal semantics. There is no recoverable-decline arm:
+  every non-answer is terminal, and recovery is the next interaction
+  (`agent_settled` clears the denial and re-arms the dialog), which the refusal
+  envelope states. The grant never bypasses the gate (shape → breaker → 429 → kb
+  param, the version probe) — it is a UI step in front of it. Silence never grants
+  unattended writes; the opt-out is typed, in settings.
 - **Tool masking — read/write toolsets (decision record)**: the tool surface declares two
   `pi-tool-masking` toolsets (library dependency, npm-published — the §2/§5 namespace
   rejection was about *scope state*, which KBs are active; tool allowlists are exactly its
@@ -1242,11 +1273,11 @@ writes; the opt-out is typed, in settings.
   `toolsetDefaults` pins per-toolset at restore without re-running the
   cascade, so a hand-pinned write-on + read-off is a reachable
   write-without-read state — accepted by design, since masking is only the
-  outer layer and confirmation + headless default-deny still backstop every
+  outer layer and the write grant + headless default-deny still backstop every
   write. Masking is the
   **outer** write layer: a masked `kb_write` is
   absent from the tool list (no schema tokens, no doomed attempts — a read-only KB session
-  by construction); when the toolset is on, confirmation + headless default-deny remain the
+  by construction); when the toolset is on, the write grant + headless default-deny remain the
   backstop unchanged. Masked ≠ refused: no refusal envelope exists for an absent tool; bare
   `/kb` prints toolset state alongside scope so the absence is never mysterious. The toggle
   is the `/kb tools` dispatcher (below); the read toolset is toggled through it too —
@@ -1482,7 +1513,7 @@ writes; the opt-out is typed, in settings.
       deployment facts — notebook IDs live in exactly one place, so they can never go
       stale in two. `allowUnattendedWrites`/`writeConfirmTimeout` are the user's
       attention dials — "whether to ask at all" and "how long to hold the dialog"
-      (§5 write-confirmation record) — properties of the human at the machine, not of
+      (§5 write-grant record) — properties of the human at the machine, not of
       any one project, so a checkout cannot silently change how long its own
       destructive writes are held for approval.
     - **`defaultKBs`: both levels, extension-implemented array-replace.** The extension
@@ -1588,7 +1619,7 @@ writes; the opt-out is typed, in settings.
 | Ceiling | What it means | Upgrade path |
 | --- | --- | --- |
 | Soft scope only | The api token is a workspace-admin credential (the only kind SiYuan issues); KB isolation is tool-level filtering to keep other KBs out of context, not a security boundary against a hostile actor. Anything holding the token — agent or otherwise — can touch the whole workspace. | Separate SiYuan instances, if hard isolation is ever genuinely needed. (No per-KB or read-only tokens exist in SiYuan's auth model.) |
-| Agent-trust on writes | Write tools touch real notebooks. | Interactive write confirmation (v1) + KB-notebook blast radius; tighter permissioning later if trust proves unwarranted. |
+| Agent-trust on writes | Write tools touch real notebooks. | Per-KB write grant + KB-notebook blast radius; tighter permissioning later if trust proves unwarranted. |
 | Lean loop, no RAG (v1) | Recall depends on the model re-querying via SQL/search, not embeddings. RAG is planned v2 work, sequenced after the lean loop ships — not a contingency awaiting a shortfall measurement. | Add a RAG layer as an external sidecar fed by `exportMdContent`/`query/sql`, never a second writer (GBrain precedent: its vectors/graph live in its own Postgres sidecar, not the storage format). v1's embedding-free construction is what makes the sidecar a clean add. |
 | No bulk transactions | No documented bulk-transaction endpoint; large imports and deep restructures are sequential API calls. (Undocumented `batchAppendBlock`/`batchInsertBlock`/`batchUpdateBlock` routes exist in the kernel — headroom, not a dependency: documented-endpoints-only stands; upstream a docs PR, then adopt.) | Host-side offline import script + index rebuild (sanctioned in SY-FORMAT.md §0.5), if a bulk-ingest workload ever appears. |
 | Intra-KB moves only | `move` resolves its destination within the call's single `kb`; cross-KB reorganization has no tool mode. | Hand-move the doc in SiYuan's UI — identity is the docId, so the doc stays reachable from any query row and every follow-up write by echoed docId works; a `toKB` param if a real migration need appears. |
@@ -1623,7 +1654,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   is a token-disclosure decision**: settings.json lives where the agent's own tools (file
   read, shell) can read it, so an agent that goes looking can lift `gnubrain.apiToken` and
   call the kernel directly — bypassing parser certification, `method` enforcement,
-  scoping, and write confirmation at once. Accepted (the threat model is model accident,
+  scoping, and the write grant at once. Accepted (the threat model is model accident,
   not a hostile agent — §6), but stated plainly: every §3/§4 guard is tool-surface-only.
   If guards ever need to mean more, the fix is deployment-side (token outside the agent's
   readable paths, or a proxy layer) — never more extension code.
@@ -1644,13 +1675,13 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Unauthenticated workspace access (deployment drift) | ~~Unknown~~ **Resolved** — auth posture verified (Milestone 0) | Non-empty access auth code keeps the anonymous-admin bypass dead; API-token matrix (no-token → rejected, bogus → rejected, real token → `code:0` on guarded + SQL endpoints) passed from the VM. `/api/system/version` has no auth middleware and proves connectivity only — guarded endpoints must be probed when re-verifying. |
 | Auth lockout from agent retry loops | Medium (model tool-retry loops are common) | Extension circuit breaker: 3 consecutive auth failures → degraded fail-fast (§5), under the kernel's lock threshold (6th consecutive failure within a 15-min window); the client never retries 401/403/429 (§2). A 429 with a correct token (lock tripped by a concurrent session or client) is surfaced as the self-healing 429 refusal — never counted toward the breaker, never retried (§5) — and arms a cooldown deadline (now + `Retry-After`, floor 60 s): further kb tool calls are refused locally with zero kernel round-trips, so a retrying model cannot extend the lock (§5). The source-read throttle contract (threshold, window, backoff, `Retry-After`, lock-extension, self-heal) is pinned by the §10 integration throttle case (§5 has the full record). Multi-KB search fan-out (§3) multiplies per-call round-trips by the active-KB count (normally 1–2); an armed cooldown refuses locally before any fan-out call is issued, so it adds no lock-extension surface. |
 | SiYuan kernel API drift | Low (community-stable for years) | Eager version probe at `session_start` (§2) against the pinned tested version; core is thin so surface area is small. The probe refuses writes on **any** drift from the pinned full version — the strict-gate rationale is the §2 decision record; enforcement is the §10 upgrade checklist (run the suite against the new kernel first, then re-pin — a verified conclusion, never a version-number bump). |
-| Model writes garbage into notebooks | Medium | Interactive write confirmation; KB notebooks bound blast radius; user backup strategy outside extension scope. |
+| Model writes garbage into notebooks | Medium | Per-KB write grant; KB notebooks bound blast radius; user backup strategy outside extension scope. |
 | Headless prompt injection widens scope | Low (corner-case config) | `/kb` dispatches on headless prompt text (§5 headless bound), so untrusted content interpolated into a `pi -p` prompt can carry `/kb all on` and widen an unattended session's write blast radius. **Unsupported combination (§5): headless + `allowUnattendedWrites: true` + untrusted content in the prompt string** — keep untrusted input in files the agent reads via tools; tool results never dispatch commands. Bounded regardless: activation is config-validated, soft-scope ceiling applies (§6). |
 | Scope confusion (soft isolation) | Low (accepted) | Named ceiling; hard isolation out of scope for v1. |
 | Git-on-host vs live workspace (user's personal backup) | User-owned | Extension is agnostic: it writes via kernel API regardless of what backs the workspace. Torn-write risk belongs to the backup strategy, not this design. Kernel API writes land on disk as `.sy` either way — git backs the workspace identically; direct file writes buy git nothing. |
-| UI rename / hand edits to KB docs | Medium (normal usage) | Safe by construction (§4 R5): identity is the docId, block IDs survive renames, and the doc stays reachable from any query row — every read/write by echoed docId works regardless of retitles. Worst case: a retitled doc no longer matches an agent's remembered mint title, so the next create by that title misses the guard — one reconcilable duplicate, never data loss (the accepted two-docs-reconcilable path). Write confirmation and result-echo keep it visible. No rename-detection machinery exists or is needed; no slug janitor exists (R5 — nothing to repair without a slug convention). |
+| UI rename / hand edits to KB docs | Medium (normal usage) | Safe by construction (§4 R5): identity is the docId, block IDs survive renames, and the doc stays reachable from any query row — every read/write by echoed docId works regardless of retitles. Worst case: a retitled doc no longer matches an agent's remembered mint title, so the next create by that title misses the guard — one reconcilable duplicate, never data loss (the accepted two-docs-reconcilable path). The write grant and result-echo keep it visible. No rename-detection machinery exists or is needed; no slug janitor exists (R5 — nothing to repair without a slug convention). |
 | Concurrent pi sessions on one KB | Normal usage, not degenerate | Two sessions can both pass the title guard before either create lands in the SQL index → duplicate topics; interleaved appends are last-writer-wins. Same "two docs, reconcilable later" blast radius as guard misses — never data loss. Verified-create is a by-ID mint assert (§4 R3), not a uniqueness check, so the race surfaces as a reconcilable duplicate, not an immediate error. A racing session's deletions also make stale targets reachable; the §4 stale-target record covers them — never a silent success against a vanished block. Interleaved overwrites are covered too: an `edit`/`replace-section` targeting content another session or the user changed since the agent last saw it hits the §4 fresh-content precondition — a `stale_content` refusal with the current content attached, never a silent clobber; the residue is the millisecond re-check→apply window the record names. No cross-session locking in v1. |
-| SQL-index lag after write breaks find-then-write | Low | If the index lags, the title guard misses → create path → duplicate doc. Verified-create is now a **by-ID assert that proves mint success** (§4 R3), not a uniqueness check — it cannot make the guard→create race visible; that race's duplicate is the accepted reconcilable class (§6, §4 R4). The same lag applies to the advisory backlink checks — the pre-write confirmations and the `invalidRefs` echo (§4) — which is why they are evidence, not proof, and never a safety gate. The design's defense stays fail-loud where the kernel is silent and reconcilable-never-lossy elsewhere. §10's read-consistency test pins the sync-flush contract for `blocks` and `refs` alike. |
+| SQL-index lag after write breaks find-then-write | Low | If the index lags, the title guard misses → create path → duplicate doc. Verified-create is now a **by-ID assert that proves mint success** (§4 R3), not a uniqueness check — it cannot make the guard→create race visible; that race's duplicate is the accepted reconcilable class (§6, §4 R4). The same lag applies to the advisory backlink checks — the `invalidRefs` echo (§4; the pre-write confirmation displays are gone with the write grant) — which is why they are evidence, not proof, and never a safety gate. The design's defense stays fail-loud where the kernel is silent and reconcilable-never-lossy elsewhere. §10's read-consistency test pins the sync-flush contract for `blocks` and `refs` alike. |
 | Encrypted KB notebook | Low (opt-in feature, rejected loudly at startup) | `/api/query/sql` sees only the global `siyuan.db`; an encrypted notebook's blocks live in a separate per-box sqlcipher database invisible to the title guard, verified-create's by-ID asserts, and the backlink check — the §4 flow would misfire (guard misses minting duplicates; verified-create fails loud on a mint the SQL surface cannot see). §5 validation step 3 rejects any configured KB with `encrypted: true` at `session_start`, naming the KB — one flag check covering both lock states (§5 one-rejection pin), pinned live by the §10 encrypted-notebook case on the shared workspace, gated behind the master password — enabling the key domain is a deliberate one-time user action via SiYuan's own UI, never the extension's, so the case only observes the rejection of an already-enabled workspace. |
 | Dual writer on the workspace | Low (user-controlled) | §7's serialization argument covers the kernel's own writes only; if the same workspace is also opened in a desktop SiYuan instance while the kernel runs, torn writes are back. Mitigation is deployment hygiene: one kernel per workspace; worth a note in the compose docs. |
 | Spill files accumulate in /tmp | Low (cosmetic) | No cleanup machinery (§3): hash-named files in per-session temp dirs, disk-bounded by spill frequency, wiped by the OS on reboot; crash or quit-then-resume leaves files the resumed transcript may quote — the agent re-queries and re-spills (same hash). A cleanup pass is a v2 add-on if /tmp usage ever matters. |
@@ -1686,7 +1717,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   - stale-target verification (§4): insert `newBlockId` absent from the post-write walk
     set → `error`; edit errors verbatim; delete/move answered per kernel generation
     (both 3.8.3 and 3.8.4 pinned); cross-doc move walk-set assert;
-  - fresh-content precondition (§4): baseline hash at serve/confirm,
+  - fresh-content precondition (§4): baseline hash at serve,
     `stale_content` refusal with zero kernel writes (request-log asserted),
     `replace-section` baselines the delete set;
   - auth breaker: 3 consecutive auth failures → degraded fail-fast, zero further
@@ -1694,11 +1725,13 @@ external writers on a live workspace entirely: the kernel serializes its own wri
     cooldown refusal with zero kernel round-trips, self-healing expiry;
   - settings validation order + token-failure branch; encrypted-notebook rejection in
     both lock states, no tool kernel calls to the rejected KB;
-  - write confirmation: allow/refuse; cancel and timeout both resolve `refused`;
-    `confirm_timeout` terminal (confirm fires exactly once across a re-request — the
-    AFK retry-treadmill pin); `writeConfirmTimeout: 0` blocks indefinitely;
-    `replace-section` confirmation displays the delete set's trailing content +
-    inbound refs (the never-unseen-sweep pin);
+  - write grant: first write opens the tri-state dialog; later writes in the same
+    interaction flow silently; every non-grant answer (No, `undefined`, unknown
+    label, thrown `select`) denies terminally with `write_denied` — no second dialog
+    in the interaction (the retry-treadmill pin); `writeConfirmTimeout: 0` blocks
+    indefinitely; concurrent writes to one ungranted KB open exactly one dialog
+    (dialog lock); `session_start`/`session_shutdown` clear all three grant/denial
+    sets; a version-drifted session refuses with zero dialogs;
   - status-slot rendering (headless-safe); version-gated write refusal (probe failure
     fails writes closed); per-write-attempt first-write probe retry;
   - file-path input (§4): missing/unreadable → structured error, no kernel call;
@@ -1756,7 +1789,9 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   - `replace-section` end to end (§4, highest-stakes composite write): list/quote-ending
     section, container-nested target (the sweep is exactly the sibling run), final-section
     trailing sweep, heading ID survives, outline-ordering pin re-asserted after the
-    round-trip, planted content-block ref orphans with `invalidRefs` echo, doc-level
+    round-trip, planted content-block ref orphans with `invalidRefs` echo, inline
+    delete receipts (`deletedBlocks`) on replace-section and both delete
+    flavors, doc-level
     delete backlink case, block-level delete orphan case, `updateBlock` preserves IDs
     (`listInvalidBlockRefs` zero).
   - `move` cases (§4): doc-level (`moveDocsByID` — IDs survive, echo, follow-up write by
@@ -1811,11 +1846,11 @@ external writers on a live workspace entirely: the kernel serializes its own wri
   now *fails*: a run that leaks context fails here, exactly where a click-through
   would score a false positive. Fixture hygiene: the planted fact exists nowhere but
   the fixture KB. **What stays manual**: the interactive moments automation cannot
-  reach — write-confirmation allow/refuse in a TTY, status-slot visibility, the M4
-  real-KB exercise — folded into a residual checklist, plus the §5 RPC confirm
-  record's one manual check (at the first real RPC-mode session: the confirm dialog
-  appears, an explicit decline refuses the write, an ignored dialog times out to
-  `confirm_timeout` refused — never an unattended write).
+  reach — write-grant allow/deny in a TTY, status-slot visibility, the M4
+  real-KB exercise — folded into a residual checklist, plus the §5 RPC grant
+  record's one manual check (at the first real RPC-mode session: the grant dialog
+  appears, an explicit decline denies the KB for the interaction (`write_denied`),
+  an ignored dialog times out to the same denial — never an unattended write).
 
 ## 11. Milestone rollout
 
@@ -1824,8 +1859,8 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | 0 | VM→host connectivity + auth smoke test | ✅ **Done.** Full auth matrix verified from the VM; deployment posture and the `ACCESS_AUTH_CODE_BYPASS` warning in §8. |
 | 1 | Repo scaffolds — two separate repositories | ✅ **Done.** Both repos green, extension loads in a real pi session; §5 settings validator enforces the full rejection matrix; no build step in either repo (both ship raw `.ts`). |
 | 2 | `siyuan-kernel-api` client | ✅ **Done.** Published to npm, exact-pinned by `gnubrain` (0.2.0 notebook/doc lifecycle; 0.3.0 encrypted-notebook family + `query()` readonly tightening). Endpoint surface, error classes, retry/timeout policy, and design constraints are the client repo's record (README + AGENTS.md). |
-| 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), interactive write confirmation | ✅ **Done.** Gate met: all four tools callable from pi (collision-asserted against the builtins); scope survives session restart; `/kb` toggles land mid-session; write confirmation verified interactively (residual checklist); auth breaker degrades after 3 consecutive auth failures and recovers via `/kb`; write-path integration suite green under the fixture policy (§10), incl. the title-guard, version-refusal (§2/§5), and stale-target (§4) contract pins and the headless `/kb` dispatch. M3 implementation deviations: Appendix B. |
-| 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write confirmation, status slot) |
+| 3 | KB extension — tool set, `kb` param validation, `/kb` command (on/off toggles incl. `all`, scope, chat state via `appendEntry`), per-KB write grant | ✅ **Done.** Gate met: all four tools callable from pi (collision-asserted against the builtins); scope survives session restart; `/kb` toggles land mid-session; grant dialog verified interactively (residual checklist); auth breaker degrades after 3 consecutive auth failures and recovers via `/kb`; write-path integration suite green under the fixture policy (§10), incl. the title-guard, version-refusal (§2/§5), and stale-target (§4) contract pins and the headless `/kb` dispatch. M3 implementation deviations: Appendix B. |
+| 4 | Loop validation — write-back conventions exercised on a real KB (e.g. recipes epub extraction) | **Automated recall harness passes end to end (§10)**: plant (kernel-asserted), restart, recall (nonce + transcript-proven tool use), negative control on deletion; residual manual checklist covers the interactive-only moments (write grant, status slot) |
 
 ---
 
@@ -1850,7 +1885,7 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Settings parent key | Single `gnubrain` parent key (= package name) | Bare `kb` key; flat per-KB keys | §5 |
 | Project/global config split | `kbs` + connection keys + `allowUnattendedWrites` + `writeConfirmTimeout` global-only **by read path** (extension reads them from the global settings file specifically, never the merged view — pi exposes no settings API to extensions, and array-replace makes warn-on-merge unguardable); `defaultKBs` at both levels, extension-implemented project-wins replace | Projects re-declaring `kbs`; absent = activate-all; warn-on-merged-view enforcement (unguardable for array keys) | §5 |
 | Error surface | Pinned status classes (`ok`/`near_matches`/`duplicate`/`error`/`refused`); `truncated`/`post_filtered` are payload markers | Free-text statuses; `truncated` as a sixth status | §5 |
-| Headless writes | Default-deny via `allowUnattendedWrites`; RPC is not headless; confirm timeout fail-closed | Default-allow; CLI flag; per-session toggle | §5, §9 |
+| Headless writes | Default-deny via `allowUnattendedWrites`; RPC is not headless; grant denial (`write_denied`) fail-closed | Default-allow; CLI flag; per-session toggle | §5, §9 |
 | Spill files | Per-session dir, content-hash names, JSONL/`.md`, **no cleanup machinery** | TSV; flat dir; terminal-shutdown cleanup | §3, §9 |
 | Recall test | Automated headless harness: nonce plant, kernel-side assert, transcript-proven tool use, negative control | Manual click-through only | §10 |
 | Unreachable startup | Degrade (session lives, fail-closed writes, per-write-attempt probe retry) | Fail session; lazy-connect | §5 |
@@ -1862,20 +1897,20 @@ external writers on a live workspace entirely: the kernel serializes its own wri
 | Multi-KB search fan-out | One kernel call per resolved KB, merged; per-call truncation accounting | One multi-`paths` call under one `pageSize`; raised `pageSize` | §3, §9, §10 |
 | Search method param | Tool-owned `method: 0`; aux params omitted (kernel defaults) | Agent-supplied `method`/aux params; tool-invented defaults | §3 |
 | replace-section ordering | Insert-before-delete | Delete-then-insert | §4 |
-| Write-confirmation timeout | `gnubrain.writeConfirmTimeout` (default 60 s; `0` = indefinite); timeout refusal `confirm_timeout` is terminal per write | Pinned constant; `0` = auto-approve; non-terminal timeout refusal | §5, §10 |
+| Write-grant denial | Tri-state per-KB dialog; `gnubrain.writeConfirmTimeout` (default 60 s; `0` = indefinite) bounds the native dialog wait; every non-grant answer is terminal per KB per interaction (`write_denied`) | Per-write dialogs; non-terminal timeout refusal; `0` = auto-approve | §5, §10 |
 | Auth lockout | Breaker at 3 consecutive auth failures; 429 is its own class with a local cooldown deadline | Message-only 429 refusal; counting 429s toward the breaker; restart-only recovery | §2, §5, §9, §10 |
 | Encrypted notebooks | Rejected at `session_start` validation — one flag check, both lock states (`lsNotebooks` reports `encrypted: true` for locked boxes too) | Warn-and-proceed; a separate locked-box stale-ID drop branch | §5, §9, §10 |
 | Tool surface for reconciliation | `delete` + `move` modes (block/doc level); tool-fetched destination outline | Defer out of v1; insert-copy+delete for cross-doc moves | §4 |
 | Delete safety | Backlink check over the section's closure (members plus descendants) via documented SQL on `refs` | Guess from outline; separate backlinks tool | §4 |
-| Replace-section ref visibility | Pre-write refs count in the confirmation + post-write `invalidRefs` echo | Ref-preserving section rewrite (pairing heuristic) | §4, §10 |
-| Final-section trailing sweep | Sweep stays (exclusion leaves incoherent doc-end fragments under a supposedly-rewritten section); trailing content rides the delete-set content display, so it is never destroyed unseen | Excluding trailing content from the delete set; outline redesign to carry trailing blocks | §4, §10 |
+| Replace-section ref visibility | Post-write `invalidRefs` echo (no pre-write display — owned loss with the write grant) | Ref-preserving section rewrite (pairing heuristic) | §4, §10 |
+| Final-section trailing sweep | Sweep stays (exclusion leaves incoherent doc-end fragments under a supposedly-rewritten section); trailing content has no pre-write itemization (the grant names the KB, not the op — owned loss); the ok envelope itemizes what left after the fact (`deletedBlocks`: ids + content, §4) and the `invalidRefs` echo covers refs (an orphaned-ref count; zero for unreferenced trailing content) | Excluding trailing content from the delete set; outline redesign to carry trailing blocks | §4, §10 |
 | Write-back tool schema | Targets agent-supplied from echoed data; anchors always tool-derived; `markdown` XOR `markdownFile`; result echoes fresh outline + address | Agent-supplied anchors; multi-call replace-section; inline-only bodies | §4 |
 | Guard-stop draft staging | Stage inline body to spill dir on guard stop; retry via `stagedPath` | Inline full-body retry; draftRef state with TTL; check-before-draft tool | §4, §10 |
 | Stale targets | Verified, not trusted: post-write walk-set evidence for every write result | Trust the kernel's HTTP result; agent re-read discipline | §4, §10 |
-| Fresh-content precondition | Baseline content hash (served content, or confirmation-displayed content when none was served) re-checked post-confirm on `edit`/`replace-section`; mismatch → `stale_content` refusal with current content attached | Content-blind overwrite; agent re-read discipline; cross-session locking | §4, §9, §10 |
+| Fresh-content precondition | Baseline content hash (served content, or current content read at call start when none was served) re-checked immediately before the apply on `edit`/`replace-section`; mismatch → `stale_content` refusal with current content attached | Content-blind overwrite; agent re-read discipline; cross-session locking | §4, §9, §10 |
 | Multi-block markdown inserts | `newBlockId` = first insert operation's `id` from the returned transaction array (`data[0].doOperations[0].id`); kernel returns one representative ID; verification = walk-set diff | Membership-only check; asserting the predicted full ID set | §4, §10 |
 | Discovery recency echo | `updated` on every discovery row — data, not ordering | `ORDER BY updated DESC`; no recency signal | §3, §4, §5, §10 |
-| `confirmNew` escape hatch | Hidden from the input schema; bypasses both guard legs; confirmation + verified-create still apply | Declared optional param; exact leg unflaggable; user arbitration | §4, §10 |
+| `confirmNew` escape hatch | Hidden from the input schema; bypasses both guard legs; the write grant + verified-create still apply | Declared optional param; exact leg unflaggable; user arbitration | §4, §10 |
 
 ---
 
@@ -1944,8 +1979,8 @@ recorded with the design updated in the same change.
    forest root, and the insert anchor is the boundary (a sibling of the
    target) or the container (the members' ancestor) — it can never land
    inside a swept member, so the guard has nothing left to catch. The
-   closure (members plus descendants) still drives the confirmation display,
-   the fresh-content baselines and the invalidRefs check, and the sweep
+   closure (members plus descendants) still drives
+   the fresh-content baselines and the invalidRefs echo, and the sweep
    verifies the replacement still stands in the post-write walk before
    reporting ok. The mock kernel's cascade-faithful delete mode
    (`cascadeDelete`) stays: the suite still pins the contract against the

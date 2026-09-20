@@ -1,7 +1,6 @@
 // Shared scaffolding for the write flows: the flow input shape, doc-target
-// ownership resolution, the confirmation gate, the shared target reads, the
-// one catch site for kernel mutations, and the delete-set display —
-// everything the per-mode flow files
+// ownership resolution, the shared target reads, and the one catch site for
+// kernel mutations — everything the per-mode flow files
 // (writeCreate/writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove)
 // build on.
 
@@ -16,18 +15,12 @@ import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 } from "siyuan-kernel-api";
-import { previewAtNewline, spillFile } from "./spill.js";
 import { ownershipStmt, sqlString } from "./kernel.js";
+import { inlineOrSpill, jsonl } from "./spill.js";
 import { TARGETABLE_CONTAINER_TYPES } from "./writeAnchors.js";
 import type { WalkedBlock } from "./walk.js";
 import type { ContentBaselines } from "./baselines.js";
-import type { SessionValidation } from "./validation.js";
-import {
-	confirmWrite,
-	type WriteConfirmFn,
-	type WriteConfirmState,
-} from "./writeConfirm.js";
-import { backlinkCheck, rootEcho, writeEchoTail } from "./writeResult.js";
+import { rootEcho, writeEchoTail } from "./writeResult.js";
 import type { WriteKernelClient } from "./kernel.js";
 import type { WriteParams } from "./writeSchema.js";
 
@@ -37,22 +30,14 @@ import type { WriteParams } from "./writeSchema.js";
 export interface WriteFlowBase {
 	sessionId: string;
 	kernel: WriteKernelClient;
-	validation: SessionValidation;
 	/** Resolved KB name + notebook id (the gate already validated both). */
 	name: string;
 	boxId: string;
 	/** Captured content body ("" on body-less modes). */
 	body: string;
-	/** Preflight verdict from the kb_write entry: run the interactive
-	 * dialog (true) or skip it for an approved unattended write (false). */
-	dialog: boolean;
-	/** Confirm key + dialog summary — computed once at the kb_write entry. */
-	confirmInputs: { key: string; summary: string };
-	confirm: WriteConfirmFn;
-	confirmState: WriteConfirmState;
 	baselines: ContentBaselines;
 	/** Fires at the flow's first kernel call — kernel-free refusals
-	 * (preflight) must not reset the breaker's consecutive count. */
+	 * (shape, grant, drift) must not reset the breaker's consecutive count. */
 	contact: () => void;
 }
 
@@ -88,29 +73,13 @@ export async function resolveDocTarget(
 	return { rootId: root.docId, title: root.title };
 }
 
-export async function confirmGate(
-	input: WriteFlowBase,
-	summary: string,
-): Promise<Envelope | null> {
-	// Approved-unattended writes (dialog: false, headless allowUnattendedWrites)
-	// skip the dialog; interactive sessions always gate here.
-	if (!input.dialog) return null;
-	return confirmWrite({
-		confirm: input.confirm,
-		writeConfirmTimeout: input.validation.settings?.writeConfirmTimeout,
-		state: input.confirmState,
-		key: input.confirmInputs.key,
-		summary,
-	});
-}
-
 /** SELECT heads the kernel stubs route on — keep builders and heads in
  * sync by construction (each builder concatenates its head constant). */
 export const BLOCK_IN_DOC_STMT_HEAD =
 	"SELECT id, content, root_id, type FROM blocks WHERE id";
 
 /** The target read shared by the blockId-targeting modes — the block's
- * current content (confirmation display + fresh-content baseline), or
+ * current content (fresh-content baseline), or
  * null when the id is absent from the kernel. Absence is never refused
  * here: each op's own kernel outcome governs the observable behavior
  * (edit/move surface the synchronous not-found error verbatim; delete
@@ -120,7 +89,7 @@ export const BLOCK_IN_DOC_STMT_HEAD =
  * different doc (cross-doc or cross-KB — kb_query rows carry raw ids
  * across all active KBs) is refused here: the kernel mutates by raw id
  * with no doc scoping of its own, so forwarding it would write outside
- * the targeted doc, past the dialog and the fresh-content baseline
+ * the targeted doc, past the grant and the fresh-content baseline
  * (the SQL cannot distinguish foreign from absent — the code compare
  * can). The TOCTOU window between this read and the kernel call is the
  * same one every precondition here accepts; post-write verification
@@ -299,45 +268,26 @@ export async function echoTail(
 	});
 }
 
-// ---------------------------------------------------------------------------
-// Delete-set display — confirmation shows what a delete-bearing write
-// orphans: block count, the trailing blocks' current content, inbound refs
-// ---------------------------------------------------------------------------
-
-const DELETE_SET_PREVIEW_CHARS = 2000;
-
-/** Confirmation summary line for a delete-bearing write's inbound refs —
- * one home so the wording cannot drift between delete and replace-section. */
-export function backlinkSummary(display: {
-	backlinks: { count: number; hpaths: string[] };
-}): string {
-	return (
-		`inbound refs: ${display.backlinks.count}` +
-		(display.backlinks.count > 0
-			? ` from: ${display.backlinks.hpaths.join(", ")}`
-			: "")
-	);
-}
-
-export async function deleteSetDisplay(
-	kernel: WriteKernelClient,
+/** The delete receipt: what a delete-bearing op removed — block ids and
+ * their walk content, covering both the members the sweep deleted
+ * explicitly and the descendants the kernel's cascade took with them
+ * (the closure is exactly what left the doc). Built from the walk the
+ * flow already holds — zero extra kernel calls. Inline within the shared
+ * preview budget; overflow spills the full JSONL and the pointer rides as
+ * a sibling field, the same contract as `outline`/`fullOutlinePath`. */
+export function deletedBlocksTail(
 	sessionId: string,
-	deleteSet: { id: string; content: string }[],
-): Promise<{
-	deleteSet: { count: number; contentPreview: string };
-	backlinks: { count: number; hpaths: string[] };
-}> {
-	const content = deleteSet.map((b) => b.content).join("\n---\n");
-	let contentPreview = content;
-	if (content.length > DELETE_SET_PREVIEW_CHARS) {
-		const path = spillFile(sessionId, "kb_write-delete-set", content, "md");
-		contentPreview = `${previewAtNewline(content, DELETE_SET_PREVIEW_CHARS)}\n… full delete-set content in ${path}`;
-	}
-	return {
-		deleteSet: { count: deleteSet.length, contentPreview },
-		backlinks: await backlinkCheck(
-			kernel,
-			deleteSet.map((b) => b.id),
-		),
-	};
+	blocks: { id: string; content: string | null }[],
+): Record<string, unknown> {
+	const rows = blocks.map((b) => ({ id: b.id, content: b.content }));
+	const { inline, spillPath } = inlineOrSpill(
+		sessionId,
+		"kb_write-deleted-blocks",
+		jsonl(rows),
+		"jsonl",
+	);
+	if (spillPath === undefined) return { deletedBlocks: rows };
+	return { deletedBlocksPreview: inline, deletedBlocksPath: spillPath };
 }
+
+// ---------------------------------------------------------------------------

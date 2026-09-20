@@ -1,5 +1,5 @@
 // The replace-section flow: enumerate the section (members + closure) from
-// the document-order walk → confirm (delete-set display) → insert-before-
+// the document-order walk → fresh-content precondition → insert-before-
 // delete in one call, verified against the post-write tree — a mid-sequence
 // failure must cost visible duplication, never loss.
 
@@ -14,10 +14,8 @@ import {
 import { deriveAppendAnchor, sectionOf } from "./writeAnchors.js";
 import { walkBlockTree } from "./walk.js";
 import {
-	backlinkSummary,
-	confirmGate,
-	deleteSetDisplay,
 	echoTail,
+	deletedBlocksTail,
 	headingInWalk,
 	insertRollbackReason,
 	runMutation,
@@ -54,31 +52,17 @@ export async function runReplaceSectionMode(
 	// land inside a block the sweep deletes (the kernel's cascade would
 	// consume the replacement and the heading itself).
 	const anchor = deriveAppendAnchor(walk, heading);
-	// The confirmation displays the enumerated delete set — block count,
-	// the trailing blocks' current content (spill budget applies), and the
-	// same backlink visibility `delete` carries.
-	const display = await deleteSetDisplay(kernel, sessionId, deleteSet.closure);
-	const summary =
-		`Replace the section under heading '${heading.content}' in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
-		`delete set: ${display.deleteSet.count} block(s)\n\n` +
-		`current content:\n${display.deleteSet.contentPreview}\n\n` +
-		backlinkSummary(display) +
-		(display.backlinks.count > 0
-			? " — replacing orphans refs into the section's content blocks (the heading ID survives)"
-			: "");
-	// Fresh-content precondition: establish missing baselines BEFORE the
-	// dialog, from the same blocks.content read the post-approval re-check
-	// uses (representation-independent). Approval then establishes exactly
-	// the content in view — a change landing between display and approval is
-	// caught by the re-check below as stale_content, not laundered into the
-	// baseline by a post-approval read.
+	// Fresh-content precondition: a concurrency guard, not a consent
+	// mechanism (the grant resolved at the kb_write entry). Establish missing
+	// baselines and check in one step right before the kernel call — the
+	// dialog's display → approval window no longer exists, so a change
+	// landing since the walk is caught as stale_content, not laundered into
+	// the baseline.
 	await establishBaselines(
 		kernel,
 		baselines,
 		deleteSet.closure.map((b) => b.id),
 	);
-	const gate = await confirmGate(input, summary);
-	if (gate !== null) return gate;
 	const stale = await assertFreshContent(
 		kernel,
 		baselines,
@@ -120,7 +104,7 @@ export async function runReplaceSectionMode(
 		);
 		if (rollback !== undefined) {
 			// No echo tail here, unlike append's rollback refusal: writeEchoTail
-			// refreshes baselines from a post-approval read, and a concurrent
+			// refreshes baselines from a post-write read, and a concurrent
 			// change landing between the stale re-check and this walk would be
 			// laundered into the baseline (the pinned timeline contract). The
 			// refusal wording already carries the evidence that matters — the
@@ -196,7 +180,7 @@ export async function runReplaceSectionMode(
 		);
 		// Verified, not trusted: the sweep's cascade must never have consumed
 		// the replacement (an anchor nested inside a swept container is
-		// refused before the dialog, so this only fires on kernel
+		// refused before the mutation, so this only fires on kernel
 		// misbehavior) — a silent loss here must not read as ok.
 		const postSweepWalk = await walkBlockTree(kernel, doc.rootId);
 		if (!idSet(postSweepWalk).has(landedId)) {
@@ -220,13 +204,15 @@ export async function runReplaceSectionMode(
 		return {
 			status: "ok",
 			// The closure is what left the doc — the members the sweep deleted
-			// explicitly plus the descendants their cascade removed — the same
-			// count the confirmation displayed.
+			// explicitly plus the descendants their cascade removed. The
+			// receipt itemizes it (ids + walk content) — the post-write
+			// visibility the pre-write grant dialog does not carry.
 			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.closure.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
 			kb: name,
 			anchor: anchor.anchor,
 			newBlockId,
 			invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
+			...deletedBlocksTail(sessionId, deleteSet.closure),
 			...tail,
 		};
 	});

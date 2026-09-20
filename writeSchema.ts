@@ -1,9 +1,8 @@
 // kb_write tool schema + the shared mode shape validation: mode-specific
-// target params (schema table), the confirm key/summary inputs, and the
-// TypeBox schema — all zero-kernel-call, all checked before the probe gate.
+// target params (schema table) and the TypeBox schema — all zero-kernel-call,
+// all checked before the probe gate.
 
 import { Type, type Static } from "typebox";
-import { writeConfirmKey } from "./writeConfirm.js";
 
 /** Mode-specific target params (schema table) — anything else the agent
  * sends is rejected before any kernel call. `confirmNew` is never declared
@@ -98,52 +97,6 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 		default:
 			return undefined;
 	}
-}
-
-/** Preflight summary — params only; the detailed dialog text is built after
- * ownership resolution (preflight must stay zero-kernel-call). */
-function writeModeSummary(p: WriteParams): string {
-	const doc = p.docId ?? "-";
-	switch (p.mode) {
-		case "edit":
-			return `Edit block ${p.blockId} in doc ${doc}`;
-		case "append":
-			return `Append to doc ${doc}${p.headingId === undefined ? " at doc end" : ` under heading ${p.headingId}`}${p.placement === "section-start" ? " (section start)" : ""}`;
-		case "replace-section":
-			return `Replace the section under heading ${p.headingId} in doc ${doc}`;
-		case "delete":
-			return p.doc === true
-				? `Delete doc ${doc}`
-				: `Delete block ${p.blockId} in doc ${doc}`;
-		case "move":
-			return p.doc === true
-				? `Move doc ${doc} to ${p.toDocId ?? "the notebook root"}`
-				: `Move block ${p.blockId} to doc ${p.toDocId}`;
-		default:
-			return `${String(p.mode)} write in doc ${doc}`;
-	}
-}
-
-/** Confirm key + preflight summary for a non-create mode — params only;
- * shared by the kb_write entry (preflight precedes the probe gate) and
- * runWriteMode's dialog so the terminal confirm_timeout key can't drift. */
-export function modeConfirmInputs(
-	name: string,
-	p: WriteParams,
-): { key: string; summary: string } {
-	return {
-		key: writeConfirmKey([
-			name,
-			p.mode,
-			p.docId,
-			p.blockId,
-			p.headingId,
-			p.doc === true ? "doc" : undefined,
-			p.toDocId,
-			p.toHeadingId,
-		]),
-		summary: writeModeSummary(p),
-	};
 }
 
 // ---------------------------------------------------------------------------

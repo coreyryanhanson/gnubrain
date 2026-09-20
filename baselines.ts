@@ -5,7 +5,7 @@
 // (kb_read outline lines, kb_query rows that selected content), write flows
 // refresh it from write results. Never persisted, never seeded from
 // submitted markdown (the kernel re-parses it, so the stored form is
-// unknowable at submit time). Same lifecycle class as the breaker/confirm
+// unknowable at submit time). Same lifecycle class as the breaker/grant
 // state: after resume/fork the map is empty and the no-baseline fallback
 // applies.
 

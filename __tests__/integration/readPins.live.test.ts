@@ -16,7 +16,7 @@ import { RESULT_LIMIT } from "../../spill.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { guardExactStmt } from "../../writeGuard.js";
 import { registerWriteTool } from "../../write.js";
-import { createWriteConfirmState } from "../../writeConfirm.js";
+import { createWriteGrantState } from "../../writeConfirm.js";
 import {
 	runSessionValidation,
 	type SessionValidation,
@@ -86,11 +86,10 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 			getValidation: () => validation,
 			getKernel: () => kernel,
 			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
+			grantState: createWriteGrantState(),
 			baselines: ContentBaselines.create(),
-			confirm: async () => true,
 		});
-		const { ctx } = createFakeCtx();
+		const { ctx } = createFakeCtx({ select: async () => "Yes" });
 		return {
 			createCalls,
 			run: async (

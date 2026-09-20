@@ -14,10 +14,8 @@ import { ContentBaselines } from "../../baselines.js";
 import { walkBlockTree, type WalkedBlock } from "../../walk.js";
 import { sectionOf } from "../../writeAnchors.js";
 import { headingInWalk, type DocTarget } from "../../writeFlow.js";
-import {
-	createWriteConfirmState,
-	type WriteConfirmFn,
-} from "../../writeConfirm.js";
+import { createWriteGrantState } from "../../writeConfirm.js";
+import type { WriteKernelClient } from "../../kernel.js";
 import { registerKbWrite } from "../unit/writeHarness.js";
 import {
 	PINNED_SIYUAN_VERSION,
@@ -58,8 +56,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	});
 
 	/** The kb_write tool path over the real kernel: the unit harness's
-	 * registration with hooks wired to the live client. */
-	function liveSetup(confirm?: WriteConfirmFn) {
+	 * registration with hooks wired to the live client. `intercept` runs
+	 * once, before the first mutation call passes through — the neutral
+	 * seam for injecting a concurrent edit between the walk and the insert
+	 * (L6), independent of dialog placement. */
+	function liveSetup(intercept?: () => Promise<void>) {
 		run += 1;
 		const validation: SessionValidation = {
 			settings: undefined,
@@ -73,13 +74,36 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			authFailed: false,
 			lsNotebooksOk: true,
 		};
+		let intercepted = false;
+		const hook = intercept;
+		const runIntercept = async () => {
+			if (hook === undefined || intercepted) return;
+			intercepted = true;
+			await hook();
+		};
+		const kernel: WriteKernelClient =
+			hook === undefined
+				? client
+				: Object.assign(Object.create(client) as WriteKernelClient, {
+						insertBlock: async (
+							params: Parameters<typeof client.insertBlock>[0],
+						) => {
+							await runIntercept();
+							return client.insertBlock(params);
+						},
+						appendBlock: async (
+							params: Parameters<typeof client.appendBlock>[0],
+						) => {
+							await runIntercept();
+							return client.appendBlock(params);
+						},
+					});
 		const { execute: runTool } = registerKbWrite({
 			getValidation: () => validation,
-			getKernel: () => client,
+			getKernel: () => kernel,
 			breaker: new CircuitBreaker(),
-			confirmState: createWriteConfirmState(),
+			grantState: createWriteGrantState(),
 			baselines: ContentBaselines.create(),
-			confirm: confirm ?? (async () => true),
 		});
 		// Details-level result (status/anchor/outline/...) — the assertion
 		// surface every write test uses.
@@ -509,10 +533,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			const a = heading(walk, "A");
 			const b = heading(walk, "B");
 			const execute = liveSetup(async () => {
-				// The confirmation callback: the concurrent edit that deletes the
+				// The neutral kernel seam: the concurrent edit that deletes the
 				// derived anchor between the walk and the insert.
 				await client.deleteBlock(b.id);
-				return true;
 			});
 			const result = await execute({
 				kb: "live",

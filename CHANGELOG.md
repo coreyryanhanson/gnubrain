@@ -18,10 +18,11 @@
     (DML, multi-statement, and non-allowlisted `FROM` tables rejected), with
     per-KB scoping spliced into the AST and a LIMIT 64 injected when absent.
   - `kb_write` — create / edit / append / replace-section / delete / move, all
-    behind the write confirmation gate (below) with verified results: minted
+    behind the per-KB write grant with verified results: minted
     and moved blocks are asserted against the post-write tree, edits carry a
     fresh-content precondition (`stale_content` refusal instead of a silent
-    clobber), and delete-bearing writes echo `invalidRefs`.
+    clobber), and delete-bearing writes echo `invalidRefs` plus a receipt of
+    the removed blocks (ids + content; overflow spills to a file pointer).
 
 - **`/kb` command** for session-scoped control:
 
@@ -37,15 +38,15 @@
     notebook listing) before acting — a successful dispatch also recovers the
     auth breaker; the 429 cooldown self-heals on its own.
 
-- **Write confirmation gate.** Interactive sessions confirm every write
-  through pi's native dialog (`ctx.ui.confirm`); headless runs (`pi -p`)
-  default-deny unless `allowUnattendedWrites: true` is set in settings. Each
-  confirm is bounded by `writeConfirmTimeout` (default 60 s, `0` = wait
-  indefinitely); a timeout is terminal for that write in that session, an
-  explicit decline is recoverable by re-requesting. Delete-bearing and
-  replace-section confirmations display the delete set (block count, trailing
-  content, inbound-ref count with referring hpaths) before anything is
-  removed.
+- **Write grant.** Writes are approved once per KB per interaction, not once per
+  write: the first `kb_write` targeting a KB opens a tri-state dialog naming the KB
+  (writes may include deletes). **Yes** approves for the interaction, **Always this
+  session** for the session, and every other answer (decline, dismissal, timeout,
+  failed dialog) denies that KB until the interaction ends. The refusal reason code
+  is renamed `confirm_timeout` → `write_denied` (consumers matching on `reason`
+  must update). `writeConfirmTimeout` (default 60 s, `0` = wait indefinitely) now
+  bounds pi's native dialog timeout. `allowUnattendedWrites: true` skips the dialog
+  in any session; headless runs (`pi -p`) default-deny unless it is set.
 
 - **Startup validation and degradation.** Sessions validate on startup —
   kernel version must match the pinned `3.8.4` exactly, `listNotebooks` must
@@ -67,10 +68,10 @@
   flooding the context: previews cap at 8000 chars, outlines at 200 headings,
   result sets at 64 rows.
 
-- **Settings keys** (global or project `.json`): `baseUrl`, `apiToken`,
-  `kbs: [{name, notebook}]`, `defaultKBs` (project wins over global),
-  `allowUnattendedWrites`, `writeConfirmTimeout`. See the README for a full
-  example.
+- **Settings keys** (global file; only `defaultKBs` may also live in the
+  project `.json`): `baseUrl`, `apiToken`, `kbs: [{name, notebook}]`,
+  `defaultKBs` (project wins over global), `allowUnattendedWrites`,
+  `writeConfirmTimeout`. See the README for a full example.
 
 - **Kernel dependency: SiYuan 3.8.4 exactly.** A different kernel version is
   refused at startup with both versions named (pinned version vs. reported).

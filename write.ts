@@ -1,7 +1,7 @@
 // kb_write registration: the tool surface (schema + description), the
 // hooks the chassis injects, the write-path probe gate, and the non-create
 // mode dispatch. The create flow lives in writeCreate.ts; shape/schema in
-// writeSchema.ts; confirmation in writeConfirm.ts; guard SQL in
+// writeSchema.ts; the per-KB grant gate in writeConfirm.ts; guard SQL in
 // writeGuard.ts; anchors in writeAnchors.ts; shared baselines/echo in
 // writeResult.ts.
 
@@ -16,15 +16,19 @@ import {
 	textResult,
 	type Envelope,
 } from "./envelope.js";
-import { gateWriteAttempt, runGatedTool, resolveBox } from "./gate.js";
+import {
+	gateWriteAttempt,
+	runGatedTool,
+	resolveBox,
+	staticDriftRefusal,
+} from "./gate.js";
 import type { SessionValidation } from "./validation.js";
 import {
+	grantGate,
 	readBodyFile,
-	preflightWrite,
-	type WriteConfirmFn,
-	type WriteConfirmState,
+	type WriteGrantState,
 } from "./writeConfirm.js";
-import { createConfirmInputs, runCreateFlow } from "./writeCreate.js";
+import { runCreateFlow } from "./writeCreate.js";
 import { runEditMode } from "./writeEdit.js";
 import { runAppendMode } from "./writeAppend.js";
 import { runReplaceSectionMode } from "./writeReplaceSection.js";
@@ -33,7 +37,6 @@ import { runMoveMode } from "./writeMove.js";
 import { resolveDocTarget, type WriteFlowBase } from "./writeFlow.js";
 import {
 	CONTENT_BEARING_MODES,
-	modeConfirmInputs,
 	modeShapeProblem,
 	writeSchema,
 	type WriteParams,
@@ -48,14 +51,14 @@ export interface WriteToolHooks {
 	/** Kernel client built from the freshest settings (revalidate). */
 	getKernel(): WriteKernelClient | undefined;
 	breaker: CircuitBreaker;
-	/** Session-scoped confirm_timeout state — same lifecycle class as the breaker. */
-	confirmState: WriteConfirmState;
+	/** Session-scoped per-KB write-grant state — same lifecycle class as the
+	 * breaker. */
+	grantState: WriteGrantState;
 	/** Session-scoped fresh-content baselines — same
-	 * lifecycle class as the breaker/confirm state. */
+	 * lifecycle class as the breaker/grant state. */
 	baselines: ContentBaselines;
-	/** Injectable seams (unit tests); defaults wire to ctx at execute time. */
-	confirm?: WriteConfirmFn;
-	hasUI?: boolean;
+	/** Injectable file-read seam (unit tests); defaults to the real
+	 * readBodyFile from writeConfirm. */
 	readBodyFile?: (path: string) => Promise<string>;
 }
 
@@ -66,15 +69,16 @@ export interface WriteToolHooks {
 export const WRITE_TOOLSET_ID = "gnubrain.write";
 export const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
 
-const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create — mint a new doc by title (topic), optionally nested under an echoed parentId; edit — updateBlock on a blockId target (the outline carries heading IDs only; non-heading block IDs come from kb_query rows); replace-section — swap a section's body in one call (the enumerated delete set rides the confirmation; the heading ID survives); append — insert new content under a heading (omitted headingId → doc end; the anchor is always tool-derived); delete — a block, or a whole doc with doc: true; move — block-level (toDocId + optional toHeadingId) or doc-level (doc: true; omitted toDocId → notebook root).
+const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create — mint a new doc by title (topic), optionally nested under an echoed parentId; edit — updateBlock on a blockId target (the outline carries heading IDs only; non-heading block IDs come from kb_query rows); replace-section — swap a section's body in one call (the heading ID survives); append — insert new content under a heading (omitted headingId → doc end; the anchor is always tool-derived); delete — a block, or a whole doc with doc: true; move — block-level (toDocId + optional toHeadingId) or doc-level (doc: true; omitted toDocId → notebook root).
 
-Doctrine: mint by title (kernel-normalized); discover by query/search; consume by ID. Targets (docId/blockId/headingId) are agent-supplied echoed values from kb_query/kb_search/kb_read/write results — never invented; anchors are always tool-derived — never agent-supplied. Replace-first: prefer edit/replace-section over append — append is for genuinely new facts. The body travels via markdown (inline) XOR markdownFile (path to a prepared markdown file; read once at call start) on create/edit/replace-section/append; delete/move carry neither. The title guard stops exact/near matches on create and returns the existing docs (docId, outline, spilled markdown) — reconcile by docId, or mint a conscious duplicate with confirmNew: true (you learn this exit from the rejection; do not pass it preemptively). Every write is confirmed with the user unless the session is headless with allowUnattendedWrites: true. The discovery name 'kbs' is read-only; writes always target a real KB by name.`;
+Doctrine: mint by title (kernel-normalized); discover by query/search; consume by ID. Targets (docId/blockId/headingId) are agent-supplied echoed values from kb_query/kb_search/kb_read/write results — never invented; anchors are always tool-derived — never agent-supplied. Replace-first: prefer edit/replace-section over append — append is for genuinely new facts. The body travels via markdown (inline) XOR markdownFile (path to a prepared markdown file; read once at call start) on create/edit/replace-section/append; delete/move carry neither. The title guard stops exact/near matches on create and returns the existing docs (docId, outline, spilled markdown) — reconcile by docId, or mint a conscious duplicate with confirmNew: true (you learn this exit from the rejection; do not pass it preemptively). Writes are approved once per KB per interaction via a dialog that names the KB only (no op detail): Yes grants for the interaction, 'Always this session' for the session, any other answer denies that KB until the interaction ends — do not retry within the interaction. allowUnattendedWrites: true skips the dialog in any session; headless sessions deny writes unless it is set. The discovery name 'kbs' is read-only; writes always target a real KB by name.`;
 
 /** Ordered kernel-free steps of the kb_write entry (mode-target shape →
- * body resolve → confirm preflight), then the probe gate → flow dispatch.
- * Standalone so the ordering pins — file read before the probe gate,
- * preflight before the probe gate, mint before preflight — are a unit
- * under test, not an inline closure. */
+ * body resolve → KB resolution → static drift refusal → grant dialog),
+ * then the probe gate → flow dispatch. Standalone so the ordering pins —
+ * file read before the probe gate, drift refusal before the grant, grant
+ * before the probe gate, mint before the grant — are a unit under test,
+ * not an inline closure. */
 async function prepareWrite(
 	p: WriteParams,
 	hooks: WriteToolHooks,
@@ -83,6 +87,7 @@ async function prepareWrite(
 	names: string[],
 	contact: () => void,
 	ctx: ExtensionContext,
+	signal: AbortSignal | undefined,
 ): Promise<Envelope> {
 	// Uniform mode-target shape check before anything else —
 	// zero kernel calls, and it covers create too (create's
@@ -116,27 +121,37 @@ async function prepareWrite(
 	// KB resolution: local map lookup, zero kernel calls.
 	const name = names[0] as string;
 	const boxId = resolveBox(name, validation);
-	// Confirm key + pre-dialog permission before the probe gate:
-	// both are kernel-free, so a denied write costs zero kernel
-	// round-trips. Key/summary are shared with the flows so the
-	// terminal confirm_timeout key can't drift.
-	let confirmInputs: { key: string; summary: string };
+	// Create's mint-title validation: kernel-free, part of the same shape
+	// leg that must precede the grant dialog.
 	let title = "";
 	if (p.mode === "create") {
 		const mint = validateMintTitle(p.topic ?? "");
 		if (!mint.ok) return refusedEnvelope(mint.message);
 		title = mint.title;
-		confirmInputs = createConfirmInputs(name, title, (body ?? "").length);
-	} else {
-		confirmInputs = modeConfirmInputs(name, p);
 	}
-	const preflight = preflightWrite({
-		hasUI: hooks.hasUI ?? ctx.hasUI,
+	// Static drift refusal before the grant dialog: kernel-free and cached
+	// (probe === "drift" decides from session state alone), so a drifted
+	// session refuses writes with zero kernel calls and zero dialogs. The
+	// probe's live legs (unreachable retry, auth/429 classification) stay
+	// below the dialog — a cached verdict may precede the prompt, a live
+	// one may not.
+	const drift = staticDriftRefusal(validation);
+	if (drift !== null) return drift;
+	// Per-KB per-interaction grant dialog (or its local refusals:
+	// allowUnattendedWrites skip, held grants, terminal denial, headless
+	// default-deny) — kernel-free, before the probe gate. The run's abort
+	// signal rides to select: pi force-resolves the dialog to undefined on
+	// abort, which lands in the single terminal denial.
+	const grant = await grantGate({
+		name,
+		hasUI: ctx.hasUI,
 		allowUnattendedWrites: validation.settings?.allowUnattendedWrites,
-		state: hooks.confirmState,
-		...confirmInputs,
+		writeConfirmTimeout: validation.settings?.writeConfirmTimeout,
+		signal,
+		select: (t, options, opts) => ctx.ui.select(t, options, opts),
+		state: hooks.grantState,
 	});
-	if (!preflight.ok) return preflight.envelope;
+	if (grant !== null) return grant;
 	// Write-path probe gate: a successful probe (or a
 	// per-attempt retry) must precede any write. The probe is
 	// unauthenticated, so it does not fire `contact` — the breaker's
@@ -151,15 +166,9 @@ async function prepareWrite(
 	const flowBase: WriteFlowBase = {
 		sessionId: ctx.sessionManager.getSessionId(),
 		kernel,
-		validation,
 		name,
 		boxId,
 		body: body ?? "",
-		confirm:
-			hooks.confirm ?? ((t, message, opts) => ctx.ui.confirm(t, message, opts)),
-		dialog: preflight.dialog,
-		confirmInputs,
-		confirmState: hooks.confirmState,
 		baselines: hooks.baselines,
 		contact,
 	};
@@ -174,9 +183,8 @@ async function prepareWrite(
 	}
 	// Non-create modes: dispatch. The mode-specific target shape (schema
 	// table) was already validated by modeShapeProblem at the entry, and
-	// pre-dialog permission (headless default-deny + terminal
-	// confirm_timeout) already ran before the probe gate — a denied write
-	// costs zero kernel round-trips.
+	// the per-KB grant already resolved before the probe gate — a denied
+	// write costs zero kernel round-trips.
 	contact();
 	const target = await resolveDocTarget(kernel, boxId, name, p.docId as string);
 	if ("status" in target) return target;
@@ -204,7 +212,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 		label: "KB Write",
 		description: WRITE_DESCRIPTION,
 		parameters: writeSchema,
-		async execute(_id, params, _signal, _onUpdate, ctx: ExtensionContext) {
+		async execute(_id, params, signal, _onUpdate, ctx: ExtensionContext) {
 			const envelope = await runGatedTool(
 				hooks,
 				params.kb,
@@ -218,6 +226,7 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 						names,
 						contact,
 						ctx,
+						signal,
 					),
 			);
 			return textResult(envelope);

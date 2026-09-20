@@ -7,7 +7,6 @@ import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { VERIFY_RETRY_DELAYS_MS } from "./kernel.js";
 import {
 	blockInDoc,
-	confirmGate,
 	echoTail,
 	runMutation,
 	type DocTarget,
@@ -32,8 +31,8 @@ import { assertFreshContent, finishWrite } from "./writeResult.js";
  * window and fails loud — the conservative direction; the envelope sends
  * the agent to re-fetch, where the already-correct content ends the loop.
  * The exact-match exemption only covers the byte-equal case. The check
- * rides blocks.content, the same SQL representation the confirmation display
- * and the fresh-content precondition hash — the walk serves the kernel's
+ * rides blocks.content, the same SQL representation the fresh-content
+ * precondition hashes — the walk serves the kernel's
  * plain form, and comparing against it would false-fail on representation
  * drift. The blocks index converges asynchronously after updateBlock, so
  * the re-reads retry inside a fixed window (the verified-create table). */
@@ -89,18 +88,14 @@ export async function runEditMode(
 	// update of a truly absent id, never this path).
 	const preWrite = { content: row.content ?? "", type: row.type ?? "" };
 	if (row.content !== null) {
-		// Fresh-content baseline: served content where the session has seen
-		// this block, else the block's CURRENT content — displayed in the
-		// confirmation; approval establishes it.
-		const summary =
-			`Edit block ${blockId} in '${doc.title}' (KB ${name}, ${input.body.length} chars)\n\n` +
-			`current content:\n${row.content}`;
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
+		// Fresh-content precondition: a concurrency guard, not a consent
+		// mechanism (the grant resolved at the kb_write entry). Served content
+		// where the session has seen this block, else the block's current
+		// content — establish + check are one step right before the kernel
+		// call (the dialog's display → approval window no longer exists).
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}
-		// Precondition: re-check after approval, before the kernel call.
 		const stale = await assertFreshContent(
 			kernel,
 			baselines,

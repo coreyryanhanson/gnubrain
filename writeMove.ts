@@ -11,7 +11,6 @@ import {
 	type WalkedBlock,
 } from "./walk.js";
 import {
-	confirmGate,
 	echoTail,
 	headingInWalk,
 	resolveDocTarget,
@@ -67,9 +66,6 @@ export async function runMoveMode(
 				`cannot move doc '${doc.title}' (${doc.rootId}) into itself — choose a destination outside the doc's own subtree`,
 			);
 		}
-		const summary = `Move doc '${doc.title}' (${doc.rootId}) to ${destLabel} (KB ${name})`;
-		const gate = await confirmGate(input, summary);
-		if (gate !== null) return gate;
 		// The 7-level depth cap and self-subtree/ancestor moves surface
 		// verbatim (the kernel rejects ancestor moves synchronously —
 		// "Cannot move to this location"; doc-level record, no echo tail,
@@ -172,9 +168,6 @@ export async function runMoveMode(
 			`cannot move block '${blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
 		);
 	}
-	const summary = `Move block ${blockId} ${sameDoc ? "within" : "to"} '${dest.title}' (KB ${name})\n\nanchor: ${anchor.anchor}`;
-	const gate = await confirmGate(input, summary);
-	if (gate !== null) return gate;
 	const moved = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
 		anchor.kind === "append"
 			? // Empty destination: moveBlock's parentID branch prepends, which

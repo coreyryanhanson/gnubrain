@@ -1,19 +1,22 @@
 // writeConfirm tests — file-path input (markdown XOR markdownFile,
-// read-once capture), the write confirmation dialog branches (allow/decline/
-// cancel/timeout/terminal), and the headless default-deny — executed
-// through the registered kb_write tool via the shared harness.
+// read-once capture) and the per-KB per-interaction write grant: the
+// tri-state dialog mapping, terminal non-answers, the dialog lock under
+// concurrency, the native-timeout/abort dial, and the headless default-deny
+// — executed through the registered kb_write tool via the shared harness.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { SessionValidation } from "../../validation.js";
-import { readBodyFile } from "../../writeConfirm.js";
+import {
+	clearInteractionGrants,
+	GRANT_OPTIONS,
+	GRANT_SESSION,
+	GRANT_YES,
+	readBodyFile,
+} from "../../writeConfirm.js";
 import { base, setup, validation } from "./writeHarness.js";
-
-afterEach(() => {
-	vi.useRealTimers();
-});
 
 describe("markdownFile input", () => {
 	it("errors on a missing file with zero kernel calls", async () => {
@@ -112,71 +115,87 @@ describe("markdownFile input", () => {
 	});
 });
 
-describe("write confirmation", () => {
-	it("proceeds when confirmed; explicit decline is recoverable", async () => {
-		const confirm = vi
-			.fn()
-			.mockResolvedValueOnce(false)
-			.mockResolvedValueOnce(true);
-		const { execute } = setup({ confirm, hasUI: true });
-		const declined = await execute({ ...base });
-		expect(declined.status).toBe("refused");
-		expect(confirm).toHaveBeenCalledTimes(1);
-		// The decline answered nothing about the write itself — a re-ask is
-		// legitimate, so the second call runs a fresh dialog.
-		const allowed = await execute({ ...base });
-		expect(allowed.status).toBe("ok");
-		expect(confirm).toHaveBeenCalledTimes(2);
+describe("grant lifecycle", () => {
+	it("Yes grants the turn — one dialog; later writes to the KB in the same interaction flow silently", async () => {
+		const { execute, grantCalls } = setup();
+		const first = await execute({ ...base });
+		expect(first.status).toBe("ok");
+		const second = await execute({ ...base });
+		expect(second.status).toBe("ok");
+		expect(grantCalls).toHaveLength(1);
+		expect(grantCalls[0]?.options).toEqual(GRANT_OPTIONS);
+		expect(grantCalls[0]?.title).toContain("'recipes'");
+		expect(grantCalls[0]?.title).toContain("not a backup");
 	});
 
-	it("cancelled and timed-out confirms both refuse; timeout is terminal", async () => {
-		vi.useFakeTimers();
-		// A dialog the user never answers: resolves false on abort.
-		const confirm = vi.fn(
-			(_t: string, _m: string, opts: { signal?: AbortSignal }) =>
-				new Promise<boolean>((resolve) => {
-					opts.signal?.addEventListener("abort", () => resolve(false));
-				}),
-		);
-		const { execute } = setup({
-			confirm,
-			hasUI: true,
-			validation: validation({ settings: { writeConfirmTimeout: 1 } }),
+	it("Always this session survives the interaction boundary — the settled clear leaves session grants", async () => {
+		const { execute, grantCalls, grantState } = setup({
+			select: async () => GRANT_SESSION,
 		});
-		const promise = execute({ ...base });
-		await vi.advanceTimersByTimeAsync(1500);
-		const timedOut = await promise;
-		expect(timedOut.status).toBe("refused");
-		expect(timedOut.reason).toBe("confirm_timeout");
-		expect(confirm).toHaveBeenCalledTimes(1);
-
-		// Re-request of the same write: immediate terminal refusal, no new dialog.
-		const again = await execute({ ...base });
-		expect(again.status).toBe("refused");
-		expect(again.reason).toBe("confirm_timeout");
-		expect(confirm).toHaveBeenCalledTimes(1);
+		const first = await execute({ ...base });
+		expect(first.status).toBe("ok");
+		clearInteractionGrants(grantState);
+		const second = await execute({ ...base });
+		expect(second.status).toBe("ok");
+		expect(grantCalls).toHaveLength(1);
 	});
 
-	it("an explicit decline does not mark the write terminal", async () => {
-		const confirm = vi.fn().mockResolvedValue(false);
-		const { execute } = setup({ confirm, hasUI: true });
+	it("the turn grant clears at the interaction boundary — the next interaction prompts again", async () => {
+		const { execute, grantCalls, grantState } = setup();
 		await execute({ ...base });
-		await execute({ ...base });
-		// Both calls asked — a decline never arms the terminal refusal.
-		expect(confirm).toHaveBeenCalledTimes(2);
+		clearInteractionGrants(grantState);
+		const next = await execute({ ...base });
+		expect(next.status).toBe("ok");
+		expect(grantCalls).toHaveLength(2);
 	});
 
-	it("a thrown dialog call fails closed — refused, never an ok", async () => {
+	it.each(["No", undefined, "Sure thing"])(
+		"a non-answer (%p) denies the KB terminally — one dialog, reason write_denied, zero kernel calls, no second dialog in the interaction",
+		async (answer) => {
+			const { execute, grantCalls, calls } = setup({
+				select: async () => answer,
+			});
+			const refused = await execute({ ...base });
+			expect(refused.status).toBe("refused");
+			expect(refused.reason).toBe("write_denied");
+			expect(calls).toHaveLength(0);
+			const again = await execute({ ...base });
+			expect(again.status).toBe("refused");
+			expect(again.reason).toBe("write_denied");
+			expect(grantCalls).toHaveLength(1);
+		},
+	);
+
+	it("the terminal denial message is the pinned string — no asserted cause, do-not-retry, next-message recovery", async () => {
+		const { execute } = setup({ select: async () => "No" });
+		const r = await execute({ ...base });
+		expect(r.message).toContain(
+			"no write grant for KB 'recipes' this interaction",
+		);
+		expect(r.message).toContain("declined, dismissed, or timed out");
+		expect(r.message).toContain("Do not retry or rephrase a write to this KB");
+		expect(r.message).toContain("next attempt the write after their reply");
+		expect(r.message).not.toContain("declined by the user");
+	});
+
+	it("a denial is remembered in the turn-denial set — it never outlives the interaction", async () => {
+		const { execute, grantState } = setup({ select: async () => "No" });
+		const refused = await execute({ ...base });
+		expect(refused.reason).toBe("write_denied");
+		expect(grantState.turnDenials.has("recipes")).toBe(true);
+		expect(grantState.sessionGrants.has("recipes")).toBe(false);
+	});
+
+	it("a thrown select fails closed — refused with the (dialog failed: …) suffix, zero kernel calls", async () => {
 		const { execute, calls } = setup({
-			confirm: () => {
+			select: () => {
 				throw new Error("rpc dropped");
 			},
-			hasUI: true,
 		});
 		const r = await execute({ ...base });
 		expect(r.status).toBe("refused");
-		expect(r.message).toContain("dialog failed");
-		expect(r.message).toContain("rpc dropped");
+		expect(r.reason).toBe("write_denied");
+		expect(r.message).toContain("(dialog failed: rpc dropped)");
 		expect(
 			calls.filter((c) =>
 				[
@@ -190,38 +209,125 @@ describe("write confirmation", () => {
 		).toHaveLength(0);
 	});
 
-	it("timeout 0 issues an untimed confirm", async () => {
-		vi.useFakeTimers();
-		let seenOpts: { signal?: AbortSignal } | undefined;
-		const confirm = vi.fn(
-			(_t: string, _m: string, opts: { signal?: AbortSignal }) => {
-				seenOpts = opts;
-				return Promise.resolve(true);
+	it("a thrown select releases the dialog lock — the denied KB stays terminal, a different ungranted KB opens its dialog", async () => {
+		let calls = 0;
+		const { execute, grantCalls } = setup({
+			select: () => {
+				calls++;
+				if (calls === 1) throw new Error("rpc dropped");
+				return Promise.resolve(GRANT_YES);
 			},
-		);
-		const { execute } = setup({
-			confirm,
-			hasUI: true,
+			validation: validation({ scope: ["recipes", "projects"] }),
+		});
+		const refused = await execute({ ...base });
+		expect(refused.reason).toBe("write_denied");
+		const other = await execute({ ...base, kb: "projects" });
+		expect(other.status).toBe("ok");
+		expect(grantCalls).toHaveLength(2);
+		// The denied KB stays terminal for the interaction.
+		const still = await execute({ ...base });
+		expect(still.reason).toBe("write_denied");
+		expect(grantCalls).toHaveLength(2);
+	});
+
+	it("the tool's abort signal rides to select as opts.signal — an abort resolves undefined → terminal denial, lock released", async () => {
+		const controller = new AbortController();
+		const { execute, grantCalls } = setup({
+			validation: validation({ scope: ["recipes", "projects"] }),
+			abortController: controller,
+			select: (title, _o, opts) =>
+				new Promise<string | undefined>((resolve) => {
+					if (title.includes("projects")) {
+						resolve(GRANT_YES);
+						return;
+					}
+					opts?.signal?.addEventListener("abort", () => resolve(undefined));
+				}),
+		});
+		const pending = execute({ ...base });
+		// Let the dialog open, then abort exactly as pi would on run abort:
+		// pi force-resolves the dialog to undefined, which lands in the
+		// single terminal denial.
+		await new Promise((r) => setTimeout(r, 5));
+		controller.abort();
+		const refused = await pending;
+		expect(refused.reason).toBe("write_denied");
+		// The next write to a different KB prompts normally — no wedged lock.
+		const other = await execute({ ...base, kb: "projects" });
+		expect(other.status).toBe("ok");
+		expect(grantCalls).toHaveLength(2);
+	});
+
+	it("writeConfirmTimeout feeds pi's native timeout in ms — seconds × 1000; 0 passes no option", async () => {
+		const timed = setup({
+			validation: validation({ settings: { writeConfirmTimeout: 2 } }),
+		});
+		await timed.execute({ ...base });
+		expect(timed.grantCalls[0]?.opts?.timeout).toBe(2000);
+
+		const untimed = setup({
 			validation: validation({ settings: { writeConfirmTimeout: 0 } }),
 		});
-		const r = await execute({ ...base });
-		expect(r.status).toBe("ok");
-		// No signal — the dialog is untimed and can never fire confirm_timeout.
-		expect(seenOpts?.signal).toBeUndefined();
-		// No timer was armed that could abort anything later.
-		await vi.advanceTimersByTimeAsync(120_000);
-		expect(r.status).toBe("ok");
+		await untimed.execute({ ...base });
+		expect(untimed.grantCalls[0]?.opts?.timeout).toBeUndefined();
+		expect(untimed.grantCalls[0]?.opts?.signal).toBeUndefined();
+
+		const defaulted = setup();
+		await defaulted.execute({ ...base });
+		expect(defaulted.grantCalls[0]?.opts?.timeout).toBe(60_000);
+	});
+
+	it("two concurrent writes to the same ungranted KB open exactly one dialog and share the verdict", async () => {
+		let release: ((v: string) => void) | undefined;
+		const gated = new Promise<string>((resolve) => {
+			release = resolve;
+		});
+		const { execute, grantCalls } = setup({ select: () => gated });
+		const a = execute({ ...base });
+		const b = execute({ ...base });
+		// Both writes settle into the lock (one in the dialog, one queued
+		// behind it) before the verdict releases.
+		await new Promise((r) => setTimeout(r, 5));
+		release?.(GRANT_YES);
+		expect((await a).status).toBe("ok");
+		expect((await b).status).toBe("ok");
+		expect(grantCalls).toHaveLength(1);
+	});
+
+	it("two concurrent writes to different ungranted KBs produce two sequential dialogs, never overlapping", async () => {
+		let inFlight = 0;
+		let maxInFlight = 0;
+		const { execute, grantCalls } = setup({
+			validation: validation({ scope: ["recipes", "projects"] }),
+			select: async () => {
+				inFlight++;
+				maxInFlight = Math.max(maxInFlight, inFlight);
+				await new Promise((r) => setTimeout(r, 1));
+				inFlight--;
+				return GRANT_YES;
+			},
+		});
+		const [a, b] = await Promise.all([
+			execute({ ...base, kb: "recipes" }),
+			execute({ ...base, kb: "projects" }),
+		]);
+		expect(a.status).toBe("ok");
+		expect(b.status).toBe("ok");
+		expect(grantCalls).toHaveLength(2);
+		expect(maxInFlight).toBe(1);
 	});
 });
 
 describe("headless default-deny", () => {
-	it("refuses with no UI and allowUnattendedWrites absent — zero confirm/kernel calls", async () => {
-		const confirm = vi.fn();
-		const { execute, calls } = setup({ confirm, hasUI: false });
+	it("refuses with no UI and allowUnattendedWrites absent — zero select/kernel calls", async () => {
+		const { execute, grantCalls, calls } = setup({ hasUI: false });
 		const r = await execute({ ...base });
 		expect(r.status).toBe("refused");
+		expect(r.message).toContain(
+			"no UI is available to grant the write (headless session)",
+		);
 		expect(r.message).toContain("allowUnattendedWrites");
-		expect(confirm).not.toHaveBeenCalled();
+		expect(grantCalls).toHaveLength(0);
 		expect(calls).toHaveLength(0);
 	});
 
@@ -244,16 +350,78 @@ describe("headless default-deny", () => {
 		expect(r.status).toBe("refused");
 	});
 
-	it("allowUnattendedWrites: true proceeds unattended — dialog skipped", async () => {
-		const confirm = vi.fn();
-		const { execute, calls } = setup({
-			confirm,
+	it("allowUnattendedWrites: true proceeds unattended — dialog skipped in a headless session", async () => {
+		const { execute, grantCalls, calls } = setup({
 			hasUI: false,
 			validation: validation({ settings: { allowUnattendedWrites: true } }),
 		});
 		const r = await execute({ ...base });
 		expect(r.status).toBe("ok");
-		expect(confirm).not.toHaveBeenCalled();
+		expect(grantCalls).toHaveLength(0);
 		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
+	});
+
+	it("allowUnattendedWrites: true skips the dialog in an interactive session too", async () => {
+		const { execute, grantCalls, calls } = setup({
+			hasUI: true,
+			validation: validation({ settings: { allowUnattendedWrites: true } }),
+		});
+		const r = await execute({ ...base });
+		expect(r.status).toBe("ok");
+		expect(grantCalls).toHaveLength(0);
+		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
+	});
+});
+
+describe("static drift refusal precedes the grant dialog", () => {
+	it("a version-drifted session refuses kb_write with zero select calls and zero kernel calls", async () => {
+		const { execute, grantCalls, calls } = setup({
+			validation: validation({ probe: "drift", kernelVersion: "3.8.3" }),
+		});
+		const r = await execute({ ...base });
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("does not match the pinned version");
+		expect(grantCalls).toHaveLength(0);
+		expect(calls).toHaveLength(0);
+	});
+});
+
+describe("kernel-free shape legs precede the grant dialog", () => {
+	it("a mint-title refusal opens no dialog and fires zero kernel calls", async () => {
+		const { execute, grantCalls, calls } = setup();
+		const r = await execute({ ...base, topic: "   " });
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("title is empty after trim");
+		expect(grantCalls).toHaveLength(0);
+		expect(calls).toHaveLength(0);
+	});
+
+	it("a mode-target shape refusal opens no dialog and fires zero kernel calls", async () => {
+		const { execute, grantCalls, calls } = setup();
+		const r = await execute({ ...base, topic: undefined, blockId: undefined });
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain('mode "create" requires topic');
+		expect(grantCalls).toHaveLength(0);
+		expect(calls).toHaveLength(0);
+	});
+});
+
+describe("one answered dialog per interaction, even while the kernel is down", () => {
+	it("a turn grant survives a probe-refused write — an in-turn retry opens no second dialog", async () => {
+		const v = validation({ probe: "unreachable" });
+		const harness = setup({ validation: v });
+		harness.client.getVersion = async () => {
+			throw new Error("connect ECONNREFUSED 127.0.0.1:6806");
+		};
+		const first = await harness.execute({ ...base });
+		expect(first.status).toBe("refused");
+		expect(first.message).toContain("SiYuan unreachable");
+		expect(harness.grantCalls).toHaveLength(1);
+		// The turn grant is already spent on the refused attempt: the retry
+		// rides it — one answered dialog per interaction is the worst case.
+		const retry = await harness.execute({ ...base });
+		expect(retry.status).toBe("refused");
+		expect(retry.message).toContain("SiYuan unreachable");
+		expect(harness.grantCalls).toHaveLength(1);
 	});
 });

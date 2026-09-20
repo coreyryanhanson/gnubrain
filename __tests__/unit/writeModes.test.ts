@@ -180,21 +180,24 @@ describe("edit", () => {
 		).toEqual([{ id: "b-1", data: "corrected body" }]);
 	});
 
-	it("no-baseline fallback: the dialog displays the block's current content; approval establishes the baseline", async () => {
-		const { execute, confirmCalls, calls } = setup({
+	it("no-baseline fallback: current content establishes the baseline at check time; the edit fires once", async () => {
+		// No served hash exists (fresh baselines), so the fallback must
+		// baseline from the block's current content — the re-check then
+		// matches itself and the edit proceeds. Without the fallback the
+		// undefined baseline refuses every matching read.
+		const { execute, calls } = setup({
 			config: {
 				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				baselineRows: [{ id: "b-1", content: "stale paragraph" }],
 			},
 		});
 		const result = await execute(editBase);
 		expect(result.status).toBe("ok");
-		expect(confirmCalls[0]?.message).toContain("current content");
-		expect(confirmCalls[0]?.message).toContain("stale paragraph");
 		// The re-check ran and matched — the write fired exactly once.
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
 	});
 
-	it("post-approval change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
+	it("concurrent change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
 		const harness = await setupWithEditMutation();
 		const result = await harness.execute(editBase);
 		expect(result.status).toBe("refused");
@@ -222,7 +225,7 @@ describe("edit", () => {
 	});
 
 	it("a missing blockId reaches the kernel — its synchronous not-found error surfaces verbatim", async () => {
-		const { execute, calls, confirmCalls } = setup({
+		const { execute, calls } = setup({
 			config: {
 				// blockRows route returns [] — the target is already gone.
 				onUpdate: () => {
@@ -234,12 +237,10 @@ describe("edit", () => {
 		expect(orphan.status).toBe("error");
 		expect(orphan.message).toContain("block [b-ghost] not found");
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
-		// No confirmation: nothing exists to show or protect.
-		expect(confirmCalls).toHaveLength(0);
 	});
 
-	it("a foreign blockId (another doc's block) is refused before any dialog or kernel write", async () => {
-		const { execute, calls, confirmCalls } = setup({
+	it("a foreign blockId (another doc's block) is refused before any kernel write", async () => {
+		const { execute, calls } = setup({
 			config: {
 				blockRows: [
 					{ id: "b-foreign", content: "other doc", root_id: "d-other" },
@@ -251,7 +252,6 @@ describe("edit", () => {
 		expect(result.message).toContain("belongs to another doc");
 		expect(result.message).toContain("d-other");
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
-		expect(confirmCalls).toHaveLength(0);
 	});
 
 	it("verified-edit: an update tx without the target's op fails loud, not ok", async () => {
@@ -368,7 +368,7 @@ describe("edit", () => {
 });
 
 /** edit harness whose kernel-side content flips between the baseline read
- * and the post-approval re-check (the race the precondition exists for). */
+ * and the fresh-content re-check (the race the precondition exists for). */
 async function setupWithEditMutation(): Promise<{
 	execute: WriteExec;
 	calls: { method: string; args: unknown }[];
@@ -377,8 +377,9 @@ async function setupWithEditMutation(): Promise<{
 		config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
 	});
 	// The re-check's content read (baseline SELECT) serves the rewritten
-	// form — the kernel-side change landed after approval (the baseline was
-	// established from the pre-dialog block read; the re-check re-reads NOW).
+	// form — the kernel-side change landed after the grant dialog (the
+	// baseline came from the flow's first block read; the re-check re-reads
+	// NOW, immediately before the apply).
 	const baseQuery = harness.client.query.bind(harness.client);
 	let rechecked = false;
 	harness.client.query = async (stmt: string) => {
@@ -538,8 +539,8 @@ describe("append", () => {
 		});
 	});
 
-	it("a heading inside a tabs container is refused before any dialog — the kernel takes no write-parent there", async () => {
-		const { execute, calls, confirmCalls } = setup({
+	it("a heading inside a tabs container is refused before any kernel write — the kernel takes no write-parent there", async () => {
+		const { execute, calls } = setup({
 			config: {
 				childrenFor: {
 					"d-doc": [walkBlock("tabs1", "tabs", "", "tabs")],
@@ -550,7 +551,6 @@ describe("append", () => {
 		const result = await execute(appendParams("h1"));
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("'tabs' container");
-		expect(confirmCalls).toHaveLength(0);
 		expect(
 			calls.filter(
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",
@@ -584,7 +584,7 @@ describe("append", () => {
 });
 
 // ---------------------------------------------------------------------------
-// replace-section — delete-set display, insert-before-delete, invalidRefs
+// replace-section — insert-before-delete, invalidRefs
 // ---------------------------------------------------------------------------
 
 const REPLACE_DOC = {
@@ -1086,24 +1086,6 @@ describe("replace-section", () => {
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 
-	it("the confirmation displays the delete set: count, content, inbound refs + referring hpaths", async () => {
-		const { execute, confirmCalls } = setup({
-			config: {
-				childrenFor: REPLACE_DOC,
-				refRows: [{ root_id: "d-other" }],
-				hpathRows: [{ hpath: "/Other doc" }],
-			},
-		});
-		await execute(replaceParams);
-		const message = confirmCalls[0]?.message ?? "";
-		expect(message).toContain("delete set: 2 block(s)");
-		expect(message).toContain("old one");
-		expect(message).toContain("old two");
-		expect(message).toContain("inbound refs: 1");
-		expect(message).toContain("/Other doc");
-		expect(message).toContain("the heading ID survives");
-	});
-
 	it("delete-bearing results carry invalidRefs", async () => {
 		const harness = setup({
 			config: {
@@ -1121,6 +1103,12 @@ describe("replace-section", () => {
 		});
 		const result = await harness.execute(replaceParams);
 		expect(result.invalidRefs).toEqual({ count: 1, hpaths: ["/Other doc"] });
+		// The receipt: the section's closure (members + descendants, the
+		// heading survives) with the walk content verbatim.
+		expect(result.deletedBlocks).toEqual([
+			{ id: "p1", content: "old one" },
+			{ id: "p2", content: "old two" },
+		]);
 	});
 
 	it("final section: the sweep runs to end of doc (trailing content deleted), anchor is appendBlock(root)", async () => {
@@ -1158,9 +1146,9 @@ describe("replace-section", () => {
 	});
 
 	it("stale delete-set content → stale_content refusal before any kernel write", async () => {
-		// Read 1 (baseline, pre-dialog) matches the walk; read 2 (the
-		// post-approval re-check) serves the concurrently rewritten p1 — the
-		// kernel-side change landed after approval.
+		// Read 1 (the flow's baseline read) matches the walk; read 2 (the
+		// fresh-content re-check) serves the concurrently rewritten p1 — the
+		// kernel-side change landed after the grant dialog.
 		const harness = await replaceQueryHarness((read) =>
 			read === 1
 				? [
@@ -1184,26 +1172,6 @@ describe("replace-section", () => {
 					c.method === "deleteBlock",
 			),
 		).toHaveLength(0);
-	});
-
-	it("the baseline read precedes the confirmation dialog — approval establishes the displayed content, not a post-approval re-read", async () => {
-		// The establish read (read 1) must run before confirmGate: a change
-		// landing between display and approval must surface as stale_content
-		// on the re-check (read 2), never be laundered into the baseline by a
-		// post-approval read.
-		const harness = setup({ config: { childrenFor: REPLACE_DOC } });
-		const baseQuery = harness.client.query.bind(harness.client);
-		// Record how many confirmations had fired at each baseline read.
-		const timeline: number[] = [];
-		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
-				timeline.push(harness.confirmCalls.length);
-			}
-			return baseQuery(stmt);
-		};
-		await harness.execute(replaceParams);
-		expect(harness.confirmCalls).toHaveLength(1);
-		expect(timeline).toEqual([0, 1]);
 	});
 
 	it("walk/blocks representation drift does not false-positive stale_content", async () => {
@@ -1326,8 +1294,8 @@ describe("replace-section", () => {
 });
 
 /** replace-section harness with scripted `WHERE id IN` content reads —
- * read 1 is the pre-dialog baseline read, read 2 the post-approval
- * re-check (the two representation-matched reads the precondition rides). */
+ * read 1 is the baseline read, read 2 the fresh-content re-check (the two
+ * representation-matched reads the precondition rides). */
 async function replaceQueryHarness(
 	respondIdIn: (read: number) => Record<string, unknown>[],
 	applyInsert?: (children: Record<string, unknown[]>) => void,
@@ -1382,6 +1350,8 @@ describe("delete", () => {
 		});
 		expect(result.status).toBe("ok");
 		expect(result.targetGone).toBe(true);
+		// The receipt rides the pre-delete SQL row: id + content verbatim.
+		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "doomed" }]);
 		expect(
 			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
 		).toEqual(["p1"]);
@@ -1406,6 +1376,8 @@ describe("delete", () => {
 		expect(result.status).toBe("ok");
 		expect(result.targetGone).toBe(false);
 		expect(result.message).toContain("STILL PRESENT");
+		// A no-op deleted nothing — no receipt next to a STILL PRESENT verdict.
+		expect(result.deletedBlocks).toBeUndefined();
 	});
 
 	it("3.8.4 delete of a missing block: synchronous error surfaced verbatim with the fresh outline", async () => {
@@ -1463,7 +1435,7 @@ describe("delete", () => {
 		expect(result.message).not.toContain("unreachable");
 	});
 
-	it("a foreign blockId (another doc's block) is refused before any dialog or kernel delete", async () => {
+	it("a foreign blockId (another doc's block) is refused before any kernel delete", async () => {
 		const { execute, calls } = setup({
 			config: {
 				blockRows: [
@@ -1482,10 +1454,10 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
 
-	it("a pre-deleted target: no dialog, kernel no-op → ok with the absent-target evidence", async () => {
-		// blockRows [] — the target vanished before the call; the delete-set
-		// display and confirmation are skipped (nothing to protect).
-		const { execute, calls, confirmCalls } = setup({
+	it("a pre-deleted target: kernel no-op → ok with the absent-target evidence", async () => {
+		// blockRows [] — the target vanished before the call; nothing to
+		// protect, the kernel no-op still reports ok.
+		const { execute, calls } = setup({
 			config: {
 				childrenFor: { "d-doc": [] },
 			},
@@ -1499,7 +1471,6 @@ describe("delete", () => {
 		expect(result.status).toBe("ok");
 		expect(result.targetGone).toBe(true);
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
-		expect(confirmCalls).toHaveLength(0);
 	});
 
 	it("a kernel rejection mid-verification (SiYuanApiError) → verificationFailed, never a false ok", async () => {
@@ -1530,7 +1501,7 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});
 
-	it("doc-level: removeDocByID fires and the result carries only invalidRefs (pinned shape)", async () => {
+	it("doc-level: removeDocByID fires and the result carries invalidRefs plus the delete receipt (pinned shape)", async () => {
 		const { execute, calls } = setup({
 			config: {
 				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "body")] },
@@ -1549,12 +1520,37 @@ describe("delete", () => {
 			calls.filter((c) => c.method === "removeDocByID").map((c) => c.args),
 		).toEqual(["d-doc"]);
 		expect(Object.keys(result).sort()).toEqual([
+			"deletedBlocks",
 			"invalidRefs",
 			"kb",
 			"message",
 			"status",
 		]);
 		expect(result.invalidRefs).toEqual({ count: 1, hpaths: ["/Other doc"] });
+		// The receipt rides the pre-delete walk set — the doc is gone.
+		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "body" }]);
+	});
+
+	it("a delete receipt over the preview budget spills: the pointer rides, the inline field goes", async () => {
+		const { execute } = setup({
+			config: {
+				childrenFor: {
+					"d-doc": [walkBlock("p1", "p", "", "x".repeat(9000))],
+				},
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			doc: true,
+		});
+		expect(result.status).toBe("ok");
+		expect(result.deletedBlocks).toBeUndefined();
+		expect(result.deletedBlocksPreview).toContain('"id":"p1"');
+		expect(result.deletedBlocksPath).toMatch(
+			/kb_write-deleted-blocks-[0-9a-f]{16}\.jsonl$/,
+		);
 	});
 });
 
@@ -1957,7 +1953,7 @@ describe("block-level move", () => {
 		);
 	});
 
-	it("same-doc move into the block's own subtree is refused pre-dialog, zero kernel moves", async () => {
+	it("same-doc move into the block's own subtree is refused with zero kernel moves", async () => {
 		// c1 is a root-level container holding heading h2, whose section is
 		// [p-kid]. Moving c1 anchored after p-kid re-parents the container
 		// into itself — the ancestor class the kernel mishandles and the
