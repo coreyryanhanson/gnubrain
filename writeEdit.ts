@@ -31,10 +31,11 @@ import { assertFreshContent, finishWrite } from "./writeResult.js";
  * window and fails loud — the conservative direction; the envelope sends
  * the agent to re-fetch, where the already-correct content ends the loop.
  * The exact-match exemption only covers the byte-equal case. The check
- * rides blocks.content, the same SQL representation the fresh-content
- * precondition hashes — the walk serves the kernel's
- * plain form, and comparing against it would false-fail on representation
- * drift. The blocks index converges asynchronously after updateBlock, so
+ * rides blocks.content: the landed predicate asserts the INDEX moved off
+ * the pre-write form (the fresh-content precondition rides the live tree,
+ * whose plain walk-form differs from blocks.content on a drifted kernel —
+ * comparing the index against it would false-fail on representation
+ * drift). The blocks index converges asynchronously after updateBlock, so
  * the re-reads retry inside a fixed window (the verified-create table). */
 async function editRollbackReason(
 	input: WriteFlowInput,

@@ -220,24 +220,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			).id;
 
 			// The concurrent kernel-side change (another session / UI hand-edit).
-			// The blocks index converges the changed content asynchronously —
-			// wait it out before issuing the edit, or the precondition's re-read
-			// sees the old (baseline-matching) content and no refusal fires.
+			// The precondition re-reads the live tree, which updateBlock changed
+			// synchronously — no index-convergence wait is needed (or valid:
+			// polling the index first would converge it and mask the very
+			// index-lag race this pin exists to catch).
 			await client.updateBlock({
 				id: headingId,
 				data: "# Fresh Pin changed",
 			});
-			await pollUntil(
-				"kernel-side heading change reaching the blocks index",
-				async () =>
-					String(
-						(
-							await client.query(
-								"SELECT content FROM blocks WHERE id = " + sqlString(headingId),
-							)
-						)[0]?.content ?? "",
-					).includes("changed"),
-			);
 
 			const w = writeSetup({ baselines });
 			const refused = await w.run({
@@ -251,12 +241,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			expect(refused.reason).toBe("stale_content");
 			expect(String(refused.currentContent)).toContain("changed");
 			expect(refused.outline).toBeDefined();
-			// The kernel content is untouched by the refused write.
-			const rows = await client.query(
-				"SELECT content FROM blocks WHERE id = " + sqlString(headingId),
-			);
-			expect(String(rows[0]!.content)).toContain("changed");
-			expect(String(rows[0]!.content)).not.toContain("attempted body");
+			// The kernel content is untouched by the refused write — read from
+			// the live tree, not the index (the index may still be converging
+			// toward the kernel-side change; the tree is the authority).
+			const postTree = await walkBlockTree(client, docId);
+			const postHeading = postTree.find((b) => b.id === headingId);
+			expect(postHeading !== undefined).toBe(true);
+			expect(String(postHeading!.content)).toContain("changed");
+			expect(String(postHeading!.content)).not.toContain("attempted body");
 
 			// The refusal payload's current content became the baseline — the
 			// re-target applies (the promised non-refuse-loop exit).

@@ -253,8 +253,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 			config.onUpdate?.();
 			// The kernel applies the update and the blocks index converges to
 			// the submitted form (live-pinned) — mirror that in the SQL
-			// fixtures so the edit flow's round-trip verification sees it;
-			// the lagging-window case is pinned by overriding the route.
+			// fixtures so the edit flow's round-trip verification sees it.
 			for (const row of config.blockRows ?? []) {
 				if ((row as { id?: string }).id === params.id) {
 					(row as { content: string }).content = params.data;
