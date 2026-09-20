@@ -19,7 +19,6 @@ import {
 	setup,
 	walkBlock,
 	type StubConfig,
-	type WriteExec,
 } from "./writeHarness.js";
 import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
 import { BLOCK_IN_DOC_STMT_HEAD } from "../../writeFlow.js";
@@ -198,15 +197,24 @@ describe("edit", () => {
 	});
 
 	it("concurrent change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
-		const harness = await setupWithEditMutation();
-		const result = await harness.execute(editBase);
+		// The dialog served "stale paragraph" (the blocks index, baseline
+		// seeded from it at check time); the live tree already holds the
+		// kernel-side rewrite — exactly the index-lag case the tree-riding
+		// precondition exists to catch.
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				childrenFor: {
+					"d-doc": [walkBlock("b-1", "p", "", "concurrently rewritten")],
+				},
+			},
+		});
+		const result = await execute(editBase);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
 		expect(result.currentContent).toBe("concurrently rewritten");
 		expect(result.outline).toBeDefined();
-		expect(
-			harness.calls.filter((c) => c.method === "updateBlock"),
-		).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
 	});
 
 	it("matching re-check proceeds; kernel errors surface verbatim with the fresh outline", async () => {
@@ -350,25 +358,24 @@ describe("edit", () => {
 
 	it("the successful write result refreshes the served-content baseline", async () => {
 		const harness = setup({
-			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				childrenFor: {
+					"d-doc": [walkBlock("b-1", "p", "", "served body")],
+				},
+			},
 		});
 		// A prior serve seeds the baseline, so the pre-write fallback (which
 		// only fills missing entries) cannot mask the refresh: only the
-		// post-write refresh can move the hash off the original serve.
+		// post-write refresh can move the hash off the original serve. The
+		// tree holds the served form so the precondition matches.
 		harness.baselines.remember("b-1", "served body");
 		const baseQuery = harness.client.query.bind(harness.client);
-		let contentReads = 0;
 		harness.client.query = async (stmt: string) => {
 			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
-				contentReads += 1;
-				// Read 1 is the pre-write re-check (must match the baseline);
-				// read 2 is the post-write refresh serving the new stored form.
-				return [
-					{
-						id: "b-1",
-						content: contentReads === 1 ? "served body" : "edited body",
-					},
-				];
+				// The post-write refresh serving the new stored form — the only
+				// baseline-content read left on this path.
+				return [{ id: "b-1", content: "edited body" }];
 			}
 			return baseQuery(stmt);
 		};
@@ -381,32 +388,6 @@ describe("edit", () => {
 		);
 	});
 });
-
-/** edit harness whose kernel-side content flips between the baseline read
- * and the fresh-content re-check (the race the precondition exists for). */
-async function setupWithEditMutation(): Promise<{
-	execute: WriteExec;
-	calls: { method: string; args: unknown }[];
-}> {
-	const harness = setup({
-		config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
-	});
-	// The re-check's content read (baseline SELECT) serves the rewritten
-	// form — the kernel-side change landed after the grant dialog (the
-	// baseline came from the flow's first block read; the re-check re-reads
-	// NOW, immediately before the apply).
-	const baseQuery = harness.client.query.bind(harness.client);
-	let rechecked = false;
-	harness.client.query = async (stmt: string) => {
-		const rows = await baseQuery(stmt);
-		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD) && !rechecked) {
-			rechecked = true;
-			return [{ id: "b-1", content: "concurrently rewritten" }];
-		}
-		return rows;
-	};
-	return harness;
-}
 
 // ---------------------------------------------------------------------------
 // append — tool-derived nextID anchor + walk-set verification
@@ -1161,23 +1142,16 @@ describe("replace-section", () => {
 	});
 
 	it("stale delete-set content → stale_content refusal before any kernel write", async () => {
-		// Read 1 (the flow's baseline read) matches the walk; read 2 (the
-		// fresh-content re-check) serves the concurrently rewritten p1 — the
-		// kernel-side change landed after the grant dialog.
-		const harness = await replaceQueryHarness((read) =>
-			read === 1
-				? [
-						{ id: "p1", content: "old one" },
-						{ id: "p2", content: "old two" },
-					]
-				: [
-						{ id: "p1", content: "concurrently rewritten" },
-						{ id: "p2", content: "old two" },
-					],
-		);
+		// The dialog served an older p1 (baseline seeded from it); the live
+		// tree holds the concurrently rewritten form — the precondition reads
+		// the tree, so the kernel-side change lands even inside the index's
+		// convergence window.
+		const harness = setup({ config: { childrenFor: REPLACE_DOC } });
+		harness.baselines.remember("p1", "an even older one");
 		const result = await harness.execute(replaceParams);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
+		expect(result.currentContent).toBe("old one");
 		expect(
 			harness.calls.filter(
 				(c) =>
@@ -1189,49 +1163,62 @@ describe("replace-section", () => {
 		).toHaveLength(0);
 	});
 
-	it("walk/blocks representation drift does not false-positive stale_content", async () => {
-		// The walk serves a plain form, blocks.content a rendered form —
-		// baseline and re-check both ride blocks.content, so the replace
-		// proceeds (the precondition stays representation-independent).
-		const harness = await replaceQueryHarness(
-			() => [
-				{ id: "p1", content: "old **one**" },
-				{ id: "p2", content: "old **two**" },
-			],
-			(children) => {
-				children["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
+	it("walk/blocks representation drift fails closed — the refusal re-baselines from the tree and the retry proceeds", async () => {
+		// The precondition's NOW rides the live tree; a baseline seeded from
+		// a divergently-rendered blocks.content form must refuse (fail
+		// closed), never launder the mismatch. The refusal re-baselines the
+		// target from the tree, so the retried write compares like-for-like
+		// and applies.
+		const harness = setup({
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
 			},
-		);
-		const result = await harness.execute(replaceParams);
-		expect(result.status).toBe("ok");
-		expect(result.reason).toBeUndefined();
+		});
+		harness.baselines.remember("p1", "old **one**");
+		const refused = await harness.execute(replaceParams);
+		expect(refused.status).toBe("refused");
+		expect(refused.reason).toBe("stale_content");
+		expect(
+			harness.calls.filter(
+				(c) =>
+					c.method === "updateBlock" ||
+					c.method === "insertBlock" ||
+					c.method === "appendBlock" ||
+					c.method === "deleteBlock",
+			),
+		).toHaveLength(0);
+		const retry = await harness.execute(replaceParams);
+		expect(retry.status).toBe("ok");
+		expect(retry.reason).toBeUndefined();
 	});
 
 	it("write results re-seed outline baselines from blocks.content — follow-up writes compare like-for-like", async () => {
-		// The walk serves a plain form ("old two"), blocks.content the
-		// rendered form ("old **two**"). The write result carries the
-		// outline, so its headings re-baseline from blocks.content (the
-		// representation the re-check hashes); a walk-seeded baseline would
-		// refuse the follow-up write as stale_content on pure representation
-		// drift.
-		const harness = await replaceQueryHarness(
-			() => [
-				{ id: "p1", content: "old **one**" },
-				{ id: "p2", content: "old **two**" },
-			],
-			(children) => {
-				children["d-doc"] = [
-					...REPLACE_DOC["d-doc"].slice(0, 3),
-					walkBlock("b-new", "p", "", "rewritten section"),
-					...REPLACE_DOC["d-doc"].slice(3),
-				];
+		// The blocks index and the walk serve the same representation on the
+		// pinned kernel, so a baseline seeded from either source compares
+		// clean against the tree-riding re-check — the replace applies, and
+		// the result-carried outline re-baselines the follow-up edit against
+		// the refreshed form instead of the pre-write serve.
+		const harness = setup({
+			config: {
+				blockRows: [{ id: "p2", content: "old two" }],
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
 			},
-			[{ id: "p2", content: "old **two**" }],
-		);
+		});
+		harness.baselines.remember("p2", "old two");
 		const first = await harness.execute(replaceParams);
 		expect(first.status).toBe("ok");
 		const second = await harness.execute({
@@ -1307,39 +1294,6 @@ describe("replace-section", () => {
 		expect(edit.reason).toBe("stale_content");
 	});
 });
-
-/** replace-section harness with scripted `WHERE id IN` content reads —
- * read 1 is the baseline read, read 2 the fresh-content re-check (the two
- * representation-matched reads the precondition rides). */
-async function replaceQueryHarness(
-	respondIdIn: (read: number) => Record<string, unknown>[],
-	applyInsert?: (children: Record<string, unknown[]>) => void,
-	blockRows: Record<string, unknown>[] = [],
-) {
-	const harness = setup({
-		config: {
-			blockRows,
-			childrenFor: REPLACE_DOC,
-			...(applyInsert
-				? {
-						onInsert: () => {
-							applyInsert(harness.childrenFor);
-						},
-					}
-				: {}),
-		},
-	});
-	const baseQuery = harness.client.query.bind(harness.client);
-	let idInReads = 0;
-	harness.client.query = async (stmt: string) => {
-		if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
-			idInReads += 1;
-			return respondIdIn(idInReads);
-		}
-		return baseQuery(stmt);
-	};
-	return harness;
-}
 
 // ---------------------------------------------------------------------------
 // delete — walk-set evidence + the doc-level pinned shape

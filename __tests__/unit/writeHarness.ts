@@ -260,6 +260,14 @@ export function writeKernelStub(config: StubConfig = {}) {
 					(row as { content: string }).content = params.data;
 				}
 			}
+			// The live tree converges too — the fresh-content precondition and
+			// the write-result outline read it as the source of truth.
+			for (const rows of Object.values(childrenFor)) {
+				const row = (rows as { id?: string; content?: string }[]).find(
+					(r) => r.id === params.id,
+				);
+				if (row !== undefined) row.content = params.data;
+			}
 			return config.updateTx ?? [{ doOperations: [{ id: String(params.id) }] }];
 		},
 		async insertBlock(params) {

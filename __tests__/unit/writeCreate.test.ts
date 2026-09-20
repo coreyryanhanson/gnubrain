@@ -147,8 +147,15 @@ describe("guard-stop staging", () => {
 		const harness = storedContentHarness(stored);
 		const stop = await harness.execute({ ...base, markdown: "the draft body" });
 		expect(stop.status).toBe("duplicate");
-		// The user edits the block after the stop served it.
+		// The user edits the block after the stop served it — the change
+		// lands in the live tree the precondition re-reads (and in the
+		// index's stored map, which now lags behind it).
 		stored.p1 = "concurrently rewritten";
+		const treeP1 = harness.childrenFor["d-doc"]?.find(
+			(r) => (r as { id?: string }).id === "p1",
+		) as { content: string } | undefined;
+		expect(treeP1).toBeDefined();
+		treeP1!.content = "concurrently rewritten";
 		const edit = await harness.execute({
 			kb: "recipes",
 			mode: "edit",

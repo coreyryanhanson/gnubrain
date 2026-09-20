@@ -48,11 +48,11 @@ function baselineContentsStmt(ids: string[]): string {
 	);
 }
 
-/** Establish missing baselines from the same source the re-check reads
- * (blocks.content): baseline and re-check must hash the same
- * representation, or any walk-vs-blocks rendering drift false-positives
- * every precondition as stale_content. Never-served blocks only — the
- * served-preference semantics are unchanged. */
+/** Establish missing baselines from blocks.content: a SQL-seeded baseline
+ * against the live-tree re-check fails closed on any walk-vs-blocks form
+ * drift (the refusal re-baselines and the retry proceeds), and on the
+ * pinned kernel the two forms are identical. Never-served blocks only —
+ * the served-preference semantics are unchanged. */
 export async function establishBaselines(
 	kernel: WriteKernelClient,
 	baselines: ContentBaselines,
@@ -79,52 +79,53 @@ export async function assertFreshContent(
 	kernel: WriteKernelClient,
 	baselines: ContentBaselines,
 	targets: { blockId: string; baseline: string | undefined }[],
-	context: { sessionId: string; docId: string } | undefined,
+	context: { sessionId: string; docId: string },
 ): Promise<Envelope | null> {
 	if (targets.length === 0) return null;
-	// Raw current content — never through the served-preference read: the
-	// precondition compares the kernel's NOW against the baseline.
-	const currentRows = await kernel.query(
-		baselineContentsStmt(targets.map((t) => t.blockId)),
-	);
-	const current = new Map(
-		rowsToBaselineView(currentRows).map((r) => [r.blockId, r.content]),
-	);
+	// NOW rides the live tree, never the SQL index: blocks.content converges
+	// 1.5–3 s after a real edit, so an index re-read is blind to a change
+	// that landed inside the approval-dialog window this precondition exists
+	// for. The kernel renders getChildBlocks content and blocks.content the
+	// same way (live-pinned), so walk-form and SQL-form baselines hash
+	// identically; a kernel that ever split them would fail closed here —
+	// the refusal re-baselines and the retry proceeds.
+	const walk = await walkBlockTree(kernel, context.docId);
+	const current = new Map(walk.map((r) => [r.id, r.content]));
 	for (const target of targets) {
 		const nowContent = current.get(target.blockId);
 		if (nowContent === undefined) continue; // vanished target → delete no-op class
+		if (target.baseline === undefined) {
+			// No-baseline fallback (same doctrine as edit's): content the
+			// session never saw adopts the live form as its baseline — a
+			// change nothing served cannot be refused.
+			baselines.remember(target.blockId, nowContent);
+			continue;
+		}
 		if (contentHash(nowContent) !== target.baseline) {
-			const currentContent = nowContent;
 			// The refusal payload serves the new content — it becomes the
 			// baseline, so the agent's re-read/re-target doesn't refuse-loop.
-			baselines.remember(target.blockId, currentContent);
-			let outline: Record<string, unknown> = {};
-			if (context !== undefined) {
-				// The refusal payload carries the outline's heading content — seed
-				// it like every other serve site, or a follow-up edit on a served
-				// heading takes the no-baseline fallback and launders a concurrent
-				// change past the precondition (the target block itself is already
-				// remembered above).
-				const fresh = renderOutlineFromWalk(
-					context.sessionId,
-					"kb_write",
-					await walkBlockTree(kernel, context.docId),
-					baselines,
-				);
-				outline = {
-					outline: fresh.outline,
-					...(fresh.fullOutlinePath !== undefined
-						? { fullOutlinePath: fresh.fullOutlinePath }
-						: {}),
-				};
-			}
+			baselines.remember(target.blockId, nowContent);
+			// The refusal carries the outline's heading content — seed it like
+			// every other serve site, or a follow-up edit on a served heading
+			// takes the no-baseline fallback and launders a concurrent change
+			// past the precondition (the target block is already remembered
+			// above). The walk is already in hand — no second walk.
+			const fresh = renderOutlineFromWalk(
+				context.sessionId,
+				"kb_write",
+				walk,
+				baselines,
+			);
 			return refusedEnvelope(
 				`the content of block '${target.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
 				{
 					reason: "stale_content",
 					blockId: target.blockId,
-					currentContent,
-					...outline,
+					currentContent: nowContent,
+					outline: fresh.outline,
+					...(fresh.fullOutlinePath !== undefined
+						? { fullOutlinePath: fresh.fullOutlinePath }
+						: {}),
 				},
 			);
 		}
