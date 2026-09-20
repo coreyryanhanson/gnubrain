@@ -21,7 +21,13 @@ import {
 	spillFile,
 	spillFileName,
 } from "../../spill.js";
-import { registerReadToolsAndToolset, READ_TOOLSET_ID } from "../../tools.js";
+import {
+	registerReadToolsAndToolset,
+	registerSearchTool,
+	READ_TOOLSET_ID,
+	runRead,
+	runSearchFanOut,
+} from "../../tools.js";
 import { getRegisteredToolsets } from "pi-tool-masking";
 import {
 	certifySelect,
@@ -366,7 +372,6 @@ describe("search tool", () => {
 		// registered via registerSearchTool — see the toolset test below for the
 		// wiring; here we exercise the fan-out through the same helper the tool
 		// uses.
-		const { runSearchFanOut } = await import("../../tools.js");
 		const { calls, client } = kernelStub();
 		const result = await runSearchFanOut(
 			"sess-1",
@@ -408,7 +413,6 @@ describe("search tool", () => {
 	});
 
 	it("drops out-of-scope rows with post_filtered: true (mocked-only contamination)", async () => {
-		const { runSearchFanOut } = await import("../../tools.js");
 		const { client } = kernelStub();
 		const contaminated: KernelReadClient = {
 			...client,
@@ -447,7 +451,6 @@ describe("search tool", () => {
 	});
 
 	it("a single active KB degenerates to the single-call shape", async () => {
-		const { runSearchFanOut } = await import("../../tools.js");
 		const { calls, client } = kernelStub();
 		await runSearchFanOut(
 			"sess-1",
@@ -461,7 +464,6 @@ describe("search tool", () => {
 	});
 
 	it("aggregates the truncation marker across fan-out calls", async () => {
-		const { runSearchFanOut } = await import("../../tools.js");
 		const saturated: KernelReadClient = {
 			...kernelStub().client,
 			async search(params) {
@@ -497,7 +499,6 @@ describe("search tool", () => {
 
 	it("rejects agent-supplied method/aux params at the tool schema", async () => {
 		const { tools, pi, hooks } = fakePiWithTools();
-		const { registerSearchTool } = await import("../../tools.js");
 		registerSearchTool(pi as never, hooks);
 		const schema = tools.get("kb_search") as unknown as {
 			parameters: Record<string, unknown>;
@@ -619,7 +620,6 @@ describe("query tool", () => {
 
 describe("read tool", () => {
 	it("the ownership query doubles as the scope check — a docId from another KB returns no rows", async () => {
-		const { runRead } = await import("../../tools.js");
 		const { client } = kernelStub();
 		const result = await runRead(
 			"sess-1",
@@ -642,7 +642,6 @@ describe("read tool", () => {
 	});
 
 	it("caps the outline at OUTLINE_HEADINGS inline lines with a spill pointer", async () => {
-		const { runRead } = await import("../../tools.js");
 		const headings = Array.from({ length: 250 }, (_, i) => ({
 			id: `h${i}`,
 			type: "h",
@@ -945,6 +944,59 @@ function ctx2(sessionId: string) {
 	return { sessionManager: { getSessionId: () => sessionId } };
 }
 
+/** Register the read tools on a bare fake pi and return the requested tool
+ * definition plus the baselines instance the tools were wired with. `kernel`
+ * defaults to a query-only stub that records every SQL statement into
+ * `kernelCalls`; tests needing richer kernels pass their own. */
+function registeredReadTool(
+	opts: {
+		validation?: SessionValidation;
+		breaker?: CircuitBreaker;
+		tool?: string;
+		kernel?: unknown;
+	} = {},
+) {
+	const registered: {
+		name: string;
+		description?: string;
+		parameters?: unknown;
+		execute?: (
+			id: string,
+			params: unknown,
+			signal: undefined,
+			onUpdate: undefined,
+			ctx: unknown,
+		) => Promise<{ content: { text: string }[] }>;
+	}[] = [];
+	const pi = {
+		registerTool(tool: never) {
+			registered.push(tool as never);
+		},
+		on: () => {},
+		events: { emit: () => {} },
+	};
+	const kernelCalls: unknown[] = [];
+	const baselines = ContentBaselines.create();
+	registerReadToolsAndToolset(pi as never, {
+		getValidation: () => opts.validation ?? validation(),
+		getKernel: () =>
+			(opts.kernel ?? {
+				baseUrl: "http://127.0.0.1:6806",
+				query: async (stmt: string) => {
+					kernelCalls.push(stmt);
+					return [];
+				},
+			}) as never,
+		breaker: opts.breaker ?? new CircuitBreaker(),
+		baselines,
+	});
+	return {
+		baselines,
+		kernelCalls,
+		tool: registered.find((t) => t.name === (opts.tool ?? "kb_read"))!,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Served-content baselines (fresh-content precondition, read-side serve leg)
 // ---------------------------------------------------------------------------
@@ -953,40 +1005,14 @@ describe("read tools seed served-content baselines", () => {
 	const type = (r: { content: { text: string }[] }) =>
 		JSON.parse(r.content[0]!.text) as Record<string, unknown>;
 
-	function registered(tool: string, kernel: unknown) {
-		const registered: {
-			name: string;
-			execute?: (
-				id: string,
-				params: unknown,
-				signal: undefined,
-				onUpdate: undefined,
-				ctx: unknown,
-			) => Promise<{ content: { text: string }[] }>;
-		}[] = [];
-		const pi = {
-			registerTool(t: never) {
-				registered.push(t as never);
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
-		const baselines = ContentBaselines.create();
-		registerReadToolsAndToolset(pi as never, {
-			getValidation: () => validation(),
-			getKernel: () => kernel as never,
-			breaker: new CircuitBreaker(),
-			baselines,
-		});
-		return { baselines, tool: registered.find((t) => t.name === tool)! };
-	}
-
 	it("kb_read records a baseline for each heading the outline serves", async () => {
-		const { baselines, tool } = registered("kb_read", {
-			...kernelStub().client,
-			async query(_stmt: string) {
-				// ownership route
-				return [{ root_id: "d1" }];
+		const { baselines, tool } = registeredReadTool({
+			kernel: {
+				...kernelStub().client,
+				async query(_stmt: string) {
+					// ownership route
+					return [{ root_id: "d1" }];
+				},
 			},
 		});
 		const envelope = type(
@@ -1008,14 +1034,17 @@ describe("read tools seed served-content baselines", () => {
 	});
 
 	it("kb_query records baselines for rows that selected id + content", async () => {
-		const { baselines, tool } = registered("kb_query", {
-			baseUrl: "http://127.0.0.1:6806",
-			async query(_stmt: string) {
-				return [
-					{ id: "p1", content: "first paragraph", box: "nb-r" },
-					// A content-less projection (refs-table row shape) — skipped.
-					{ id: "r1", def_block_id: "p1", box: "nb-r" },
-				];
+		const { baselines, tool } = registeredReadTool({
+			tool: "kb_query",
+			kernel: {
+				baseUrl: "http://127.0.0.1:6806",
+				async query(_stmt: string) {
+					return [
+						{ id: "p1", content: "first paragraph", box: "nb-r" },
+						// A content-less projection (refs-table row shape) — skipped.
+						{ id: "r1", def_block_id: "p1", box: "nb-r" },
+					];
+				},
 			},
 		});
 		const envelope = type(
@@ -1038,52 +1067,13 @@ describe("read tools seed served-content baselines", () => {
 // ---------------------------------------------------------------------------
 
 describe('kbs discovery (kb_read kb: "kbs")', () => {
-	function registeredReadTool(
-		validation: SessionValidation,
-		kernelCalls: unknown[],
-		opts: { breaker?: CircuitBreaker; tool?: string } = {},
-	) {
-		const registered: {
-			name: string;
-			description?: string;
-			parameters?: unknown;
-			execute?: (
-				id: string,
-				params: unknown,
-				signal: undefined,
-				onUpdate: undefined,
-				ctx: unknown,
-			) => Promise<{ content: { text: string }[] }>;
-		}[] = [];
-		const pi = {
-			registerTool(tool: never) {
-				registered.push(tool as never);
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
-		registerReadToolsAndToolset(pi as never, {
-			getValidation: () => validation,
-			getKernel: () =>
-				({
-					baseUrl: "http://127.0.0.1:6806",
-					query: async (stmt: string) => {
-						kernelCalls.push(stmt);
-						return [];
-					},
-				}) as never,
-			breaker: opts.breaker ?? new CircuitBreaker(),
-			baselines: ContentBaselines.create(),
-		});
-		return registered.find((t) => t.name === (opts.tool ?? "kb_read"))!;
-	}
-
 	const parse = (r: { content: { text: string }[] }) =>
 		JSON.parse(r.content[0]!.text) as Record<string, unknown>;
 
 	it("returns the active set with zero kernel calls", async () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1101,10 +1091,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("empty scope uses EMPTY_SCOPE_MESSAGE verbatim with the same marker shape", async () => {
-		const kernelCalls: unknown[] = [];
 		const v = validation();
 		v.scope = [];
-		const read = registeredReadTool(v, kernelCalls);
+		const { tool: read } = registeredReadTool({ validation: v });
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1121,10 +1110,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("a shape-degraded session still refuses discovery (the short-circuit sits after the shape check)", async () => {
-		const kernelCalls: unknown[] = [];
 		const v = validation();
 		v.shapeErrors = ["kbs must be an array"];
-		const read = registeredReadTool(v, kernelCalls);
+		const { tool: read, kernelCalls } = registeredReadTool({ validation: v });
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1140,12 +1128,14 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("discovery succeeds while the breaker is tripped and leaves it untouched (no recordSuccess)", async () => {
-		const kernelCalls: unknown[] = [];
 		const breaker = new CircuitBreaker();
 		// Trip the breaker.
 		for (let i = 0; i < 3; i++) breaker.recordAuthFailure();
 		expect(breaker.tripped).toBe(true);
-		const read = registeredReadTool(validation(), kernelCalls, { breaker });
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+			breaker,
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1164,10 +1154,12 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("discovery succeeds while a 429 cooldown is armed", async () => {
-		const kernelCalls: unknown[] = [];
 		const breaker = new CircuitBreaker();
 		breaker.recordRateLimit({ retryAfterSeconds: 60 } as never, Date.now());
-		const read = registeredReadTool(validation(), kernelCalls, { breaker });
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+			breaker,
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1182,8 +1174,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("a discovery call carrying a docId still returns the scope branch (docId ignored)", async () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1200,8 +1193,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("valid kb with docId absent is refused with the three-exit guidance inside the gated op", async () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1220,8 +1214,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("empty-string docId counts as missing", async () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read, kernelCalls } = registeredReadTool({
+			validation: validation(),
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1236,8 +1231,9 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("a near-miss kb name (separator guess) gets the unknown-KB rejection, not the guidance", async () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read } = registeredReadTool({
+			validation: validation(),
+		});
 		const envelope = parse(
 			await read.execute!(
 				"id",
@@ -1253,8 +1249,7 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("docId is optional in the kb_read schema", () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read } = registeredReadTool({ validation: validation() });
 		const props = (read.parameters as { properties: Record<string, unknown> })
 			.properties;
 		expect(props["docId"]).toBeDefined();
@@ -1266,14 +1261,13 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 	});
 
 	it("the kb_read description carries the discovery line", () => {
-		const kernelCalls: unknown[] = [];
-		const read = registeredReadTool(validation(), kernelCalls);
+		const { tool: read } = registeredReadTool({ validation: validation() });
 		expect(read.description).toContain('kb: "kbs"');
 	});
 
 	it('kb_query rejects kb: ["kbs"] via the existing unknown-KB rejection (no special case)', async () => {
-		const kernelCalls: unknown[] = [];
-		const query = registeredReadTool(validation(), kernelCalls, {
+		const { tool: query, kernelCalls } = registeredReadTool({
+			validation: validation(),
 			tool: "kb_query",
 		});
 		const envelope = parse(
