@@ -5,6 +5,7 @@
 
 import type { BlockTransaction } from "siyuan-kernel-api";
 import { inlineOrSpill, jsonl } from "./spill.js";
+import type { Envelope } from "./envelope.js";
 import type { KernelProbeClient } from "./validation.js";
 
 /** Structural client subset the read tools need (tests stub it). */
@@ -92,11 +93,33 @@ export function ownershipStmt(boxId: string, docId: string): string {
 }
 
 /**
+ * Shared tail of every row-carrying envelope: within the inline budget the
+ * rows ride the envelope under `key`; overflow spills the full JSONL and the
+ * envelope keeps a newline-boundary preview plus the pointer instead.
+ */
+export function withRowPayload(
+	envelope: Envelope,
+	sessionId: string,
+	tool: string,
+	key: "rows" | "blockIds",
+	kept: Record<string, unknown>[],
+): Envelope {
+	const payload = rowPayload(sessionId, tool, kept);
+	if (payload.rows !== undefined) {
+		envelope[key] = payload.rows;
+	} else {
+		envelope.preview = payload.preview;
+		envelope.fullResultPath = payload.fullResultPath;
+	}
+	return envelope;
+}
+
+/**
  * Row payload: within the inline budget the rows ride the envelope;
  * overflow spills the full JSONL and the envelope keeps a newline-boundary
  * preview plus the pointer.
  */
-export function rowPayload(
+function rowPayload(
 	sessionId: string,
 	tool: string,
 	kept: Record<string, unknown>[],

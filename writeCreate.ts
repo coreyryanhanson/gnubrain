@@ -6,7 +6,7 @@ import { SiYuanApiError } from "siyuan-kernel-api";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile } from "./spill.js";
 import { rememberServedRows } from "./baselines.js";
-import { rowPayload, sqlString, VERIFY_RETRY_DELAYS_MS } from "./kernel.js";
+import { sqlString, VERIFY_RETRY_DELAYS_MS, withRowPayload } from "./kernel.js";
 import {
 	renderOutline,
 	renderOutlineFromWalk,
@@ -106,13 +106,7 @@ async function duplicateStop(
 		// Same serve-time seeding as the outline above — blockIds is the
 		// payload the agent is invited to edit by id.
 		rememberServedRows(input.baselines, blocks);
-		const payload = rowPayload(sessionId, "kb_write-blocks", blocks);
-		if (payload.rows !== undefined) {
-			envelope.blockIds = payload.rows;
-		} else {
-			envelope.preview = payload.preview;
-			envelope.fullResultPath = payload.fullResultPath;
-		}
+		withRowPayload(envelope, sessionId, "kb_write-blocks", "blockIds", blocks);
 	}
 	return stagedEnvelope(envelope, input);
 }

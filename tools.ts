@@ -25,7 +25,11 @@ import {
 	runGatedTool,
 	resolveBox,
 } from "./gate.js";
-import { ownershipStmt, rowPayload, type KernelReadClient } from "./kernel.js";
+import {
+	ownershipStmt,
+	withRowPayload,
+	type KernelReadClient,
+} from "./kernel.js";
 import {
 	inlineOrSpill,
 	jsonl,
@@ -163,14 +167,7 @@ function buildQueryEnvelope(
 		const path = spillFile(sessionId, "kb_query", jsonl(kept), "jsonl");
 		envelope.truncated = `${limit} rows — refine the query; full result in ${path}`;
 	}
-	const payload = rowPayload(sessionId, "kb_query", kept);
-	if (payload.rows !== undefined) {
-		envelope.rows = payload.rows;
-	} else {
-		envelope.preview = payload.preview;
-		envelope.fullResultPath = payload.fullResultPath;
-	}
-	return envelope;
+	return withRowPayload(envelope, sessionId, "kb_query", "rows", kept);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,14 +274,7 @@ export async function runSearchFanOut(
 		const path = spillFile(sessionId, "kb_search", jsonl(merged), "jsonl");
 		envelope.truncated = `${truncatedRows} rows — truncated in ${truncatedKBs} of ${names.length} KBs; full result in ${path}`;
 	}
-	const payload = rowPayload(sessionId, "kb_search", merged);
-	if (payload.rows !== undefined) {
-		envelope.rows = payload.rows;
-	} else {
-		envelope.preview = payload.preview;
-		envelope.fullResultPath = payload.fullResultPath;
-	}
-	return envelope;
+	return withRowPayload(envelope, sessionId, "kb_search", "rows", merged);
 }
 
 // ---------------------------------------------------------------------------
