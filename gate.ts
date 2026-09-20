@@ -68,6 +68,12 @@ export function kbNameProblem(
 	name: string,
 	validation: SessionValidation,
 ): string | undefined {
+	// A validation skipped under an armed 429 cooldown has an empty valid set
+	// by design — the KB is neither stale nor encrypted, so naming the skip is
+	// the only honest refusal. /kb re-validates once the cooldown expires.
+	if (validation.skippedDueToRateLimit === true) {
+		return `session validation was skipped while the kernel was rate-limited — run /kb to re-validate '${name}'`;
+	}
 	if (validation.validKBs.has(name)) return undefined;
 	if (!validation.settings?.kbs.some((entry) => entry.name === name)) {
 		return `unknown KB '${name}'. Active: ${activeList(validation)}`;

@@ -37,6 +37,27 @@ function kernelStub(getVersion: () => Promise<string> = async () => "3.8.4") {
 describe("kb param contract", () => {
 	const v = validation();
 
+	it("a rate-limit-skipped validation refuses with the skip named, not stale-or-encrypted", () => {
+		// rateLimitedValidation shape: settings parsed, empty valid set, the
+		// skip flag set — the refusal must not misreport the KB as stale.
+		const skipped = validation({
+			validKBs: [],
+			scope: [],
+		});
+		skipped.skippedDueToRateLimit = true;
+		const r = resolveKbParam("recipes", "single", skipped);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.message).toContain("validation was skipped");
+			expect(r.message).not.toContain("stale or encrypted");
+		}
+		// Without the flag the same shape still refuses, with the stale branch.
+		const plain = validation({ validKBs: [], scope: [] });
+		const stale = resolveKbParam("recipes", "single", plain);
+		expect(stale.ok).toBe(false);
+		if (!stale.ok) expect(stale.message).toContain("stale or encrypted");
+	});
+
 	it("requires the kb param", () => {
 		const result = resolveKbParam(undefined, "single", v);
 		expect(result.ok).toBe(false);

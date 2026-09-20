@@ -354,9 +354,19 @@ describe("index wiring", () => {
 			expect(cooled.status).toBe("refused");
 			expect(cooled.message).toContain("rate-limit lockout");
 
-			// After the lock expires, /kb re-validates for real.
+			// After the lock expires, calls refuse with the rate-limit skip named
+			// — never "stale or encrypted" — until /kb re-validates for real.
 			locked = false;
 			await vi.advanceTimersByTimeAsync(61_000);
+			const afterLock = await runToolDetails(
+				"kb_query",
+				{ kb: ["dev"], sql: "SELECT id FROM blocks" },
+				ctx,
+			);
+			expect(afterLock.status).toBe("refused");
+			expect(afterLock.message).toContain("validation was skipped");
+			expect(afterLock.message).not.toContain("stale or encrypted");
+
 			await runCommand("all on", ctx);
 			expect(versionCalls).toBe(2);
 			expect(d.notebooks()).toBe(2);

@@ -180,18 +180,12 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			projectSettingsPath(ctx.cwd),
 		);
 		// An armed 429 cooldown means the kernel refuses us per-IP and any call
-		// extends the lock — including these two probes. Skip them: the session
-		// comes up rate-limited, tools refuse locally via the gate, and /kb after
-		// the cooldown re-validates for real. In-process only: restarting pi (or
+		// extends the lock — including the validation probes. The client is
+		// still built first (a pure constructor, no I/O): the gate refuses
+		// locally while the lock is armed, and after it expires calls get an
+		// honest "validation skipped" refusal instead of "stale or encrypted"
+		// until /kb re-validates for real. In-process only: restarting pi (or
 		// the kernel) starts fresh by design — do not persist the deadline.
-		if (breaker.inCooldown()) {
-			return rateLimitedValidation({
-				loaded,
-				...(deps.pinnedVersion !== undefined && {
-					pinnedVersion: deps.pinnedVersion,
-				}),
-			});
-		}
 		const kernel =
 			loaded.global.ok && loaded.global.settings
 				? createClient(
@@ -200,6 +194,15 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 					)
 				: undefined;
 		if (kernel !== undefined) kernelClient = kernel;
+		// Only the probes are skipped — the client above is already built.
+		if (breaker.inCooldown()) {
+			return rateLimitedValidation({
+				loaded,
+				...(deps.pinnedVersion !== undefined && {
+					pinnedVersion: deps.pinnedVersion,
+				}),
+			});
+		}
 		// Branch-scoped read: only the active branch's scope snapshot counts —
 		// a scope toggle on an abandoned branch must not leak back in.
 		const persisted = latestPersistedScope(ctx.sessionManager.getBranch());

@@ -44,6 +44,9 @@ export interface SessionValidation {
 	/** The effective version pin (per-test override or module constant) —
 	 * both gates resolve drift against this, never the module constant. */
 	pinnedVersion?: string;
+	/** Set when validation was skipped because the 429 cooldown was armed —
+	 * kb-name refusals must name the skip, not "stale or encrypted". */
+	skippedDueToRateLimit?: boolean;
 }
 
 /** scope persistence payload — a complete snapshot of the active set. */
@@ -143,6 +146,7 @@ export function rateLimitedValidation(input: {
 		],
 		authFailed: false,
 		lsNotebooksOk: false,
+		skippedDueToRateLimit: true,
 	};
 }
 
