@@ -1,14 +1,14 @@
 # DESIGN — gnubrain (slim successor to DESIGN_v2.md)
 
-Status: Milestones 0–3 complete. The full design doc (v2, with decision records
-R1–R6, milestone history, and M3 deviation ledger) is archived on the
-`design-v2-archive` branch — consult it for rationale; this file is the
-operating record. Milestone 4 (automated recall harness) was **dropped**:
-tool-level behavior is fully pinned by the integration suite; model-in-the-loop
-recall behavior is untested by construction (accepted concession, see below).
-The full v2 doc (decision records R1–R6, milestone history, M3 deviation
-ledger) stays recoverable from git history — branch or tag `design-v2-archive`
-before removing `DESIGN_v2.md` from the working tree.
+Status: Milestones 0–3 complete. Milestone 4 (automated recall harness) was
+**dropped**: tool-level behavior is pinned by the unit + integration suites
+(live arms opt-in; two rollback arms are unit-pinned by necessity — see
+`__tests__/integration/writePins.live.test.ts`); model-in-the-loop recall
+behavior is untested by construction (accepted concession, see below).
+The full design doc (v2, with decision records R1–R6, milestone history, and
+M3 deviation ledger) is the rationale record: it is currently still at
+`DESIGN_v2.md` in the working tree; before deleting it, archive it as branch
+`design-v2-archive` (not yet created). Until then, read the file itself.
 
 **Where truth lives:** behavior is pinned by tests — the test files
 (`__tests__/`) are the authoritative case inventory. Code comments and test
@@ -33,8 +33,9 @@ load-bearing — throttle-last).
 4. **Upgrade checklist.** On any SiYuan upgrade: run the full integration suite
    against the new kernel *before* re-pinning — a red suite means re-verify the
    affected behaviors, never a version-number bump. Same discipline for
-   `node-sql-parser` (exact-pinned; re-run the parser certification matrix) and
-   `pi-tool-masking`.
+   `node-sql-parser` (exact-pinned; re-run the parser certification matrix).
+   `pi-tool-masking` is exact-pinned too; its toolset/toggle cases are its
+   re-verification.
 5. **Query certification is parser-based.** Single-table SELECT over
    `blocks`/`refs` only; scoping rides the extension-owned `box IN (...)`
    spliced into the AST and re-parsed for verification. DML is rejected at the
@@ -82,7 +83,8 @@ load-bearing — throttle-last).
   migrations.
 - **Embedding-assisted dedup → primary identity mechanism.** The title guard
   (exact + space/hyphen/underscore legs) stays as the zero-dep fallback
-  (`near_matches` → `degraded_dedup`).
+  (surfacing through the existing `near_matches` status; `degraded_dedup` is a
+  planned label, not an envelope status).
 - Smaller parked items (upgrade paths from the archived doc's ceiling table):
   spill-file cleanup pass if /tmp usage ever matters; named KB groups for
   subset scope switching; per-mode `kb_write` allowlist; cross-KB moves;
@@ -96,12 +98,16 @@ load-bearing — throttle-last).
   X) has manual click-through as its only available check.
 - **Soft scope.** See invariant 7. Token in settings.json is readable by the
   agent's own tools — accepted deployment posture.
+- **Deployment posture** (not re-derivable from this repo; archived v2 §8 has
+  the long form): non-empty SiYuan access auth code — never
+  `ACCESS_AUTH_CODE_BYPASS=true` (grants anonymous admin); kernel port bound to
+  the VM-facing interface only, not `0.0.0.0`; host firewall is the network
+  boundary; one kernel per workspace (dual writers = torn writes).
 
 ## Reference
 
-- `siyuan-kernel-api` repo: client design constraints live in its AGENTS.md
-  (policy-free surface, transport contract, error classes).
-- Archived design rationale: the full `DESIGN_v2.md` (recoverable from git
-  history once removed from the working tree — see header), incl.
-  kernel-behavior findings worth re-reading before sidecar work (derived-index
-  convergence timings, 429 lock-extension behavior).
+- `siyuan-kernel-api`: client design constraints (policy-free surface,
+  transport contract, error classes) live in the client repo's README.md +
+  AGENTS.md — the published npm package ships the README only.
+- Archived design rationale: the full `DESIGN_v2.md`, still in the working
+  tree — archive as `design-v2-archive` before deleting (see header).
