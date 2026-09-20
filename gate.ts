@@ -340,8 +340,15 @@ export async function runKbCall(
 		return errorEnvelope(err instanceof Error ? err.message : String(err));
 	}
 	// A call that actually reached the kernel resets the consecutive count —
-	// but never the 429 cooldown, which self-heals on expiry alone.
+	// but never the 429 cooldown, which self-heals on expiry alone. This
+	// includes a malformed result: the transport succeeded, so contact is real.
 	if (kernelContact) input.breaker.recordSuccess();
+	// An op that resolves to a non-envelope (a flow's union discrimination
+	// letting a `null` transport result through) must render as an error
+	// envelope, never a TypeError out of execute.
+	if (result === null || typeof result !== "object") {
+		return errorEnvelope("internal: kb op returned no envelope");
+	}
 	// Reads warn and proceed on version drift: the result already
 	// succeeded, so the drift rides the envelope as a payload field. Writes
 	// are separately refused in gateWriteAttempt; the kbs discovery form

@@ -239,6 +239,25 @@ describe("runKbCall version-drift warning", () => {
 	});
 });
 
+describe("runKbCall non-envelope op results", () => {
+	it("renders a null op result as an error envelope instead of throwing", async () => {
+		const envelope = await runKbCall(
+			{
+				validation: validation(),
+				breaker: new CircuitBreaker(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			// A flow's union discrimination can hand a `null` transport result
+			// back typed as an Envelope — the gate must render it, not throw.
+			async () => null as unknown as import("../../envelope.js").Envelope,
+		);
+		expect(envelope.status).toBe("error");
+		expect(envelope.message).toContain("no envelope");
+	});
+});
+
 describe("runKbCall error classification", () => {
 	it("feeds the breaker on auth failures and refuses locally once tripped", async () => {
 		const breaker = new CircuitBreaker();
