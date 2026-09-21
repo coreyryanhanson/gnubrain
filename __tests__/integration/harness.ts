@@ -1,16 +1,16 @@
-// Sprint 5b integration-suite harness (runs against the live pinned kernel,
+// Integration-suite harness (runs against the live pinned kernel,
 // opt-in with SIYUAN_INTEGRATION=1, never in CI). Three pieces:
 //
 // 1. Fixture→settings wiring — two disposable notebooks minted per run,
-//    injected in memory through S1's settings-load seam (loadGnubrainSettings
+//    injected in memory through the settings-load seam (loadGnubrainSettings
 //    with an in-memory readFile; the user's settings files are never read or
-//    written). Item 11's temp-HOME seeding serializes the same object via
+//    written). The temp-HOME seeding serializes the same object via
 //    buildFixtureSettings.
 // 2. Setup pins — kernel version exactly equals the pin (accidental upgrade →
 //    red suite), teardown asserts the notebook count back to baseline
 //    (zero strays).
 // 3. Test-only raw-kernel-call helper — raw DELETE and bogus-token arming
-//    deliberately stay outside the typed client (§10);
+//    deliberately stay outside the typed client;
 //    every notebook/doc lifecycle call rides the typed client.
 
 import { spawnSync } from "node:child_process";
@@ -269,7 +269,7 @@ export function scopeEntries(events: HeadlessEvent[]): unknown[] {
 
 export interface IntegrationFixtures {
 	client: SiYuanKernelClient;
-	/** The fixture settings object — item 11 seeds a temp HOME with it. */
+	/** The fixture settings object — the headless tests seed a temp HOME with it. */
 	settings: GnubrainSettings;
 	/** Full startup validation over the real kernel, scope = both fixtures. */
 	validation: SessionValidation;
@@ -280,7 +280,7 @@ export interface IntegrationFixtures {
 }
 
 /** The fixture settings shape, shared by every consumer that needs it: the
- * in-memory settings seam (setupFixtures) and item 11's temp-HOME seeding
+ * in-memory settings seam (setupFixtures) and the temp-HOME seeding
  * (separate `pi -p` process — serialize this same object into
  * <tempHome>/.pi/agent/settings.json). */
 export function buildFixtureSettings(
@@ -315,7 +315,7 @@ export async function setupFixtures(): Promise<IntegrationFixtures> {
 
 	const baselineCount = (await client.listNotebooks()).notebooks.length;
 
-	// Two notebooks, not one (§10): the multi-KB pins need a deterministic
+	// Two notebooks, not one: the multi-KB pins need a deterministic
 	// two-KB workspace, not fixture + live notebooks.
 	const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
 	const fixtureA = await client.createNotebook(`gnubrain-it-a-${stamp}`);
@@ -325,7 +325,7 @@ export async function setupFixtures(): Promise<IntegrationFixtures> {
 
 	const settings = buildFixtureSettings(fixtureA.id, fixtureB.id);
 
-	// Item 11's temp-HOME seeding serializes this same object (buildFixtureSettings).
+	// The temp-HOME seeding serializes this same object (buildFixtureSettings).
 	const settingsText = JSON.stringify({ gnubrain: settings });
 	const loaded = await loadGnubrainSettings(
 		async () => settingsText,

@@ -1,8 +1,8 @@
-// Live pins L1–L6: the write-tool path
-// against the pinned kernel. Disposable fixture notebook, teardown via
-// removeNotebook; opt-in with SIYUAN_INTEGRATION=1, never in CI.
+// Live write-tool pins against the pinned kernel. Disposable fixture
+// notebook, teardown via removeNotebook; opt-in with SIYUAN_INTEGRATION=1,
+// never in CI.
 //
-// L3's refused kinds (a heading under `tabs` or an unnamed container) have no
+// The refused kinds (a heading under `tabs` or an unnamed container) have no
 // markdown-mintable fixture — tabs are a UI construct and a footnote
 // definition cannot carry a heading — so their refusal is pinned by the
 // headingInWalk unit cases; the live pin covers the acceptance side.
@@ -30,7 +30,7 @@ import {
 	TOKEN,
 } from "./harness.js";
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 	// Built lazily: a describe body runs during collection even when the suite
 	// is skipped, and BASE_URL/TOKEN are only present in a live run.
 	let client: SiYuanKernelClient;
@@ -59,7 +59,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	 * registration with hooks wired to the live client. `intercept` runs
 	 * once, before the first mutation call passes through — the neutral
 	 * seam for injecting a concurrent edit between the walk and the insert
-	 * (L6), independent of dialog placement. */
+	 * (the concurrent-delete pin), independent of dialog placement. */
 	function liveSetup(intercept?: () => Promise<void>) {
 		run += 1;
 		const validation: SessionValidation = {
@@ -141,9 +141,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 		return h!;
 	};
 
-	it("L1: sectionOf().members equals getChildBlocks for every heading, flat and container-nested (the membership oracle)", async () => {
+	it("sectionOf().members equals getChildBlocks for every heading, flat and container-nested (the membership oracle)", async () => {
 		const docId = await mintDoc(
-			"L1 membership oracle",
+			"membership oracle",
 			[
 				"# Alpha",
 				"",
@@ -180,11 +180,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	});
 
 	it(
-		"L2: append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
+		"append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
-				"L2 callout nested",
+				"callout nested",
 				[
 					"# Top",
 					"",
@@ -242,11 +242,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L2: a move into a list-item-nested section lands inside the item; the sibling item survives",
+		"a move into a list-item-nested section lands inside the item; the sibling item survives",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
-				"L2 list item nested",
+				"list item nested",
 				[
 					"# Top",
 					"",
@@ -294,11 +294,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L3: appendBlock accepts every markdown-mintable container kind as a write-parent",
+		"appendBlock accepts every markdown-mintable container kind as a write-parent",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
-				"L3 container acceptance",
+				"container acceptance",
 				[
 					"# Doc",
 					"",
@@ -352,12 +352,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L4: a doc-end move anchors previousID after the last root-level block; a blank destination anchors after its lone empty paragraph",
+		"a doc-end move anchors previousID after the last root-level block; a blank destination anchors after its lone empty paragraph",
 		async () => {
 			const execute = liveSetup();
-			const srcId = await mintDoc("L4 source", "# Src\n\nsrc paragraph\n");
+			const srcId = await mintDoc("source", "# Src\n\nsrc paragraph\n");
 			const destId = await mintDoc(
-				"L4 populated destination",
+				"populated destination",
 				"# Dest\n\ndest one\n\ndest two\n",
 			);
 			const srcWalk = await walkBlockTree(client, srcId);
@@ -383,7 +383,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			// a blank destination; the empty-walk leg is unit-pinned).
 			const emptyId = await client.createDocWithMarkdown({
 				notebook: notebookId,
-				path: `/L4 blank destination-${run}`,
+				path: `/blank destination-${run}`,
 				markdown: "",
 			});
 			await awaitIndexed(emptyId);
@@ -411,13 +411,13 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L5: a nextID-anchored append and an empty-section move land identically folded and unfolded",
+		"a nextID-anchored append and an empty-section move land identically folded and unfolded",
 		async () => {
 			const execute = liveSetup();
 			// nextID-anchored append: fold the target heading (it has children —
 			// the kernel's fold redirect is reachable), the landing is unchanged.
 			const docId = await mintDoc(
-				"L5 fold independence",
+				"fold independence",
 				["# A", "", "p1", "", "## Sub", "", "p2", "", "# B", "", "pB", ""].join(
 					"\n",
 				),
@@ -477,7 +477,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 				const w = await walkBlockTree(client, id);
 				return { docId: id, empty: heading(w, "Empty target").id };
 			};
-			const unfolded = await mkEmptyCallout("L5 move unfolded");
+			const unfolded = await mkEmptyCallout("move unfolded");
 			const filler1 = await client.appendBlock({
 				data: "filler one",
 				parentID: unfolded.docId,
@@ -492,7 +492,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 				toHeadingId: unfolded.empty,
 			});
 			expect(move1.status).toBe("ok");
-			const folded = await mkEmptyCallout("L5 move folded");
+			const folded = await mkEmptyCallout("move folded");
 			await setFold(folded.empty, true);
 			const filler2 = await client.appendBlock({
 				data: "filler two",
@@ -523,12 +523,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L6: deleting the boundary heading between walk and insert surfaces the kernel error with the fresh outline",
+		"deleting the boundary heading between walk and insert surfaces the kernel error with the fresh outline",
 		async () => {
-			const docId = await mintDoc(
-				"L6 stale anchor",
-				"# A\n\np1\n\n# B\n\npB\n",
-			);
+			const docId = await mintDoc("stale anchor", "# A\n\np1\n\n# B\n\npB\n");
 			const walk = await walkBlockTree(client, docId);
 			const a = heading(walk, "A");
 			const b = heading(walk, "B");
@@ -558,14 +555,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 			// The refusal rule over a real walk (the unit suite pins both refused
 			// kinds against hand-built walks; tabs/footnote fixtures cannot be
 			// minted from markdown).
-			const docId = await mintDoc(
-				"L3 refusal walk",
-				"# A\n\np1\n\n# B\n\npB\n",
-			);
+			const docId = await mintDoc("refusal walk", "# A\n\np1\n\n# B\n\npB\n");
 			const walk = await walkBlockTree(client, docId);
 			const doc: DocTarget = {
 				rootId: docId,
-				title: "L3 refusal walk",
+				title: "refusal walk",
 			};
 			for (const h of walk.filter((b) => b.type === "h")) {
 				expect(headingInWalk(walk, doc, h.id)).toBe(h);
@@ -575,11 +569,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins (L1–L7)", () =>
 	);
 
 	it(
-		"L7: replace-section sweeps a member heading (a deeper heading belongs to the section), the boundary heading survives",
+		"replace-section sweeps a member heading (a deeper heading belongs to the section), the boundary heading survives",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
-				"L7 deeper heading member",
+				"deeper heading member",
 				[
 					"# A",
 					"",

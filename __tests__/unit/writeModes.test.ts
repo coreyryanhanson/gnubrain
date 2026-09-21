@@ -2073,8 +2073,8 @@ describe("block-level move", () => {
 		expect(result.outline).toBeDefined();
 		expect(result.title).toBe("Docker Networking");
 		// The doc-level echo's hpath is export-sourced (the live kernel rebuilds
-		// the blocks.hpath column asynchronously after moveDocsByID — M3 plan
-		// deviation 8); the stub's exportMarkdown returns "/doc".
+		// the blocks.hpath column asynchronously after moveDocsByID); the stub's
+		// exportMarkdown returns "/doc".
 		expect(result.hpath).toBe("/doc");
 		expect(result.anchor).toBeUndefined();
 		expect(result.newBlockId).toBeUndefined();

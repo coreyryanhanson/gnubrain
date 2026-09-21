@@ -1,4 +1,4 @@
-// Harness self-check: proves the 5b-a wiring (fixture minting, in-memory
+// Harness self-check: proves the fixture wiring (fixture minting, in-memory
 // settings injection, version pin, teardown assertion) against the live
 // kernel before any case rides on it. Opt-in with SIYUAN_INTEGRATION=1.
 
@@ -18,7 +18,7 @@ import {
 	type IntegrationFixtures,
 } from "./harness.js";
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("5b-a harness self-check", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("harness self-check", () => {
 	let fixtures: IntegrationFixtures;
 
 	beforeAll(async () => {

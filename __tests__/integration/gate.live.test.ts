@@ -1,13 +1,13 @@
-// Sprint 6 gate — the scripted live checks for items 1, 2, 3 and 5 (the
-// manual residuals — TTY write-grant, status-slot visibility — stay with
-// the operator by design, §10). Two layers:
+// Scripted live checks for tool masking, scope persistence and the auth
+// breaker (the manual residuals — TTY write-grant, status-slot visibility —
+// stay with the operator by design). Two layers:
 //
-// - Items 1–3 run real `pi -p` child sessions under a temp HOME seeded with
-//   the fixture settings (the item 11 pattern): a probe extension dumps
+// - Masking/scope cases run real `pi -p` child sessions under a temp HOME
+//   seeded with the fixture settings: a probe extension dumps
 //   pi.getAllTools()/getActiveTools() to a file so the tool-registration and
 //   masking asserts are mechanical, never eyeballed; seeded session files
 //   (harness seedSession) put the resumed child through the real restore path.
-// - Item 5 (auth breaker) runs in-process over the live kernel through the
+// - The auth-breaker case runs in-process over the live kernel through the
 //   register(pi, deps) seam, with a token-rotating client wrapper so the
 //   per-call 401s are genuine kernel rejections (the field scenario the
 //   breaker exists for: a token that validates at startup but is rejected
@@ -77,11 +77,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	}, LIVE_TIMEOUT);
 
 	// ---------------------------------------------------------------
-	// Item 1 — tools callable from pi: registered, active, unshadowed;
+	// Tools callable from pi: registered, active, unshadowed;
 	// /kb tools masking live; toolset state survives session resume.
 	// ---------------------------------------------------------------
 	it(
-		"item 1: all four kb tools + unshadowed builtins; /kb tools read masks kb_write; state survives resume",
+		"all four kb tools + unshadowed builtins; /kb tools read masks kb_write; state survives resume",
 		{ timeout: 480_000 },
 		() => {
 			const home = mkdtempSync(`${tmpdir()}/gnubrain-gate-home-`);
@@ -172,9 +172,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	);
 
 	// ---------------------------------------------------------------
-	// Item 2 — scope survives session restart: the resumed session
+	// Scope survives session restart: the resumed session
 	// resolves scope from the persisted kb-scope entry (seeded in the
-	// exact shape appendEntry writes — item 11's stream evidence — and
+	// exact shape appendEntry writes — the headless test's stream evidence — and
 	// restored by the real resume machinery). Discriminator: the
 	// idempotent-toggle skip. Toggling an already-off KB must NOT append
 	// a snapshot — which only happens if the resumed session read the
@@ -182,7 +182,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	// see the KB as active and append a fresh snapshot.
 	// ---------------------------------------------------------------
 	it(
-		"item 2: scope survives session restart (resume reads the persisted entry)",
+		"scope survives session restart (resume reads the persisted entry)",
 		{ timeout: 300_000 },
 		() => {
 			const home = mkdtempSync(`${tmpdir()}/gnubrain-gate-home-`);
@@ -224,12 +224,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	);
 
 	// ---------------------------------------------------------------
-	// Item 3 — /kb <name> on and /kb all off land mid-session: several
+	// /kb <name> on and /kb all off land mid-session: several
 	// command dispatches inside ONE pi -p process (same live session, no
 	// restart between), each appending its full post-toggle snapshot.
 	// ---------------------------------------------------------------
 	it(
-		"item 3: /kb <name> on and /kb all off land mid-session",
+		"/kb <name> on and /kb all off land mid-session",
 		{ timeout: 300_000 },
 		() => {
 			const home = mkdtempSync(`${tmpdir()}/gnubrain-gate-home-`);
@@ -257,15 +257,15 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 	);
 
 	// ---------------------------------------------------------------
-	// Item 5 — auth breaker, live: a token that validates at startup but
+	// Auth breaker, live: a token that validates at startup but
 	// is rejected per-call (rotation = the field scenario) feeds the
 	// breaker; the tripping read returns refused with the breaker message
-	// (Sprint 1 semantics: the 3rd consecutive failure returns the local
+	// (the 3rd consecutive failure returns the local
 	// refusal, not the auth error), post-trip reads refuse locally with
 	// ZERO kernel round-trips, and /kb recovery with the corrected token
 	// restores reads immediately.
 	// ---------------------------------------------------------------
-	it("item 5: auth breaker trips on live 401s, refuses locally, recovers via /kb", async () => {
+	it("auth breaker trips on live 401s, refuses locally, recovers via /kb", async () => {
 		const { pi, fire, runCommand, runTool } = createFakePi();
 		const docId = await mintDoc(
 			fixtures.client,

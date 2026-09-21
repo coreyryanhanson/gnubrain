@@ -1,8 +1,7 @@
-// Sprint 5b-b: the read-side integration cases — item 9 (search/query pins,
-// first per §10's search-shape execution order), item 1 (title-guard kernel
-// round-trip), items 2/3 (nested-mint + duplicate disambiguation, tool-path
-// verified-create), item 4 (version-refusal contract pin). Runs against the
-// live pinned kernel over the 5b-a fixtures; opt-in with
+// The read-side integration cases — search/query pins, the title-guard
+// kernel round-trip, nested-mint + duplicate disambiguation with tool-path
+// verified-create, and the version-refusal contract pin. Runs against the
+// live pinned kernel over the shared fixtures; opt-in with
 // SIYUAN_INTEGRATION=1, never in CI.
 
 import { readFileSync } from "node:fs";
@@ -32,7 +31,7 @@ import {
 	type IntegrationFixtures,
 } from "./harness.js";
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 	let fixtures: IntegrationFixtures;
 	let client: SiYuanKernelClient;
 	// Unique-suffix stamp shared by every title in the run, so guard pins
@@ -111,11 +110,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	}
 
 	// -------------------------------------------------------------------
-	// Item 9 — search + query pins (search-shape first, §10)
+	// Search + query pins
 	// -------------------------------------------------------------------
 
 	it(
-		"item 9a: kb_query/kb_search scoping shape — every row carries a fixture box",
+		"kb_query/kb_search scoping shape — every row carries a fixture box",
 		async () => {
 			const read = readSetup();
 			const q = await read("kb_query", {
@@ -140,7 +139,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 9b: recall-loop echo — a two-fixture search hit carries root_id/box/resolved-KB/updated, and reads back",
+		"recall-loop echo — a two-fixture search hit carries root_id/box/resolved-KB/updated, and reads back",
 		async () => {
 			const term = unique("recall").replaceAll(" ", "-");
 			await mintDoc(
@@ -191,7 +190,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 9c: two-KB saturation — one saturated KB never crowds the other out (fan-out pin)",
+		"two-KB saturation — one saturated KB never crowds the other out (fan-out pin)",
 		async () => {
 			const term = unique("saturate").replaceAll(" ", "-");
 			// RESULT_LIMIT + 1 matching paragraphs in fixture-a saturate its
@@ -243,7 +242,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 9d: OR precedence under the scope splice — a top-level OR aggregate only reports fixture boxes",
+		"OR precedence under the scope splice — a top-level OR aggregate only reports fixture boxes",
 		async () => {
 			const read = readSetup();
 			// If the box IN (...) splice lost its parenthesization, the OR's
@@ -284,7 +283,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 9e: exportMarkdown carries no block IDs — the read content never echoes the outline's ids",
+		"exportMarkdown carries no block IDs — the read content never echoes the outline's ids",
 		async () => {
 			const docId = await mintDoc(
 				client,
@@ -308,11 +307,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Item 1 — title-guard kernel round-trip
+	// Title-guard kernel round-trip
 	// -------------------------------------------------------------------
 
 	it(
-		"item 1a: tab titles are refused at mint with zero kernel calls",
+		"tab titles are refused at mint with zero kernel calls",
 		async () => {
 			const w = writeSetup();
 			const result = await w.run({
@@ -329,7 +328,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 1b: adversarial titles mint and re-find verbatim (blocks.content stores them unescaped) ('\"'→&quot;, ' verbatim, never &#30;/&#39;)",
+		"adversarial titles mint and re-find verbatim (blocks.content stores them unescaped) ('\"'→&quot;, ' verbatim, never &#30;/&#39;)",
 		async () => {
 			const w = writeSetup();
 			const minted = new Map<string, string>();
@@ -367,7 +366,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 1c: clean titles store verbatim with the expected hpath (trim, Unicode, exactly-512-rune boundary)",
+		"clean titles store verbatim with the expected hpath (trim, Unicode, exactly-512-rune boundary)",
 		async () => {
 			const w = writeSetup();
 			const trimmed = await w.run({
@@ -390,7 +389,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 			expect(unicode.title).toBe("中文 标题 🎉");
 			expect(unicode.hpath).toBe("/中文 标题 🎉");
 
-			// The exactly-512-rune boundary mints (the live pin for §4's
+			// The exactly-512-rune boundary mints (the live pin for the
 			// superset claim); one rune over is refused.
 			const boundary = "x".repeat(512);
 			const atLimit = await w.run({
@@ -416,7 +415,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 1d: renameDocByID mid-test — the guard re-finds by the new stored title",
+		"renameDocByID mid-test — the guard re-finds by the new stored title",
 		async () => {
 			const w = writeSetup();
 			const created = await w.run({
@@ -453,11 +452,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Items 2/3 — nested-mint, duplicate disambiguation, verified-create
+	// Nested-mint, duplicate disambiguation, verified-create
 	// -------------------------------------------------------------------
 
 	it(
-		"item 2a: nested create → echo → read → guard on re-create; stale parent fails loud",
+		"nested create → echo → read → guard on re-create; stale parent fails loud",
 		async () => {
 			const w = writeSetup();
 			const parent = await w.run({
@@ -513,7 +512,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-b read-side cases", () => {
 	);
 
 	it(
-		"item 2b: duplicate rows carry outlines + per-row spilled markdown; confirmNew third mint; deletes clear the guard",
+		"duplicate rows carry outlines + per-row spilled markdown; confirmNew third mint; deletes clear the guard",
 		async () => {
 			const w = writeSetup();
 			const title = unique("Dup Pin");
@@ -597,7 +596,7 @@ third body`,
 	);
 
 	it(
-		"item 2c: guard-stop staging round-trip — markdownFile retry with confirmNew mints the staged body",
+		"guard-stop staging round-trip — markdownFile retry with confirmNew mints the staged body",
 		async () => {
 			const w = writeSetup();
 			const title = unique("Stage Pin");
@@ -640,7 +639,7 @@ third body`,
 	);
 
 	it(
-		"item 3: tool-path verified-create — guard matches first, no create call fires, the duplicate stop echoes the existing doc",
+		"tool-path verified-create — guard matches first, no create call fires, the duplicate stop echoes the existing doc",
 		async () => {
 			const title = unique("Pre-Existing");
 			const existing = await mintDoc(
@@ -677,11 +676,11 @@ third body`,
 	);
 
 	// -------------------------------------------------------------------
-	// Item 4 — version-refusal contract pin
+	// Version-refusal contract pin
 	// -------------------------------------------------------------------
 
 	it(
-		"item 4: a deliberately wrong per-test pin refuses every write naming both versions; reads proceed with the drift warning",
+		"a deliberately wrong per-test pin refuses every write naming both versions; reads proceed with the drift warning",
 		async () => {
 			// Per-test config through the production seam (pinnedVersion rides
 			// runSessionValidation) — the module constant is untouched, so the

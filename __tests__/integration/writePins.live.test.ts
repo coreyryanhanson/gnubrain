@@ -1,17 +1,17 @@
-// Sprint 5b-c: the write-side integration cases — the §10 stale-target,
-// fresh-content, replace-section + delete-orphans, move, and write-result
-// freshness cases. Runs against the live pinned kernel over the 5b-a
-// fixtures; opt-in with SIYUAN_INTEGRATION=1, never in CI.
+// The write-side integration cases — stale-target, fresh-content,
+// replace-section + delete-orphans, move, and write-result freshness cases.
+// Runs against the live pinned kernel over the shared fixtures; opt-in with
+// SIYUAN_INTEGRATION=1, never in CI.
 //
-// No-honest-live-route notes (unit-pinned instead, per §10's stale-target case):
+// No-honest-live-route notes (unit-pinned instead):
 // append's walk-set rollback branch and move's tree-level-miss branch are
 // unreachable live — 3.8.4 executes block writes synchronously and errors on
 // unresolvable ids/anchors instead of rolling back behind an HTTP success.
 // The adjacent honest route (a concurrently deleted boundary anchor → the
 // kernel's synchronous error with the fresh outline attached) is live-pinned
-// in writeModes.live.test.ts (L6); the rollback/tree-level-miss arms are
+// in writeModes.live.test.ts; the rollback/tree-level-miss arms are
 // unit-pinned. The container-nested move target and the doc-end move are
-// likewise already live-pinned there (L2 move / L4).
+// likewise already live-pinned there.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SiYuanKernelClient } from "siyuan-kernel-api";
@@ -35,7 +35,7 @@ import {
 	type IntegrationFixtures,
 } from "./harness.js";
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 	let fixtures: IntegrationFixtures;
 	let client: SiYuanKernelClient;
 	let boxId: string;
@@ -132,7 +132,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			.map((b) => b.id);
 
 	// -------------------------------------------------------------------
-	// Stale-target contract pins (§10)
+	// Stale-target contract pins
 	// -------------------------------------------------------------------
 
 	it(
@@ -196,7 +196,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Fresh-content live pin (§10)
+	// Fresh-content live pin
 	// -------------------------------------------------------------------
 
 	it(
@@ -294,7 +294,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Replace-section + delete-orphans end to end (§10)
+	// Replace-section + delete-orphans end to end
 	// -------------------------------------------------------------------
 
 	it(
@@ -353,7 +353,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 				markdown: "replacement body",
 			});
 			expect(result.status).toBe("ok");
-			// §4 write-result contract fields on a replace.
+			// Write-result contract fields on a replace.
 			expect(result.anchor).toBeDefined();
 			expect(result.newBlockId).toBeDefined();
 			expect(result.outline).toBeDefined();
@@ -587,7 +587,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Move cases (§10): doc-level; cross-doc + same-doc block moves
+	// Move cases: doc-level; cross-doc + same-doc block moves
 	// -------------------------------------------------------------------
 
 	it(
@@ -799,7 +799,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Item 10 — write-result freshness
+	// Write-result freshness
 	// -------------------------------------------------------------------
 
 	it(
@@ -831,7 +831,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("5b-c write-side cases", () => {
 			const diff = [...postIds].filter((id) => !preIds.has(id));
 			expect(diff.length).toBeGreaterThanOrEqual(2);
 			expect(diff).toContain(multi.newBlockId);
-			// §4 write-result contract: the result outline matches a fresh
+			// Write-result contract: the result outline matches a fresh
 			// post-write query (heading IDs and order).
 			expect(outlineIds(multi.outline)).toEqual(await walkHeadingIds(docId));
 

@@ -1,5 +1,5 @@
 // The integration suite shares one live kernel and carries cross-file
-// execution order (§10: search-shape first, throttle after all kernel cases,
+// execution order (search-shape first, throttle after all kernel cases,
 // the raw-DML hardening pin last) — its files must never run in parallel with
 // each other, and their order must not depend on vitest's cache-driven
 // default sort (unknown files by size, then previous-run duration, longest
@@ -10,18 +10,18 @@ import { defineConfig } from "vitest/config";
 import { BaseSequencer } from "vitest/node";
 import type { TestSpecification } from "vitest/node";
 
-// §10 execution order for the live integration suite (endsWith match on the
+// Execution order for the live integration suite (endsWith match on the
 // file name). The throttle file must stay last: its throttle case arms the
 // kernel's per-IP lock (the raw-DML hardening pin runs after the lock's
 // expiry, inside the same file).
 const INTEGRATION_ORDER = [
 	"smoke.live.test.ts", // search-shape first (cheapest falsifier)
 	"harness.live.test.ts",
-	"headlessKb.live.test.ts", // item 11 — pi -p child process, needs the kernel
+	"headlessKb.live.test.ts", // pi -p child process, needs the kernel
 	"readPins.live.test.ts",
 	"writeModes.live.test.ts",
 	"writePins.live.test.ts",
-	"gate.live.test.ts", // sprint 6 gate — items 1–3 (pi children) + item 5 (in-process breaker)
+	"gate.live.test.ts", // pi children (masking/scope) + in-process auth breaker
 	"throttleLive.live.test.ts", // encrypted → throttle (arms the lock) → raw-DML hardening
 ];
 
