@@ -1,14 +1,4 @@
-# DESIGN — gnubrain (slim successor to DESIGN_v2.md)
-
-Status: Milestones 0–3 complete. Milestone 4 (automated recall harness) was
-**dropped**: tool-level behavior is pinned by the unit + integration suites
-(live arms opt-in; two rollback arms are unit-pinned by necessity — see
-`__tests__/integration/writePins.live.test.ts`); model-in-the-loop recall
-behavior is untested by construction (accepted concession, see below).
-The full design doc (v2, with decision records R1–R6, milestone history, and
-M3 deviation ledger) is the rationale record: it is currently still at
-`DESIGN_v2.md` in the working tree; before deleting it, archive it as branch
-`design-v2-archive` (not yet created). Until then, read the file itself.
+# DESIGN — gnubrain
 
 **Where truth lives:** behavior is pinned by tests — the test files
 (`__tests__/`) are the authoritative case inventory. Code comments and test
@@ -109,5 +99,3 @@ load-bearing — throttle-last).
 - `siyuan-kernel-api`: client design constraints (policy-free surface,
   transport contract, error classes) live in the client repo's README.md +
   AGENTS.md — the published npm package ships the README only.
-- Archived design rationale: the full `DESIGN_v2.md`, still in the working
-  tree — archive as `design-v2-archive` before deleting (see header).
