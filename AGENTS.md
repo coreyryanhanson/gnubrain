@@ -43,6 +43,31 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   must pass with zero warnings. Husky pre-commit runs lint-staged →
   `oxfmt` + `oxlint --fix --deny-warnings` on staged `*.ts`.
 
+## Design invariants
+
+- **Kernel API only.** All reads/writes go through the kernel HTTP API — never
+  write `.sy` files (the agent's microVM can't see host files anyway, and this
+  avoids torn-write hazards).
+- **Zero model calls.** The extension makes no model/provider calls. The agent
+  is the intelligence; SiYuan is the memory.
+- **Never silently wrong.** Kernel results that can lie (silently-rolled-back
+  inserts, silent no-op DML, hpath-as-address) are verified against the live
+  block tree / by-ID asserts, never trusted from the HTTP result. New write
+  modes must verify post-write with `getChildBlocks` walk evidence.
+- **Soft scope, tool-surface-only guards.** The API token is a workspace-admin
+  credential; the threat model is model accident, not a hostile agent. All
+  guards (parser certification, scoping, write grant) are tool-surface-only.
+  Hard isolation = separate SiYuan instances, if ever needed.
+- **Upgrade checklist.** On any SiYuan upgrade: run the full integration suite
+  against the new kernel *before* re-pinning — a red suite means re-verify the
+  affected behaviors, never a version-number bump. Same discipline for
+  `node-sql-parser` and `pi-tool-masking` (both exact-pinned; re-run their
+  certification/toolset cases).
+- **Deployment posture** (not re-derivable from this repo): non-empty SiYuan
+  access auth code — never `ACCESS_AUTH_CODE_BYPASS=true`; kernel port bound
+  to the VM-facing interface only; one kernel per workspace (dual writers =
+  torn writes).
+
 ## Architecture
 
 `index.ts` is the entry (`register(pi, deps)`): session lifecycle, `/kb`
@@ -77,12 +102,20 @@ fails writes closed and warns on reads. Change the pin only deliberately — the
 live harness asserts the kernel reports it exactly. Tests override per-run via
 `deps.pinnedVersion` / `runSessionValidation({ pinnedVersion })`.
 
-Kernel behaviors pinned at that version that the code relies on: nested doc
+Kernel behaviors pinned at that version that the code relies on: doc identity
+is the docId — hpath is a derived display label, never an address; doc titles
+store verbatim in `blocks.content`; `blocks.sort` is a type weight, not
+document order (enumerate structure via `getChildBlocks`, not SQL); nested doc
 nesting is the hpath chain — `blocks.parent_id` is empty on `'d'` rows — and
 ancestor/self-subtree doc moves are rejected synchronously ("Cannot move to
 this location"), so no pre-check guards them. DML through `/api/query/sql`
 is a silent no-op. `blocks.content`/`refs`/`hpath` converge 1.5–3 s
-asynchronously after a write (hpath last, after `moveDocsByID`).
+asynchronously after a write (hpath last, after `moveDocsByID`); tree
+endpoints (`getChildBlocks`, `exportMarkdown`) are synchronous. Auth
+throttle: locking starts at the 6th consecutive auth failure
+(`30 << (fail − 5)` seconds, 15-min cap; any request during a lock — correct
+token included — records another fail and overwrites the lock) — 429 is never
+counted toward the extension breaker and never retried.
 
 ## Settings
 
@@ -110,6 +143,16 @@ asynchronously after a write (hpath last, after `moveDocsByID`).
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a
   kernel you can safely mutate, never CI.
+
+## Roadmap (parked)
+
+- RAG / vector sidecar (v2 primary): external sidecar fed by
+  `exportMdContent`/`query/sql`, never a second writer; store the embedding
+  model id per-vector so model swaps are re-embeds, not migrations.
+- Embedding-assisted dedup as primary identity; title guard stays as the
+  zero-dep fallback (via the existing `near_matches` status).
+- Smaller parked items: spill-file cleanup pass, named KB groups, per-mode
+  `kb_write` allowlist, host-side asset fetch.
 
 ## Release
 
