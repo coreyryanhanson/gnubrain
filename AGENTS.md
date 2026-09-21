@@ -151,8 +151,8 @@ counted toward the extension breaker and never retried.
   model id per-vector so model swaps are re-embeds, not migrations.
 - Embedding-assisted dedup as primary identity; title guard stays as the
   zero-dep fallback (via the existing `near_matches` status).
-- Smaller parked items: spill-file cleanup pass, named KB groups, per-mode
-  `kb_write` allowlist, host-side asset fetch.
+- Smaller parked items: spill-file cleanup pass, named KB groups,
+  host-side asset fetch.
 
 ## Release
 
