@@ -2,27 +2,22 @@
 // scan) → submission path from ground truth → verified-create by-ID asserts
 // → echo, with guard-stop draft staging.
 
-import { SiYuanApiError } from "siyuan-kernel-api";
-import { errorEnvelope, type Envelope } from "./envelope.js";
-import { spillFile } from "./spill.js";
-import { rememberServedRows } from "./baselines.js";
-import { sqlString, VERIFY_RETRY_DELAYS_MS, withRowPayload } from "./kernel.js";
-import {
-	renderOutline,
-	renderOutlineFromWalk,
-	walkBlockTree,
-	type WalkedBlock,
-} from "./walk.js";
-import { runMutation, type WriteFlowBase } from "./writeFlow.js";
 import {
 	GUARD_NEAR_CAP,
-	guardExactStmt,
-	guardNearStmt,
-	toGuardRows,
+	SiYuanApiError,
+	findTitleMatches,
+	walkBlockTree,
 	type GuardRow,
-} from "./writeGuard.js";
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
+import { createVerifiedDoc } from "siyuan-kb-primitives/write";
+import { type Envelope } from "./envelope.js";
+import { spillFile, withRowPayload } from "./spill.js";
+import { rememberServedRows } from "./baselines.js";
+import { serveOutline, serveOutlineFromWalk } from "./outline.js";
+import type { WriteFlowBase } from "./writeFlow.js";
 import { finishWrite } from "./writeResult.js";
-import type { WriteKernelClient } from "./kernel.js";
+import { createVerdictEnvelope } from "./writeVerdicts.js";
 
 export interface CreateFlowInput extends WriteFlowBase {
 	/** Minted (normalized) title — the kb_write entry validated it. */
@@ -58,7 +53,7 @@ async function duplicateStop(
 		// edit on a served heading verifies against what the agent saw here,
 		// not against content read at edit time (which launders a concurrent
 		// kernel-side change past the stale_content precondition).
-		const outline = renderOutlineFromWalk(
+		const outline = serveOutlineFromWalk(
 			sessionId,
 			"kb_write",
 			walk,
@@ -164,158 +159,59 @@ function stagedEnvelope(envelope: Envelope, input: CreateFlowInput): Envelope {
 	return envelope;
 }
 
-/** SELECT heads the kernel stubs route on — keep builders and heads in sync
- * by construction (each builder concatenates its head constant). */
-export const PARENT_LOOKUP_STMT_HEAD = "SELECT id, hpath, content FROM blocks";
-export const VERIFIED_ROOT_STMT_HEAD =
-	"SELECT id, root_id, content, hpath, updated FROM blocks";
-
-function parentLookupStmt(boxId: string, parentId: string): string {
-	return (
-		`${PARENT_LOOKUP_STMT_HEAD} ` +
-		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(parentId)} AND type = 'd'`
-	);
-}
-
-function verifiedRootStmt(boxId: string, returnedId: string): string {
-	return (
-		`${VERIFIED_ROOT_STMT_HEAD} ` +
-		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(returnedId)} AND type = 'd'`
-	);
-}
-
-/** Verified-create re-reads: the kernel indexes a fresh doc asynchronously —
- * createDocWithMd resolves when the doc is in the tree, while its blocks
- * row lands via the async index queue (observed live even on an empty DB).
- * VERIFY_RETRY_DELAYS_MS (kernel.ts) is the convergence table shared with
- * the edit flow's post-update re-read. */
-
-async function verifiedRoot(
-	kernel: WriteKernelClient,
-	boxId: string,
-	returnedId: string,
-): Promise<
-	{ id: string; root_id: string; content: string; hpath: string } | undefined
-> {
-	for (let attempt = 0; ; attempt++) {
-		const rows = (await kernel.query(verifiedRootStmt(boxId, returnedId))).map(
-			(r) => ({
-				id: String(r.id),
-				root_id: String(r.root_id),
-				content: String(r.content),
-				hpath: String(r.hpath),
-			}),
-		);
-		const root = rows[0];
-		if (root !== undefined) return root;
-		const delay = VERIFY_RETRY_DELAYS_MS[attempt];
-		if (delay === undefined) return undefined;
-		await new Promise((resolve) => setTimeout(resolve, delay));
-	}
-}
-
-/**
- * The `create` flow: title guard (exact leg, then near-match scan) →
- * submission path built from ground truth → verified-create by-ID asserts →
- * echo (root docId, stored title, real hpath, fresh outline).
+/** The `create` flow: title guard (exact leg, then near-match scan) →
+ * guarded-create primitive (parent read-back, mint, verified-create by-ID
+ * asserts) → echo (root docId, stored title, real hpath, fresh outline).
  * `confirmNew: true` bypasses both guard legs; the per-KB grant (resolved
- * at the kb_write entry) and verified-create still apply.
- */
+ * at the kb_write entry) and the primitive's asserts still apply. */
 export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId } = input;
 	const title = input.title;
 
-	// Guard — exact leg first; only an empty exact leg runs the scan.
+	// Guard — exact leg first; only an empty exact leg runs the scan. The
+	// primitive fires the single pre-legs contact (reset-on-success) itself.
 	if (!input.confirmNew) {
-		input.contact();
-		const exact = toGuardRows(await kernel.query(guardExactStmt(boxId, title)));
-		if (exact.length > 0) return duplicateStop(input, title, exact);
-		const near = toGuardRows(await kernel.query(guardNearStmt(boxId, title)));
-		if (near.length > 0) return nearMatchStop(input, title, near);
+		const matches = await findTitleMatches(kernel, input.contact, boxId, title);
+		if (matches.kind === "duplicate") {
+			return duplicateStop(input, title, matches.rows);
+		}
+		if (matches.kind === "near") {
+			return nearMatchStop(input, title, matches.rows);
+		}
 	}
 
-	// Submission path from ground truth, never predicted.
-	input.contact();
-	let path: string;
-	let parentID: string | undefined;
-	let storedParentHpath: string | undefined;
-	if (input.parentId !== undefined) {
-		const parentRows = await kernel.query(
-			parentLookupStmt(boxId, input.parentId),
-		);
-		const parent = parentRows[0];
-		if (parent === undefined) {
-			return errorEnvelope(
-				`parentId '${input.parentId}' does not resolve to a doc in KB '${name}' (stale or foreign target)`,
-			);
-		}
-		storedParentHpath = String(parent.hpath ?? "");
-		path = `${storedParentHpath}/${title}`;
-		parentID = input.parentId;
-	} else {
-		path = `/${title}`;
+	// The version-coupled core — submission path from ground truth, the
+	// mint, and the verified-create asserts — lives in the primitive; its
+	// required probe carries the gate's verdict and the drift refusal is
+	// the primitive's own arm.
+	const outcome = await createVerifiedDoc(kernel, input.probe, input.contact, {
+		boxId,
+		title,
+		body: input.body,
+		...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+	});
+	if (outcome.kind !== "created") {
+		return createVerdictEnvelope(outcome, { name });
 	}
 
-	// The mint may or may not land when the transport fails (mutationFailed
-	// doc) — the kernel-returned id is lost with the response, so the
-	// unverified verdict cannot be narrowed by a re-read here.
-	const minted = await runMutation(input, {}, undefined, () =>
-		kernel.createDocWithMarkdown({
-			notebook: boxId,
-			path,
-			markdown: input.body,
-			...(parentID !== undefined ? { parentID } : {}),
-		}),
-	);
-	if (typeof minted === "object") return minted;
-	const returnedId: string = minted;
-
-	// Post-mint reads: a network drop during verification must never read
-	// as "unreachable" — the doc may already be minted (finishWrite doc).
-	return finishWrite(input.name, { docId: returnedId }, async () => {
-		// Verified-create: by-ID asserts on the kernel-returned root
-		// ID — fail-loud on shape, never a by-title re-lookup. The bounded
-		// re-read absorbs the kernel's async index lag (verifiedRoot doc).
-		const root = await verifiedRoot(kernel, boxId, returnedId);
-		if (root === undefined) {
-			return errorEnvelope(
-				`verified-create failed: the kernel returned doc id '${returnedId}' but no type='d' row exists for it in KB '${name}' — the mint is unconfirmable; do not retry blindly`,
-			);
-		}
-		if (parentID !== undefined) {
-			// Nested asserts: the parent must still exist with the hpath that was
-			// used, and the child's hpath must equal storedParentHpath + "/" +
-			// the child's STORED title (ground truth, never the submitted form).
-			const parentNow = (
-				await kernel.query(parentLookupStmt(boxId, parentID))
-			).map((r) => ({ hpath: String(r.hpath) }))[0];
-			if (parentNow === undefined || parentNow.hpath !== storedParentHpath) {
-				return errorEnvelope(
-					`verified-create failed: parent '${parentID}' was deleted or renamed between the hpath read-back and the create — the kernel minted a ghost intermediate; drop the ghost subtree and retry`,
-				);
-			}
-			const expectedChildHpath = `${storedParentHpath}/${root.content}`;
-			if (root.hpath !== expectedChildHpath) {
-				return errorEnvelope(
-					`verified-create failed: stored hpath '${root.hpath}' does not match ground truth '${expectedChildHpath}' — unexpected kernel title normalization`,
-				);
-			}
-		}
-
-		const outline = await renderOutline(
+	// Post-mint echo: a network drop here must never read as "unreachable" —
+	// the mint is already verified by the primitive's asserts (finishWrite
+	// doc).
+	return finishWrite(input.name, { docId: outcome.docId }, async () => {
+		const outline = await serveOutline(
 			kernel,
 			sessionId,
 			"kb_write",
-			root.root_id,
+			outcome.docId,
 			input.baselines,
 		);
 		return {
 			status: "ok",
-			message: `created '${root.content}' in KB '${name}' — docId ${root.root_id}, hpath ${root.hpath}`,
+			message: `created '${outcome.content}' in KB '${name}' — docId ${outcome.docId}, hpath ${outcome.hpath}`,
 			kb: name,
-			docId: root.root_id,
-			title: root.content,
-			hpath: root.hpath,
+			docId: outcome.docId,
+			title: outcome.content,
+			hpath: outcome.hpath,
 			outline: outline.outline,
 			...(outline.fullOutlinePath !== undefined
 				? { fullOutlinePath: outline.fullOutlinePath }

@@ -37,7 +37,7 @@ export function refusedEnvelope(
  * breaker) or lands in finishWrite (network/timeout → verificationFailed).
  * Mid-sequence flows (replace-section's delete sweep) attach the state to
  * the error; the catch sites merge it into their classified envelope. */
-export interface PartialReplaceState {
+interface PartialReplaceState {
 	partialReplace: true;
 	newBlockId: string;
 	deletedBlockIds: string[];
@@ -90,7 +90,8 @@ export function versionRefusalEnvelope(
 		`SiYuan kernel version ${kernelVersion} does not match the pinned version ` +
 			`${pinnedVersion}. Writes are refused. Verify the new kernel against ` +
 			`the integration checklist, re-pin ` +
-			`PINNED_SIYUAN_VERSION, then start a new session.`,
+			`PINNED_SIYUAN_VERSION in siyuan-kb-primitives (its version.ts), ` +
+			`then start a new session.`,
 	);
 }
 

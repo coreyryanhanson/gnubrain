@@ -1,6 +1,6 @@
 // Shared scaffolding for the write flows: the flow input shape, doc-target
-// ownership resolution, the shared target reads, and the one catch site for
-// kernel mutations — everything the per-mode flow files
+// ownership resolution, and the shared target reads — everything the
+// per-mode flow files
 // (writeCreate/writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove)
 // build on.
 
@@ -11,17 +11,16 @@ import {
 	refusedEnvelope,
 } from "./envelope.js";
 import {
-	SiYuanApiError,
-	SiYuanNetworkError,
-	SiYuanTimeoutError,
-} from "siyuan-kernel-api";
-import { ownershipStmt, sqlString } from "./kernel.js";
+	ownershipStmt,
+	resolveHeadingTarget,
+	rootEcho,
+	type KernelProbeResult,
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
+import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import { inlineOrSpill, jsonl } from "./spill.js";
-import { TARGETABLE_CONTAINER_TYPES } from "./writeAnchors.js";
-import type { WalkedBlock } from "./walk.js";
 import type { ContentBaselines } from "./baselines.js";
-import { rootEcho, writeEchoTail } from "./writeResult.js";
-import type { WriteKernelClient } from "./kernel.js";
+import { writeEchoTail } from "./writeResult.js";
 import type { WriteParams } from "./writeSchema.js";
 
 /** Flow input shared by every mode, create included — one declaration so
@@ -39,6 +38,12 @@ export interface WriteFlowBase {
 	/** Fires at the flow's first kernel call — kernel-free refusals
 	 * (shape, grant, drift) must not reset the breaker's consecutive count. */
 	contact: () => void;
+	/** The gate's probe verdict, stamped by prepareWrite's caller — the
+	 * session-start value, or the fresh re-probe on the retry path. The
+	 * verdict primitives require it; the gate refuses the
+	 * unreachable/never-probed members before any flow runs, so only the
+	 * narrow KernelProbeResult reaches here. */
+	probe: KernelProbeResult;
 }
 
 export interface WriteFlowInput extends WriteFlowBase {
@@ -51,8 +56,9 @@ export interface DocTarget {
 }
 
 /** Every non-create mode takes docId — an echoed target, ownership-
- * checked by the same scoping query (an id from another KB reads as
- * nothing). */
+ * checked by the scoping query (an id from another KB reads as
+ * nothing). The statement itself lives in the primitives beside the
+ * block-row shape it encodes; this side owns only the refusal. */
 export async function resolveDocTarget(
 	kernel: WriteKernelClient,
 	boxId: string,
@@ -73,114 +79,53 @@ export async function resolveDocTarget(
 	return { rootId: root.docId, title: root.title };
 }
 
-/** SELECT heads the kernel stubs route on — keep builders and heads in
- * sync by construction (each builder concatenates its head constant). */
-export const BLOCK_IN_DOC_STMT_HEAD =
-	"SELECT id, content, root_id, type FROM blocks WHERE id";
-
-/** The target read shared by the blockId-targeting modes — the block's
- * current content (fresh-content baseline), or
- * null when the id is absent from the kernel. Absence is never refused
- * here: each op's own kernel outcome governs the observable behavior
- * (edit/move surface the synchronous not-found error verbatim; delete
- * is a success no-op on 3.8.3 and a synchronous "tree not found" error
- * on 3.8.4, surfaced the same way) and the live suite watches the
- * kernel, not this pre-read, for contract drift. A block that EXISTS but belongs to a
- * different doc (cross-doc or cross-KB — kb_query rows carry raw ids
- * across all active KBs) is refused here: the kernel mutates by raw id
- * with no doc scoping of its own, so forwarding it would write outside
- * the targeted doc, past the grant and the fresh-content baseline
- * (the SQL cannot distinguish foreign from absent — the code compare
- * can). The TOCTOU window between this read and the kernel call is the
- * same one every precondition here accepts; post-write verification
- * walks are the backstop. */
-export async function blockInDoc(
-	kernel: WriteKernelClient,
-	doc: DocTarget,
-	blockId: string,
-): Promise<
-	{ content: string | null; type: string | null } | { refusal: string }
-> {
-	const rows = await kernel.query(
-		`${BLOCK_IN_DOC_STMT_HEAD} = ${sqlString(blockId)}`,
-	);
-	if (rows[0] === undefined) return { content: null, type: null };
-	// A document row's content is its title, not a body — an id confusion
-	// here would rename the doc and verify against the title hash. Doc ids
-	// never target block-level ops.
-	if (String(rows[0].type ?? "") === "d") {
-		return {
-			refusal: `'${blockId}' is a document id, not a block — use a doc-level op or re-target a block from the outline (kb_read)`,
-		};
-	}
-	const rootId = String(rows[0].root_id ?? "");
-	return rootId === doc.rootId
-		? {
-				content: String(rows[0].content),
-				type: String(rows[0].type ?? ""),
-			}
-		: {
-				refusal: `block '${blockId}' belongs to another doc (root ${rootId}), not '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-			};
+/** The stale-heading refusal — shared by headingInWalk and replace-section's
+ * section-membership fallback, which both reject the same target. */
+export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
+	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`;
 }
 
-/** The pinned rejection when a heading id is absent from the doc walk.
- * Same class as blockInDoc's foreign-block refusal: a target id that fails
- * the doc's own membership check is refused before any kernel call (doc-
- * level resolution is the `error` case, matching the status table).
- *
- * A heading whose container the kernel does not accept as a write-parent
- * (appendBlock/moveBlock accept d/b/l/i/s/callout/tab) is refused here too:
- * a section target inside `tabs` or an unnamed container (wire type "",
- * e.g. a footnote definition) would place the write in a container the
- * kernel rejects. */
+/** The heading-target refusal map — wording only. The judgment (membership
+ * + write-parent targetability, the kernel's CheckContainerParent set) is
+ * the primitives' `resolveHeadingTarget`; a section target inside `tabs` or
+ * an unnamed container (wire type "", e.g. a footnote definition) would
+ * place the write in a container the kernel rejects, so the untargetable
+ * arm refuses with the same re-target guidance every flow shares. */
 export function headingInWalk(
 	walk: WalkedBlock[],
 	doc: DocTarget,
 	headingId: string,
 ): WalkedBlock | Envelope {
-	const heading = walk.find((b) => b.id === headingId && b.type === "h");
-	if (heading === undefined) {
-		return refusedEnvelope(
-			`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-		);
+	const outcome = resolveHeadingTarget(walk, headingId);
+	switch (outcome.kind) {
+		case "heading":
+			return outcome.heading;
+		case "stale":
+			return refusedEnvelope(staleHeadingMessage(headingId, doc));
+		case "untargetable": {
+			const container =
+				outcome.containerType === ""
+					? "an unnamed container"
+					: `a '${outcome.containerType}' container`;
+			return refusedEnvelope(
+				`headingId '${headingId}' (${outcome.headingContent}) sits inside ${container}, which the kernel does not accept as a write-parent — not a targetable heading; re-target a heading in the doc, a quote, a list, a superblock, a callout or a tab`,
+			);
+		}
 	}
-	if (!TARGETABLE_CONTAINER_TYPES.has(heading.parentType ?? "")) {
-		const container =
-			heading.parentType === "" || heading.parentType === null
-				? "an unnamed container"
-				: `a '${heading.parentType}' container`;
-		return refusedEnvelope(
-			`headingId '${headingId}' (${heading.content}) sits inside ${container}, which the kernel does not accept as a write-parent — not a targetable heading; re-target a heading in the doc, a quote, a list, a superblock, a callout or a tab`,
-		);
-	}
-	return heading;
-}
-
-/** Verified, not trusted: a kernel-returned insert id counts as landed
- * only when it is genuinely new — present in the post-write walk set and
- * absent from the pre-write set. A miss means the transaction rolled back
- * silently behind HTTP success. One home so the predicate and its error
- * wording cannot drift between the insert-bearing modes. */
-export function insertRollbackReason(
-	newBlockId: string | undefined,
-	preIds: ReadonlySet<string>,
-	postIds: ReadonlySet<string>,
-): string | undefined {
-	if (newBlockId === undefined) return "the kernel returned no block id";
-	if (!postIds.has(newBlockId) || preIds.has(newBlockId))
-		return `the kernel returned '${newBlockId}' but it is absent from the post-write tree`;
-	return undefined;
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled heading-target arm");
 }
 
 /** Error-path echo reads are garnish: the verdict (the transport message or
  * the kernel's own error) is already correct without the outline, so a
  * dropped re-read must not mask it — unwrapped, the echo's transport throw
- * would escape mutationFailed and runKbCall would reclassify a
+ * would escape the flow's per-arm mapping and runKbCall would reclassify a
  * kernel-answered call as "SiYuan unreachable". Success-path echoes
  * (finishWrite) stay loud on purpose: a dropped verification read must read
- * as unverified, never as success. */
-async function errorTail(
+ * as unverified, never as success. Exported for the write flows' per-arm
+ * refusal envelopes — every mode now maps its primitive outcomes here and
+ * applies the same garnish rule. */
+export async function errorTail(
 	input: WriteFlowBase,
 	doc: DocTarget | undefined,
 ): Promise<Record<string, unknown>> {
@@ -189,69 +134,6 @@ async function errorTail(
 		return await echoTail(input, doc);
 	} catch {
 		return {};
-	}
-}
-
-/** Classify a failed kernel mutation call (the catch site above this —
- * runMutation — is the single call point). A transport-class throw
- * (network drop, per-attempt timeout) leaves the mutation's outcome UNKNOWN:
- * fetch can reject after the request was sent, and a timed-out request was
- * delivered — so the write may already be applied and the envelope must
- * never read as runKbCall's "SiYuan unreachable", whose retry invitation
- * would duplicate an applied write (the same contract finishWrite enforces
- * for the post-write reads, which this sits upstream of). A synchronous
- * kernel rejection (SiYuanApiError) is not in-flight: it surfaces verbatim
- * with the fresh outline attached (no tail when the caller passes no doc —
- * the pinned doc-level record shape). Auth and rate-limit errors return
- * undefined — runMutation rethrows them for runKbCall's classification
- * (breaker counting, 429 cooldown). The echo reads run best-effort on both
- * legs (errorTail): the verdict — the transport message or the kernel's own
- * error — must not depend on them landing. */
-async function mutationFailed(
-	input: WriteFlowBase,
-	err: unknown,
-	extra: Record<string, unknown> = {},
-	doc?: DocTarget | undefined,
-): Promise<Envelope | undefined> {
-	if (err instanceof SiYuanNetworkError || err instanceof SiYuanTimeoutError) {
-		const tail = await errorTail(input, doc);
-		return errorEnvelope(
-			`the write's outcome is unverified: the kernel call failed at the ` +
-				`transport layer (${err instanceof Error ? err.message : String(err)}) — ` +
-				`the request may have been delivered and the write may already be ` +
-				`applied; do NOT retry blindly — re-fetch the outline (kb_read) and ` +
-				`confirm whether it landed before repeating it`,
-			{ kb: input.name, verificationFailed: true, ...extra, ...tail },
-		);
-	}
-	if (err instanceof SiYuanApiError) {
-		const tail = await errorTail(input, doc);
-		return errorEnvelope(err.message, {
-			kb: input.name,
-			...extra,
-			...tail,
-		});
-	}
-	return undefined;
-}
-
-/** One catch site for every kernel mutation call: mutationFailed's envelope
- * (transport-unverified / kernel-verbatim) is returned, and anything it
- * declines to classify (auth, rate limit) is rethrown for runKbCall's
- * classification — breaker counting, 429 cooldown. That fork is the policy,
- * so it lives once here instead of in every mode's catch block. */
-export async function runMutation<T>(
-	input: WriteFlowBase,
-	extra: Record<string, unknown>,
-	doc: DocTarget | undefined,
-	call: () => Promise<T>,
-): Promise<T | Envelope> {
-	try {
-		return await call();
-	} catch (err) {
-		const failed = await mutationFailed(input, err, extra, doc);
-		if (failed !== undefined) return failed;
-		throw err;
 	}
 }
 
@@ -297,5 +179,3 @@ export function deletedBlocksTail(
 	if (spillPath === undefined) return { deletedBlocks: rows };
 	return { deletedBlocksPreview: inline, deletedBlocksPath: spillPath };
 }
-
-// ---------------------------------------------------------------------------

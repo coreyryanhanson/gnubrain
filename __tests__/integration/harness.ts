@@ -17,15 +17,17 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
-import { ownershipStmt } from "../../kernel.js";
+import {
+	PINNED_SIYUAN_VERSION,
+	ownershipStmt,
+	SiYuanKernelClient,
+} from "siyuan-kb-primitives";
 import {
 	globalSettingsPath,
 	loadGnubrainSettings,
 	type GnubrainSettings,
 } from "../../settings.js";
 import {
-	PINNED_SIYUAN_VERSION,
 	runSessionValidation,
 	type SessionValidation,
 } from "../../validation.js";
@@ -342,9 +344,9 @@ export async function setupFixtures(): Promise<IntegrationFixtures> {
 			`fixture settings failed shape validation: ${validation.shapeErrors.join("; ")}`,
 		);
 	}
-	if (validation.probe !== "ok") {
+	if (validation.probe.verdict !== "ok") {
 		throw new Error(
-			`kernel probe verdict is '${validation.probe}' (version ${validation.kernelVersion}) — expected 'ok' against the pin`,
+			`kernel probe verdict is '${validation.probe.verdict}' — expected 'ok' against the pin`,
 		);
 	}
 	for (const name of ["fixture-a", "fixture-b"] as const) {

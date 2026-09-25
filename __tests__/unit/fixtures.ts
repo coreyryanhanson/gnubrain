@@ -11,7 +11,6 @@ export function validation(overrides?: {
 	shapeErrors?: string[];
 	warnings?: string[];
 	probe?: SessionValidation["probe"];
-	kernelVersion?: string;
 	/** Per-test version-pin override — the effective pin rides the validation. */
 	pinnedVersion?: string;
 	/** Extra/overriding settings fields (timeouts, unattended writes, ...). */
@@ -30,8 +29,7 @@ export function validation(overrides?: {
 		},
 		shapeErrors: overrides?.shapeErrors ?? [],
 		warnings: overrides?.warnings ?? [],
-		probe: overrides?.probe ?? "ok",
-		kernelVersion: overrides?.kernelVersion ?? "3.8.4",
+		probe: overrides?.probe ?? { verdict: "ok", kernelVersion: "3.8.4" },
 		...(overrides?.pinnedVersion !== undefined && {
 			pinnedVersion: overrides.pinnedVersion,
 		}),

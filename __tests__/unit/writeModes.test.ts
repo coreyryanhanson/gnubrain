@@ -6,12 +6,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	BLOCK_IN_DOC_STMT_HEAD,
 	SiYuanApiError,
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
-} from "siyuan-kernel-api";
+	BLOCK_CONTENTS_STMT_HEAD,
+} from "siyuan-kb-primitives";
 import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import {
 	base,
@@ -20,9 +22,7 @@ import {
 	walkBlock,
 	type StubConfig,
 } from "./writeHarness.js";
-import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
-import { BLOCK_IN_DOC_STMT_HEAD } from "../../writeFlow.js";
-import { VERIFY_RETRY_DELAYS_MS } from "../../kernel.js";
+import { VERIFY_RETRY_DELAYS_MS } from "siyuan-kb-primitives/write";
 import { contentHash } from "../../baselines.js";
 
 describe("kb_write schema", () => {
@@ -294,6 +294,9 @@ describe("edit", () => {
 	it("verified-edit: a silent kernel no-op (ack ok, index never converges) does not read as ok", async () => {
 		// Collapse the convergence window: the index never serves the
 		// submitted body, so the first retry exhausts the table instantly.
+		// Deliberate cross-package coupling: this mutates the primitives'
+		// exported table in place (same module instance, not a copy) — a
+		// frozen or copied array in the primitives breaks this test.
 		const delays = VERIFY_RETRY_DELAYS_MS.splice(0);
 		try {
 			const harness = setup({
@@ -372,7 +375,7 @@ describe("edit", () => {
 		harness.baselines.remember("b-1", "served body");
 		const baseQuery = harness.client.query.bind(harness.client);
 		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
 				// The post-write refresh serving the new stored form — the only
 				// baseline-content read left on this path.
 				return [{ id: "b-1", content: "edited body" }];
@@ -671,7 +674,12 @@ describe("replace-section", () => {
 	it("enumerates the delete set by walk, inserts BEFORE deleting, preserves the boundary", async () => {
 		const harness = setup({
 			config: {
+				cascadeDelete: true,
 				childrenFor: REPLACE_DOC,
+				// A referring doc survives the replace — pins the orphaned-refs
+				// count wording (doc(s), not ref(s): backlinkCheck counts roots).
+				refRows: [{ id: "ref-1", root_id: "r1" }],
+				hpathRows: [{ hpath: "/lab/notebook" }],
 				onInsert: () => {
 					harness.childrenFor["d-doc"] = [
 						...REPLACE_DOC["d-doc"].slice(0, 3),
@@ -700,6 +708,13 @@ describe("replace-section", () => {
 		).toEqual(["p1", "p2"]);
 		expect(result.anchor).toBe("nextID=h2 (next heading)");
 		expect(result.newBlockId).toBe("b-new");
+		// The orphaned-refs wording is agent-visible and pinned here: the
+		// count is of distinct referring docs, not refs.
+		expect(result.message).toContain("1 doc(s) with orphaned refs");
+		expect(result.invalidRefs).toEqual({
+			count: 1,
+			hpaths: ["/lab/notebook"],
+		});
 		// Outline freshness: the result outline reflects the post-write
 		// tree — the swept blocks are gone from it.
 		expect(result.outline).not.toContain("old one");
@@ -949,6 +964,35 @@ describe("replace-section", () => {
 		expect(result.message).toContain("do not retry");
 	});
 
+	it("a success-reported delete that left the block in the tree fails loud (members-survived), never ok", async () => {
+		// The default stub's deleteBlock resolves without touching the live
+		// tree — the 3.8.3 success-no-op generation. The judgment reads the
+		// post-sweep walk, so the lying ok receipt the old flow would have
+		// rendered is now the members-survived refusal with the survivors
+		// itemized.
+		const harness = setup({
+			config: {
+				childrenFor: REPLACE_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain(
+			"reported success but the block(s) are still present",
+		);
+		expect(result.message).toContain("do not retry blindly");
+		expect(result.partialReplace).toBe(true);
+		expect(result.deletedBlockIds).toEqual([]);
+		expect(result.remainingBlockIds).toEqual(["p1", "p2"]);
+	});
+
 	it("a mid-sweep failure's remaining list is an antichain — any delete order finishes the job", async () => {
 		let deletes = 0;
 		const harness = setup({
@@ -1085,6 +1129,7 @@ describe("replace-section", () => {
 	it("delete-bearing results carry invalidRefs", async () => {
 		const harness = setup({
 			config: {
+				cascadeDelete: true,
 				childrenFor: REPLACE_DOC,
 				refRows: [{ root_id: "d-other" }],
 				hpathRows: [{ hpath: "/Other doc" }],
@@ -1110,6 +1155,7 @@ describe("replace-section", () => {
 	it("final section: the sweep runs to end of doc (trailing content deleted), anchor is appendBlock(root)", async () => {
 		const harness = setup({
 			config: {
+				cascadeDelete: true,
 				childrenFor: REPLACE_DOC,
 				onInsert: () => {
 					harness.childrenFor["d-doc"] = [
@@ -1171,6 +1217,7 @@ describe("replace-section", () => {
 		// and applies.
 		const harness = setup({
 			config: {
+				cascadeDelete: true,
 				childrenFor: REPLACE_DOC,
 				onInsert: () => {
 					harness.childrenFor["d-doc"] = [
@@ -1207,6 +1254,7 @@ describe("replace-section", () => {
 		// the refreshed form instead of the pre-write serve.
 		const harness = setup({
 			config: {
+				cascadeDelete: true,
 				blockRows: [{ id: "p2", content: "old two" }],
 				childrenFor: REPLACE_DOC,
 				onInsert: () => {
@@ -1262,7 +1310,7 @@ describe("replace-section", () => {
 		});
 		const baseQuery = harness.client.query.bind(harness.client);
 		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
 				// Real-kernel mirror: rows for exactly the requested IDs.
 				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
 				return ids.flatMap((id) =>
@@ -1319,6 +1367,10 @@ describe("delete", () => {
 		});
 		expect(result.status).toBe("ok");
 		expect(result.targetGone).toBe(true);
+		// Wording pin: the orphaned-refs count is agent-visible (0 here —
+		// no refRows configured).
+		expect(result.message).toContain("0 doc(s) with orphaned refs");
+		expect(result.invalidRefs).toEqual({ count: 0, hpaths: [] });
 		// The receipt rides the pre-delete SQL row: id + content verbatim.
 		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "doomed" }]);
 		expect(
@@ -1468,6 +1520,57 @@ describe("delete", () => {
 		expect(result.message).toContain("post-write verification reads failed");
 		expect(result.targetGone).toBeUndefined();
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+	});
+
+	it("a transport drop mid-delete reads as outcome-unverified with the outline attached, never a blind-retry invitation", async () => {
+		// The delete may already be applied when the transport fails — the
+		// primitive's transport-unverified arm, not runKbCall's retry
+		// invitation. The error-path echo reads run best-effort.
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+				armDeleteError: (arm) => arm(new SiYuanNetworkError()),
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.verificationFailed).toBe(true);
+		expect(result.message).toContain("transport layer");
+		// The verdict is the transport-unverified envelope, not runKbCall's
+		// "SiYuan unreachable" shape (the stub's own network-error text
+		// legitimately rides the detail interpolation).
+		expect(result.blockId).toBe("p1");
+		expect(result.targetGone).toBeUndefined();
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+	});
+
+	it("doc-level: a synchronous kernel rejection surfaces verbatim with the fresh outline", async () => {
+		const { execute, calls } = setup({
+			config: {
+				childrenFor: { "d-doc": [walkBlock("h1", "h", "h1", "Heading")] },
+				onRemoveDoc: () => {
+					throw new SiYuanApiError(-1, -1, "tree not found");
+				},
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			doc: true,
+		});
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("tree not found");
+		expect(result.outline).toContain("Heading");
+		expect(
+			calls.filter((c) => c.method === "removeDocByID").map((c) => c.args),
+		).toEqual(["d-doc"]);
 	});
 
 	it("doc-level: removeDocByID fires and the result carries invalidRefs plus the delete receipt (pinned shape)", async () => {
@@ -2072,10 +2175,12 @@ describe("block-level move", () => {
 		expect(move?.args).toEqual({ fromIDs: ["d-doc"], toID: "nb-r" });
 		expect(result.outline).toBeDefined();
 		expect(result.title).toBe("Docker Networking");
-		// The doc-level echo's hpath is export-sourced (the live kernel rebuilds
-		// the blocks.hpath column asynchronously after moveDocsByID); the stub's
-		// exportMarkdown returns "/doc".
-		expect(result.hpath).toBe("/doc");
+		// The doc-level echo's hpath rides the verdict's own evidence — the
+		// live-tree read the landed judgment ran on (the kernel rebuilds the
+		// blocks.hpath column asynchronously after moveDocsByID, so the SQL
+		// column is never the source). The stub routes exportMarkdown through
+		// the docRoots table.
+		expect(result.hpath).toBe("/Docker Networking");
 		expect(result.anchor).toBeUndefined();
 		expect(result.newBlockId).toBeUndefined();
 		expect(result.movedBlockId).toBeUndefined();
@@ -2096,6 +2201,54 @@ describe("block-level move", () => {
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
 		).toHaveLength(0);
+	});
+
+	it("doc-level: silent rollback behind HTTP success → verified-move failed, never ok", async () => {
+		// moveDocsByID applies nothing in the stub — the tree still reports
+		// the pre-move hpath, which is exactly the silent-rollback shape the
+		// primitive's hpath judgment exists to catch.
+		const harness = moveHarness();
+		const r = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			doc: true,
+			toDocId: "d-other",
+		});
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBeUndefined();
+		// Bare doc-level record: no echo tail — a garnish read here could
+		// mask the verdict (the errorTail rule; siblings carry no tail).
+		expect(r.outline).toBeUndefined();
+		expect(r.hpath).toBeUndefined();
+		expect(r.message).toContain("verified-move failed");
+		expect(r.message).toContain("did not land at the destination");
+		expect(r.message).toContain("/Docker Networking");
+	});
+
+	it("doc-level: evidence-read drop (exportMarkdown) after moveDocsByID → verificationFailed, not a false ok", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const harness = moveHarness(undefined, {
+			armExportError: (set) => {
+				arm = set;
+			},
+			onMove: () => arm?.(new SiYuanNetworkError()),
+		});
+		const r = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			doc: true,
+		});
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		// The mutation's transport succeeded — the move may already be
+		// applied. Never the retry invitation, never "unreachable".
+		expect(r.message).not.toContain("SiYuan unreachable");
+		expect(r.message).toContain("post-write verification reads failed");
+		expect(
+			harness.calls.filter((c) => c.method === "moveDocsByID"),
+		).toHaveLength(1);
 	});
 
 	it("doc-level: kernel rejections (the depth cap) surface verbatim", async () => {

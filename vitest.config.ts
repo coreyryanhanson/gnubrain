@@ -1,19 +1,19 @@
 // The integration suite shares one live kernel and carries cross-file
-// execution order (search-shape first, throttle after all kernel cases,
-// the raw-DML hardening pin last) — its files must never run in parallel with
-// each other, and their order must not depend on vitest's cache-driven
-// default sort (unknown files by size, then previous-run duration, longest
-// first — the ~8-minute throttle file would otherwise drift to the front of
-// the queue and arm the lock over the whole suite). Unit tests don't touch
+// execution order (search-shape first, gate/headless files later). Its files
+// must never run in parallel with each other, and their order must not depend
+// on vitest's cache-driven default sort (unknown files by size, then
+// previous-run duration, longest first). Unit tests don't touch
 // the kernel, so they keep default parallelism via a separate project.
 import { defineConfig } from "vitest/config";
 import { BaseSequencer } from "vitest/node";
 import type { TestSpecification } from "vitest/node";
 
 // Execution order for the live integration suite (endsWith match on the
-// file name). The throttle file must stay last: its throttle case arms the
-// kernel's per-IP lock (the raw-DML hardening pin runs after the lock's
-// expiry, inside the same file).
+// file name). The throttle schedule pin lives in the primitives live suite;
+// the one lock-arming case here (breaker.live's 429 cooldown case, opt-in
+// via SIYUAN_INTEGRATION_THROTTLE=1) arms a minimal ~2 min lock and must run
+// last — while it is held, every other live case on this IP would 429.
+// Without the flag nothing arms the lock and the ordering is convention.
 const INTEGRATION_ORDER = [
 	"smoke.live.test.ts", // search-shape first (cheapest falsifier)
 	"harness.live.test.ts",
@@ -21,8 +21,9 @@ const INTEGRATION_ORDER = [
 	"readPins.live.test.ts",
 	"writeModes.live.test.ts",
 	"writePins.live.test.ts",
-	"gate.live.test.ts", // pi children (masking/scope) + in-process auth breaker
-	"throttleLive.live.test.ts", // encrypted → throttle (arms the lock) → raw-DML hardening
+	"gate.live.test.ts", // pi children (masking/scope), in-process
+	"throttleLive.live.test.ts", // encrypted + raw-DML hardening (no lock arming)
+	"breaker.live.test.ts", // 401 breaker + 429 cooldown (arms a lock under THROTTLE — last)
 ];
 
 class OrderedSequencer extends BaseSequencer {
@@ -41,6 +42,9 @@ class OrderedSequencer extends BaseSequencer {
 
 export default defineConfig({
 	test: {
+		// Verbose by default: runs tee to logs per policy, so per-case lines
+		// make failures greppable without a re-run. CLI flags still win.
+		reporters: ["verbose"],
 		sequence: {
 			sequencer: OrderedSequencer,
 		},

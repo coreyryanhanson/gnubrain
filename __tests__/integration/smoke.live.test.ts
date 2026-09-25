@@ -5,7 +5,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
+import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { BASE_URL, INTEGRATION, TOKEN } from "./harness.js";
 import {
 	certifySelect,

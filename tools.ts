@@ -2,8 +2,8 @@
 // Every call routes through the shared gate (shape → breaker → cooldown → kb
 // param); kernel errors classify in runKbCall. Scoping is tool-owned: the
 // agent never writes box IDs or notebook IDs, and search's aux params are
-// rejected at the schema. Shared kernel primitives live in kernel.ts; the
-// SQL certification layer in sqlScope.ts.
+// rejected at the schema. Kernel primitives live in siyuan-kb-primitives;
+// the SQL certification layer in sqlScope.ts.
 
 import type { Binary } from "node-sql-parser";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -25,17 +25,14 @@ import {
 	runGatedTool,
 	resolveBox,
 } from "./gate.js";
-import {
-	ownershipStmt,
-	withRowPayload,
-	type KernelReadClient,
-} from "./kernel.js";
+import { ownershipStmt, type KernelReadClient } from "siyuan-kb-primitives";
 import {
 	inlineOrSpill,
 	jsonl,
 	RESULT_LIMIT,
 	spillFile,
 	spillPointer,
+	withRowPayload,
 } from "./spill.js";
 import {
 	certifySelect,
@@ -44,7 +41,7 @@ import {
 	reparse,
 	verifyRebuilt,
 } from "./sqlScope.js";
-import { renderOutline } from "./walk.js";
+import { serveOutline } from "./outline.js";
 import type { SessionValidation } from "./validation.js";
 
 export interface ReadToolHooks {
@@ -278,10 +275,10 @@ export async function runSearchFanOut(
 }
 
 // ---------------------------------------------------------------------------
-// kb_read — exportMarkdown (+ the outline ride-along, now walk.ts)
+// kb_read — exportMarkdown (+ the outline ride-along, now outline.ts)
 // ---------------------------------------------------------------------------
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; \`[tabs]\`/\`[unnamed]\` are bracketed notation for containers the kernel refuses as a write target, marked \`(not targetable)\`.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
 
 /**
  * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns
@@ -413,7 +410,7 @@ export async function runRead(
 		hpath: doc.hPath,
 	};
 
-	const outline = await renderOutline(
+	const outline = await serveOutline(
 		kernel,
 		sessionId,
 		"kb_read",

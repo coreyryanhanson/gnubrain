@@ -1,9 +1,9 @@
 // kb_write registration: the tool surface (schema + description), the
 // hooks the chassis injects, the write-path probe gate, and the non-create
 // mode dispatch. The create flow lives in writeCreate.ts; shape/schema in
-// writeSchema.ts; the per-KB grant gate in writeConfirm.ts; guard SQL in
-// writeGuard.ts; anchors in writeAnchors.ts; shared baselines/echo in
-// writeResult.ts.
+// writeSchema.ts; the per-KB grant gate in writeConfirm.ts; mint policy in
+// writeGuard.ts; the guard SQL and anchors (placement) live in the
+// primitives; shared baselines/echo in writeResult.ts.
 
 import type {
 	ExtensionAPI,
@@ -43,7 +43,7 @@ import {
 } from "./writeSchema.js";
 import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines } from "./baselines.js";
-import type { WriteKernelClient } from "./kernel.js";
+import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 
 export interface WriteToolHooks {
 	/** Live session validation — set by session_start / /kb recovery. */
@@ -157,12 +157,15 @@ async function prepareWrite(
 	// unauthenticated, so it does not fire `contact` — the breaker's
 	// reset-on-success contract counts only authenticated calls;
 	// the op's own contact covers any write that reaches the kernel.
-	const probeEnv = await gateWriteAttempt({
+	// The returned verdict is the stamp the flow input carries: the
+	// cached-ok verdict on the cached path, the fresh re-probe result on
+	// the retry path.
+	const probeGate = await gateWriteAttempt({
 		validation,
 		kernel,
 		breaker: hooks.breaker,
 	});
-	if (probeEnv !== null) return probeEnv;
+	if (!probeGate.ok) return probeGate.envelope;
 	const flowBase: WriteFlowBase = {
 		sessionId: ctx.sessionManager.getSessionId(),
 		kernel,
@@ -171,6 +174,7 @@ async function prepareWrite(
 		body: body ?? "",
 		baselines: hooks.baselines,
 		contact,
+		probe: probeGate.probe,
 	};
 	if (p.mode === "create") {
 		return runCreateFlow({

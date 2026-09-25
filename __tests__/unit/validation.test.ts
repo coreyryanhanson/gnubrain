@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
 	SiYuanAuthError,
 	SiYuanNetworkError,
+	type KernelProbeClient,
 	type NotebookList,
-} from "siyuan-kernel-api";
+} from "siyuan-kb-primitives";
 import { loadGnubrainSettings } from "../../settings.js";
 import {
 	latestPersistedScope,
 	runSessionValidation,
-	type KernelProbeClient,
 	type SessionValidation,
 } from "../../validation.js";
 
@@ -98,7 +98,7 @@ describe("startup validation order", () => {
 		expect(result.shapeErrors).toContain(
 			"baseUrl is required and must be a non-empty string",
 		);
-		expect(result.probe).toBe("never-probed");
+		expect(result.probe).toEqual({ verdict: "never-probed" });
 		expect(result.validKBs.size).toBe(0);
 		expect(result.scope).toEqual([]);
 	});
@@ -113,7 +113,7 @@ describe("startup validation order", () => {
 		});
 		expect(calls.version).toBe(1);
 		expect(calls.notebooks).toBe(1);
-		expect(result.probe).toBe("unreachable");
+		expect(result.probe).toEqual({ verdict: "unreachable" });
 	});
 
 	it("strict full-version match — 3.8.4-dev or 3.8 drifts", async () => {
@@ -123,8 +123,10 @@ describe("startup validation order", () => {
 				loaded: await loaded(globalSettings()),
 				kernel,
 			});
-			expect(result.probe).toBe("drift");
-			expect(result.kernelVersion).toBe(version);
+			expect(result.probe).toEqual({
+				verdict: "drift",
+				kernelVersion: version,
+			});
 		}
 	});
 
@@ -135,7 +137,7 @@ describe("startup validation order", () => {
 			kernel,
 			pinnedVersion: "3.9.0",
 		});
-		expect(result.probe).toBe("ok");
+		expect(result.probe).toEqual({ verdict: "ok", kernelVersion: "3.9.0" });
 	});
 });
 
@@ -300,6 +302,6 @@ describe("validation pipeline result sanity", () => {
 		});
 		expect(result.settings?.apiToken).toBe("token");
 		expect(result.validKBs.get("dev")).toBe("nb-1");
-		expect(result.probe).toBe("ok");
+		expect(result.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
 	});
 });

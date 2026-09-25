@@ -36,7 +36,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("harness self-check", () => {
 			const { client, validation, notebookIds } = fixtures;
 			// Version-pin + settings-seam + scope pins asserted in setupFixtures;
 			// here the observable surface for later cases.
-			expect(validation.probe).toBe("ok");
+			expect(validation.probe.verdict).toBe("ok");
 			expect([...validation.validKBs.keys()].sort()).toEqual([
 				"fixture-a",
 				"fixture-b",

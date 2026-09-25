@@ -5,22 +5,24 @@
 // The refused kinds (a heading under `tabs` or an unnamed container) have no
 // markdown-mintable fixture — tabs are a UI construct and a footnote
 // definition cannot carry a heading — so their refusal is pinned by the
-// headingInWalk unit cases; the live pin covers the acceptance side.
+// headingInWalk unit cases; the kernel-side facts those refusals mirror (the
+// membership oracle, the container write-parent set) are pinned by the
+// primitives' own live suite.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
-import { CircuitBreaker } from "../../breaker.js";
-import { ContentBaselines } from "../../baselines.js";
-import { walkBlockTree, type WalkedBlock } from "../../walk.js";
-import { sectionOf } from "../../writeAnchors.js";
-import { headingInWalk, type DocTarget } from "../../writeFlow.js";
-import { createWriteGrantState } from "../../writeConfirm.js";
-import type { WriteKernelClient } from "../../kernel.js";
-import { registerKbWrite } from "../unit/writeHarness.js";
 import {
 	PINNED_SIYUAN_VERSION,
-	type SessionValidation,
-} from "../../validation.js";
+	SiYuanKernelClient,
+	walkBlockTree,
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
+import { CircuitBreaker } from "../../breaker.js";
+import { ContentBaselines } from "../../baselines.js";
+import { sectionOf, type WriteKernelClient } from "siyuan-kb-primitives/write";
+import { headingInWalk, type DocTarget } from "../../writeFlow.js";
+import { createWriteGrantState } from "../../writeConfirm.js";
+import { registerKbWrite } from "../unit/writeHarness.js";
+import { type SessionValidation } from "../../validation.js";
 import {
 	awaitIndexed as hAwaitIndexed,
 	mintDoc as hMintDoc,
@@ -65,8 +67,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 		const validation: SessionValidation = {
 			settings: undefined,
 			shapeErrors: [],
-			probe: "ok",
-			kernelVersion: PINNED_SIYUAN_VERSION,
+			probe: { verdict: "ok", kernelVersion: PINNED_SIYUAN_VERSION },
 			validKBs: new Map([["live", notebookId]]),
 			scope: ["live"],
 			defaultKBs: ["live"],
@@ -141,44 +142,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 		return h!;
 	};
 
-	it("sectionOf().members equals getChildBlocks for every heading, flat and container-nested (the membership oracle)", async () => {
-		const docId = await mintDoc(
-			"membership oracle",
-			[
-				"# Alpha",
-				"",
-				"lead paragraph",
-				"",
-				"## Sub",
-				"",
-				"sub body",
-				"",
-				"> ## Quoted",
-				"> quote body",
-				"",
-				"# Beta",
-				"",
-				"beta body",
-				"",
-			].join("\n"),
-		);
-		const walk = await walkBlockTree(client, docId);
-		const headings = walk.filter((b) => b.type === "h");
-		// The quoted heading exercises the container-nested half of the
-		// equivalence: its members are its siblings INSIDE the quote, which is
-		// also what the kernel answers getChildBlocks with.
-		expect(headings.length).toBe(4);
-		expect(headings.some((h) => (h.parentType ?? "") === "b")).toBe(true);
-		for (const h of headings) {
-			const kernelIds = (await client.getChildBlocks(h.id)).map((b) =>
-				String(b.id),
-			);
-			expect(sectionOf(walk, h.id)!.members.map((m) => m.id)).toEqual(
-				kernelIds,
-			);
-		}
-	});
-
 	it(
 		"append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
 		async () => {
@@ -242,7 +205,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 	);
 
 	it(
-		"a move into a list-item-nested section lands inside the item; the sibling item survives",
+		"a move into a list-item-nested section lands inside the item (the landing judgment is live-pinned primitives-side)",
 		async () => {
 			const execute = liveSetup();
 			const docId = await mintDoc(
@@ -273,80 +236,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 				toDocId: docId,
 				toHeadingId: h.id,
 			});
+			// The landing position (inside the item, sibling surviving) is
+			// live-pinned primitives-side (move.live) — the tool pin here is
+			// the ok envelope and the anchor echo.
 			expect(moved.status).toBe("ok");
-			const after = await walkBlockTree(client, docId);
-			// The moved heading lands inside the list item, right after the
-			// section's end (it is an h1 — the boundary of H's section there,
-			// not a member of it).
-			const nextAfter = after.find((b) => b.id === next.id)!;
-			const body = after.find((b) => b.content === "item body")!;
-			expect(nextAfter.parentId).toBe(body.parentId);
-			const itemChildren = after.filter((b) => b.parentId === body.parentId);
-			expect(itemChildren.at(-1)!.id).toBe(next.id);
-			// The sibling list item survives untouched at doc level.
-			const itemTwo = after.find((b) => b.content === "item two");
-			expect(itemTwo).toBeDefined();
-			expect(itemTwo!.parentId).not.toBe(
-				after.find((b) => b.content === "item one")!.parentId,
-			);
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"appendBlock accepts every markdown-mintable container kind as a write-parent",
-		async () => {
-			const execute = liveSetup();
-			const docId = await mintDoc(
-				"container acceptance",
-				[
-					"# Doc",
-					"",
-					"> # In quote",
-					"> quote body",
-					"",
-					"- item",
-					"",
-					"  ## In item",
-					"",
-					"  item body",
-					"",
-					"> [!NOTE] C",
-					"> ## In callout",
-					"> callout body",
-					"",
-					"{{{row",
-					"# In superblock",
-					"superblock body",
-					"}}}",
-					"",
-				].join("\n"),
-			);
-			const walk = await walkBlockTree(client, docId);
-			for (const content of [
-				"In quote",
-				"In item",
-				"In callout",
-				"In superblock",
-			]) {
-				const target = heading(walk, content);
-				const result = await execute({
-					kb: "live",
-					mode: "append",
-					docId,
-					headingId: target.id,
-					markdown: `appended to ${content}`,
-				});
-				expect(result.status).toBe("ok");
-				const after = await walkBlockTree(client, docId);
-				const containerId = sectionOf(after, target.id)!.containerId;
-				expect(containerId).not.toBeNull();
-				// The kernel accepted the container as a write-parent and the
-				// block is its last child.
-				expect(
-					after.find((b) => b.content === `appended to ${content}`)!.parentId,
-				).toBe(containerId);
-			}
+			expect(String(moved.anchor)).toContain("previousID=");
 		},
 		LIVE_TIMEOUT,
 	);
@@ -372,15 +266,13 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 			expect(moved.status).toBe("ok");
 			expect(String(moved.anchor)).toContain("(doc end)");
 			expect(String(moved.anchor)).toContain("previousID=");
-			const destWalk = await walkBlockTree(client, destId);
-			expect(destWalk.findLast((b) => b.parentId === null)!.id).toBe(mover.id);
 
-			// Blank destination: the kernel never leaves a doc childless (a blank
-			// doc carries one empty paragraph, and deleting it re-mints one), so
-			// the appendBlock(root) leg is unreachable live — the walk sees the
-			// lone paragraph and anchors previousID after it, which lands at the
-			// doc's end all the same (the kernel's prepend quirk avoided even for
-			// a blank destination; the empty-walk leg is unit-pinned).
+			// Blank destination: the kernel never leaves a doc childless (a
+			// blank doc carries one empty paragraph — live-pinned
+			// primitives-side, move.live), so the appendBlock(root) leg is
+			// unreachable live; the walk sees the lone paragraph and anchors
+			// previousID after it (the empty-walk leg is unit-pinned). The
+			// tool pin here is the anchor echo carrying that exact id.
 			const emptyId = await client.createDocWithMarkdown({
 				notebook: notebookId,
 				path: `/blank destination-${run}`,
@@ -388,7 +280,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 			});
 			await awaitIndexed(emptyId);
 			const blankWalk = await walkBlockTree(client, emptyId);
-			expect(blankWalk).toHaveLength(1);
 			const srcWalk2 = await walkBlockTree(client, srcId);
 			const mover2 = srcWalk2.find((b) => b.type === "h")!;
 			const moved2 = await execute({
@@ -401,10 +292,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
 			expect(moved2.status).toBe("ok");
 			expect(String(moved2.anchor)).toContain(
 				`previousID=${blankWalk[0]!.id} (doc end)`,
-			);
-			const blankAfter = await walkBlockTree(client, emptyId);
-			expect(blankAfter.findLast((b) => b.parentId === null)!.id).toBe(
-				mover2.id,
 			);
 		},
 		LIVE_TIMEOUT,

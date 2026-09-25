@@ -6,11 +6,15 @@
 // each read attempts the kernel call; writes retry the probe per attempt.
 
 import {
+	PINNED_SIYUAN_VERSION,
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
-} from "siyuan-kernel-api";
+	probeKernel,
+	type KernelProbeClient,
+	type KernelProbeResult,
+} from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import {
 	breakerRefusalEnvelope,
@@ -24,8 +28,7 @@ import {
 	driftWarning,
 	type Envelope,
 } from "./envelope.js";
-import type { KernelProbeClient, SessionValidation } from "./validation.js";
-import { PINNED_SIYUAN_VERSION } from "./validation.js";
+import type { SessionValidation } from "./validation.js";
 
 /** `query`/`search` take an array of names; every other tool exactly one. */
 export type KbArity = "array" | "single";
@@ -39,8 +42,7 @@ export const EMPTY_SCOPE_MESSAGE =
  * discovery-facing strings cannot drift between read and write tools. */
 export const NOT_READY_VALIDATION =
 	"kb tools are not ready — session validation has not run";
-export const NOT_READY_KERNEL =
-	"kb tools are not ready — settings did not load";
+const NOT_READY_KERNEL = "kb tools are not ready — settings did not load";
 
 function activeList(validation: SessionValidation): string {
 	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
@@ -219,72 +221,91 @@ function classifyKernelError(
 	return null;
 }
 
+/** The effective pin: rides the validation (runSessionValidation resolves
+ * the per-test override); hand-built validations fall back to the constant. */
+function effectivePin(validation: SessionValidation): string {
+	return validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
+}
+
 /** The static (cached, kernel-free) half of the write-path version gate:
  * probe === "drift" refuses from session state alone, so it may run before
  * the grant dialog — a drifted session prompts never, for any KB, for as
  * long as the drift persists. One home for the pinned-version resolution:
  * the write entry calls this ahead of the dialog, and gateWriteAttempt
- * delegates to it first, so the two call sites cannot drift. */
+ * delegates to it first, so the two call sites cannot drift. The pin
+ * itself resolves through effectivePin. */
 export function staticDriftRefusal(
 	validation: SessionValidation,
 ): Envelope | null {
-	if (validation.probe !== "drift") return null;
-	// The effective pin rides the validation (runSessionValidation resolves
-	// the per-test override); hand-built validations fall back to the constant.
-	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
+	if (validation.probe.verdict !== "drift") return null;
 	return versionRefusalEnvelope(
-		validation.kernelVersion ?? "unknown",
-		pinnedVersion,
+		validation.probe.kernelVersion,
+		effectivePin(validation),
 	);
 }
+
+/** Result of the write-path probe gate: either the envelope that refuses
+ * this write, or the verdict to stamp into the flow input — the cached-ok
+ * verdict on the cached path, the fresh re-probe result on the retry path
+ * (so prepareWrite's caller stamps exactly what the gate verified). */
+type WriteProbeGate =
+	| { ok: true; probe: KernelProbeResult }
+	| { ok: false; envelope: Envelope };
 
 /**
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
- * attempt — a still-failed retry refuses only that write. Returns null to
- * proceed. The probe does not fire `contact`: the breaker's reset-on-success
- * contract counts only authenticated calls, and getVersion is unauthenticated
- * — the op's own contact covers any write that actually reaches the kernel.
- * A probe that comes back 429/auth classifies like any kernel call: the 429
- * arms the local cooldown (retrying writes then refuse locally with zero
- * kernel calls — any call inside an active lock extends it), and the verdict
- * stays "unreachable" — the probe retries after the cooldown expires.
+ * attempt — a still-failed retry refuses only that write. Returns the stamp
+ * (the verdict to carry into the flow) on success. The probe does not fire
+ * `contact`: the breaker's reset-on-success contract counts only
+ * authenticated calls, and getVersion is unauthenticated — the op's own
+ * contact covers any write that actually reaches the kernel. A probe that
+ * comes back 429/auth classifies like any kernel call: the 429 arms the
+ * local cooldown (retrying writes then refuse locally with zero kernel
+ * calls — any call inside an active lock extends it), and the verdict stays
+ * unreachable — the probe retries after the cooldown expires.
  */
 export async function gateWriteAttempt(input: {
 	validation: SessionValidation;
 	kernel: KernelProbeClient;
 	breaker: CircuitBreaker;
 	now?: number;
-}): Promise<Envelope | null> {
+}): Promise<WriteProbeGate> {
 	const { validation, kernel } = input;
 	const drift = staticDriftRefusal(validation);
-	if (drift !== null) return drift;
-	if (validation.probe === "ok") {
-		return null;
+	if (drift !== null) return { ok: false, envelope: drift };
+	if (validation.probe.verdict === "ok") {
+		return { ok: true, probe: validation.probe };
 	}
 	// unreachable in production; defensive: per-write-attempt probe retry — never a
-	// session-wide loop.
-	// The effective pin rides the validation (runSessionValidation resolves
-	// the per-test override); hand-built validations fall back to the constant.
-	const pinnedVersion = validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
+	// session-wide loop. The probe rethrows on failure so classifyKernelError
+	// sees the thrown object (429 → cooldown, auth → breaker); the comparison
+	// lives in the pin-owning package, not re-encoded here.
 	try {
-		const version = await kernel.getVersion();
-		validation.kernelVersion = version;
-		if (version !== pinnedVersion) {
-			validation.probe = "drift";
-			return versionRefusalEnvelope(version, pinnedVersion);
+		const fresh = await probeKernel(kernel, effectivePin(validation));
+		validation.probe = fresh;
+		if (fresh.verdict === "drift") {
+			return {
+				ok: false,
+				envelope: versionRefusalEnvelope(
+					fresh.kernelVersion,
+					effectivePin(validation),
+				),
+			};
 		}
-		validation.probe = "ok";
-		return null;
+		return { ok: true, probe: fresh };
 	} catch (err) {
 		const classified = classifyKernelError(
 			err,
 			input.breaker,
 			input.now ?? Date.now(),
 		);
-		if (classified !== null) return classified;
-		validation.probe = "unreachable";
-		return refusedEnvelope(`SiYuan unreachable at ${kernel.baseUrl}`);
+		if (classified !== null) return { ok: false, envelope: classified };
+		validation.probe = { verdict: "unreachable" };
+		return {
+			ok: false,
+			envelope: refusedEnvelope(`SiYuan unreachable at ${kernel.baseUrl}`),
+		};
 	}
 }
 
@@ -359,14 +380,10 @@ export async function runKbCall(
 	// succeeded, so the drift rides the envelope as a payload field. Writes
 	// are separately refused in gateWriteAttempt; the kbs discovery form
 	// (tools.ts) makes zero kernel calls and skips this by design.
-	if (
-		result.status === "ok" &&
-		input.validation.probe === "drift" &&
-		input.validation.kernelVersion !== undefined
-	) {
+	if (result.status === "ok" && input.validation.probe.verdict === "drift") {
 		result.drift = driftWarning(
-			input.validation.kernelVersion,
-			input.validation.pinnedVersion ?? PINNED_SIYUAN_VERSION,
+			input.validation.probe.kernelVersion,
+			effectivePin(input.validation),
 		);
 	}
 	return result;

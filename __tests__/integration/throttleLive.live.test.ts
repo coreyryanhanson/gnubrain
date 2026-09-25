@@ -1,32 +1,34 @@
-// Throttle / raw-DML-hardening / encrypted-notebook cases — the encrypted
-// case needs the kernel (never inside
-// the throttle lock window), the throttle pin runs after all other kernel
-// cases and ends by waiting out the extended lock, and the raw-DML hardening
-// pin runs last (since 3.8.4 it creates no desync — the position is the kept
-// last slot). The cross-file
-// ordering that puts this file last lives in vitest.config.ts (OrderedSequencer).
-//
-// Opt-in: SIYUAN_INTEGRATION=1 for the file; the throttle case additionally
-// needs SIYUAN_INTEGRATION_THROTTLE=1 (its arming sequence ends at a final
-// lock of 480s, extendable to the 15-min cap — never CI, never run twice in
-// quick succession, and it self-heals); the encrypted case
-// needs SIYUAN_ENCRYPTED_PASSWORD and an encryption-enabled workspace (the
+// Encrypted-notebook + raw-DML-hardening cases. The throttle pin lives in
+// the primitives live suite: the kernel lock schedule is pin-owning-repo
+// knowledge, and the extension-cooldown leg is gnubrain surface primitives
+// cannot reach — its refusal branches are pinned by gate.test.ts against a
+// stubbed SiYuanRateLimitError, and the real-429 leg (minimal arming, same
+// THROTTLE flag) lives in breaker.live.test.ts, sequenced after this file.
+// Nothing in this file arms the kernel's per-IP lock, so this file's
+// position is convention, not load-bearing. The encrypted case needs
+// SIYUAN_ENCRYPTED_PASSWORD and an encryption-enabled workspace (the
 // one-time enable is a user action in SiYuan's own UI — the extension never
 // manages the key domain).
+//
+// Opt-in: SIYUAN_INTEGRATION=1. A kernel lock held by an external source
+// still surfaces in beforeAll — the guard below names the self-heal.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SiYuanKernelClient, SiYuanRateLimitError } from "siyuan-kernel-api";
+import {
+	PINNED_SIYUAN_VERSION,
+	SiYuanKernelClient,
+	SiYuanRateLimitError,
+	sqlString,
+} from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { globalSettingsPath, loadGnubrainSettings } from "../../settings.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import {
-	PINNED_SIYUAN_VERSION,
 	runSessionValidation,
 	type SessionValidation,
 } from "../../validation.js";
-import { sqlString } from "../../kernel.js";
 import {
 	BASE_URL,
 	INTEGRATION,
@@ -38,23 +40,7 @@ import {
 	type IntegrationFixtures,
 } from "./harness.js";
 
-const THROTTLE_ENABLED =
-	INTEGRATION && process.env.SIYUAN_INTEGRATION_THROTTLE === "1";
 const ENCRYPTED_PASSWORD = process.env.SIYUAN_ENCRYPTED_PASSWORD ?? "";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** The kernel's lockout math at 3.8.4 (util/session.go): locking starts at
- * the 6th consecutive fail, `30 << (FailCount - 5)` seconds, capped at 15
- * min; any request during a lock (correct token included) records another
- * fail and overwrites the lock. This case's arming sequence ends at FailCount
- * 9 — 6 bogus + the 7th + the correct-token 429 + the during-call kb_read —
- * so the final lock is 30 << 4 = 480s. Each served Retry-After reports the
- * remaining time of the lock BEFORE the fail that extended it, so the last
- * served value (240s) understates the final lock by one generation — the
- * wait floors on the computed 480s, doubled last-served as drift cover.
- * The margin absorbs clock skew (5 s raced it once in the client's runs). */
-const THROTTLE_FINAL_LOCK_MS = 480_000;
-const SLEEP_MARGIN_MS = 15_000;
 
 interface KernelCounts {
 	query: number;
@@ -116,25 +102,8 @@ function readRunner(
 	return async (params) => runToolDetails("kb_read", params, ctx);
 }
 
-/** Teardown that surfaces an active lock instead of cascading extensions
- * toward the cap (each 429 under the lock re-arms it). */
-async function teardownToleratingLock(
-	fixtures: IntegrationFixtures,
-): Promise<void> {
-	try {
-		await fixtures.teardown();
-	} catch (err) {
-		if (err instanceof SiYuanRateLimitError) {
-			throw new Error(
-				"throttle teardown hit the active lock — fixture notebooks left in place, kernel container reset required",
-			);
-		}
-		throw err;
-	}
-}
-
 describe.skipIf(!INTEGRATION || TOKEN === "")(
-	"throttle / raw-DML hardening / encrypted-notebook",
+	"raw-DML hardening / encrypted-notebook",
 	() => {
 		let client: SiYuanKernelClient;
 		let baselineCount: number;
@@ -280,148 +249,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				}
 				const remaining = (await client.listNotebooks()).notebooks.length;
 				expect(remaining).toBe(baselineCount);
-			},
-		);
-
-		it.skipIf(!THROTTLE_ENABLED)(
-			"throttle pin: 6 bogus requests arm the lock, a kb call rides it, expiry self-heals",
-			{ timeout: 1_500_000 },
-			async () => {
-				const fixtures: IntegrationFixtures = await setupFixtures();
-				try {
-					// The fixture pair is active (defaultKBs) before anything is
-					// armed; validation ran clean inside setupFixtures.
-					const marker = `throttle target ${fixtures.notebookIds.fixtureA}`;
-					const docId = await mintDoc(
-						client,
-						fixtures.notebookIds.fixtureA,
-						"/throttle target",
-						`# throttle target\n\n${marker}`,
-					);
-
-					// Known-good call on a guarded endpoint: resets the kernel's
-					// fail counter (successes clear it), so the arming sequence
-					// starts from a clean counter. Rides the typed client — the
-					// raw helper is only for the raw pins below.
-					await client.listNotebooks();
-
-					// 6 bogus-token requests; the 6th still returns 401. All throttle
-					// legs use a guarded endpoint (lsNotebooks) — an unauthenticated
-					// version probe would succeed with a bogus token and prove
-					// nothing.
-					for (let i = 0; i < 6; i++) {
-						const res = await rawKernelCall(
-							"/api/notebook/lsNotebooks",
-							{},
-							{
-								token: `bogus-throttle-${i}`,
-							},
-						);
-						expect(res.status).toBe(401);
-					}
-
-					// 7th bogus call: the distinct 429 class with Retry-After.
-					const seventh = await rawKernelCall(
-						"/api/notebook/lsNotebooks",
-						{},
-						{
-							token: "bogus-throttle-6",
-						},
-					);
-					expect(seventh.status).toBe(429);
-					expect(seventh.headers.get("retry-after")).not.toBeNull();
-					console.error(
-						`[throttle] 7th served Retry-After: ${seventh.headers.get("retry-after")}`,
-					);
-
-					// 8th, correctly-authenticated call: the same 429 — the lock is
-					// shared per-IP (two sessions' 3+3 failures, exercised for
-					// real). The genuine error arms the extension's cooldown.
-					let served: SiYuanRateLimitError | undefined;
-					try {
-						await client.listNotebooks();
-						expect.unreachable("the lock must 429 a correct token too");
-					} catch (err) {
-						expect(err).toBeInstanceOf(SiYuanRateLimitError);
-						served = err as SiYuanRateLimitError;
-					}
-					expect(served?.retryAfterSeconds).toBeDefined();
-					console.error(
-						`[throttle] 8th (correct token) served Retry-After: ${served?.retryAfterSeconds}`,
-					);
-
-					// Extension cooldown leg: a kb call during the lock arms the
-					// local cooldown (it receives the 429 and classifies it); the
-					// next call inside the window is refused locally with zero
-					// kernel round-trips.
-					const breaker = new CircuitBreaker();
-					const counts = zeroCounts();
-					const kernel = countingKernel(client, counts);
-					const run = readRunner(fixtures.validation, kernel, breaker);
-					const armedAt = Date.now();
-					const during = await run({ kb: "fixture-a", docId });
-					expect(during.status).toBe("refused");
-					expect(String(during.message)).toContain("429");
-					expect(breaker.inCooldown()).toBe(true);
-					// The during-call must have made exactly one kernel round-trip —
-					// every extra 429'd call extends the lock a full generation.
-					expect(counts.query).toBe(1);
-					console.error(
-						`[throttle] during-call served Retry-After: ${breaker.lastRetryAfterSeconds}`,
-					);
-					const afterDuring = { ...counts };
-					const inside = await run({ kb: "fixture-a", docId });
-					expect(inside.status).toBe("refused");
-					for (const key of Object.keys(counts) as (keyof KernelCounts)[]) {
-						expect(counts[key]).toBe(afterDuring[key]);
-					}
-
-					// Passive wait ≥ the final lock with ZERO kernel calls — any
-					// request during the lock re-enters the throttle and extends it,
-					// so a poll loop cannot terminate. The during-call's own 429 is
-					// the last extension (the inside call is refused locally), and
-					// each served Retry-After understates the final lock by one
-					// extension generation — the floor accounts for that (see
-					// THROTTLE_FINAL_LOCK_MS above).
-					const lastServed =
-						breaker.lastRetryAfterSeconds ?? THROTTLE_FINAL_LOCK_MS / 1000;
-					await sleep(
-						Math.max(
-							THROTTLE_FINAL_LOCK_MS,
-							2 * lastServed * 1000,
-							breaker.cooldownUntil - Date.now(),
-						) + SLEEP_MARGIN_MS,
-					);
-					console.error(
-						`[throttle] wait done at +${((Date.now() - armedAt) / 1000).toFixed(0)}s after arming`,
-					);
-
-					// Post-expiry: the next call succeeds with no recovery step
-					// (self-healing expiry — no /kb, no re-validation). One bounded
-					// recovery cycle covers an external auth-fail source on this IP
-					// (another client's bad token re-arms the shared per-IP lock
-					// during the blind wait — observed live once): sleep out the
-					// served remainder and probe again. This is not the naive poll —
-					// the sleep always lands past the served remaining time, so it
-					// converges as soon as the external fails stop; if they continue,
-					// no wait strategy can terminate and the case goes red naming the
-					// external source.
-					try {
-						await client.listNotebooks();
-					} catch (err) {
-						if (!(err instanceof SiYuanRateLimitError)) throw err;
-						const remaining = err.retryAfterSeconds ?? 0;
-						console.error(
-							`[throttle] first post-wait probe still locked (remaining ${remaining}s) — external extension suspected; one recovery wait`,
-						);
-						await sleep(remaining * 1000 + SLEEP_MARGIN_MS);
-						await expect(client.listNotebooks()).resolves.toBeDefined();
-					}
-					const after = await run({ kb: "fixture-a", docId });
-					expect(after.status).toBe("ok");
-				} finally {
-					await teardownToleratingLock(fixtures);
-				}
 			},
 		);
 

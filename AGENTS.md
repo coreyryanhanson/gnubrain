@@ -4,6 +4,13 @@ Pi extension (`gnubrain`) that exposes a SiYuan kernel as a knowledge base:
 four tools (`kb_read`, `kb_search`, `kb_query`, `kb_write`) plus the `/kb`
 command. Published to npm as a `pi-package`.
 
+This is the **tools layer** of a three-layer stack (bottom to top):
+`siyuan-kernel-api` (typed thin HTTP client) → `siyuan-kb-primitives`
+(version-pinned kernel primitives over that client) → **gnubrain** (the four
+kb tools, `/kb`, write flows, spill). Kernel-coupled logic — the block-tree
+walk, by-ID reads, the title-guard reads, the guarded-create core, the verify
+loops, the pin and probe — lives in `siyuan-kb-primitives`, not here.
+
 ## Commands
 
 ```sh
@@ -34,7 +41,7 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   `--noEmit` only. Do not add a bundler, `dist/`, or a compile step.
 - **NodeNext ESM: import local modules with a `.js` extension even though the
   files are `.ts`** — `import { guardCall } from "./gate.js"`, and in tests
-  `"../../kernel.js"`. Getting this wrong is the most common breakage.
+  `"../../tools.js"`. Getting this wrong is the most common breakage.
 - **Flat layout.** Every module lives at the repo root (no `src/`); npm
   publishes `*.ts` at the root. Put new modules at the root and keep them flat.
 - TypeScript is strict plus `noUncheckedIndexedAccess` and
@@ -42,6 +49,20 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
 - **Formatting is not cosmetic here:** oxfmt uses tabs and 80 columns; oxlint
   must pass with zero warnings. Husky pre-commit runs lint-staged →
   `oxfmt` + `oxlint --fix --deny-warnings` on staged `*.ts`.
+- **Layering: import the primitives only through their entry points.** The
+  read barrel (`siyuan-kb-primitives`) carries all read primitives, the pin,
+  the probe, and the layer-1 identity surface; the write entry
+  (`siyuan-kb-primitives/write`) is the only path to the write verdicts —
+  the guarded-create core, the verified edit, the verified insert (append
+  and replace-section's insert leg), the verified block/doc moves, and the
+  verified deletes and delete sweep (mutation + landing judgment as one
+  primitive call, returning a closed union with the evidence the verdict
+  was rendered from). Every write mode's mutation is issued there; the
+  flows keep only target resolution, preconditions, and envelope wording.
+  No source file in this repo
+  names `siyuan-kernel-api` — take the client constructor, error classes,
+  and kernel types from the read barrel (one requirer = one layer-1 copy in
+  every install, which keeps `instanceof` identity alive).
 
 ## Design invariants
 
@@ -53,16 +74,28 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
 - **Never silently wrong.** Kernel results that can lie (silently-rolled-back
   inserts, silent no-op DML, hpath-as-address) are verified against the live
   block tree / by-ID asserts, never trusted from the HTTP result. New write
-  modes must verify post-write with `getChildBlocks` walk evidence.
+  modes must verify post-write with `getChildBlocks` walk evidence — the
+  verify loops themselves live in `siyuan-kb-primitives/write` and refuse on
+  version-coupled grounds (drift, silent rollback); a new write mode composes
+  them instead of re-encoding them.
+- **Verdicts carry their evidence.** Write primitives return every post-write
+  fact the tool layer's session policy depends on (walks, ids, hpaths) as
+  verdict detail — gnubrain never re-fetches state a verdict already
+  observed, so baselines and echoes are seeded from the exact snapshot the
+  judgment certified.
 - **Soft scope, tool-surface-only guards.** The API token is a workspace-admin
   credential; the threat model is model accident, not a hostile agent. All
   guards (parser certification, scoping, write grant) are tool-surface-only.
   Hard isolation = separate SiYuan instances, if ever needed.
-- **Upgrade checklist.** On any SiYuan upgrade: run the full integration suite
-  against the new kernel *before* re-pinning — a red suite means re-verify the
-  affected behaviors, never a version-number bump. Same discipline for
-  `node-sql-parser` and `pi-tool-masking` (both exact-pinned; re-run their
-  certification/toolset cases).
+- **Upgrade checklist.** On any SiYuan upgrade: re-run the live suites against
+  the new kernel *before* re-pinning — the pin lives in
+  `siyuan-kb-primitives` (`version.ts`), its repo falsifies the version-pinned
+  behaviors, and this repo exercises them transitively. A primitives release
+  (new pin, changed statements) takes precedence over any gnubrain release
+  built on it. On this repo's side, re-read the tool-side kernel-fact list
+  under "Version coupling" below — one grep-able list, not a re-derivation.
+  Same re-verify discipline for `node-sql-parser` and `pi-tool-masking` (both
+  exact-pinned; re-run their certification/toolset cases).
 - **Deployment posture** (not re-derivable from this repo): non-empty SiYuan
   access auth code — never `ACCESS_AUTH_CODE_BYPASS=true`; kernel port bound
   to the VM-facing interface only; one kernel per workspace (dual writers =
@@ -78,44 +111,164 @@ tests drive the extension through it instead of touching real files.
 - **Every kb tool call routes through `gate.ts`.** Reads use `runKbCall`;
   writes run the per-KB grant gate (after `guardCall`, before
   `gateWriteAttempt`), then `gateWriteAttempt`, then a flow. The gate
-  order is pinned (shape → breaker → 429 cooldown → `kb` param) and
-  refuses locally with zero kernel calls before the op runs. Never call
-  the kernel client outside this path.
+  order is pinned (shape → breaker → 429 cooldown → `kb` param → mint title →
+  cached-verdict drift refusal → grant) and refuses locally with zero kernel
+  calls before the op runs. Never call the kernel client outside this path.
 - **Toolsets** via `pi-tool-masking`: `gnubrain.read` (registered in
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
   `/kb tools read|write|off` toggles them live.
-- **Write flows:** `write.ts` dispatches edit / append / replace-section /
-  delete / move; create is `writeCreate.ts`. Schema/shape in `writeSchema.ts`,
-  grant gate in `writeConfirm.ts`, guard SQL in `writeGuard.ts`.
+- **Write flows** (`write.ts` dispatches edit / append / replace-section /
+  delete / move; create is `writeCreate.ts`) are tool-schema orchestration
+  laced with session state: baselines seeding, spill receipts, move outlines,
+  envelope wording. The kernel-coupled cores they compose —
+  `findTitleMatches`, `createVerifiedDoc`, `editVerified`, `insertVerified`,
+  `blockInDoc`, `rootEcho`, `resolveHeadingTarget` (the heading-target
+  judgment; `headingInWalk` here maps its arms to wording), the verified
+  block/doc moves (`moveBlockVerified` / `moveDocVerified`), the verified
+  delete sweep (`sweepSectionMembers`), the verified deletes
+  (`deleteBlockVerified` / `deleteDocVerified`), and the placement module
+  (the section rule and the anchors derived from it) — live in
+  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions;
+  `writeVerdicts.ts` maps every kind to agent-facing wording via exhaustive
+  switches (no default), so a new kind in a primitives release fails
+  typecheck until its wording is written here — the anchor echoes ride the
+  same rule (`appendAnchorEcho` / `moveAnchorEcho`), and the shared
+  pre-judgment failure ladder of the verified mutation flows
+  (`mutationFailureEnvelope`: drift / transport-unverified / kernel-refused /
+  verification-failed) is worded there too, so a new failure arm fails
+  typecheck once, not per flow.
+  Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
+  policy in `writeGuard.ts` (`validateMintTitle` — the guard's stmt
+  builders and the mint-title kernel facts both moved down; only the
+  wording stays).
+- **Session state** stays here: `baselines.ts` (what this chat was shown),
+  `breaker.ts` (consecutive-failure state machine; its cooldown floor derives
+  from the barrel's `authLockSeconds(6)` — it dodges the kernel's per-IP lock,
+  never calls into one), grant state, spill receipts. These are
+  session-lifetime policy, not kernel facts.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
   only single-table `SELECT` from `blocks`/`refs`; scope is spliced into the
-  AST and re-parsed for verification.
+  AST and re-parsed for verification. It stays here because model-authored SQL
+  is a tool-surface problem — the primitives' own statements are hand-built
+  with fixed heads, no parser.
+- **Result shaping** stays here: `spill.ts` owns inline-vs-spill
+  (`withRowPayload`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`, `RESULT_LIMIT`) and
+  `outline.ts` owns outline presentation (pure `renderOutlineLines` + the
+  required-baselines serve wrappers `serveOutline`/`serveOutlineFromWalk`).
+  Envelopes (`envelope.ts`) are tool-surface policy and never move.
 - Every tool result is an envelope `{status: ok | near_matches | duplicate |
   error | refused, message, ...}` (`envelope.ts`) — use its factory helpers,
   don't invent statuses. Large payloads spill to session temp files.
 
-## SiYuan version pin
+## Version coupling
 
-`PINNED_SIYUAN_VERSION` lives in `validation.ts` (`"3.8.4"`). Version drift
-fails writes closed and warns on reads. Change the pin only deliberately — the
-live harness asserts the kernel reports it exactly. Tests override per-run via
-`deps.pinnedVersion` / `runSessionValidation({ pinnedVersion })`.
+The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.4"`), the drift probe
+(`probeKernel` → `KernelProbeResult`), and the pinned lock schedule
+(`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts` — not in
+`validation.ts`. This repo consumes them through the read barrel: writes fail closed on a `drift` verdict — the gate refuses
+before the op runs, and the probe-taking primitives refuse again inside
+(the sweep takes no probe, so replace-section's drift refusal is the
+gate's alone), reads warn, and the breaker derives its cooldown floor from
+the formula. Change the pin only deliberately, in the primitives repo — its live
+suite asserts the kernel reports the pin exactly, and the checklist above
+gates the bump.
 
-Kernel behaviors pinned at that version that the code relies on: doc identity
-is the docId — hpath is a derived display label, never an address; doc titles
-store verbatim in `blocks.content`; `blocks.sort` is a type weight, not
-document order (enumerate structure via `getChildBlocks`, not SQL); nested doc
-nesting is the hpath chain — `blocks.parent_id` is empty on `'d'` rows — and
-ancestor/self-subtree doc moves are rejected synchronously ("Cannot move to
-this location"), so no pre-check guards them. DML through `/api/query/sql`
-is a silent no-op. `blocks.content`/`refs`/`hpath` converge 1.5–3 s
-asynchronously after a write (hpath last, after `moveDocsByID`); tree
-endpoints (`getChildBlocks`, `exportMarkdown`) are synchronous. Auth
-throttle: locking starts at the 6th consecutive auth failure
-(`30 << (fail − 5)` seconds, 15-min cap; any request during a lock — correct
-token included — records another fail and overwrites the lock) — 429 is never
-counted toward the extension breaker and never retried.
+**Tool-side kernel-fact list** — the complete set of spots in *this* repo
+whose comments or wording reference a pinned kernel behavior. The
+falsifying tests for every fact live in the primitives repo or a local
+live suite as noted; the tool-side code at each spot is wording and
+precondition, not the fact itself. An upgrade pass re-reads this list and,
+where the cited fact changed, updates wording/comments here and
+re-falsifies the fact there:
+
+- `assertFreshContent` (`writeResult.ts`) — the fresh-content precondition
+  rides the live tree, never the SQL index (`blocks.content` converges
+  asynchronously), and the walk ≡ SQL equivalence claim (the kernel builds
+  both via `nodeStaticContent`, so walk-form and SQL-form baselines hash
+  identically). The hash comparison itself is executable dependence on
+  that equivalence — the one deliberate exception to the move-down rule:
+  it is fail-closed (a kernel that ever split walk-form from SQL-form
+  refuses `stale_content`, re-baselines, and the retry proceeds), and the
+  dependence is inherent while `kb_query` may serve SQL-form baselines.
+  Falsified by the primitives live content-equivalence case.
+- `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
+  getChildBlocks ≡ `blocks.content` equivalence; the code depends on
+  nothing. The same claim (comment only, no dependence) appears in the
+  baseline-refresh comment in `writeResult.ts` and the
+  `serveOutlineFromWalk` doc comment in `outline.ts`. Falsified by the
+  same primitives live case.
+- The type-`'d'` root-row wording in `resolveDocTarget`'s refusal
+  (`writeFlow.ts`) — wording only; the type-`'d'` row semantics the wording
+  describes moved with the pin (`rootEcho` in the primitives). The same
+  type-`'d'` row fact is also the discovery hint in `kb_read`'s
+  missing-docId refusal (`tools.ts`). Falsified by
+  the primitives live title round-trip and by-ID cases.
+- The insert-shape fact — one `doOperations` entry per markdown insert,
+  whole body in its `data` — moved down with `insertVerified` (primitives
+  `write.ts`). Falsified by the primitives live insert-shape case plus
+  local append/replace-section round trips (`writeModes.live`).
+- The baseline-seeding comment (`establishBaselines`, `writeResult.ts`) —
+  repeats the walk ≡ `blocks.content` equivalence. Same primitives live case.
+- The `lsNotebooks` encrypted-flag fact (`validation.ts`) — `encrypted` is
+  always present in the listing regardless of lock state, and the SQL
+  surface cannot see encrypted boxes, so one rejection covers both lock
+  states. Falsified locally by `throttleLive.live` (the
+  encrypted-notebook case).
+- The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
+  found" — moved down with `deleteBlockVerified` / `deleteDocVerified`
+  (primitives `delete.ts`); the flow-side wording (kernel error verbatim
+  with the fresh outline, the targetGone receipt gate) stays tool-side.
+  Falsified by the primitives' `delete.live` (tree-not-found case) and
+  their `sweep.live` cascade case.
+- The mint-policy claims (`validateMintTitle`, `writeGuard.ts`) —
+  wording only; the facts themselves (the `normalizeDocTitle` 512-rune
+  truncation bound, the `/` path-separator rule) moved down as
+  `mintTitleProblem` in the primitives' `/write` entry (`rootEcho`
+  promotion template), falsified by the primitives title round-trip and
+  their own unit suite; the rejection set remains a superset claim over
+  `normalizeDocTitle`, pinned live by the same round-trip.
+- The synchronous-move-rejection fact — the kernel rejects ancestor moves
+  synchronously ("Cannot move to this location", doc-level record, no echo
+  tail) — moved down with `moveDocVerified` (primitives `move.ts`); the
+  doc-level move record shape (outline + title/hpath echo, no
+  anchor/newBlockId/destOutline) stays tool-side wording. Falsified by the
+  primitives' `move.live` (ancestor-move case).
+- The hpath-rebuild fact — `blocks.hpath` is a derived column the index
+  rebuilds asynchronously after `moveDocsByID` (still the pre-move value
+  immediately after the move), so the landed judgment and the echoed hpath
+  ride the live tree — moved down with `moveDocVerified`. Falsified by the
+  primitives' `move.live` (the SQL-lag pin).
+- The delete-cascade fact — the kernel's cascade removes a container
+  member's descendants with it, so the sweep deletes only the enumerated
+  members — moved down with `sweepSectionMembers` (primitives `sweep.ts`);
+  the call-site comment in `writeReplaceSection.ts` is a summary kept for
+  the pre-enumeration rationale, and the sweep's partial-apply envelope
+  wording (byte-identical receipt, do-not-retry guidance) stays tool-side.
+  Falsified by the primitives' `sweep.live` (cascade case).
+- The `kb_query` description claims (`tools.ts`, `QUERY_DESCRIPTION`) —
+  agent-facing wording: `sort` is a block-type weight, not display order
+  (document order comes from the outline or the anchor ids), and `hpath`
+  is a derived display label, never an address. Wording pinned by the
+  local unit suite (`tools.test.ts`); the semantics ride the primitives'
+  walk suites.
+- The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
+  endpoint is a silent no-op in every mode (code 0, row untouched), so the
+  endpoint is no longer a mutation vector and the tool still rejects DML
+  by shape. Pinned by the local live suite (`throttleLive.live`, raw-DML
+  hardening case).
+- The breaker-floor and probe/cooldown comments (`breaker.ts`,
+  `gateWriteAttempt` in `gate.ts`) — the cooldown floor derives from the
+  barrel's `authLockSeconds(6)`; a `getVersion` probe is unauthenticated so
+  it never counts as breaker contact; a 429 arms the local cooldown, and
+  any call inside an active lock extends it. Schedule and extension
+  falsified by the primitives' `throttle.live`; the extension's half by
+  `breaker.live` (under `SIYUAN_INTEGRATION_THROTTLE=1`).
+
+If an entry here ever grows executable dependence on a pinned behavior, move
+the code down into the primitives (the `rootEcho` promotion is the template) —
+do not lengthen the list. Sole deliberate exception: `assertFreshContent`'s
+walk ≡ SQL hash comparison (fail-closed; recorded in its entry).
 
 ## Settings
 
@@ -131,14 +284,22 @@ counted toward the extension breaker and never retried.
 
 - `__tests__/unit` runs with default parallelism; `__tests__/integration` sets
   `fileParallelism: false` and an explicit `INTEGRATION_ORDER` in
-  `vitest.config.ts`. **That order is load-bearing:** `throttleLive.live.test.ts`
-  must stay last — its throttle case arms the kernel's per-IP lock.
+  `vitest.config.ts`. The throttle schedule pin lives in the primitives live
+  suite; the extension's half of the throttle story
+  (`breaker.live.test.ts`) arms a minimal lock under
+  `SIYUAN_INTEGRATION_THROTTLE=1` (6 bogus auths + the one observation call;
+  ~2 min self-heal) and must run last — while it is held, every other live
+  case on this IP would 429.
 - Unit tests use `__tests__/helpers/fakePi.ts` and SQL-routed kernel stubs
-  (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup). **Stubs route
-  on the exported `*_STMT_HEAD` constants** (`GUARD_STMT_HEAD`,
-  `OWNERSHIP_STMT_HEAD`, `BLOCK_IN_DOC_STMT_HEAD`, …). If you reword a SQL
-  statement, update its head constant in the same change or the stub silently
-  stops matching.
+  (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
+- The version-pinned behaviors (walk order/parentage, verdict primitives,
+  auth-lock schedule, live title round-trip, the move facts, the delete
+  generation and delete-cascade facts) are falsified by the primitives
+  repo's own unit + live suites; this repo's suites exercise them
+  transitively and are never the sole falsification of a pinned fact. The
+  replace-section and append live cases here pin only tool-surface behavior
+  (envelope wording, partial-replace receipts, insert-before-delete ordering
+  through the gate), not kernel facts.
 - The integration suite needs a live SiYuan 3.8.4 kernel and self-skips
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a
@@ -146,9 +307,12 @@ counted toward the extension breaker and never retried.
 
 ## Roadmap (parked)
 
-- RAG / vector sidecar (v2 primary): external sidecar fed by
-  `exportMdContent`/`query/sql`, never a second writer; store the embedding
-  model id per-vector so model swaps are re-embeds, not migrations.
+- RAG / vector sidecar (v2 primary): a third consumer of the primitives read
+  barrel — fed by `exportMdContent`/`query/sql`, never a second writer; it
+  must never import `siyuan-kb-primitives/write`, and composes the same
+  auth-lock dodge the breaker does, from the barrel's `authLockSeconds`. Store
+  the embedding model id per-vector so model swaps are re-embeds, not
+  migrations.
 - Embedding-assisted dedup as primary identity; title guard stays as the
   zero-dep fallback (via the existing `near_matches` status).
 - Smaller parked items: spill-file cleanup pass, named KB groups,
@@ -160,4 +324,8 @@ counted toward the extension breaker and never retried.
 `scripts/release.mjs`: tests → version bump → promotes the CHANGELOG
 `[Unreleased]` section → commit/tag → `npm publish` → reinstate `[Unreleased]`
 → push. Draft CHANGELOG entries before releasing. `prepublishOnly` also runs
-tests + typecheck.
+tests + typecheck and `scripts/check-pack.mjs` (every root module must ship;
+nothing else may). The script refuses to release while any dependency spec is
+a `file:` path — the co-development link (`file:../siyuan-kb-primitives`)
+must be swapped to an exact pin before publishing, and the primitives release
+that this one depends on must already be on the registry (publish bottom-up).

@@ -1,15 +1,12 @@
-// writeGuard tests — mint policy rejections and the title guard (verbatim
-// stored-form patterns, near-match variants, separator-only fallback, uniform
-// duplicate stops, confirmNew bypass) — executed through the registered
-// kb_write tool via the shared harness.
+// writeGuard tests — mint policy rejections and the execute-driven title
+// guard cases (duplicate/near stops, confirmNew bypass) through the
+// registered kb_write tool via the shared harness. The pure pattern cases
+// (LIKE escaping, verbatim stored-form patterns, near-match variants,
+// statement shapes) live in siyuan-kb-primitives, beside the builders.
 
 import { describe, expect, it } from "vitest";
-import {
-	guardExactPattern,
-	guardNearPatterns,
-	guardNearStmt,
-	validateMintTitle,
-} from "../../writeGuard.js";
+import { guardExactPattern } from "siyuan-kb-primitives";
+import { validateMintTitle } from "../../writeGuard.js";
 import { base, setup } from "./writeHarness.js";
 
 describe("mint policy", () => {
@@ -81,39 +78,7 @@ describe("title guard", () => {
 		expect(String(exact?.args)).toContain("R&D");
 	});
 
-	it("escapes % and _ in the guard patterns", () => {
-		expect(guardExactPattern("100%_devops")).toBe("100\\%\\_devops");
-	});
-
-	it("leaves double quotes verbatim — the kernel stores content unescaped", () => {
-		expect(guardExactPattern('a"b')).toBe('a"b');
-		expect(guardNearPatterns('a"b')).toEqual(['a"b%']);
-	});
-
-	it("leaves the apostrophe verbatim — the kernel does not escape it", () => {
-		expect(guardExactPattern("it's")).toBe("it's");
-		expect(guardNearPatterns("it's")).toEqual(["it's%"]);
-	});
-
-	it("near-match legs include the underscore variant (kebab-vs-snake)", () => {
-		expect(guardNearPatterns("docker networking")).toEqual([
-			"docker networking%",
-			"docker-networking%",
-			"docker\\_networking%",
-		]);
-	});
-
-	it("near-match fragments are built from the verbatim title", () => {
-		// One-word titles dedupe to a single leg.
-		expect(guardNearPatterns("R&D")).toEqual(["R&D%"]);
-	});
-
-	it("separator-only titles still yield a well-formed near leg (no empty parens)", async () => {
-		for (const topic of ["-", "_", "---", "- _ -"]) {
-			expect(guardNearPatterns(topic).length).toBeGreaterThan(0);
-			expect(guardNearStmt("nb-r", topic)).not.toContain("AND ()");
-		}
-		// End to end: the create mints instead of failing on malformed SQL.
+	it("separator-only titles mint instead of failing on malformed SQL", async () => {
 		const { execute, calls } = setup();
 		const r = await execute({ ...base, topic: "-" });
 		expect(r.status).toBe("ok");

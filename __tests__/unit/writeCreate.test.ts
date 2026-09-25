@@ -7,14 +7,16 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+	BLOCK_CONTENTS_STMT_HEAD,
 	SiYuanApiError,
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
-} from "siyuan-kernel-api";
-import { VERIFIED_ROOT_STMT_HEAD } from "../../writeCreate.js";
-import { BASELINE_CONTENTS_STMT_HEAD } from "../../writeResult.js";
+} from "siyuan-kb-primitives";
+import { VERIFIED_ROOT_STMT_HEAD } from "siyuan-kb-primitives/write";
+import { CircuitBreaker } from "../../breaker.js";
+import { validation } from "./fixtures.js";
 import { type StubConfig, base, setup } from "./writeHarness.js";
 
 describe("guard-stop staging", () => {
@@ -117,7 +119,7 @@ describe("guard-stop staging", () => {
 		});
 		const baseQuery = harness.client.query.bind(harness.client);
 		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD)) {
+			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
 				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
 				return ids.flatMap((id) =>
 					id !== undefined && stored[id] !== undefined
@@ -444,5 +446,57 @@ describe("transport failure on the create call itself", () => {
 		expect(r.verificationFailed).toBe(true);
 		expect(r.message).toContain("outcome is unverified");
 		expect(r.message).not.toContain("SiYuan unreachable");
+	});
+});
+
+describe("contact-site contract (breaker reset)", () => {
+	/** The gate's observable for the contact contract is recordSuccess: an op
+	 * that reached the kernel resets the consecutive count exactly once per
+	 * call, an op-internal zero-contact refusal (drift) must not. The per-site
+	 * contact counts (once before the guard legs, once pre-submission, none on
+	 * verification) are pinned primitives-side. */
+
+	const duplicateConfig: StubConfig = {
+		exactRows: [
+			{
+				id: "d1",
+				root_id: "d1",
+				content: "Docker Networking",
+				updated: "20260101120000",
+			},
+		],
+	};
+
+	it("guard contact resets the count on a duplicate stop", async () => {
+		const breaker = new CircuitBreaker();
+		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
+		const { execute } = setup({ breaker, config: duplicateConfig });
+		const r = await execute({ ...base, topic: "Docker Networking" });
+		expect(r.status).toBe("duplicate");
+		expect(recordSuccess).toHaveBeenCalledTimes(1);
+	});
+
+	it("confirmNew bypass still fires the pre-submission contact", async () => {
+		const breaker = new CircuitBreaker();
+		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
+		const { execute } = setup({ breaker });
+		const r = await execute({ ...base, confirmNew: true });
+		expect(r.status).toBe("ok");
+		expect(recordSuccess).toHaveBeenCalledTimes(1);
+	});
+
+	it("drift refusal fires no contact — count not reset", async () => {
+		const breaker = new CircuitBreaker();
+		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
+		const { execute } = setup({
+			breaker,
+			validation: validation({
+				probe: { verdict: "drift", kernelVersion: "3.8.5" },
+			}),
+		});
+		const r = await execute({ ...base, topic: "Docker Networking" });
+		expect(r.status).toBe("refused");
+		expect(r.message).toContain("3.8.5");
+		expect(recordSuccess).not.toHaveBeenCalled();
 	});
 });

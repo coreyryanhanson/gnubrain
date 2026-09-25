@@ -7,46 +7,20 @@ import {
 	SiYuanApiError,
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
-	type BlockTransaction,
-} from "siyuan-kernel-api";
+	blockContents,
+	rootEcho,
+	walkBlockTree,
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
 import {
 	errorEnvelope,
 	refusedEnvelope,
 	takePartialReplace,
 	type Envelope,
 } from "./envelope.js";
-import { sqlString, type WriteKernelClient } from "./kernel.js";
-import {
-	renderOutlineFromWalk,
-	walkBlockTree,
-	type WalkedBlock,
-} from "./walk.js";
-
-interface BaselineView {
-	blockId: string;
-	content: string;
-}
-
-function rowsToBaselineView(rows: Record<string, unknown>[]): BaselineView[] {
-	return rows.map((r) => ({
-		blockId: String(r.id),
-		content: String(r.content),
-	}));
-}
-
-/** SELECT heads the kernel stubs route on — keep builders and heads in
- * sync by construction (each builder concatenates its head constant). */
-export const BASELINE_CONTENTS_STMT_HEAD =
-	"SELECT id, content FROM blocks WHERE id IN";
-export const REFERRING_HPATHS_STMT_HEAD =
-	"SELECT DISTINCT hpath FROM blocks WHERE root_id IN";
-export const ROOT_ECHO_STMT_HEAD = "SELECT root_id, content, hpath FROM blocks";
-
-function baselineContentsStmt(ids: string[]): string {
-	return (
-		`${BASELINE_CONTENTS_STMT_HEAD} ` + `(${ids.map(sqlString).join(", ")})`
-	);
-}
+import type { WriteKernelClient } from "siyuan-kb-primitives/write";
+import { serveOutlineFromWalk } from "./outline.js";
+import { verificationReadsFailedMessage } from "./writeVerdicts.js";
 
 /** Establish missing baselines from blocks.content: a SQL-seeded baseline
  * against the live-tree re-check fails closed on any walk-vs-blocks form
@@ -62,10 +36,8 @@ export async function establishBaselines(
 		(id) => baselines.servedHash(id) === undefined,
 	);
 	if (missing.length === 0) return;
-	for (const row of rowsToBaselineView(
-		await kernel.query(baselineContentsStmt(missing)),
-	)) {
-		baselines.remember(row.blockId, row.content);
+	for (const row of await blockContents(kernel, missing)) {
+		baselines.remember(row.id, row.content);
 	}
 }
 
@@ -110,7 +82,7 @@ export async function assertFreshContent(
 			// takes the no-baseline fallback and launders a concurrent change
 			// past the precondition (the target block is already remembered
 			// above). The walk is already in hand — no second walk.
-			const fresh = renderOutlineFromWalk(
+			const fresh = serveOutlineFromWalk(
 				context.sessionId,
 				"kb_write",
 				walk,
@@ -136,74 +108,6 @@ export async function assertFreshContent(
 // ---------------------------------------------------------------------------
 // Write-result contract — echoes + verification evidence
 // ---------------------------------------------------------------------------
-
-/** `data[0].doOperations[0].id` — the pinned response shape (write-result
- * contract; the minted ID serializes as the first insert operation's id). */
-export function newBlockIdFrom(tx: BlockTransaction[]): string | undefined {
-	return tx[0]?.doOperations[0]?.id;
-}
-
-export const REFS_BACKLINK_STMT_HEAD =
-	"SELECT DISTINCT root_id FROM refs WHERE def_block_id IN";
-
-function refsBacklinkStmt(ids: string[]): string {
-	return `${REFS_BACKLINK_STMT_HEAD} (${ids.map(sqlString).join(", ")})`;
-}
-
-/** Referring docs' display paths — the landed envelope's "who cites this"
- * list. */
-function referringHpathsStmt(rootIds: string[]): string {
-	return (
-		`${REFERRING_HPATHS_STMT_HEAD} ` + `(${rootIds.map(sqlString).join(", ")})`
-	);
-}
-
-/** Inbound block-refs over the delete set (delete mode) — same documented
- * SQL surface as every read; the count is advisory (the derived refs index
- * can lag). */
-export async function backlinkCheck(
-	kernel: WriteKernelClient,
-	ids: string[],
-): Promise<{ count: number; hpaths: string[] }> {
-	if (ids.length === 0) return { count: 0, hpaths: [] };
-	const rows = await kernel.query(refsBacklinkStmt(ids));
-	const rootIds = [...new Set(rows.map((r) => String(r.root_id)))];
-	if (rootIds.length === 0) return { count: 0, hpaths: [] };
-	const hpathRows = await kernel.query(referringHpathsStmt(rootIds));
-	return {
-		count: rootIds.length,
-		hpaths: hpathRows.map((r) => String(r.hpath)),
-	};
-}
-
-/** Root row echo: root docId + stored title +
- * real hpath — display plus the echoed target the write contract requires. */
-export async function rootEcho(
-	kernel: WriteKernelClient,
-	boxId: string,
-	docId: string,
-): Promise<{ docId: string; title: string; hpath: string } | undefined> {
-	const rows = await kernel.query(rootEchoStmt(boxId, docId));
-	const row = rows[0];
-	return row === undefined
-		? undefined
-		: {
-				docId: String(row.root_id),
-				title: String(row.content),
-				hpath: String(row.hpath),
-			};
-}
-
-function rootEchoStmt(boxId: string, docId: string): string {
-	return (
-		`${ROOT_ECHO_STMT_HEAD} ` +
-		`WHERE box = ${sqlString(boxId)} AND id = ${sqlString(docId)} AND type = 'd'`
-	);
-}
-
-export function idSet(walk: WalkedBlock[]): Set<string> {
-	return new Set(walk.map((b) => b.id));
-}
 
 /** Post-mutation wrapper for the verification + echo reads every write
  * runs AFTER the kernel mutation has been issued. A network drop there
@@ -239,10 +143,9 @@ export async function finishWrite(
 		// own catch guards against re-enters one error class over.
 		return errorEnvelope(
 			partial === undefined
-				? `the write call returned success but the post-write verification reads failed: ` +
-						`${err instanceof Error ? err.message : String(err)} — the write's ` +
-						`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
-						`(kb_read) and confirm the write landed before repeating it`
+				? verificationReadsFailedMessage(
+						err instanceof Error ? err.message : String(err),
+					)
 				: `the write is partially applied — a mid-write step failed: ` +
 						`${err instanceof Error ? err.message : String(err)} — the earlier ` +
 						`steps have landed; do NOT re-run, re-fetch the outline (kb_read) ` +
@@ -270,7 +173,11 @@ export async function writeEchoTail(input: {
 }): Promise<Record<string, unknown>> {
 	const { kernel, sessionId, boxId, docId, baselines, refreshBlockIds } = input;
 	const walk = input.walk ?? (await walkBlockTree(kernel, docId));
-	const outline = renderOutlineFromWalk(sessionId, "kb_write", walk);
+	// The wrapper seeds all walk headings at echo time — the SQL refresh
+	// below overwrites those rows from the index read in the same call when
+	// the index returns them; a missing row keeps the walk-form hash, which
+	// is the same string on the pinned kernel.
+	const outline = serveOutlineFromWalk(sessionId, "kb_write", walk, baselines);
 	const root = await rootEcho(kernel, boxId, docId);
 	const envelope: Record<string, unknown> = { outline: outline.outline };
 	if (outline.fullOutlinePath !== undefined) {
@@ -299,10 +206,8 @@ export async function writeEchoTail(input: {
 		]),
 	];
 	if (refreshIds.length > 0) {
-		for (const row of rowsToBaselineView(
-			await kernel.query(baselineContentsStmt(refreshIds)),
-		)) {
-			baselines.remember(row.blockId, row.content);
+		for (const row of await blockContents(kernel, refreshIds)) {
+			baselines.remember(row.id, row.content);
 		}
 	}
 	return envelope;

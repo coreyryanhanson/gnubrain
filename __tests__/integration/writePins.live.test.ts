@@ -3,28 +3,38 @@
 // Runs against the live pinned kernel over the shared fixtures; opt-in with
 // SIYUAN_INTEGRATION=1, never in CI.
 //
-// No-honest-live-route notes (unit-pinned instead):
+// No-honest-live-route notes (unit-pinned instead, primitives-side):
 // append's walk-set rollback branch and move's tree-level-miss branch are
 // unreachable live — 3.8.4 executes block writes synchronously and errors on
 // unresolvable ids/anchors instead of rolling back behind an HTTP success.
 // The adjacent honest route (a concurrently deleted boundary anchor → the
 // kernel's synchronous error with the fresh outline attached) is live-pinned
 // in writeModes.live.test.ts; the rollback/tree-level-miss arms are
-// unit-pinned. The container-nested move target and the doc-end move are
-// likewise already live-pinned there.
+// unit-pinned in the primitives' write.test.ts. The move landing facts
+// (block-level judgment, placement-through-move, depth cap) are live-pinned
+// in the primitives' move.live; this file keeps the move envelope pins.
+// The delete-generation fact (3.8.3 success no-op vs 3.8.4 "tree not found")
+// is live-pinned in the primitives' delete.live; this file keeps the delete
+// envelope pins (the verbatim kernel message + fresh outline). The insert
+// transaction's response shape (one insert op carrying the whole body in its
+// data; doOperations[0].id as the minted id and its SQL convergence) is
+// live-pinned in the primitives' writePins.live; this file keeps the
+// tool-path walk-diff and envelope pins.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
+import {
+	SiYuanKernelClient,
+	sqlString,
+	walkBlockTree,
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
-import { sqlString } from "../../kernel.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
-import { sectionOf } from "../../writeAnchors.js";
+import { sectionOf } from "siyuan-kb-primitives/write";
 import { registerReadToolsAndToolset } from "../../tools.js";
-import { walkBlockTree, type WalkedBlock } from "../../walk.js";
 import { registerWriteTool } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
-import { REFS_BACKLINK_STMT_HEAD } from "../../writeResult.js";
 import {
 	INTEGRATION,
 	LIVE_TIMEOUT,
@@ -658,10 +668,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 			expect(self.status).toBe("refused");
 			expect(String(self.message)).toContain("into itself");
 
-			// Own-descendant move: the kernel rejects the ancestor move
-			// synchronously (live 'd' rows carry no parent_id — the hpath chain
-			// is the kernel's nesting record) and the rejection surfaces
-			// verbatim.
+			// Own-descendant move: the primitive's kernel-refused arm surfaces
+			// the kernel's synchronous ancestor-move rejection verbatim (the
+			// rejection fact itself is live-pinned primitives-side, move.live).
 			const ownDesc = await w.run({
 				kb: "fixture-a",
 				mode: "move",
@@ -672,7 +681,9 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 			expect(ownDesc.status).toBe("error");
 			expect(String(ownDesc.message)).toContain("Cannot move to this location");
 
-			// Own-parent no-op: a root-level doc to the notebook root.
+			// Own-parent no-op: a root-level doc to the notebook root — the
+			// tool maps the primitive's landed judgment to ok (the landed
+			// judgment itself is live-pinned primitives-side, move.live).
 			const ownParent = await w.run({
 				kb: "fixture-a",
 				mode: "move",
@@ -680,14 +691,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 				doc: true,
 			});
 			expect(ownParent.status).toBe("ok");
-			const stillThere = await client.query(
-				"SELECT root_id FROM blocks WHERE box = " +
-					sqlString(boxId) +
-					" AND id = " +
-					sqlString(kid2) +
-					" AND type = 'd'",
-			);
-			expect(stillThere).toHaveLength(1);
 		},
 		LIVE_TIMEOUT,
 	);
@@ -735,7 +738,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 	);
 
 	it(
-		"cross-doc block move — movedBlockId equality, destOutline freshness, provenance survives; same-doc shape pin",
+		"cross-doc block move — movedBlockId equality, anchor echo, destOutline freshness; same-doc shape pin",
 		async () => {
 			const srcId = await mintDoc(
 				client,
@@ -769,10 +772,11 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 			expect(sameDoc.movedBlockId).toBe(mover.id);
 			expect(String(sameDoc.anchor)).toContain("(end of section)");
 			expect(sameDoc.destOutline).toBeUndefined();
-			const afterSame = await walkBlockTree(client, srcId);
-			expect(afterSame.findLast((b) => b.parentId === null)!.id).toBe(mover.id);
 
-			// Cross-doc move of the remaining block.
+			// Cross-doc move of the remaining block. The landing judgment
+			// (membership cross-doc, position same-doc, provenance) is
+			// live-pinned primitives-side (move.live) — the tool pins here are
+			// the envelope fields only.
 			const moved = await w.run({
 				kb: "fixture-a",
 				mode: "move",
@@ -786,14 +790,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 			// destOutline is fresh: the destination's post-move heading set.
 			const destOutline = String(moved.destOutline);
 			expect(destOutline).toContain("Dest H");
-			// Provenance survives: same block id, same content, in the
-			// destination tree; gone from the source.
-			const destWalk = await walkBlockTree(client, destId);
-			const landed = destWalk.find((b) => b.id === stayer.id)!;
-			expect(landed.content).toBe("stayer body");
-			const srcAfter = await walkBlockTree(client, srcId);
-			expect(srcAfter.some((b) => b.id === stayer.id)).toBe(false);
-			expect(srcAfter.some((b) => b.id === mover.id)).toBe(true);
 		},
 		LIVE_TIMEOUT,
 	);
@@ -853,83 +849,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 			expect(diff2).toHaveLength(1);
 			expect(diff2).toContain(single.newBlockId);
 			expect(outlineIds(single.outline)).toEqual(await walkHeadingIds(docId));
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"refs index convergence — a write-planted block ref becomes visible to the backlink query within a bounded wait",
-		async () => {
-			const hostId = await mintDoc(
-				client,
-				boxId,
-				"/Ref Host",
-				"# Ref Host\n\nhost body\n",
-			);
-			const targetId = await mintDoc(
-				client,
-				boxId,
-				"/Ref Target",
-				"# Ref Target\n\ntarget body\n",
-			);
-			const targetBlock = await paraId(targetId, "target body");
-			const hostBlock = await paraId(hostId, "host body");
-
-			const w = writeSetup();
-			const edited = await w.run({
-				kb: "fixture-a",
-				mode: "edit",
-				docId: hostId,
-				blockId: hostBlock,
-				markdown: `updated body with ref ((${targetBlock} "x"))`,
-			});
-			expect(edited.status).toBe("ok");
-			// Zero waits would flake: the derived refs index converges on the
-			// same asynchronous pass as blocks (~2–3 s live) — the pin is the
-			// bounded convergence, not literal immediacy.
-			await pollUntil(
-				"write-planted ref reaching the refs index",
-				async () =>
-					(
-						await client.query(
-							REFS_BACKLINK_STMT_HEAD + " (" + sqlString(targetBlock) + ")",
-						)
-					).length >= 1,
-				15_000,
-			);
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"newBlockId response-shape — the transaction's doOperations[0].id is the minted ID and resolves to the inserted content",
-		async () => {
-			const docId = await mintDoc(
-				client,
-				boxId,
-				"/Shape Pin",
-				"# Shape Doc\n\nshape body\n",
-			);
-			const tx = await client.appendBlock({
-				data: "shape probe body",
-				parentID: docId,
-			});
-			const mintedId = tx[0]!.doOperations[0]!.id;
-			expect(String(mintedId)).toMatch(/^\d{14}-[0-9a-z]+$/);
-			// The minted id resolves to the inserted content (content column
-			// converges asynchronously after the append).
-			await pollUntil(
-				"appended block reaching the blocks index",
-				async () =>
-					String(
-						(
-							await client.query(
-								"SELECT content FROM blocks WHERE id = " +
-									sqlString(String(mintedId)),
-							)
-						)[0]?.content ?? "",
-					) === "shape probe body",
-			);
 		},
 		LIVE_TIMEOUT,
 	);

@@ -18,11 +18,13 @@
     (DML, multi-statement, and non-allowlisted `FROM` tables rejected), with
     per-KB scoping spliced into the AST and a LIMIT 64 injected when absent.
   - `kb_write` — create / edit / append / replace-section / delete / move, all
-    behind the per-KB write grant with verified results: minted
-    and moved blocks are asserted against the post-write tree, edits carry a
-    fresh-content precondition (`stale_content` refusal instead of a silent
-    clobber), and delete-bearing writes echo `invalidRefs` plus a receipt of
-    the removed blocks (ids + content; overflow spills to a file pointer).
+    behind the per-KB write grant and all verified: every mutation's landing is
+    judged against the post-write block tree, so a silently rolled-back insert,
+    a no-op delete, or a lost move reads as a refusal, never as ok; minted and
+    moved blocks are asserted against that tree; edits carry a fresh-content
+    precondition (`stale_content` refusal instead of a silent clobber); and
+    delete-bearing writes echo `invalidRefs` plus a receipt of the removed
+    blocks (ids + content; overflow spills to a file pointer).
 
 - **`/kb` command** for session-scoped control:
 
@@ -43,13 +45,12 @@
   (writes may include deletes). **Yes** approves for the interaction, **Always this
   session** for the session, and every other answer (decline, dismissal, timeout,
   failed dialog) denies that KB until the interaction ends. The refusal reason code
-  is renamed `confirm_timeout` → `write_denied` (consumers matching on `reason`
-  must update). `writeConfirmTimeout` (default 60 s, `0` = wait indefinitely) now
+  is `write_denied`. `writeConfirmTimeout` (default 60 s, `0` = wait indefinitely)
   bounds pi's native dialog timeout. `allowUnattendedWrites: true` skips the dialog
   in any session; headless runs (`pi -p`) default-deny unless it is set.
 
 - **Startup validation and degradation.** Sessions validate on startup —
-  kernel version must match the pinned `3.8.4` exactly, `listNotebooks` must
+  kernel version must match the pinned version exactly, `listNotebooks` must
   succeed, encrypted notebooks are rejected in both lock states, unknown KB
   names in settings are warn-and-dropped. Failures degrade the session rather
   than crash it: a status-bar slot shows the severity ladder (unreachable red
@@ -73,5 +74,9 @@
   `defaultKBs` (project wins over global), `allowUnattendedWrites`,
   `writeConfirmTimeout`. See the README for a full example.
 
-- **Kernel dependency: SiYuan 3.8.4 exactly.** A different kernel version is
-  refused at startup with both versions named (pinned version vs. reported).
+- **Kernel coupling lives in `siyuan-kb-primitives`.** Block-tree walks,
+  title-guard reads, placement, and every write verdict — `createVerifiedDoc`,
+  `editVerified`, `insertVerified`, `moveBlockVerified` / `moveDocVerified`,
+  `deleteBlockVerified` / `deleteDocVerified`, `sweepSectionMembers` — ride
+  that package, whose SiYuan version pin this package consumes — writes fail
+  closed on kernel drift, reads warn.

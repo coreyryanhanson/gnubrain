@@ -4,7 +4,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
-} from "siyuan-kernel-api";
+} from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import {
 	gateWriteAttempt,
@@ -180,7 +180,9 @@ describe("guardCall dispatch gate", () => {
 
 describe("runKbCall version-drift warning", () => {
 	it("read results carry the drift warning when the probe verdict is drift", async () => {
-		const v = validation({ probe: "drift", kernelVersion: "3.8.5" });
+		const v = validation({
+			probe: { verdict: "drift", kernelVersion: "3.8.5" },
+		});
 		const envelope = await runKbCall(
 			{
 				validation: v,
@@ -204,8 +206,7 @@ describe("runKbCall version-drift warning", () => {
 
 	it("both gates resolve drift against the validation's effective pin override", async () => {
 		const v = validation({
-			probe: "drift",
-			kernelVersion: "3.8.5",
+			probe: { verdict: "drift", kernelVersion: "3.8.5" },
 			pinnedVersion: "9.9.9",
 		});
 		const envelope = await runKbCall(
@@ -230,8 +231,10 @@ describe("runKbCall version-drift warning", () => {
 			breaker: new CircuitBreaker(),
 			now: NOW,
 		});
-		expect(refusal?.status).toBe("refused");
-		expect(refusal?.message).toContain("9.9.9");
+		expect(refusal !== undefined && !refusal.ok).toBe(true);
+		if (refusal === undefined || refusal.ok)
+			throw new Error("expected refusal");
+		expect(refusal.envelope.message).toContain("9.9.9");
 	});
 
 	it("no drift field on a probe-ok session, and gateWriteAttempt still refuses writes statically", async () => {
@@ -248,15 +251,19 @@ describe("runKbCall version-drift warning", () => {
 		);
 		expect(ok.drift).toBeUndefined();
 
-		const drifted = validation({ probe: "drift", kernelVersion: "3.8.5" });
+		const drifted = validation({
+			probe: { verdict: "drift", kernelVersion: "3.8.5" },
+		});
 		const refusal = await gateWriteAttempt({
 			validation: drifted,
 			kernel: kernelStub(async () => "3.8.5").client,
 			breaker,
 			now: NOW,
 		});
-		expect(refusal?.status).toBe("refused");
-		expect(refusal?.message).toContain("3.8.5");
+		expect(refusal !== undefined && !refusal.ok).toBe(true);
+		if (refusal === undefined || refusal.ok)
+			throw new Error("expected refusal");
+		expect(refusal.envelope.message).toContain("3.8.5");
 	});
 });
 
@@ -459,44 +466,50 @@ describe("runKbCall error classification", () => {
 describe("write gate", () => {
 	it("version drift fails closed with the static refusal naming both versions", async () => {
 		const { client, calls } = kernelStub();
-		const v = validation({ probe: "drift", kernelVersion: "3.9.0" });
+		const v = validation({
+			probe: { verdict: "drift", kernelVersion: "3.9.0" },
+		});
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel: client,
 			breaker: new CircuitBreaker(),
 		});
-		expect(envelope?.status).toBe("refused");
-		expect(envelope?.message).toContain("3.9.0");
-		expect(envelope?.message).toContain("3.8.4");
-		expect(envelope?.message).toContain("PINNED_SIYUAN_VERSION");
+		expect(envelope !== undefined && !envelope.ok).toBe(true);
+		if (envelope === undefined || envelope.ok)
+			throw new Error("expected refusal");
+		expect(envelope.envelope.message).toContain("3.9.0");
+		expect(envelope.envelope.message).toContain("3.8.4");
+		expect(envelope.envelope.message).toContain("PINNED_SIYUAN_VERSION");
 		expect(calls).toEqual([]); // drift verdict is cached — no extra probe
 	});
 
 	it("an unreachable kernel retries the probe per write attempt", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel, calls } = kernelStub();
-		// First write attempt retries and heals the cached verdict.
-		expect(
-			await gateWriteAttempt({
-				validation: v,
-				kernel,
-				breaker: new CircuitBreaker(),
-			}),
-		).toBeNull();
-		expect(v.probe).toBe("ok");
-		// Second attempt sees the cached ok verdict — no extra probe.
-		expect(
-			await gateWriteAttempt({
-				validation: v,
-				kernel,
-				breaker: new CircuitBreaker(),
-			}),
-		).toBeNull();
+		// First write attempt retries and heals the cached verdict — the
+		// gate surfaces the fresh verdict as the stamp.
+		const healed = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker: new CircuitBreaker(),
+		});
+		expect(healed.ok).toBe(true);
+		if (!healed.ok) throw new Error("expected stamp");
+		expect(healed.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
+		expect(v.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
+		// Second attempt sees the cached ok verdict — no extra probe; the
+		// stamp is the cached verdict itself.
+		const cached = await gateWriteAttempt({
+			validation: v,
+			kernel,
+			breaker: new CircuitBreaker(),
+		});
+		expect(cached.ok && cached.probe.verdict === "ok").toBe(true);
 		expect(calls).toEqual(["getVersion"]);
 	});
 
 	it("a still-failed probe retry refuses only that write", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanNetworkError();
 		});
@@ -505,15 +518,17 @@ describe("write gate", () => {
 			kernel,
 			breaker: new CircuitBreaker(),
 		});
-		expect(envelope?.status).toBe("refused");
-		expect(envelope?.message).toContain(
+		expect(envelope !== undefined && !envelope.ok).toBe(true);
+		if (envelope === undefined || envelope.ok)
+			throw new Error("expected refusal");
+		expect(envelope.envelope.message).toContain(
 			"SiYuan unreachable at http://127.0.0.1:6806",
 		);
-		expect(v.probe).toBe("unreachable");
+		expect(v.probe).toEqual({ verdict: "unreachable" });
 	});
 
 	it("a 429 on the probe arms the cooldown instead of reporting unreachable", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const breaker = new CircuitBreaker();
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanRateLimitError(429, 90);
@@ -524,9 +539,11 @@ describe("write gate", () => {
 			breaker,
 			now: NOW,
 		});
-		expect(envelope?.status).toBe("refused");
-		expect(envelope?.message).toContain("rate-limit lockout");
-		expect(envelope?.message).toContain("Retry-After: 90s");
+		expect(envelope !== undefined && !envelope.ok).toBe(true);
+		if (envelope === undefined || envelope.ok)
+			throw new Error("expected refusal");
+		expect(envelope.envelope.message).toContain("rate-limit lockout");
+		expect(envelope.envelope.message).toContain("Retry-After: 90s");
 		// The 429 arms the local cooldown — subsequent writes refuse in
 		// guardCall with zero kernel calls (any call inside an active lock
 		// extends it) — and never counts toward the breaker.
@@ -534,11 +551,11 @@ describe("write gate", () => {
 		expect(breaker.tripped).toBe(false);
 		// The status ladder has no throttle state: the verdict stays
 		// "unreachable" and the probe retries after the cooldown expires.
-		expect(v.probe).toBe("unreachable");
+		expect(v.probe).toEqual({ verdict: "unreachable" });
 	});
 
 	it("a 401 on the probe feeds the breaker's consecutive-failure count", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const breaker = new CircuitBreaker();
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanAuthError(401);
@@ -548,47 +565,51 @@ describe("write gate", () => {
 			kernel,
 			breaker,
 		});
-		expect(envelope?.status).toBe("error");
-		expect(envelope?.message).toContain("auth rejected the request");
+		expect(envelope !== undefined && !envelope.ok).toBe(true);
+		if (envelope === undefined || envelope.ok)
+			throw new Error("expected classification");
+		expect(envelope.envelope.status).toBe("error");
+		expect(envelope.envelope.message).toContain("auth rejected the request");
 		// The probe's own 401 counted toward the threshold — two more
 		// failures trip it, not three.
 		expect(breaker.tripped).toBe(false);
 		breaker.recordAuthFailure();
 		breaker.recordAuthFailure();
 		expect(breaker.tripped).toBe(true);
-		expect(v.probe).toBe("unreachable");
+		expect(v.probe).toEqual({ verdict: "unreachable" });
 	});
 
 	it("an ok probe passes without any probe call", async () => {
 		const { client, calls } = kernelStub();
-		expect(
-			await gateWriteAttempt({
-				validation: validation(),
-				kernel: client,
-				breaker: new CircuitBreaker(),
-			}),
-		).toBeNull();
+		const pass = await gateWriteAttempt({
+			validation: validation(),
+			kernel: client,
+			breaker: new CircuitBreaker(),
+		});
+		expect(pass.ok && pass.probe.verdict === "ok").toBe(true);
 		expect(calls).toEqual([]);
 	});
 
 	it("version drift after a probe retry fails closed", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel } = kernelStub(async () => "4.0.0");
 		const envelope = await gateWriteAttempt({
 			validation: v,
 			kernel,
 			breaker: new CircuitBreaker(),
 		});
-		expect(envelope?.status).toBe("refused");
-		expect(envelope?.message).toContain("4.0.0");
-		expect(v.probe).toBe("drift");
+		expect(envelope !== undefined && !envelope.ok).toBe(true);
+		if (envelope === undefined || envelope.ok)
+			throw new Error("expected refusal");
+		expect(envelope.envelope.message).toContain("4.0.0");
+		expect(v.probe.verdict).toBe("drift");
 	});
 
 	it("a successful probe retry does not reset the breaker's consecutive count — the probe is unauthenticated", async () => {
 		const breaker = new CircuitBreaker();
 		breaker.recordAuthFailure();
 		breaker.recordAuthFailure();
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel } = kernelStub();
 		const envelope = await runKbCall(
 			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
@@ -598,7 +619,7 @@ describe("write gate", () => {
 			},
 		);
 		expect(envelope.status).toBe("refused"); // tripped → fail-fast refusal
-		expect(v.probe).toBe("ok"); // the probe did reach the kernel
+		expect(v.probe.verdict).toBe("ok"); // the probe did reach the kernel
 		// 2 previous failures + this one = tripped; the probe must not have
 		// cleared the count.
 		expect(breaker.tripped).toBe(true);
@@ -607,7 +628,7 @@ describe("write gate", () => {
 
 describe("reads never gate on the cached unreachable verdict", () => {
 	it("runKbCall attempts the kernel op even while the probe verdict is unreachable", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		let kernelCalls = 0;
 		const envelope = await runKbCall(
 			{

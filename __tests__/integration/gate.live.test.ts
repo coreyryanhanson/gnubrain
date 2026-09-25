@@ -1,36 +1,23 @@
-// Scripted live checks for tool masking, scope persistence and the auth
-// breaker (the manual residuals — TTY write-grant, status-slot visibility —
-// stay with the operator by design). Two layers:
-//
-// - Masking/scope cases run real `pi -p` child sessions under a temp HOME
-//   seeded with the fixture settings: a probe extension dumps
-//   pi.getAllTools()/getActiveTools() to a file so the tool-registration and
-//   masking asserts are mechanical, never eyeballed; seeded session files
-//   (harness seedSession) put the resumed child through the real restore path.
-// - The auth-breaker case runs in-process over the live kernel through the
-//   register(pi, deps) seam, with a token-rotating client wrapper so the
-//   per-call 401s are genuine kernel rejections (the field scenario the
-//   breaker exists for: a token that validates at startup but is rejected
-//   mid-session). The zero-further-kernel-calls property is observed here
-//   via the call-counting wrapper (it cannot be observed in an interactive
-//   session — no extension request log — where only the refused-vs-auth-error
-//   signature is visible; the counting-fetch pin itself stays unit-only).
+// Scripted live checks for tool masking and scope persistence (the manual
+// residuals — TTY write-grant, status-slot visibility — stay with the
+// operator by design). The cases run real `pi -p` child sessions under a
+// temp HOME seeded with the fixture settings: a probe extension dumps
+// pi.getAllTools()/getActiveTools() to a file so the tool-registration and
+// masking asserts are mechanical, never eyeballed; seeded session files
+// (harness seedSession) put the resumed child through the real restore path.
+// The in-process auth-breaker cases (401 → breaker, live 429 → cooldown)
+// live in breaker.live.test.ts.
 //
 // Opt-in with SIYUAN_INTEGRATION=1, never in CI.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
-import register, { type GnubrainDeps } from "../../index.js";
-import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import {
-	BASE_URL,
 	INTEGRATION,
 	LIVE_TIMEOUT,
 	REPO_ROOT,
 	TOKEN,
-	mintDoc,
 	runHeadlessPi,
 	scopeEntries,
 	seedHome,
@@ -255,99 +242,4 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
 			}
 		},
 	);
-
-	// ---------------------------------------------------------------
-	// Auth breaker, live: a token that validates at startup but
-	// is rejected per-call (rotation = the field scenario) feeds the
-	// breaker; the tripping read returns refused with the breaker message
-	// (the 3rd consecutive failure returns the local
-	// refusal, not the auth error), post-trip reads refuse locally with
-	// ZERO kernel round-trips, and /kb recovery with the corrected token
-	// restores reads immediately.
-	// ---------------------------------------------------------------
-	it("auth breaker trips on live 401s, refuses locally, recovers via /kb", async () => {
-		const { pi, fire, runCommand, runTool } = createFakePi();
-		const docId = await mintDoc(
-			fixtures.client,
-			fixtures.notebookIds.fixtureA,
-			"/gate-breaker",
-			"breaker recovery target",
-		);
-
-		let stale = false;
-		const calls: string[] = [];
-		const globalSettings = JSON.stringify({ gnubrain: fixtures.settings });
-		const deps: GnubrainDeps = {
-			readFile: async (path: string) => {
-				if (path.startsWith("/project")) {
-					throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-				}
-				return globalSettings;
-			},
-			// Token-rotating client factory: validation always rides the real
-			// token; tool calls ride a stale token while `stale` is set — the
-			// 401s below are genuine live kernel rejections.
-			createClient: () =>
-				new Proxy({} as SiYuanKernelClient, {
-					get(_t, prop) {
-						if (prop === "baseUrl") return BASE_URL;
-						return async (...args: unknown[]) => {
-							calls.push(String(prop));
-							const target = stale
-								? new SiYuanKernelClient(BASE_URL, "gnubrain-gate-bogus-token")
-								: fixtures.client;
-							const fn = Reflect.get(target as object, prop) as (
-								...a: unknown[]
-							) => unknown;
-							return fn.apply(target, args);
-						};
-					},
-				}),
-		};
-		register(pi, deps);
-		const { ctx } = createFakeCtx({ cwd: "/project" });
-		await fire("session_start", ctx);
-
-		const read = async () =>
-			(await runTool("kb_read", { kb: "fixture-a", docId }, ctx)).details as {
-				status: string;
-				message: string;
-			};
-
-		// Mid-session rotation: startup validated with the real token; from
-		// here the client rides the stale token.
-		stale = true;
-		// Reads 1–2: genuine 401s surface as auth errors and feed the breaker.
-		const first = await read();
-		expect(first.status).toBe("error");
-		expect(first.message).toMatch(/auth/i);
-		const second = await read();
-		expect(second.status).toBe("error");
-		expect(second.message).toMatch(/auth/i);
-		expect(calls.length).toBeGreaterThanOrEqual(2);
-
-		// The tripping read returns the local refusal, not an auth error.
-		const tripping = await read();
-		expect(tripping.status).toBe("refused");
-		expect(tripping.message).toContain("circuit breaker");
-
-		// Post-trip: refused locally with zero kernel round-trips.
-		calls.length = 0;
-		const fourth = await read();
-		expect(fourth.status).toBe("refused");
-		expect(fourth.message).toContain("circuit breaker");
-		expect(calls).toEqual([]);
-
-		// Recovery: /kb with the corrected (un-rotated) client re-validates
-		// against the live kernel — success clears the breaker — and reads
-		// restore immediately, no cooldown wait.
-		stale = false;
-		// Bare /kb: the recovery hook re-validates against the live kernel
-		// before dispatch; success clears the breaker.
-		await runCommand("", ctx);
-		calls.length = 0;
-		const recovered = await read();
-		expect(recovered.status).toBe("ok");
-		expect(calls.length).toBeGreaterThanOrEqual(1);
-	});
 });

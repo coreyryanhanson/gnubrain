@@ -3,33 +3,44 @@
 // delete in one call, verified against the post-write tree — a mid-sequence
 // failure must cost visible duplication, never loss.
 
-import { SiYuanApiError, SiYuanKernelError } from "siyuan-kernel-api";
+import {
+	SiYuanKernelError,
+	backlinkCheck,
+	walkBlockTree,
+} from "siyuan-kb-primitives";
+import {
+	deriveAppendAnchor,
+	idSet,
+	insertVerified,
+	sectionOf,
+	sweepSectionMembers,
+} from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
 	markPartialReplace,
 	refusedEnvelope,
 	type Envelope,
-	type PartialReplaceState,
 } from "./envelope.js";
-import { deriveAppendAnchor, sectionOf } from "./writeAnchors.js";
-import { walkBlockTree } from "./walk.js";
 import {
 	echoTail,
 	deletedBlocksTail,
 	headingInWalk,
-	insertRollbackReason,
-	runMutation,
+	errorTail,
+	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import {
 	assertFreshContent,
-	backlinkCheck,
 	establishBaselines,
 	finishWrite,
-	idSet,
-	newBlockIdFrom,
 } from "./writeResult.js";
+import {
+	appendAnchorEcho,
+	insertLandedRefusal,
+	mutationFailureEnvelope,
+	sweepRefusal,
+} from "./writeVerdicts.js";
 
 export async function runReplaceSectionMode(
 	input: WriteFlowInput,
@@ -43,15 +54,14 @@ export async function runReplaceSectionMode(
 	if ("status" in heading) return heading;
 	const deleteSet = sectionOf(walk, headingId);
 	if (deleteSet === undefined) {
-		return refusedEnvelope(
-			`headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-		);
+		return refusedEnvelope(staleHeadingMessage(headingId, doc));
 	}
 	// The anchor is a sibling of the target (the boundary) or the target's
 	// container — never inside a member's subtree, so the insert can never
 	// land inside a block the sweep deletes (the kernel's cascade would
 	// consume the replacement and the heading itself).
 	const anchor = deriveAppendAnchor(walk, heading);
+	const echo = appendAnchorEcho(anchor);
 	// Fresh-content precondition: a concurrency guard, not a consent
 	// mechanism (the grant resolved at the kb_write entry). Establish missing
 	// baselines and check in one step right before the kernel call — the
@@ -74,143 +84,108 @@ export async function runReplaceSectionMode(
 	);
 	if (stale !== null) return stale;
 	// insert-before-delete: a mid-sequence failure must cost visible
-	// duplication, never loss. Same anchor rule as `append`. The insert is
-	// the first mutation — a synchronous kernel rejection here is NOT a
-	// partial replace; it surfaces verbatim with the fresh outline attached
-	// (mirrors the edit flow). Transport classes carry the unverified
-	// verdict — the insert may have landed even though no tx came back.
-	const tx = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
-		anchor.kind === "append"
-			? kernel.appendBlock({
-					data: input.body,
-					parentID: anchor.containerId ?? doc.rootId,
-				})
-			: kernel.insertBlock({ data: input.body, nextID: anchor.nextID }),
-	);
-	if ("status" in tx) return tx;
+	// duplication, never loss. Same anchor rule as `append`. The verified
+	// insert is the first mutation — a synchronous kernel rejection here is
+	// NOT a partial replace; it surfaces verbatim with the fresh outline
+	// attached. Transport classes carry the unverified verdict — the insert
+	// may have landed even though no tx came back.
+	const outcome = await insertVerified(kernel, input.probe, {
+		anchor,
+		body: input.body,
+		rootId: doc.rootId,
+		preIds: idSet(walk),
+	});
+	switch (outcome.kind) {
+		case "drift":
+		case "transport-unverified":
+		case "kernel-refused":
+		case "verification-failed":
+			return mutationFailureEnvelope(outcome, {
+				kb: name,
+				anchor: echo,
+				tail: () => errorTail(input, doc),
+			});
+	}
 	// Everything from here on is post-mutation — a drop anywhere in the
-	// insert verification, the delete sweep, or the echo must never read
-	// as "unreachable" while the insert has landed and the sweep may be
-	// half-applied (finishWrite doc).
-	return finishWrite(name, { anchor: anchor.anchor }, async () => {
-		const newBlockId = newBlockIdFrom(tx);
-		// Verify the insert landed BEFORE any delete — a silent rollback
-		// must not sweep the old section away.
-		const afterInsertWalk = await walkBlockTree(kernel, doc.rootId);
-		const rollback = insertRollbackReason(
-			newBlockId,
-			idSet(walk),
-			idSet(afterInsertWalk),
-		);
-		if (rollback !== undefined) {
+	// delete sweep or the echo must never read as "unreachable" while the
+	// insert has landed and the sweep may be half-applied (finishWrite
+	// doc). The verdict's postWalk IS the post-insert tree — reused below,
+	// never re-traversed.
+	return finishWrite(name, { anchor: echo }, async () => {
+		if (outcome.verdict.kind !== "landed") {
 			// No echo tail here, unlike append's rollback refusal: writeEchoTail
 			// refreshes baselines from a post-write read, and a concurrent
 			// change landing between the stale re-check and this walk would be
 			// laundered into the baseline (the pinned timeline contract). The
 			// refusal wording already carries the evidence that matters — the
 			// old section is untouched.
+			const rollback = insertLandedRefusal(outcome.verdict);
 			return errorEnvelope(
 				`verified-insert failed: ${rollback} — the transaction rolled back silently behind HTTP success; the old section is untouched`,
-				{ kb: name, anchor: anchor.anchor },
+				{ kb: name, anchor: echo },
 			);
 		}
-		// Rollback verified — the kernel-returned id is present in the
-		// post-write tree, so the partial-apply evidence can name it.
-		const landedId: string = newBlockId as string;
-		// Deletes ride the pre-enumerated section members — a post-insert
-		// re-enumeration would sweep the replacement into the delete set.
-		// The members are siblings, so each is already a forest root: the
-		// kernel's cascade removes a container member's descendants with it,
-		// and sweeping those explicitly would error (tree not found) behind a
-		// fully-successful replace.
-		const sweep = deleteSet.members;
-		for (const [i, block] of sweep.entries()) {
-			try {
-				await kernel.deleteBlock(block.id);
-			} catch (err) {
-				const partialIds = (): Pick<
-					PartialReplaceState,
-					"deletedBlockIds" | "remainingBlockIds"
-				> => ({
-					deletedBlockIds: sweep.slice(0, i).map((b) => b.id),
-					remainingBlockIds: sweep.slice(i).map((b) => b.id),
+		// The kernel-returned id is present in the post-write tree (the landed
+		// arm guarantees it), so the partial-apply evidence can name it.
+		const landedId = outcome.verdict.blockId;
+		// The verified delete sweep, whole: the pre-enumerated members in
+		// document order (a post-insert re-enumeration would sweep the
+		// replacement into the delete set), the post-sweep judgment, and the
+		// post-sweep walk as the verdict's evidence — the echo tail below
+		// reuses it, never re-traverses. The members are siblings, so each is
+		// already a forest root: the kernel's cascade removes a container
+		// member's descendants with it, and sweeping those explicitly would
+		// error (tree not found) behind a fully-successful replace.
+		const memberIds = deleteSet.members.map((b) => b.id);
+		const sweep = await sweepSectionMembers(kernel, {
+			rootId: doc.rootId,
+			memberIds,
+			newBlockId: landedId,
+		});
+		if (sweep.kind === "interrupted") {
+			// Transport-class failures (429, auth, network, timeout) have their
+			// own classification paths — 429/auth flow to runKbCall
+			// (cooldown/breaker), network/timeout land in finishWrite
+			// (verificationFailed). The insert has landed and part of the old
+			// section may be swept, so the partial state rides the error for
+			// the catch sites to merge into whatever envelope the classifier
+			// produces. Non-kernel error classes rethrow unmarked, as before.
+			if (sweep.error instanceof SiYuanKernelError) {
+				markPartialReplace(sweep.error, {
+					partialReplace: true,
+					newBlockId: landedId,
+					deletedBlockIds: sweep.deletedBlockIds,
+					remainingBlockIds: sweep.remainingBlockIds,
 				});
-				if (!(err instanceof SiYuanApiError)) {
-					// Transport-class failures (429, auth, network, timeout) have
-					// their own classification paths — 429/auth flow to runKbCall
-					// (cooldown/breaker), network/timeout land in finishWrite
-					// (verificationFailed). The insert has landed and part of
-					// the old section may be swept, so the partial state rides
-					// the error for the catch sites to merge into whatever
-					// envelope the classifier produces.
-					if (err instanceof SiYuanKernelError) {
-						markPartialReplace(err, {
-							partialReplace: true,
-							newBlockId: landedId,
-							...partialIds(),
-						});
-					}
-					throw err;
-				}
-				// The insert has landed and part of the old section may be
-				// swept — a bare error here invites a re-run that duplicates
-				// the replacement. Surface the partial state instead.
-				return errorEnvelope(
-					`replace partially applied: the new section is in place (block '${landedId}') but the delete of '${block.id}' failed (${err instanceof Error ? err.message : String(err)})` +
-						(i > 0 ? `, and ${i} earlier block(s) were deleted` : "") +
-						` — do NOT re-run; delete the remaining old-section block(s) to finish: ${sweep
-							.slice(i)
-							.map((b) => b.id)
-							.join(", ")}`,
-					{
-						kb: name,
-						anchor: anchor.anchor,
-						newBlockId: landedId,
-						partialReplace: true,
-						...partialIds(),
-					},
-				);
 			}
+			throw sweep.error;
 		}
+		if (sweep.kind !== "swept")
+			return sweepRefusal(sweep, {
+				kb: name,
+				anchor: echo,
+				newBlockId: landedId,
+				memberIds,
+			});
 		// invalidRefs: post-write echo over the section's closure — what
 		// actually got orphaned, verified.
 		const invalidRefs = await backlinkCheck(
 			kernel,
 			deleteSet.closure.map((b) => b.id),
 		);
-		// Verified, not trusted: the sweep's cascade must never have consumed
-		// the replacement (an anchor nested inside a swept container is
-		// refused before the mutation, so this only fires on kernel
-		// misbehavior) — a silent loss here must not read as ok.
-		const postSweepWalk = await walkBlockTree(kernel, doc.rootId);
-		if (!idSet(postSweepWalk).has(landedId)) {
-			return errorEnvelope(
-				`verified-replace failed: the new section block '${landedId}' is absent from the post-write tree — the delete sweep's cascade consumed the replacement; do not retry`,
-				{
-					kb: name,
-					anchor: anchor.anchor,
-					newBlockId: landedId,
-					partialReplace: true,
-					deletedBlockIds: sweep.map((b) => b.id),
-					remainingBlockIds: [],
-				},
-			);
-		}
-		// The echo tail must reflect the tree AFTER the deletes: the walk
-		// above IS that tree — reused, not re-traversed.
-		const tail = await echoTail(input, doc, postSweepWalk, [
-			newBlockId as string,
-		]);
+		// The echo tail must reflect the tree AFTER the deletes: the verdict's
+		// postWalk IS that tree — reused, not re-traversed.
+		const tail = await echoTail(input, doc, sweep.postWalk, [landedId]);
 		return {
 			status: "ok",
 			// The closure is what left the doc — the members the sweep deleted
 			// explicitly plus the descendants their cascade removed. The
 			// receipt itemizes it (ids + walk content) — the post-write
 			// visibility the pre-write grant dialog does not carry.
-			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.closure.length} block(s), ${invalidRefs.count} orphaned ref(s)`,
+			message: `replaced the section under heading '${heading.content}' in '${doc.title}' (KB ${name}) — delete set ${deleteSet.closure.length} block(s), ${invalidRefs.count} doc(s) with orphaned refs`,
 			kb: name,
-			anchor: anchor.anchor,
-			newBlockId,
+			anchor: echo,
+			newBlockId: landedId,
 			invalidRefs: { count: invalidRefs.count, hpaths: invalidRefs.hpaths },
 			...deletedBlocksTail(sessionId, deleteSet.closure),
 			...tail,

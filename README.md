@@ -102,6 +102,22 @@ Scope changes persist across sessions.
 > Requires SiYuan 3.8.4 exactly. Any other kernel version refuses writes and
 > warns on reads (see the status indicator for the reported version).
 
+## Architecture
+
+GNUbrain is the top layer of a three-layer stack, each an independent repo:
+
+| Layer | Package | Owns |
+|---|---|---|
+| 1 | [`siyuan-kernel-api`](https://www.npmjs.com/package/siyuan-kernel-api) | Typed thin HTTP client — version agnostic |
+| 2 | [`siyuan-kb-primitives`](https://www.npmjs.com/package/siyuan-kb-primitives) | Version-pinned kernel primitives: block-tree walk, by-ID reads, title guard, guarded create, verify loops, the SiYuan version pin and probe |
+| 3 | `gnubrain` (this repo) | The four kb tools, `/kb`, write flows, session state, spill and envelope shaping |
+
+Everything that can lie because of a kernel version — the walk, the write
+verifications, the pin itself — lives in layer 2 and is falsified by its own
+test suites; this repo consumes it through the primitives' entry points and
+owns only tool-surface policy (approval gates, breaker, scopes, result
+shaping).
+
 ## Development
 
 ```sh

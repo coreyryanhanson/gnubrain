@@ -7,7 +7,7 @@ const theme = { fg: (_color: string, text: string) => text };
 
 function input(overrides?: Partial<KbStatusInput>): KbStatusInput {
 	return {
-		probe: "ok",
+		probe: { verdict: "ok", kernelVersion: "3.8.4" },
 		shapeErrors: [],
 		breakerTripped: false,
 		scope: ["recipes", "projects"],
@@ -27,7 +27,7 @@ describe("renderKbStatus", () => {
 	});
 
 	it("an unreachable kernel shows red and keeps the scope text", () => {
-		const text = renderKbStatus(input({ probe: "unreachable" }), {
+		const text = renderKbStatus(input({ probe: { verdict: "unreachable" } }), {
 			fg: (c, t) => `[${c}]${t}`,
 		});
 		expect(text).toBe("[error]● kb: recipes, projects");
@@ -38,30 +38,36 @@ describe("renderKbStatus", () => {
 			renderKbStatus(input(o), theme);
 		expect(render({ shapeErrors: ["bad"] })).toBe("● kb: config");
 		// Unreachable wins over a tripped breaker — red, scope text, no tag.
-		expect(render({ breakerTripped: true, probe: "unreachable" })).toBe(
-			"● kb: recipes, projects",
-		);
+		expect(
+			render({ breakerTripped: true, probe: { verdict: "unreachable" } }),
+		).toBe("● kb: recipes, projects");
 		expect(render({ breakerTripped: true })).toBe("● kb: breaker");
-		expect(render({ probe: "drift" })).toBe("● kb: version");
+		expect(
+			render({ probe: { verdict: "drift", kernelVersion: "3.8.4" } }),
+		).toBe("● kb: version");
 		// Shape failure beats the breaker and version drift.
 		expect(
-			render({ shapeErrors: ["bad"], breakerTripped: true, probe: "drift" }),
+			render({
+				shapeErrors: ["bad"],
+				breakerTripped: true,
+				probe: { verdict: "drift", kernelVersion: "3.8.4" },
+			}),
 		).toBe("● kb: config");
 	});
 
 	it("degraded-config beats the healthy colors, and shape-failure beats never-probed grey", () => {
 		expect(
 			renderKbStatus(
-				input({ probe: "never-probed", shapeErrors: ["bad"] }),
+				input({ probe: { verdict: "never-probed" }, shapeErrors: ["bad"] }),
 				theme,
 			),
 		).toBe("● kb: config");
 	});
 
 	it("never-probed renders grey with the scope text", () => {
-		expect(renderKbStatus(input({ probe: "never-probed" }), theme)).toBe(
-			"● kb: recipes, projects",
-		);
+		expect(
+			renderKbStatus(input({ probe: { verdict: "never-probed" } }), theme),
+		).toBe("● kb: recipes, projects");
 	});
 
 	it("the healthy capability ladder: reads on → filled dot", () => {

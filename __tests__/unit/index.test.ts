@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SiYuanAuthError, SiYuanRateLimitError } from "siyuan-kernel-api";
+import { SiYuanAuthError, SiYuanRateLimitError } from "siyuan-kb-primitives";
 import { TOOLSET_EVENTS, getRegisteredToolsets } from "pi-tool-masking";
 import register, { type GnubrainDeps } from "../../index.js";
 import {

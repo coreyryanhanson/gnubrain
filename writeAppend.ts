@@ -1,26 +1,37 @@
 // The append flow: tool-derived nextID anchor, doc-end fallback; the
-// returned id is verified against the post-write walk set.
+// mutation and the insert-landed judgment are one primitive call
+// (insertVerified) — the post-write walk rides the verdict.
 
+import { walkBlockTree, type WalkedBlock } from "siyuan-kb-primitives";
+import {
+	deriveAppendAnchor,
+	idSet,
+	insertVerified,
+	type AppendPlacement,
+} from "siyuan-kb-primitives/write";
 import { errorEnvelope, type Envelope } from "./envelope.js";
-import { deriveAppendAnchor, type AppendPlacement } from "./writeAnchors.js";
-import { walkBlockTree, type WalkedBlock } from "./walk.js";
 import {
 	echoTail,
 	headingInWalk,
-	insertRollbackReason,
-	runMutation,
+	errorTail,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import { finishWrite, idSet, newBlockIdFrom } from "./writeResult.js";
+import { finishWrite } from "./writeResult.js";
+import {
+	appendAnchorEcho,
+	insertLandedRefusal,
+	mutationFailureEnvelope,
+} from "./writeVerdicts.js";
 
 export async function runAppendMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
 ): Promise<Envelope> {
 	const { kernel, name, params } = input;
-	// The walk doubles as anchor data AND the pre-write set for verification
-	// (the same walk the anchor derivation fetches).
+	// The walk doubles as anchor data AND the pre-write set the verified
+	// insert's landed judgment diffs against (the same walk the anchor
+	// derivation fetches).
 	const walk = await walkBlockTree(kernel, doc.rootId);
 	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
@@ -33,43 +44,51 @@ export async function runAppendMode(
 		resolvedHeading,
 		params.placement as AppendPlacement | undefined,
 	);
-	const tx = await runMutation(input, { anchor: anchor.anchor }, doc, () =>
-		anchor.kind === "append"
-			? kernel.appendBlock({
-					data: input.body,
-					parentID: anchor.containerId ?? doc.rootId,
-				})
-			: kernel.insertBlock({ data: input.body, nextID: anchor.nextID }),
-	);
-	if ("status" in tx) return tx;
+	const echo = appendAnchorEcho(anchor);
+	// The verified insert: the mutation and the landed judgment are one
+	// primitive call. Transport failures in the mutation phase are outcome-
+	// UNKNOWN (the insert may already be applied); auth / rate-limit errors
+	// rethrow for runKbCall's classification (breaker counting, 429
+	// cooldown).
+	const outcome = await insertVerified(kernel, input.probe, {
+		anchor,
+		body: input.body,
+		rootId: doc.rootId,
+		preIds: idSet(walk),
+	});
+	switch (outcome.kind) {
+		case "drift":
+		case "transport-unverified":
+		case "kernel-refused":
+		case "verification-failed":
+			return mutationFailureEnvelope(outcome, {
+				kb: name,
+				anchor: echo,
+				tail: () => errorTail(input, doc),
+			});
+	}
 	// Post-mutation reads: a network drop here must never read as
-	// "unreachable" — the insert may already be applied (finishWrite doc).
-	return finishWrite(name, { anchor: anchor.anchor }, async () => {
-		// A markdown insert lands as exactly one doOperations entry with
-		// the whole body embedded in its data (pinned live: N-paragraph
-		// body → one insert op), so doOperations[0].id covers the whole
-		// payload. The landed predicate + rollback wording live in
-		// insertRollbackReason (shared with replace-section).
-		const newBlockId = newBlockIdFrom(tx);
-		const postWalk = await walkBlockTree(kernel, doc.rootId);
-		const rollback = insertRollbackReason(
-			newBlockId,
-			idSet(walk),
-			idSet(postWalk),
-		);
-		if (rollback !== undefined) {
-			const tail = await echoTail(input, doc, postWalk);
+	// "unreachable" — the insert is already applied (finishWrite doc). The
+	// landed judgment lives in the primitives' insertVerified (the
+	// pin-owning repo); the refusal wording rides the shared map
+	// (writeVerdicts). The verdict's postWalk IS the post-write tree — the
+	// echo reuses it, never re-traverses.
+	return finishWrite(name, { anchor: echo }, async () => {
+		if (outcome.verdict.kind !== "landed") {
+			const rollback = insertLandedRefusal(outcome.verdict);
+			const tail = await echoTail(input, doc, outcome.postWalk);
 			return errorEnvelope(
 				`verified-append failed: ${rollback} — the transaction rolled back silently behind HTTP success; nothing was inserted`,
-				{ kb: name, anchor: anchor.anchor, ...tail },
+				{ kb: name, anchor: echo, ...tail },
 			);
 		}
-		const tail = await echoTail(input, doc, postWalk, [newBlockId as string]);
+		const newBlockId = outcome.verdict.blockId;
+		const tail = await echoTail(input, doc, outcome.postWalk, [newBlockId]);
 		return {
 			status: "ok",
-			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId as string}`,
+			message: `appended to '${doc.title}' (KB ${name}) — newBlockId ${newBlockId}`,
 			kb: name,
-			anchor: anchor.anchor,
+			anchor: echo,
 			newBlockId,
 			...tail,
 		};

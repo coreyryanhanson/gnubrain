@@ -4,7 +4,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { defineToolset, TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
+import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
 import {
@@ -29,7 +29,7 @@ import {
 	clearSessionGrants,
 	createWriteGrantState,
 } from "./writeConfirm.js";
-import { type WriteKernelClient } from "./kernel.js";
+import { type WriteKernelClient } from "siyuan-kb-primitives/write";
 import {
 	registerWriteTool,
 	WRITE_TOOLSET_ID,
@@ -123,7 +123,7 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	const statusInput = (
 		validation: SessionValidation | undefined,
 	): KbStatusInput => ({
-		probe: validation?.probe ?? "never-probed",
+		probe: validation?.probe ?? { verdict: "never-probed" },
 		shapeErrors: validation?.shapeErrors ?? [],
 		breakerTripped: breaker.tripped,
 		scope: validation?.scope ?? [],

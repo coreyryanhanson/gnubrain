@@ -36,7 +36,26 @@ export function renderKbStatus(
 		? (color: string, text: string) => theme.fg(color, text)
 		: (_color: string, text: string) => text;
 
-	if (input.probe === "unreachable") {
+	// The verdict read as a discriminator: one exhaustive switch (no default)
+	// plus the trailing never-check — a new ProbeVerdict member is a compile
+	// error here instead of a silently blank status dot. The ladder below
+	// interleaves non-verdict causes, so the ordering lives outside.
+	const verdict = ((): "unreachable" | "version" | "never-probed" | "ok" => {
+		switch (input.probe.verdict) {
+			case "unreachable":
+				return "unreachable";
+			case "drift":
+				return "version";
+			case "never-probed":
+				return "never-probed";
+			case "ok":
+				return "ok";
+		}
+		input.probe satisfies never;
+		return "ok";
+	})();
+
+	if (verdict === "unreachable") {
 		return `${fg("error", GLYPH_FILLED)} kb: ${input.scope.join(", ") || "(none)"}`;
 	}
 
@@ -44,12 +63,12 @@ export function renderKbStatus(
 	let cause: string | undefined;
 	if (input.shapeErrors.length > 0) cause = "config";
 	else if (input.breakerTripped) cause = "breaker";
-	else if (input.probe === "drift") cause = "version";
+	else if (verdict === "version") cause = "version";
 	if (cause !== undefined) {
 		return `${fg("warning", GLYPH_FILLED)} kb: ${cause}`;
 	}
 
-	if (input.probe === "never-probed") {
+	if (verdict === "never-probed") {
 		return `${fg("muted", GLYPH_FILLED)} kb: ${input.scope.join(", ") || "(none)"}`;
 	}
 

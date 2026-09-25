@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { createFakePi as fakePi } from "../helpers/fakePi.js";
-import { SiYuanApiError } from "siyuan-kernel-api";
+import {
+	SiYuanApiError,
+	walkBlockTree,
+	type KernelReadClient,
+} from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
-import {
-	MAX_WALK_DEPTH,
-	renderOutlineFromWalk,
-	walkBlockTree,
-} from "../../walk.js";
+import { renderOutlineLines } from "../../outline.js";
 import {
 	inlineOrSpill,
 	PREVIEW_CHARS,
@@ -35,7 +35,6 @@ import {
 	rebuildWithScope,
 	verifyRebuilt,
 } from "../../sqlScope.js";
-import type { KernelReadClient } from "../../kernel.js";
 import type { SessionValidation } from "../../validation.js";
 import { validation as makeValidation } from "./fixtures.js";
 
@@ -760,7 +759,7 @@ describe("read tool", () => {
 			},
 		};
 		const walk = await walkBlockTree(client, "d1");
-		const { outline } = renderOutlineFromWalk("sess-1", "kb_read", walk);
+		const outline = renderOutlineLines(walk).join("\n");
 		expect(outline.split("\n")).toEqual([
 			"# Top → h1",
 			">## In quote → hq",
@@ -795,40 +794,6 @@ describe("read tool", () => {
 		expect(tolerant.map((b) => b.id)).toEqual(["gone"]);
 		// Default (write verification): the same error propagates.
 		await expect(walkBlockTree(client, "d1")).rejects.toBe(boom);
-	});
-
-	it("walk renders a container chain exactly to the recursion bound (no off-by-one truncation)", async () => {
-		// A chain of containers ending in a heading leaf; the walk must
-		// render every level up to the bound and cut cleanly past it.
-		const chainClient = (leafAfter: number): KernelReadClient => ({
-			...kernelStub().client,
-			async getChildBlocks(id) {
-				if (id === "d1")
-					return [{ id: "c1", type: "l", subType: "", content: "" }];
-				const m = /^c(\d+)$/.exec(id);
-				if (m === null) return [];
-				const d = Number(m[1]);
-				return d < leafAfter
-					? [{ id: `c${d + 1}`, type: "l", subType: "", content: "" }]
-					: [{ id: "leaf", type: "h", subType: "h1", content: "deep" }];
-			},
-		});
-		// Exactly the bound: c1..c{N-1} containers, the leaf lands at depth N.
-		const full = await walkBlockTree(chainClient(MAX_WALK_DEPTH - 1), "d1");
-		expect(full.map((b) => b.id)).toEqual([
-			...Array.from({ length: MAX_WALK_DEPTH - 1 }, (_, i) => `c${i + 1}`),
-			"leaf",
-		]);
-		expect(full.at(-1)?.parentId).toBe(`c${MAX_WALK_DEPTH - 1}`);
-		expect(full.at(-1)?.parentType).toBe("l");
-		// One level deeper: the leaf would sit past the bound and is cut,
-		// with the deepest in-bound container level intact.
-		const over = await walkBlockTree(chainClient(MAX_WALK_DEPTH), "d1");
-		expect(over.map((b) => b.id)).toEqual(
-			Array.from({ length: MAX_WALK_DEPTH }, (_, i) => `c${i + 1}`),
-		);
-		expect(over.at(-1)?.parentId).toBe(`c${MAX_WALK_DEPTH - 1}`);
-		expect(over.at(-1)?.parentType).toBe("l");
 	});
 });
 

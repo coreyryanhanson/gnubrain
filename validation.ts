@@ -3,22 +3,26 @@
 // A shape failure degrades the session and skips the network steps; every
 // later tool call is rejected with the problem named, never a crash.
 
-import { SiYuanAuthError, type NotebookList } from "siyuan-kernel-api";
+import {
+	PINNED_SIYUAN_VERSION,
+	SiYuanAuthError,
+	probeKernel,
+	type KernelProbeClient,
+	type KernelProbeResult,
+	type NotebookList,
+} from "siyuan-kb-primitives";
 import type { GnubrainSettings, LoadedSettings } from "./settings.js";
 
-export const PINNED_SIYUAN_VERSION = "3.8.4";
-
-/** probe verdict, cached for the session. `never-probed` = the shape
- * check failed before the probe ran (a distinct state from unreachable). */
-export type ProbeVerdict = "ok" | "drift" | "unreachable" | "never-probed";
-
-/** Structural client subset the validation pipeline needs (tests stub it). */
-export interface KernelProbeClient {
-	/** Kernel origin without trailing slash (for unreachable-kernel messages). */
-	readonly baseUrl: string;
-	getVersion(): Promise<string>;
-	listNotebooks(): Promise<NotebookList>;
-}
+/** probe verdict, cached for the session. A discriminated union of objects:
+ * the ok/drift members carry the observed kernel version (one home that
+ * cannot disagree with the verdict); `never-probed` = the shape check
+ * failed before the probe ran (a distinct state from unreachable); the two
+ * session-lifecycle members are this pipeline's own states — the primitives
+ * package never produces them. */
+export type ProbeVerdict =
+	| KernelProbeResult
+	| { verdict: "unreachable" }
+	| { verdict: "never-probed" };
 
 export interface SessionValidation {
 	/** undefined when shape validation failed. */
@@ -26,7 +30,6 @@ export interface SessionValidation {
 	/** Non-empty = degraded session: every tool call refused with the problem named. */
 	shapeErrors: string[];
 	probe: ProbeVerdict;
-	kernelVersion: string | undefined;
 	/** Post-validation KB name → notebook id (stale/encrypted dropped). */
 	validKBs: Map<string, string>;
 	/** Active scope names, all valid; empty = nothing active (never activate-all). */
@@ -102,8 +105,7 @@ export function degradedValidation(errors: string[]): SessionValidation {
 	return {
 		settings: undefined,
 		shapeErrors: errors,
-		probe: "never-probed",
-		kernelVersion: undefined,
+		probe: { verdict: "never-probed" },
 		pinnedVersion: PINNED_SIYUAN_VERSION,
 		validKBs: new Map(),
 		scope: [],
@@ -135,8 +137,7 @@ export function rateLimitedValidation(input: {
 		// Not "never-probed" (that name means the shape gate stopped us) and no
 		// probe ran — "unreachable" is the honest verdict: the kernel cannot
 		// serve this session right now, and a write attempt may re-probe it.
-		probe: "unreachable",
-		kernelVersion: undefined,
+		probe: { verdict: "unreachable" },
 		pinnedVersion: input.pinnedVersion ?? PINNED_SIYUAN_VERSION,
 		validKBs: new Map(),
 		scope: [],
@@ -186,13 +187,13 @@ export async function runSessionValidation(input: {
 
 	// Step 2 — kernel probe: unauthenticated, connectivity + version only.
 	// Strict full-version match; drift fails writes closed, reads proceed.
+	// The comparison lives in the pin-owning package (probeKernel); this
+	// caller owns its own swallow policy — a failed probe is "unreachable".
 	let probe: ProbeVerdict;
-	let kernelVersion: string | undefined;
 	try {
-		kernelVersion = await kernel.getVersion();
-		probe = kernelVersion === pinnedVersion ? "ok" : "drift";
+		probe = await probeKernel(kernel, pinnedVersion);
 	} catch {
-		probe = "unreachable";
+		probe = { verdict: "unreachable" };
 	}
 
 	// Step 3 — notebook existence + encryption state. The first authenticated
@@ -231,7 +232,6 @@ export async function runSessionValidation(input: {
 			settings,
 			shapeErrors,
 			probe,
-			kernelVersion,
 			pinnedVersion,
 			validKBs,
 			scope: [],
@@ -254,7 +254,6 @@ export async function runSessionValidation(input: {
 		settings,
 		shapeErrors,
 		probe,
-		kernelVersion,
 		pinnedVersion,
 		validKBs,
 		scope,

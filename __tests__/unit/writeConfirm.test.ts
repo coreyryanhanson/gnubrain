@@ -33,7 +33,7 @@ describe("markdownFile input", () => {
 
 	it("reads the file before the probe gate — a bad path still fires zero kernel calls on an unreachable kernel", async () => {
 		const v: SessionValidation = validation();
-		v.probe = "unreachable";
+		v.probe = { verdict: "unreachable" };
 		const { execute, calls } = setup({ validation: v });
 		const r = await execute({
 			...base,
@@ -333,7 +333,7 @@ describe("headless default-deny", () => {
 
 	it("a denied write pays no probe retry on an unreachable kernel", async () => {
 		const v: SessionValidation = validation();
-		v.probe = "unreachable";
+		v.probe = { verdict: "unreachable" };
 		const { execute, calls } = setup({ hasUI: false, validation: v });
 		const r = await execute({ ...base });
 		expect(r.status).toBe("refused");
@@ -376,7 +376,9 @@ describe("headless default-deny", () => {
 describe("static drift refusal precedes the grant dialog", () => {
 	it("a version-drifted session refuses kb_write with zero select calls and zero kernel calls", async () => {
 		const { execute, grantCalls, calls } = setup({
-			validation: validation({ probe: "drift", kernelVersion: "3.8.3" }),
+			validation: validation({
+				probe: { verdict: "drift", kernelVersion: "3.8.3" },
+			}),
 		});
 		const r = await execute({ ...base });
 		expect(r.status).toBe("refused");
@@ -408,7 +410,7 @@ describe("kernel-free shape legs precede the grant dialog", () => {
 
 describe("one answered dialog per interaction, even while the kernel is down", () => {
 	it("a turn grant survives a probe-refused write — an in-turn retry opens no second dialog", async () => {
-		const v = validation({ probe: "unreachable" });
+		const v = validation({ probe: { verdict: "unreachable" } });
 		const harness = setup({ validation: v });
 		harness.client.getVersion = async () => {
 			throw new Error("connect ECONNREFUSED 127.0.0.1:6806");

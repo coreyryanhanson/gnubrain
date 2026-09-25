@@ -6,14 +6,13 @@
 
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SiYuanKernelClient } from "siyuan-kernel-api";
+import { guardExactStmt, SiYuanKernelClient } from "siyuan-kb-primitives";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { ContentBaselines } from "../../baselines.js";
 import { CircuitBreaker } from "../../breaker.js";
 import { globalSettingsPath, loadGnubrainSettings } from "../../settings.js";
 import { RESULT_LIMIT } from "../../spill.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
-import { guardExactStmt } from "../../writeGuard.js";
 import { registerWriteTool } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import {
@@ -696,8 +695,7 @@ third body`,
 				kernel: client,
 				pinnedVersion: "9.9.9",
 			});
-			expect(drift.probe).toBe("drift");
-			expect(drift.kernelVersion).toBe("3.8.4");
+			expect(drift.probe).toEqual({ verdict: "drift", kernelVersion: "3.8.4" });
 
 			const w = writeSetup(drift);
 			for (const params of [

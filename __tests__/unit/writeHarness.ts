@@ -3,28 +3,29 @@
 // parent lookup, verified-create read) AND the mode flow (ownership, echo,
 // block-in-doc, refs, baselines), a fake-pi setup() bound to the registered
 // kb_write tool, and the base create params. Consumed by
-// writeConfirm/writeGuard/writeCreate/writeAnchors tests and the full
+// writeConfirm/writeGuard/writeCreate tests and the full
 // writeModes suite.
 
-import { SiYuanApiError, type BlockTransaction } from "siyuan-kernel-api";
-import { CircuitBreaker } from "../../breaker.js";
-import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
+import {
+	BLOCK_CONTENTS_STMT_HEAD,
+	BLOCK_IN_DOC_STMT_HEAD,
+	GUARD_STMT_HEAD,
+	OWNERSHIP_STMT_HEAD,
+	REFERRING_HPATHS_STMT_HEAD,
+	REFS_BACKLINK_STMT_HEAD,
+	ROOT_ECHO_STMT_HEAD,
+	SiYuanApiError,
+	type BlockTransaction,
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
 import {
 	PARENT_LOOKUP_STMT_HEAD,
 	VERIFIED_ROOT_STMT_HEAD,
-} from "../../writeCreate.js";
-import { GUARD_STMT_HEAD } from "../../writeGuard.js";
-import { BLOCK_IN_DOC_STMT_HEAD } from "../../writeFlow.js";
+	type WriteKernelClient,
+} from "siyuan-kb-primitives/write";
+import { CircuitBreaker } from "../../breaker.js";
+import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import type { WriteParams } from "../../writeSchema.js";
-import { OWNERSHIP_STMT_HEAD } from "../../kernel.js";
-import type { WalkedBlock } from "../../walk.js";
-import {
-	BASELINE_CONTENTS_STMT_HEAD,
-	ROOT_ECHO_STMT_HEAD,
-	REFS_BACKLINK_STMT_HEAD,
-	REFERRING_HPATHS_STMT_HEAD,
-} from "../../writeResult.js";
-import type { WriteKernelClient } from "../../kernel.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import {
@@ -48,7 +49,7 @@ export interface StubConfig {
 	blockRows?: Record<string, unknown>[];
 	refRows?: Record<string, unknown>[];
 	hpathRows?: Record<string, unknown>[];
-	/** BASELINE_CONTENTS route rows ({id, content}) — the raw current-
+	/** BLOCK_CONTENTS route rows ({id, content}) — the raw current-
 	 * content read the fresh-content re-check and the write-result
 	 * refresh ride; [] (the default) means vanished targets, re-check
 	 * skipped. */
@@ -91,7 +92,8 @@ export interface StubConfig {
 	 * with its tree descendants, and a delete of an id no longer in the index
 	 * throws the kernel's synchronous tree-not-found error. Off (default):
 	 * deletes apply nothing — the success no-op generation the stale-target
-	 * tests pin. */
+	 * tests and the replace-section members-survived pin rely on (the
+	 * sweep's post-write judgment must see the survivors it refuses on). */
 	cascadeDelete?: boolean;
 }
 
@@ -180,9 +182,9 @@ export function writeKernelStub(config: StubConfig = {}) {
 			if (stmt.startsWith(REFERRING_HPATHS_STMT_HEAD)) {
 				return config.hpathRows ?? [];
 			}
-			// BASELINE_CONTENTS' head is a prefix-superset of BLOCK_IN_DOC's
-			// ("... WHERE id IN" vs "... WHERE id"), so it must route first.
-			if (stmt.startsWith(BASELINE_CONTENTS_STMT_HEAD))
+			// The two heads are disjoint ("... WHERE id IN" vs
+			// "... WHERE id, ..."), so either route order is correct.
+			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD))
 				return config.baselineRows ?? [];
 			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
 				// blockRows fixtures are rows of the default doc ("d-doc") —
@@ -236,7 +238,12 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async exportMarkdown(id) {
 			calls.push({ method: "exportMarkdown", args: id });
 			if (exportError) throw exportError;
-			return { hPath: "/doc", content: `# markdown of ${id}\nbody` };
+			// Doc roots echo their own hpath (the live-tree ground truth the
+			// verified doc move's judgment rides); anything else is "/doc".
+			return {
+				hPath: docRoots[id]?.hpath ?? "/doc",
+				content: `# markdown of ${id}\nbody`,
+			};
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
@@ -383,6 +390,9 @@ export interface WriteSetupResult {
 	execute: WriteExec;
 	tool: { parameters: unknown; description?: string };
 	client: WriteKernelClient;
+	/** The circuit breaker the tool runs under (a held instance when passed
+	 * via opts.breaker). */
+	breaker: CircuitBreaker;
 	calls: { method: string; args: unknown }[];
 	/** The grant dialogs the write entry opened (title + options + the
 	 * opts the production code passed — signal, native timeout). */
@@ -401,6 +411,8 @@ export function setup(
 	opts: {
 		config?: StubConfig;
 		validation?: SessionValidation;
+		/** Test seam: pass a held breaker to observe reset behavior. */
+		breaker?: CircuitBreaker;
 		hasUI?: boolean;
 		select?: GrantSelectFn;
 		abortController?: AbortController;
@@ -411,6 +423,7 @@ export function setup(
 	const grantCalls: GrantCall[] = [];
 	const grantState = createWriteGrantState();
 	const baselines = ContentBaselines.create();
+	const breaker = opts.breaker ?? new CircuitBreaker();
 	const recordedSelect: GrantSelectFn = async (title, options, selectOpts) => {
 		grantCalls.push({
 			title,
@@ -423,7 +436,7 @@ export function setup(
 		{
 			getValidation: () => opts.validation ?? validation(),
 			getKernel: () => kernel.client,
-			breaker: new CircuitBreaker(),
+			breaker,
 			grantState,
 			baselines,
 			...(opts.readBodyFile !== undefined && {
@@ -440,6 +453,7 @@ export function setup(
 	return {
 		execute,
 		tool,
+		breaker,
 		client: kernel.client,
 		calls: kernel.calls,
 		grantCalls,
