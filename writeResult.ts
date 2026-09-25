@@ -1,15 +1,20 @@
-// Shared write-result machinery: the baseline/fresh-content precondition and
-// the echo/verification evidence (root echo, backlink check, post-write walk
-// sets) every doc-targeting result shares.
+// Shared write-result machinery: the fresh-content refusal wrapper and the
+// echo/verification evidence (root echo, backlink check, post-write walk
+// sets) every doc-targeting result shares. The freshness judgment itself —
+// both reads and the comparison — lives in the primitives' read barrel
+// (checkFreshContent); only the session doctrine and the refusal wording
+// stay here.
 
-import { contentHash, type ContentBaselines } from "./baselines.js";
+import { type ContentBaselines } from "./baselines.js";
 import {
 	SiYuanApiError,
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 	blockContents,
+	checkFreshContent,
 	rootEcho,
 	walkBlockTree,
+	type FreshArm,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import {
@@ -22,87 +27,85 @@ import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
 import { verificationReadsFailedMessage } from "./writeVerdicts.js";
 
-/** Establish missing baselines from blocks.content: a SQL-seeded baseline
- * against the live-tree re-check fails closed on any walk-vs-blocks form
- * drift (the refusal re-baselines and the retry proceeds), and on the
- * pinned kernel the two forms are identical. Never-served blocks only —
- * the served-preference semantics are unchanged. */
-export async function establishBaselines(
-	kernel: WriteKernelClient,
-	baselines: ContentBaselines,
-	blockIds: string[],
-): Promise<void> {
-	const missing = blockIds.filter(
-		(id) => baselines.servedHash(id) === undefined,
-	);
-	if (missing.length === 0) return;
-	for (const row of await blockContents(kernel, missing)) {
-		baselines.remember(row.id, row.content);
-	}
-}
-
 /**
- * precondition, checked right before the kernel write: the current content
- * must still hash to the baseline. A mismatch →
- * `stale_content` refusal with the current content and fresh outline, no
- * kernel write fired (the message names the re-read path, never a retry).
+ * Fresh-content precondition, checked right before the kernel write: the
+ * current content must still hash to the baseline the session last served.
+ * One wrapper over the primitives' checkFreshContent judgment (both reads
+ * and the comparison live down-repo; the walk ≡ SQL equivalence the pair
+ * depends on is falsified there), applying the session doctrine over ALL
+ * arms — there is no early stop, so a multi-stale refusal names every
+ * stale target and the agent decides once:
+ * - `fresh` → remember (a no-op: the hash already matches; preserves the
+ *   seed side effect for the residual paths)
+ * - `unseen` → adopt the live form (the no-baseline fallback, visible:
+ *   nothing stored existed to launder)
+ * - `stale` → re-baseline from the judged content AND name the target —
+ *   the anti-laundering invariant: no stored baseline moves without its
+ *   content being visible in the same envelope, so the retry proceeds
+ *   against informed consent instead of refuse-looping
+ * - `vanished` → skip (delete no-op class; the baseline is retained, so a
+ *   return via undo re-judges as `fresh` if unchanged, `stale` if not)
+ * Any stale arm → the `stale_content` refusal carrying every stale target
+ * (`staleTargets`, beside the retained scalar first-arm fields) and the
+ * outline served from the judged walk; otherwise `null` and the walk is
+ * dropped. Read errors propagate raw — the flows' transport classification
+ * applies (breaker counting, 429 cooldown).
  */
-export async function assertFreshContent(
+export async function freshContentRefusal(
 	kernel: WriteKernelClient,
 	baselines: ContentBaselines,
-	targets: { blockId: string; baseline: string | undefined }[],
+	targets: { blockId: string; baselineHash: string | undefined }[],
 	context: { sessionId: string; docId: string },
 ): Promise<Envelope | null> {
 	if (targets.length === 0) return null;
-	// NOW rides the live tree, never the SQL index: blocks.content converges
-	// 1.5–3 s after a real edit, so an index re-read is blind to a change
-	// that landed inside the approval-dialog window this precondition exists
-	// for. The kernel renders getChildBlocks content and blocks.content the
-	// same way (live-pinned), so walk-form and SQL-form baselines hash
-	// identically; a kernel that ever split them would fail closed here —
-	// the refusal re-baselines and the retry proceeds.
-	const walk = await walkBlockTree(kernel, context.docId);
-	const current = new Map(walk.map((r) => [r.id, r.content]));
-	for (const target of targets) {
-		const nowContent = current.get(target.blockId);
-		if (nowContent === undefined) continue; // vanished target → delete no-op class
-		if (target.baseline === undefined) {
-			// No-baseline fallback (same doctrine as edit's): content the
-			// session never saw adopts the live form as its baseline — a
-			// change nothing served cannot be refused.
-			baselines.remember(target.blockId, nowContent);
-			continue;
+	const { walk, arms } = await checkFreshContent(kernel, {
+		docId: context.docId,
+		targets,
+	});
+	const staleArms: Extract<FreshArm, { kind: "stale" }>[] = [];
+	for (const arm of arms) {
+		switch (arm.kind) {
+			case "vanished":
+				continue;
+			case "fresh":
+			case "unseen":
+				baselines.remember(arm.blockId, arm.currentContent);
+				continue;
+			case "stale":
+				baselines.remember(arm.blockId, arm.currentContent);
+				staleArms.push(arm);
+				continue;
 		}
-		if (contentHash(nowContent) !== target.baseline) {
-			// The refusal payload serves the new content — it becomes the
-			// baseline, so the agent's re-read/re-target doesn't refuse-loop.
-			baselines.remember(target.blockId, nowContent);
-			// The refusal carries the outline's heading content — seed it like
-			// every other serve site, or a follow-up edit on a served heading
-			// takes the no-baseline fallback and launders a concurrent change
-			// past the precondition (the target block is already remembered
-			// above). The walk is already in hand — no second walk.
-			const fresh = serveOutlineFromWalk(
-				context.sessionId,
-				"kb_write",
-				walk,
-				baselines,
-			);
-			return refusedEnvelope(
-				`the content of block '${target.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
-				{
-					reason: "stale_content",
-					blockId: target.blockId,
-					currentContent: nowContent,
-					outline: fresh.outline,
-					...(fresh.fullOutlinePath !== undefined
-						? { fullOutlinePath: fresh.fullOutlinePath }
-						: {}),
-				},
-			);
-		}
+		arm satisfies never;
 	}
-	return null;
+	const first = staleArms[0];
+	if (first === undefined) return null;
+	// The refusal's outline renders from the judged snapshot — its heading
+	// content is seeded like every other serve site, or a follow-up edit on
+	// a served heading takes the no-baseline fallback and launders a
+	// concurrent change past the precondition. The walk is already in hand.
+	const fresh = serveOutlineFromWalk(
+		context.sessionId,
+		"kb_write",
+		walk,
+		baselines,
+	);
+	return refusedEnvelope(
+		`the content of block '${first.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
+		{
+			reason: "stale_content",
+			blockId: first.blockId,
+			currentContent: first.currentContent,
+			staleTargets: staleArms.map((arm) => ({
+				blockId: arm.blockId,
+				currentContent: arm.currentContent,
+			})),
+			outline: fresh.outline,
+			...(fresh.fullOutlinePath !== undefined
+				? { fullOutlinePath: fresh.fullOutlinePath }
+				: {}),
+		},
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -197,8 +200,8 @@ export async function writeEchoTail(input: {
 	// rows) keeps the map's single-source invariant explicit: the walk's
 	// content IS blocks.content (the kernel builds both via
 	// nodeStaticContent), but a walk taken mid-write races the index
-	// differently than the re-check's query path — same source, same read
-	// mechanism, no representation drift.
+	// differently than the judgment's SQL seed read — same source, same
+	// read mechanism, no representation drift.
 	const refreshIds = [
 		...new Set([
 			...walk.filter((b) => b.type === "h").map((b) => b.id),

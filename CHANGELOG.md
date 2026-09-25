@@ -75,8 +75,9 @@
   `writeConfirmTimeout`. See the README for a full example.
 
 - **Kernel coupling lives in `siyuan-kb-primitives`.** Block-tree walks,
-  title-guard reads, placement, and every write verdict — `createVerifiedDoc`,
-  `editVerified`, `insertVerified`, `moveBlockVerified` / `moveDocVerified`,
-  `deleteBlockVerified` / `deleteDocVerified`, `sweepSectionMembers` — ride
+  title-guard reads, placement, the fresh-content judgment, and every write
+  verdict — `createVerifiedDoc`, `editVerified`, `insertVerified`,
+  `moveBlockVerified` / `moveDocVerified`, `deleteBlockVerified` /
+  `deleteDocVerified`, `sweepSectionMembers`, `checkFreshContent` — ride
   that package, whose SiYuan version pin this package consumes — writes fail
   closed on kernel drift, reads warn.

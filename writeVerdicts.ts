@@ -7,9 +7,10 @@
 // a map that forgets an arm changes the rendered message and fails the
 // suites, which is the catch, not the hazard).
 //
-// Tool-side policy refusals (grant, breaker, 429 cooldown, fresh-content
-// precondition, mint title) never cross the boundary and keep their
-// existing homes.
+// Tool-side policy refusals (grant, breaker, 429 cooldown, mint title)
+// never cross the boundary and keep their existing homes; the fresh-content
+// judgment itself moved down (the primitives' checkFreshContent) — only
+// its refusal envelope stays tool-side (freshContentRefusal, writeResult).
 
 import {
 	PINNED_SIYUAN_VERSION,

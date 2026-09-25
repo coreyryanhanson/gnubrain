@@ -12,7 +12,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import { assertFreshContent, finishWrite } from "./writeResult.js";
+import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	editVerifyFailureReason,
 	blockInDocRefusal,
@@ -40,15 +40,16 @@ export async function runEditMode(
 		// Fresh-content precondition: a concurrency guard, not a consent
 		// mechanism (the grant resolved at the kb_write entry). Served content
 		// where the session has seen this block, else the block's current
-		// content — establish + check are one step right before the kernel
-		// call (the dialog's display → approval window no longer exists).
+		// content — seed + check are one wrapper step right before the
+		// kernel call (the dialog's display → approval window no longer
+		// exists).
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}
-		const stale = await assertFreshContent(
+		const stale = await freshContentRefusal(
 			kernel,
 			baselines,
-			[{ blockId, baseline: baselines.servedHash(blockId) }],
+			[{ blockId, baselineHash: baselines.servedHash(blockId) }],
 			{ sessionId, docId: doc.rootId },
 		);
 		if (stale !== null) return stale;

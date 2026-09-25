@@ -123,13 +123,16 @@ tests drive the extension through it instead of touching real files.
   laced with session state: baselines seeding, spill receipts, move outlines,
   envelope wording. The kernel-coupled cores they compose —
   `findTitleMatches`, `createVerifiedDoc`, `editVerified`, `insertVerified`,
-  `blockInDoc`, `rootEcho`, `resolveHeadingTarget` (the heading-target
+  `blockInDoc`, `rootEcho`, the fresh-content judgment
+  (`checkFreshContent`), `resolveHeadingTarget` (the heading-target
   judgment; `headingInWalk` here maps its arms to wording), the verified
   block/doc moves (`moveBlockVerified` / `moveDocVerified`), the verified
   delete sweep (`sweepSectionMembers`), the verified deletes
   (`deleteBlockVerified` / `deleteDocVerified`), and the placement module
   (the section rule and the anchors derived from it) — live in
-  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions;
+  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions (the
+  fresh-content judgment instead returns its arms and the judged walk as
+  evidence; the doctrine over them stays in `freshContentRefusal`);
   `writeVerdicts.ts` maps every kind to agent-facing wording via exhaustive
   switches (no default), so a new kind in a primitives release fails
   typecheck until its wording is written here — the anchor echoes ride the
@@ -182,16 +185,17 @@ precondition, not the fact itself. An upgrade pass re-reads this list and,
 where the cited fact changed, updates wording/comments here and
 re-falsifies the fact there:
 
-- `assertFreshContent` (`writeResult.ts`) — the fresh-content precondition
-  rides the live tree, never the SQL index (`blocks.content` converges
-  asynchronously), and the walk ≡ SQL equivalence claim (the kernel builds
-  both via `nodeStaticContent`, so walk-form and SQL-form baselines hash
-  identically). The hash comparison itself is executable dependence on
-  that equivalence — the one deliberate exception to the move-down rule:
-  it is fail-closed (a kernel that ever split walk-form from SQL-form
-  refuses `stale_content`, re-baselines, and the retry proceeds), and the
-  dependence is inherent while `kb_query` may serve SQL-form baselines.
-  Falsified by the primitives live content-equivalence case.
+- The fresh-content judgment (`checkFreshContent`, the primitives' read
+  barrel) — the precondition rides the live tree, never the SQL index
+  (`blocks.content` converges asynchronously), and the walk ≡ SQL
+  equivalence (the kernel builds both via `nodeStaticContent`, so walk-form
+  and SQL-form baselines hash identically) remains a cross-boundary
+  property: the comparison and both reads moved down with the promotion,
+  but this repo's serve sites still seed SQL-form content into the
+  baseline map. Fail-closed on any split (a diverging seed reads as
+  `stale`, named, never silently matched — the retry proceeds). Falsified
+  by the primitives live content-equivalence case and their `fresh` unit
+  and live suites.
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing. The same claim (comment only, no dependence) appears in the
@@ -208,8 +212,6 @@ re-falsifies the fact there:
   whole body in its `data` — moved down with `insertVerified` (primitives
   `write.ts`). Falsified by the primitives live insert-shape case plus
   local append/replace-section round trips (`writeModes.live`).
-- The baseline-seeding comment (`establishBaselines`, `writeResult.ts`) —
-  repeats the walk ≡ `blocks.content` equivalence. Same primitives live case.
 - The `lsNotebooks` encrypted-flag fact (`validation.ts`) — `encrypted` is
   always present in the listing regardless of lock state, and the SQL
   surface cannot see encrypted boxes, so one rejection covers both lock
@@ -267,8 +269,11 @@ re-falsifies the fact there:
 
 If an entry here ever grows executable dependence on a pinned behavior, move
 the code down into the primitives (the `rootEcho` promotion is the template) —
-do not lengthen the list. Sole deliberate exception: `assertFreshContent`'s
-walk ≡ SQL hash comparison (fail-closed; recorded in its entry).
+do not lengthen the list. Sole deliberate exception, narrowed: the
+fresh-content judgment's comparison-and-both-reads half moved down
+(`checkFreshContent`, the primitives' read barrel), but the tool-side seed
+sites' reliance on the walk ≡ SQL equivalence remains — the exception
+survives as a qualified cross-boundary property, recorded in that entry.
 
 ## Settings
 
@@ -293,6 +298,7 @@ walk ≡ SQL hash comparison (fail-closed; recorded in its entry).
 - Unit tests use `__tests__/helpers/fakePi.ts` and SQL-routed kernel stubs
   (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
 - The version-pinned behaviors (walk order/parentage, verdict primitives,
+  the walk ≡ SQL content pair behind the fresh-content judgment,
   auth-lock schedule, live title round-trip, the move facts, the delete
   generation and delete-cascade facts) are falsified by the primitives
   repo's own unit + live suites; this repo's suites exercise them

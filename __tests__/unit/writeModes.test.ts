@@ -13,6 +13,7 @@ import {
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
 	BLOCK_CONTENTS_STMT_HEAD,
+	contentHash,
 } from "siyuan-kb-primitives";
 import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import {
@@ -20,10 +21,12 @@ import {
 	registerKbWrite,
 	setup,
 	walkBlock,
+	writeKernelStub,
 	type StubConfig,
 } from "./writeHarness.js";
 import { VERIFY_RETRY_DELAYS_MS } from "siyuan-kb-primitives/write";
-import { contentHash } from "../../baselines.js";
+import { ContentBaselines } from "../../baselines.js";
+import { freshContentRefusal } from "../../writeResult.js";
 
 describe("kb_write schema", () => {
 	it("does not declare confirmNew (learned only from rejections)", () => {
@@ -52,6 +55,141 @@ const editBase = {
 	blockId: "b-1",
 	markdown: "corrected body",
 };
+
+// ---------------------------------------------------------------------------
+// freshContentRefusal — the per-arm session doctrine over the primitives'
+// checkFreshContent judgment, driven directly on the stubbed kernel
+// ---------------------------------------------------------------------------
+
+describe("freshContentRefusal", () => {
+	const ctx = { sessionId: "s1", docId: "d-doc" };
+
+	it("unseen → adopt the live form and proceed (null)", async () => {
+		// No baseline, no SQL row: the session never served the block, so
+		// there is no stored value to launder — the live form becomes the
+		// baseline and the caller proceeds.
+		const stub = writeKernelStub({
+			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "live body")] },
+		});
+		const baselines = ContentBaselines.create();
+		const verdict = await freshContentRefusal(
+			stub.client,
+			baselines,
+			[{ blockId: "p1", baselineHash: undefined }],
+			ctx,
+		);
+		expect(verdict).toBeNull();
+		expect(baselines.servedHash("p1")).toBe(contentHash("live body"));
+	});
+
+	it("seed-and-check fresh → remember (the baseline is seeded even when every arm is fresh)", async () => {
+		// No baseline, but the SQL row matches the walk — the establish
+		// side effect survives the promotion: the residual paths' later
+		// checks compare like-for-like.
+		const stub = writeKernelStub({
+			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "index form")] },
+			baselineRows: [{ id: "p1", content: "index form" }],
+		});
+		const baselines = ContentBaselines.create();
+		const verdict = await freshContentRefusal(
+			stub.client,
+			baselines,
+			[{ blockId: "p1", baselineHash: undefined }],
+			ctx,
+		);
+		expect(verdict).toBeNull();
+		expect(baselines.servedHash("p1")).toBe(contentHash("index form"));
+	});
+
+	it("vanished → skipped (delete no-op class), no baseline remembered", async () => {
+		// The classification (walk-absence before any SQL read, even with a
+		// lingering blocks.content row inside the convergence window) is
+		// falsified down-repo in the primitives' fresh.test.ts; this asserts
+		// the wrapper's half — a `vanished` arm must not remember, so a
+		// misclassification as `unseen` would fail the servedHash assertion.
+		const stub = writeKernelStub({
+			baselineRows: [{ id: "p1", content: "lingering index row" }],
+		});
+		const baselines = ContentBaselines.create();
+		const verdict = await freshContentRefusal(
+			stub.client,
+			baselines,
+			[{ blockId: "p1", baselineHash: undefined }],
+			ctx,
+		);
+		expect(verdict).toBeNull();
+		expect(baselines.servedHash("p1")).toBeUndefined();
+	});
+
+	it("stale → one refusal naming every stale target; re-baseline exactly the named set; retry proceeds", async () => {
+		// Multi-stale doctrine: all stale arms in one envelope. The tool-side
+		// half of the anti-laundering invariant: every re-baselined hash
+		// equals the hash of the content the envelope carried — no stored
+		// baseline moves without its content being visible.
+		const stub = writeKernelStub({
+			childrenFor: {
+				"d-doc": [
+					walkBlock("p1", "p", "", "rewritten one"),
+					walkBlock("p2", "p", "", "rewritten two"),
+					walkBlock("p3", "p", "", "untouched"),
+				],
+			},
+		});
+		const baselines = ContentBaselines.create();
+		baselines.remember("p1", "old one");
+		baselines.remember("p2", "old two");
+		// Targets are rebuilt per call in the real flows (the served hash is
+		// read at call time) — mirror that here.
+		const targetsOf = () => [
+			{ blockId: "p1", baselineHash: baselines.servedHash("p1") },
+			{ blockId: "p2", baselineHash: baselines.servedHash("p2") },
+			{ blockId: "p3", baselineHash: baselines.servedHash("p3") },
+		];
+		const verdict = await freshContentRefusal(
+			stub.client,
+			baselines,
+			targetsOf(),
+			ctx,
+		);
+		expect(verdict).not.toBeNull();
+		expect(verdict?.status).toBe("refused");
+		expect(verdict?.reason).toBe("stale_content");
+		expect(verdict?.blockId).toBe("p1");
+		expect(verdict?.currentContent).toBe("rewritten one");
+		expect(verdict?.staleTargets).toEqual([
+			{ blockId: "p1", currentContent: "rewritten one" },
+			{ blockId: "p2", currentContent: "rewritten two" },
+		]);
+		// The outline renders from the judged walk (headings-only — a stale
+		// non-heading member's content is new information via staleTargets,
+		// not the outline).
+		expect(verdict?.outline).toBeDefined();
+		// Re-baseline of exactly the named set — each stored hash equals the
+		// content the envelope carried.
+		expect(baselines.servedHash("p1")).toBe(contentHash("rewritten one"));
+		expect(baselines.servedHash("p2")).toBe(contentHash("rewritten two"));
+		// Refuse-loop escape: the same call now matches and returns null.
+		const retry = await freshContentRefusal(
+			stub.client,
+			baselines,
+			targetsOf(),
+			ctx,
+		);
+		expect(retry).toBeNull();
+	});
+
+	it("empty target list → null with zero kernel calls", async () => {
+		const stub = writeKernelStub({});
+		const verdict = await freshContentRefusal(
+			stub.client,
+			ContentBaselines.create(),
+			[],
+			ctx,
+		);
+		expect(verdict).toBeNull();
+		expect(stub.calls).toHaveLength(0);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Mode-target shape (schema table) — zero kernel calls
@@ -177,23 +315,6 @@ describe("edit", () => {
 		expect(
 			calls.filter((c) => c.method === "updateBlock").map((c) => c.args),
 		).toEqual([{ id: "b-1", data: "corrected body" }]);
-	});
-
-	it("no-baseline fallback: current content establishes the baseline at check time; the edit fires once", async () => {
-		// No served hash exists (fresh baselines), so the fallback must
-		// baseline from the block's current content — the re-check then
-		// matches itself and the edit proceeds. Without the fallback the
-		// undefined baseline refuses every matching read.
-		const { execute, calls } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "stale paragraph" }],
-				baselineRows: [{ id: "b-1", content: "stale paragraph" }],
-			},
-		});
-		const result = await execute(editBase);
-		expect(result.status).toBe("ok");
-		// The re-check ran and matched — the write fired exactly once.
-		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
 	});
 
 	it("concurrent change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
@@ -1202,6 +1323,35 @@ describe("replace-section", () => {
 			harness.calls.filter(
 				(c) =>
 					c.method === "updateBlock" ||
+					c.method === "insertBlock" ||
+					c.method === "appendBlock" ||
+					c.method === "deleteBlock",
+			),
+		).toHaveLength(0);
+	});
+
+	it("multi-stale delete set → one refusal naming every stale member, each re-baselined from its named content", async () => {
+		// Two concurrently-rewritten members: the wrapper judges every target
+		// (no early stop), so one refusal carries both — each extra round-
+		// trip today's stop-at-first bought nothing the all-arms shape
+		// doesn't give in one turn. The re-baselined hash of each named
+		// member equals contentHash(its named currentContent) — the tool-side
+		// half of the anti-laundering invariant.
+		const harness = setup({ config: { childrenFor: REPLACE_DOC } });
+		harness.baselines.remember("p1", "an even older one");
+		harness.baselines.remember("p2", "an even older two");
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("refused");
+		expect(result.reason).toBe("stale_content");
+		expect(result.staleTargets).toEqual([
+			{ blockId: "p1", currentContent: "old one" },
+			{ blockId: "p2", currentContent: "old two" },
+		]);
+		expect(harness.baselines.servedHash("p1")).toBe(contentHash("old one"));
+		expect(harness.baselines.servedHash("p2")).toBe(contentHash("old two"));
+		expect(
+			harness.calls.filter(
+				(c) =>
 					c.method === "insertBlock" ||
 					c.method === "appendBlock" ||
 					c.method === "deleteBlock",

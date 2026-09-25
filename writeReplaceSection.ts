@@ -30,11 +30,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
-import {
-	assertFreshContent,
-	establishBaselines,
-	finishWrite,
-} from "./writeResult.js";
+import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	appendAnchorEcho,
 	insertLandedRefusal,
@@ -63,22 +59,18 @@ export async function runReplaceSectionMode(
 	const anchor = deriveAppendAnchor(walk, heading);
 	const echo = appendAnchorEcho(anchor);
 	// Fresh-content precondition: a concurrency guard, not a consent
-	// mechanism (the grant resolved at the kb_write entry). Establish missing
-	// baselines and check in one step right before the kernel call — the
+	// mechanism (the grant resolved at the kb_write entry). One wrapper step
+	// right before the kernel call — the judgment seeds missing baselines
+	// from the SQL index and checks against the live tree in one pass (the
 	// dialog's display → approval window no longer exists, so a change
 	// landing since the walk is caught as stale_content, not laundered into
-	// the baseline.
-	await establishBaselines(
-		kernel,
-		baselines,
-		deleteSet.closure.map((b) => b.id),
-	);
-	const stale = await assertFreshContent(
+	// the baseline).
+	const stale = await freshContentRefusal(
 		kernel,
 		baselines,
 		deleteSet.closure.map((b) => ({
 			blockId: b.id,
-			baseline: baselines.servedHash(b.id),
+			baselineHash: baselines.servedHash(b.id),
 		})),
 		{ sessionId, docId: doc.rootId },
 	);

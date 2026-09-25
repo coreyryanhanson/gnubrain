@@ -9,11 +9,7 @@
 // state: after resume/fork the map is empty and the no-baseline fallback
 // applies.
 
-import { createHash } from "node:crypto";
-
-export function contentHash(content: string): string {
-	return createHash("sha256").update(content).digest("hex").slice(0, 16);
-}
+import { contentHash } from "siyuan-kb-primitives";
 
 export class ContentBaselines {
 	private hashes = new Map<string, string>();
