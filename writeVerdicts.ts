@@ -41,7 +41,11 @@ import {
  * gate's static refusal. Unreachable through the flows: the gate refuses a
  * drifted verdict before any flow runs, so every arm here is
  * defense-in-depth behind the gate order — but worded once, so it can
- * never diverge from the gate's own refusal. */
+ * never diverge from the gate's own refusal. The pin resolves from the
+ * module constant, deliberately: this arm only renders if the gate order
+ * is ever violated, and in production the effective pin IS the constant
+ * (the session override is a test seam) — the gate stays the one home for
+ * the resolution. */
 function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }

@@ -25,7 +25,11 @@ import {
 	runGatedTool,
 	resolveBox,
 } from "./gate.js";
-import { ownershipStmt, type KernelReadClient } from "siyuan-kb-primitives";
+import {
+	docMarkdown,
+	ownershipStmt,
+	type KernelReadClient,
+} from "siyuan-kb-primitives";
 import {
 	inlineOrSpill,
 	jsonl,
@@ -275,7 +279,8 @@ export async function runSearchFanOut(
 }
 
 // ---------------------------------------------------------------------------
-// kb_read — exportMarkdown (+ the outline ride-along, now outline.ts)
+// kb_read — the barrel's docMarkdown export read (+ the outline ride-along,
+// now outline.ts)
 // ---------------------------------------------------------------------------
 
 const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
@@ -393,7 +398,8 @@ export async function runRead(
 	baselines: ContentBaselines,
 ): Promise<Envelope> {
 	const boxId = resolveBox(name, validation);
-	// GFM only, never getDoc. The kernel route takes a bare stmt (no bind
+	// GFM only, never getDoc — the id-free export shape is the primitives'
+	// docMarkdown pin. The kernel route takes a bare stmt (no bind
 	// params), so trusted ids ride escaped literals (ownershipStmt).
 	contact();
 	const ownership = await kernel.query(ownershipStmt(boxId, docId));
@@ -401,7 +407,7 @@ export async function runRead(
 		return noSuchDocEnvelope(name, docId);
 	}
 	const rootId = String(ownership[0]?.root_id);
-	const doc = await kernel.exportMarkdown(rootId);
+	const doc = await docMarkdown(kernel, rootId);
 	const envelope: Envelope = {
 		status: "ok",
 		message: `${doc.content.length} chars from ${doc.hPath}`,

@@ -7,9 +7,10 @@ import {
 	PINNED_SIYUAN_VERSION,
 	SiYuanAuthError,
 	probeKernel,
+	resolveNotebooks,
 	type KernelProbeClient,
 	type KernelProbeResult,
-	type NotebookList,
+	type NotebookProblem,
 } from "siyuan-kb-primitives";
 import type { GnubrainSettings, LoadedSettings } from "./settings.js";
 
@@ -54,6 +55,20 @@ export interface SessionValidation {
 
 /** scope persistence payload — a complete snapshot of the active set. */
 export const KB_SCOPE_ENTRY_TYPE = "kb-scope";
+
+/** Tool-side wording for a dropped KB. Exhaustive with no default: a new
+ * `NotebookProblem` kind from a primitives release fails typecheck here —
+ * the same discipline as writeVerdicts — instead of silently worded as
+ * another kind. */
+function notebookProblemWarning(problem: NotebookProblem): string {
+	switch (problem.kind) {
+		case "missing":
+			return `KB '${problem.name}' notebook ${problem.notebookId} not found on the kernel — dropped from the valid set`;
+		case "encrypted":
+			return `KB '${problem.name}' uses an encrypted notebook — rejected at startup (the SQL surface cannot see encrypted boxes)`;
+	}
+	problem satisfies never;
+}
 
 /** Latest `kb-scope` entry wins; none → undefined (caller falls back to defaultKBs). */
 export function latestPersistedScope(
@@ -201,30 +216,24 @@ export async function runSessionValidation(input: {
 	// The configured default (project defaultKBs over global) is retained on
 	// every result so /tree navigation can re-resolve scope offline.
 	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
-	const validKBs = new Map<string, string>();
+	let validKBs: Map<string, string>;
 	try {
-		const list: NotebookList = await kernel.listNotebooks();
-		const byId = new Map(list.notebooks.map((n) => [n.id, n]));
-		for (const kb of settings.kbs) {
-			const notebook = byId.get(kb.notebook);
-			if (notebook === undefined) {
-				warnings.push(
-					`KB '${kb.name}' notebook ${kb.notebook} not found on the kernel — dropped from the valid set`,
-				);
-			} else if (notebook.encrypted) {
-				// One rejection for both lock states: `encrypted` is always present
-				// in lsNotebooks output regardless of lock state.
-				warnings.push(
-					`KB '${kb.name}' uses an encrypted notebook — rejected at startup (the SQL surface cannot see encrypted boxes)`,
-				);
-			} else {
-				validKBs.set(kb.name, kb.notebook);
-			}
+		const { valid, problems } = resolveNotebooks(
+			settings.kbs,
+			await kernel.listNotebooks(),
+		);
+		validKBs = valid;
+		for (const problem of problems) {
+			// One rejection for both lock states: `encrypted` is always present
+			// in lsNotebooks output regardless of lock state (the pin and the
+			// branch live in the primitives; this is the wording only).
+			warnings.push(notebookProblemWarning(problem));
 		}
 	} catch (err) {
-		// Fail-closed: the valid set stays empty; every tool call's `kb` name is
-		// rejected as not-in-scope until /kb recovery re-runs validation.
-		validKBs.clear();
+		// Fail-closed: the only throw site is the listing call itself, which
+		// precedes resolution — the valid set is untouched/empty; every tool
+		// call's `kb` name is rejected as not-in-scope until /kb recovery
+		// re-runs validation.
 		warnings.push(
 			`lsNotebooks failed (${err instanceof Error ? err.message : String(err)}) — no KBs are valid until /kb re-validates`,
 		);
@@ -233,7 +242,7 @@ export async function runSessionValidation(input: {
 			shapeErrors,
 			probe,
 			pinnedVersion,
-			validKBs,
+			validKBs: new Map(),
 			scope: [],
 			defaultKBs: configuredDefault,
 			warnings,

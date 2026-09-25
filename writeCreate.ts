@@ -5,6 +5,7 @@
 import {
 	GUARD_NEAR_CAP,
 	SiYuanApiError,
+	docMarkdown,
 	findTitleMatches,
 	walkBlockTree,
 	type GuardRow,
@@ -61,7 +62,7 @@ async function duplicateStop(
 		);
 		let markdown = "";
 		try {
-			const md = await kernel.exportMarkdown(docId);
+			const md = await docMarkdown(kernel, docId);
 			markdown = md.content;
 		} catch (err) {
 			// Same vanished-candidate rule as the walk above.

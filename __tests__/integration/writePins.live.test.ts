@@ -477,56 +477,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 	);
 
 	it(
-		"updateBlock preserves block IDs — a ref into the edited block still resolves",
-		async () => {
-			const docId = await mintDoc(
-				client,
-				boxId,
-				"/Edit Preserve Pin",
-				"# Edit Preserve\n\nbefore body\n",
-			);
-			const blockId = await paraId(docId, "before body");
-			// A ref into the block about to be edited: ID preservation means it
-			// still resolves after the edit (workspace-wide listInvalidBlockRefs
-			// carries earlier cases' deliberately-orphaned refs, so the pin is
-			// scoped to this block).
-			await mintDoc(
-				client,
-				boxId,
-				"/Edit Preserve Referrer",
-				`# Edit Preserve Referrer\n\ncite: ((${blockId} "cite"))\n`,
-			);
-			const w = writeSetup();
-			const result = await w.run({
-				kb: "fixture-a",
-				mode: "edit",
-				docId,
-				blockId,
-				markdown: "after body",
-			});
-			expect(result.status).toBe("ok");
-			// The same block id now carries the new content (IDs preserved); the
-			// content column converges asynchronously after the edit.
-			await pollUntil(
-				"edited content reaching the blocks index",
-				async () =>
-					String(
-						(
-							await client.query(
-								"SELECT content FROM blocks WHERE id = " + sqlString(blockId),
-							)
-						)[0]?.content ?? "",
-					) === "after body",
-			);
-			// The ref into the edited block still resolves — it is not among
-			// the workspace's invalid refs.
-			const invalid = await client.listInvalidBlockRefs();
-			expect(JSON.stringify(invalid)).not.toContain(blockId);
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
 		"doc-level delete backlink case — the invalidRefs echo shows the backlink count and referring hpaths; the ref reports invalid afterward",
 		async () => {
 			const docId = await mintDoc(
@@ -691,48 +641,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("write-side cases", () => {
 				doc: true,
 			});
 			expect(ownParent.status).toBe("ok");
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"doc-level move past the kernel's depth cap surfaces the error verbatim",
-		async () => {
-			// A depth-7 destination chain (the kernel's creation cap): nesting
-			// under a doc that deep is rejected by the kernel's own depth cap,
-			// both at creation (level 8) and at move time (live-verified).
-			let path = "";
-			const chain: string[] = [];
-			for (let i = 1; i <= 7; i++) {
-				path += `/Depth Chain ${i}`;
-				chain.push(
-					await mintDoc(
-						client,
-						boxId,
-						path,
-						`# Depth Chain ${i}\n\ndeep ${i}\n`,
-					),
-				);
-			}
-			const mover = await mintDoc(
-				client,
-				boxId,
-				"/Depth Mover",
-				"# Depth Mover\n\nmover body\n",
-			);
-
-			const w = writeSetup();
-			const result = await w.run({
-				kb: "fixture-a",
-				mode: "move",
-				docId: mover,
-				doc: true,
-				toDocId: chain[6]!,
-			});
-			expect(result.status).toBe("error");
-			// The kernel's depth-cap rejection verbatim.
-			expect(String(result.message)).toContain("7 levels deep");
-			expect(result.docId).toBe(mover);
 		},
 		LIVE_TIMEOUT,
 	);

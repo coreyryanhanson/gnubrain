@@ -281,30 +281,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 		LIVE_TIMEOUT,
 	);
 
-	it(
-		"exportMarkdown carries no block IDs — the read content never echoes the outline's ids",
-		async () => {
-			const docId = await mintDoc(
-				client,
-				fixtures.notebookIds.fixtureA,
-				unique("/export-pin"),
-				"# Export pin\n\nplain paragraph\n",
-			);
-			const read = readSetup();
-			const res = await read("kb_read", { kb: "fixture-a", docId });
-			expect(res.status).toBe("ok");
-			const content = String(res.content);
-			expect(content).toContain("Export pin");
-			// No IAL block attributes in the export.
-			expect(content).not.toMatch(/\{: /);
-			// None of the outline's block IDs appear in the content.
-			for (const match of String(res.outline).matchAll(/→ (\S+)/g)) {
-				expect(content).not.toContain(match[1]);
-			}
-		},
-		LIVE_TIMEOUT,
-	);
-
 	// -------------------------------------------------------------------
 	// Title-guard kernel round-trip
 	// -------------------------------------------------------------------
@@ -327,45 +303,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 	);
 
 	it(
-		"adversarial titles mint and re-find verbatim (blocks.content stores them unescaped) ('\"'→&quot;, ' verbatim, never &#30;/&#39;)",
-		async () => {
-			const w = writeSetup();
-			const minted = new Map<string, string>();
-			for (const title of ["A & B", 'say "hi"', "it's fine"]) {
-				const ok = await w.run({
-					kb: "fixture-a",
-					mode: "create",
-					topic: title,
-					markdown: `body of ${title}`,
-				});
-				expect(ok.status).toBe("ok");
-				minted.set(title, String(ok.docId));
-			}
-
-			// Re-create each title → the exact guard leg re-finds the minted
-			// doc, and the row reports the kernel's stored form — verbatim
-			// (live-verified: blocks.content is unescaped, unlike the ial).
-			for (const [title, docId] of minted) {
-				const dup = await w.run({
-					kb: "fixture-a",
-					mode: "create",
-					topic: title,
-					markdown: "x",
-				});
-				expect(dup.status).toBe("duplicate");
-				expect(String(dup.message)).toContain(docId);
-				const row = (dup.rows as Record<string, unknown>[])[0]!;
-				expect(row.docId).toBe(docId);
-				// Stored form is the submitted title verbatim — `"` and `&`
-				// unescaped, `'` verbatim, never a numeric entity.
-				expect(row.title).toBe(title);
-			}
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"clean titles store verbatim with the expected hpath (trim, Unicode, exactly-512-rune boundary)",
+		"clean titles store verbatim with the expected hpath (trim, Unicode) and 513 runes is refused with the bound named",
 		async () => {
 			const w = writeSetup();
 			const trimmed = await w.run({
@@ -388,19 +326,10 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			expect(unicode.title).toBe("中文 标题 🎉");
 			expect(unicode.hpath).toBe("/中文 标题 🎉");
 
-			// The exactly-512-rune boundary mints (the live pin for the
-			// superset claim); one rune over is refused.
-			const boundary = "x".repeat(512);
-			const atLimit = await w.run({
-				kb: "fixture-a",
-				mode: "create",
-				topic: boundary,
-				markdown: "body",
-			});
-			expect(atLimit.status).toBe("ok");
-			expect(atLimit.title).toBe(boundary);
-			expect(atLimit.hpath).toBe(`/${boundary}`);
-
+			// The 512-boundary mint — the kernel-fact half of the bound — is
+			// pinned in the primitives' title round-trip live suite; what stays
+			// here is the tool side: one rune over the bound is refused with the
+			// bound named.
 			const over = await w.run({
 				kb: "fixture-a",
 				mode: "create",

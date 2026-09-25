@@ -198,10 +198,12 @@ re-falsifies the fact there:
   and live suites.
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
-  nothing. The same claim (comment only, no dependence) appears in the
-  baseline-refresh comment in `writeResult.ts` and the
-  `serveOutlineFromWalk` doc comment in `outline.ts`. Falsified by the
-  same primitives live case.
+  nothing (the same for the `serveOutlineFromWalk` doc comment in
+  `outline.ts`). The `writeResult.ts` baseline-refresh comment is the
+  exception: that refresh seeds SQL-form content into the baseline map the
+  judgment hashes walk-form against — an executable dependence on the
+  equivalence, the site the fresh-content entry above names. Falsified by
+  the same primitives live case.
 - The type-`'d'` root-row wording in `resolveDocTarget`'s refusal
   (`writeFlow.ts`) — wording only; the type-`'d'` row semantics the wording
   describes moved with the pin (`rootEcho` in the primitives). The same
@@ -212,11 +214,13 @@ re-falsifies the fact there:
   whole body in its `data` — moved down with `insertVerified` (primitives
   `write.ts`). Falsified by the primitives live insert-shape case plus
   local append/replace-section round trips (`writeModes.live`).
-- The `lsNotebooks` encrypted-flag fact (`validation.ts`) — `encrypted` is
-  always present in the listing regardless of lock state, and the SQL
-  surface cannot see encrypted boxes, so one rejection covers both lock
-  states. Falsified locally by `throttleLive.live` (the
-  encrypted-notebook case).
+- The `lsNotebooks` encrypted-flag fact — `encrypted` is always present in
+  the listing regardless of lock state, and the SQL surface cannot see
+  encrypted boxes, so one rejection covers both lock states — moved down
+  with `resolveNotebooks` (primitives `notebooks.ts`); only the rejection
+  wording and the warn-and-drop policy stay in `validation.ts`. Falsified
+  by the primitives' `notebooks.live` (both lock states) beside the branch,
+  plus the local tool-path case (`encryptedNotebook.live`).
 - The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
   found" — moved down with `deleteBlockVerified` / `deleteDocVerified`
   (primitives `delete.ts`); the flow-side wording (kernel error verbatim
@@ -257,8 +261,9 @@ re-falsifies the fact there:
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
   endpoint is no longer a mutation vector and the tool still rejects DML
-  by shape. Pinned by the local live suite (`throttleLive.live`, raw-DML
-  hardening case).
+  by shape. Pinned by the primitives live suite (silent-DML no-op case,
+  `writePins.live`); the tool-side shape rejection is pinned locally
+  (`tools.test.ts`).
 - The breaker-floor and probe/cooldown comments (`breaker.ts`,
   `gateWriteAttempt` in `gate.ts`) — the cooldown floor derives from the
   barrel's `authLockSeconds(6)`; a `getVersion` probe is unauthenticated so
@@ -314,7 +319,8 @@ survives as a qualified cross-boundary property, recorded in that entry.
 ## Roadmap (parked)
 
 - RAG / vector sidecar (v2 primary): a third consumer of the primitives read
-  barrel — fed by `exportMdContent`/`query/sql`, never a second writer; it
+  barrel — fed by the barrel's `docMarkdown` (the promoted `exportMdContent`
+  read)/`query/sql`, never a second writer; it
   must never import `siyuan-kb-primitives/write`, and composes the same
   auth-lock dodge the breaker does, from the barrel's `authLockSeconds`. Store
   the embedding model id per-vector so model swaps are re-embeds, not

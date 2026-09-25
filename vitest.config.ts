@@ -22,7 +22,7 @@ const INTEGRATION_ORDER = [
 	"writeModes.live.test.ts",
 	"writePins.live.test.ts",
 	"gate.live.test.ts", // pi children (masking/scope), in-process
-	"throttleLive.live.test.ts", // encrypted + raw-DML hardening (no lock arming)
+	"encryptedNotebook.live.test.ts", // encrypted-notebook (no lock arming)
 	"breaker.live.test.ts", // 401 breaker + 429 cooldown (arms a lock under THROTTLE — last)
 ];
 
