@@ -175,7 +175,7 @@ export async function runMoveMode(
 		case "verification-failed":
 			return mutationFailureEnvelope(outcome, {
 				kb: name,
-				anchor: echo,
+				extra: { anchor: echo },
 				tail: () => errorTail(input, doc),
 			});
 	}

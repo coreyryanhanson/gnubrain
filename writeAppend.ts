@@ -63,7 +63,7 @@ export async function runAppendMode(
 		case "verification-failed":
 			return mutationFailureEnvelope(outcome, {
 				kb: name,
-				anchor: echo,
+				extra: { anchor: echo },
 				tail: () => errorTail(input, doc),
 			});
 	}

@@ -4,7 +4,8 @@
 // HTTP success) and deleteDocVerified (pre-delete walk captured as the
 // receipt/invalidRefs evidence). Tool-surface scoping stays here; the
 // non-judged arms' envelope wording rides writeVerdicts' exhaustive
-// mappers (deleteBlockVerdictEnvelope / deleteDocVerdictEnvelope). The
+// mappers (the shared mutationFailureEnvelope — the block-delete failure
+// half IS MutationFailure by type / deleteDocVerdictEnvelope). The
 // generation-coupled fact (3.8.3 success no-op vs 3.8.4
 // "tree not found") lives in the primitives' delete.ts and surfaces
 // verbatim through the kernel-refused arm.
@@ -25,8 +26,8 @@ import {
 import { finishWrite } from "./writeResult.js";
 import {
 	blockInDocRefusal,
-	deleteBlockVerdictEnvelope,
 	deleteDocVerdictEnvelope,
+	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
 
 export async function runDeleteMode(
@@ -97,13 +98,15 @@ export async function runDeleteMode(
 	if (outcome.kind !== "judged") {
 		// The exhaustive wording home (the createVerdictEnvelope pattern):
 		// a new arm in a primitives release fails typecheck until its
-		// envelope is written here. The lazy errorTail supplier keeps the
+		// envelope is written in writeVerdicts. The block-delete failure half
+		// IS MutationFailure by type, so it rides the shared ladder with its
+		// blockId as the flow's verdict key. The lazy tail supplier keeps the
 		// per-arm garnish rule — only the arms that attach the echo reads
 		// fire them.
-		return deleteBlockVerdictEnvelope(outcome, {
+		return mutationFailureEnvelope(outcome, {
 			kb: name,
-			blockId,
-			errorTail: () => errorTail(input, doc),
+			extra: { blockId },
+			tail: () => errorTail(input, doc),
 		});
 	}
 	// Post-mutation reads: a network drop here must never read as

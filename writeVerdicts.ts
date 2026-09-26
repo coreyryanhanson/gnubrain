@@ -19,7 +19,6 @@ import {
 import type {
 	AppendAnchor,
 	CreateDocOutcome,
-	DeleteBlockOutcome,
 	DeleteDocOutcome,
 	EditVerifyOutcome,
 	InsertLandedOutcome,
@@ -83,8 +82,11 @@ export function verificationReadsFailedMessage(detail: string): string {
 
 /** The shared failure ladder for the verified mutation flows — the four
  * pre-judgment arms every mutation outcome union carries (edit, append,
- * block move, replace-section), worded once so a new arm in a primitives
- * release fails typecheck here instead of diverging across four flows.
+ * block move, replace-section, and the block-delete half of
+ * DeleteBlockOutcome — that half IS MutationFailure by type, so the block
+ * delete shares this ladder rather than copying it), worded once so a new
+ * arm in a primitives release fails typecheck here instead of diverging
+ * across every flow.
  * Per-arm doctrine:
  * - drift: the gate refuses first; this is defense-in-depth. Zero kernel
  *   calls — the tail thunk is never awaited on this arm.
@@ -102,7 +104,9 @@ export async function mutationFailureEnvelope(
 	outcome: MutationFailure,
 	opts: {
 		kb: string;
-		anchor?: string;
+		/** The flow's own verdict key — the placement anchor echo, or the
+		 * block delete's blockId — spread verbatim, never re-worded here. */
+		extra?: { anchor: string } | { blockId: string };
 		tail: () => Promise<Record<string, unknown>>;
 	},
 ): Promise<Envelope> {
@@ -113,19 +117,19 @@ export async function mutationFailureEnvelope(
 			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
 				kb: opts.kb,
 				verificationFailed: true,
-				...(opts.anchor !== undefined ? { anchor: opts.anchor } : {}),
+				...opts.extra,
 				...(await opts.tail()),
 			});
 		case "kernel-refused":
 			return errorEnvelope(outcome.message, {
 				kb: opts.kb,
-				...(opts.anchor !== undefined ? { anchor: opts.anchor } : {}),
+				...opts.extra,
 				...(await opts.tail()),
 			});
 		case "verification-failed":
 			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
 				kb: opts.kb,
-				...(opts.anchor !== undefined ? { anchor: opts.anchor } : {}),
+				...opts.extra,
 				verificationFailed: true,
 			});
 	}
@@ -373,60 +377,8 @@ export function moveDocVerdictEnvelope(
 	return errorEnvelope("internal: unhandled doc-move verdict");
 }
 
-/** Envelope mapping for a verified block-delete outcome other than the
- * judged success — byte-identical to the sentences the flow issued before
- * the extraction (the createVerdictEnvelope pattern). The garnish reads
- * ride a lazy supplier, not a pre-built tail: only the transport-unverified
- * and kernel-refused arms attach the flow's error-path echo reads, and an
- * eagerly computed tail would fire kernel calls on the arms that stand
- * alone (drift, verification-failed — byte-parity with the pre-mapper
- * flow, where the echo reads just failed and none were re-attempted). */
-export async function deleteBlockVerdictEnvelope(
-	outcome: Exclude<DeleteBlockOutcome, { kind: "judged" }>,
-	ctx: {
-		kb: string;
-		blockId: string;
-		errorTail: () => Promise<Record<string, unknown>>;
-	},
-): Promise<Envelope> {
-	switch (outcome.kind) {
-		case "drift":
-			return driftRefusal(outcome.observed);
-		case "transport-unverified":
-			// The delete may already be applied — never render this as
-			// "unreachable", whose retry invitation would duplicate an
-			// applied write. The error-path echo reads run best-effort.
-			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
-				kb: ctx.kb,
-				verificationFailed: true,
-				blockId: ctx.blockId,
-				...(await ctx.errorTail()),
-			});
-		case "kernel-refused":
-			// A synchronous kernel rejection is not in-flight; it surfaces
-			// verbatim with the fresh outline attached.
-			return errorEnvelope(outcome.message, {
-				kb: ctx.kb,
-				blockId: ctx.blockId,
-				...(await ctx.errorTail()),
-			});
-		case "verification-failed":
-			// The mutation's transport succeeded — the delete may already be
-			// applied. Same never-retry-blindly contract as the transport
-			// leg. No garnish tail: the echo reads just failed and the old
-			// finishWrite catch attached none — the message stands alone.
-			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
-				kb: ctx.kb,
-				blockId: ctx.blockId,
-				verificationFailed: true,
-			});
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled block-delete verdict");
-}
-
 /** The doc-delete twin — every non-mutated DeleteDocOutcome arm, the same
- * lazy-garnish rule as the block mapper. The union has no
+ * lazy-garnish rule as the shared ladder. The union has no
  * verification-failed arm: the primitive's evidence walk runs before the
  * mutation (raw throws), and the post-mutation reads live in the flow's
  * finishWrite leg. */
