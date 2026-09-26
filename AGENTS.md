@@ -183,12 +183,14 @@ suite asserts the kernel reports the pin exactly, and the checklist above
 gates the bump.
 
 **Tool-side kernel-fact list** — the complete set of spots in *this* repo
-whose comments or wording reference a pinned kernel behavior. The
-falsifying tests for every fact live in the primitives repo or a local
-live suite as noted; the tool-side code at each spot is wording and
-precondition, not the fact itself. An upgrade pass re-reads this list and,
-where the cited fact changed, updates wording/comments here and
-re-falsifies the fact there:
+whose comments or wording reference a pinned kernel behavior. Every fact
+here is falsified in the primitives repo's unit + live suites (an upgrade
+pass re-runs them wholesale); this repo's suites exercise them transitively
+and never sole-falsify a pinned fact, so entries name a test only where
+this repo pins something of its own — tool-surface wording, or a live case
+riding the tool path. The tool-side code at each spot is wording and
+precondition, not the fact itself; an upgrade pass re-reads this list and
+re-falsifies the changed fact in the primitives.
 
 - The fresh-content judgment (`checkFreshContent`, the primitives' read
   barrel) — the precondition rides the live tree, never the SQL index
@@ -200,15 +202,13 @@ re-falsifies the fact there:
   `echoTail` refresh in `writeFlow.ts` (the exception the
   `rememberServedRows` entry below names). Fail-closed on any split (a
   diverging seed reads as `stale`, named, never silently matched — the
-  retry proceeds). Falsified by the primitives live content-equivalence
-  case and their `fresh` unit and live suites.
+  retry proceeds).
 - The child-order fact — `getChildBlocks` returns a parent's children in
   document order, so the first element is the doc's first block — lives in
   `firstChildContent` (primitives `byId.ts`); the near-match
   excerpt read (`writeCreate.ts`) keeps only the swallow policy (a
   vanished candidate mid-scan → empty excerpt, kernel errors rethrown
-  for classification). Falsified by the primitives' `walk.live`
-  (document-order walk) and `byId.test.ts` (the rethrow-verbatim arm).
+  for classification).
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing (the same for the `serveOutlineFromWalk` doc comment in
@@ -216,56 +216,47 @@ re-falsifies the fact there:
   (the success-path echo tail it cites is the executable-dependence site)
   is the exception: that refresh seeds SQL-form content into the baseline
   map the judgment hashes walk-form against — the site the fresh-content
-  entry above names. Falsified by the same primitives live case.
+  entry above names.
 - The type-`'d'` root-row fact behind doc targeting (`writeFlow.ts`
   `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
   refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
   absent, never normalized to its containing doc. The same type-`'d'` row
   fact is also the discovery hint in `kb_read`'s missing-docId refusal
   (`tools.ts`, which keeps the unfiltered `ownershipStmt` read: a block id
-  there exports its containing doc). Falsified by the primitives' by-ID
-  live suite (the block-id absent case) and their title round-trip.
+  there exports its containing doc).
 - The insert-shape fact — one `doOperations` entry per markdown insert,
   whole body in its `data` — lives in `insertVerified` (primitives
-  `write.ts`). Falsified by the primitives live insert-shape case plus
-  local append/replace-section round trips (`writePlacement.live`).
+  `write.ts`).
 - The `lsNotebooks` encrypted-flag fact — `encrypted` is always present in
   the listing regardless of lock state, and the SQL surface cannot see
   encrypted boxes, so one rejection covers both lock states — lives in
   `resolveNotebooks` (primitives `notebooks.ts`); this repo keeps the
-  rejection wording and the warn-and-drop policy (`validation.ts`). Falsified
-  by the primitives' `notebooks.live` (both lock states) beside the branch,
-  plus the local tool-path case (`encryptedNotebook.live`).
+  rejection wording and the warn-and-drop policy (`validation.ts`); the
+  tool path is pinned locally (`encryptedNotebook.live`).
 - The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
   found" — lives in `deleteBlockVerified` / `deleteDocVerified`
   (primitives `delete.ts`); this repo keeps the flow-side wording (kernel
   error verbatim with the fresh outline, the targetGone receipt gate).
-  Falsified by the primitives' `delete.live` (tree-not-found case) and
-  their `sweep.live` cascade case.
 - The mint-policy claims (`validateMintTitle`, `writeGuard.ts`) —
   wording only; the facts themselves (the `normalizeDocTitle` 512-rune
   truncation bound, the `/` path-separator rule) live in the primitives'
-  `mintTitleProblem` (`/write` entry), falsified by the primitives title
-  round-trip and their own unit suite; the rejection set remains a
-  superset claim over `normalizeDocTitle`, pinned live by the same
-  round-trip.
+  `mintTitleProblem` (`/write` entry); the rejection set remains a
+  superset claim over `normalizeDocTitle`.
 - The synchronous-move-rejection fact — the kernel rejects ancestor moves
   synchronously ("Cannot move to this location", doc-level record, no echo
   tail) — lives in `moveDocVerified` (primitives `move.ts`); this repo
   keeps the doc-level move record shape wording (outline + title/hpath
-  echo, no anchor/newBlockId/destOutline). Falsified by the
-  primitives' `move.live` (ancestor-move case).
+  echo, no anchor/newBlockId/destOutline).
 - The hpath-rebuild fact — `blocks.hpath` is a derived column the index
   rebuilds asynchronously after `moveDocsByID` (still the pre-move value
   immediately after the move), so the landed judgment and the echoed hpath
   ride the live tree — the fact lives in `moveDocVerified` (primitives
-  `move.ts`). Falsified by the primitives' `move.live` (the SQL-lag pin).
+  `move.ts`).
 - The search-window fact — the kernel shares one `pageSize` window across
   every `paths` entry of a full-text search call, so a hit-rich KB fills
   the pre-filter window and silently drops the other KBs' matches — lives
   in `searchBoxes` (primitives `search.ts`); the tool side owns only
-  the resolve/echo/spill around the per-box fan-out. Falsified by the
-  primitives' `search.live` (shared-window premise + per-box strategy).
+  the resolve/echo/spill around the per-box fan-out.
 - The delete-cascade fact — the kernel's cascade removes a container
   member's descendants with it, so the sweep deletes only the enumerated
   members — lives in `sweepSectionMembers` (primitives `sweep.ts`);
@@ -273,35 +264,30 @@ re-falsifies the fact there:
   the pre-enumeration rationale, and this repo keeps the sweep's
   partial-apply envelope wording (byte-identical receipt, do-not-retry
   guidance).
-  Falsified by the primitives' `sweep.live` (cascade case).
 - The `kb_query` description claims (`tools.ts`, `QUERY_DESCRIPTION`) —
   agent-facing wording: `sort` is a block-type weight, not display order
   (document order comes from the outline or the anchor ids), and `hpath`
   is a derived display label, never an address. Wording pinned by the
-  local unit suite (`tools.test.ts`); the semantics ride the primitives'
-  walk suites.
+  local unit suite (`tools.test.ts`).
 - The `kb_read` description claims (`tools.ts`, `READ_DESCRIPTION`) —
   agent-facing wording over the placement module's notation: the
   `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
   write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives' shared
   targetable-container set consumed by the heading-target judgment
   (`walk.ts`) and the notation's glyph table (`outline.ts`)). Wording pinned
-  by the local unit suite (`tools.test.ts`); the semantics ride the
-  primitives' outline suites.
+  by the local unit suite (`tools.test.ts`).
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
   endpoint is no longer a mutation vector and the tool still rejects DML
-  by shape. Pinned by the primitives live suite (silent-DML no-op case,
-  `writePins.live`); the tool-side shape rejection is pinned locally
+  by shape; the tool-side shape rejection is pinned locally
   (`tools.test.ts`).
 - The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
   cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
   the primitives; `breaker.ts` holds it as session state); a `getVersion`
   probe is unauthenticated so it never counts as breaker contact; a 429
   arms the local cooldown, and any call inside an active lock extends it.
-  Schedule and dodge falsified by the primitives' unit suite plus
-  `throttle.live`; the extension's half (holder wiring, the
-  genuine-class seam) by the local unit seam suite (`breaker.test.ts`).
+  The extension's half (holder wiring, the genuine-class seam) is pinned
+  locally (`breaker.test.ts`).
 
 If an entry here ever grows executable dependence on a pinned behavior, move
 the code down into the primitives — do not lengthen the list.
@@ -326,15 +312,11 @@ the code down into the primitives — do not lengthen the list.
   lock (the extension's dodge wiring is unit-pinned in `breaker.test.ts`).
 - Unit tests use `__tests__/helpers/fakePi.ts` and SQL-routed kernel stubs
   (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
-- The version-pinned behaviors (walk order/parentage, verdict primitives,
-  the walk ≡ SQL content pair behind the fresh-content judgment,
-  auth-lock schedule, live title round-trip, the move facts, the delete
-  generation and delete-cascade facts) are falsified by the primitives
-  repo's own unit + live suites; this repo's suites exercise them
-  transitively and are never the sole falsification of a pinned fact. The
-  replace-section and append live cases here pin only tool-surface behavior
-  (envelope wording, partial-replace receipts, insert-before-delete ordering
-  through the gate), not kernel facts.
+- The version-pinned behaviors are falsified by the primitives repo's
+  unit + live suites (the fact list under Version coupling names where
+  each lives); this repo's live cases pin only tool-surface behavior
+  (envelope wording, partial-replace receipts, insert-before-delete
+  ordering through the gate), never kernel facts.
 - The integration suite needs a live SiYuan 3.8.4 kernel and self-skips
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a
