@@ -105,7 +105,7 @@ export function headingInWalk(
 					? "an unnamed container"
 					: `a '${outcome.containerType}' container`;
 			return refusedEnvelope(
-				`headingId '${headingId}' (${outcome.headingContent}) sits inside ${container}, which the kernel does not accept as a write-parent — not a targetable heading; re-target a heading in the doc, a quote, a list, a superblock, a callout or a tab`,
+				`headingId '${headingId}' (${outcome.headingContent}) sits inside ${container}, which the kernel does not accept as a write-parent — not a targetable heading; re-fetch the outline (kb_read) and re-target a heading not marked (not targetable)`,
 			);
 		}
 	}

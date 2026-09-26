@@ -687,6 +687,7 @@ describe("append", () => {
 		const result = await execute(appendParams("h1"));
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("'tabs' container");
+		expect(result.message).toContain("(not targetable)");
 		expect(
 			calls.filter(
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",
