@@ -13,7 +13,6 @@ import {
 import {
 	blockContents,
 	headingRows,
-	ownershipStmt,
 	resolveHeadingTarget,
 	rootEcho,
 	walkBlockTree,
@@ -58,26 +57,20 @@ export interface DocTarget {
 	title: string;
 }
 
-/** Every non-create mode takes docId — an echoed target, ownership-
- * checked by the scoping query (an id from another KB reads as
- * nothing). The statement itself lives in the primitives beside the
- * block-row shape it encodes; this side owns only the refusal. */
+/** Every non-create mode takes docId — an echoed type-'d' root_id, read
+ * through rootEcho: box-scoped (an id from another KB reads as nothing)
+ * and type-discriminated (a block id is not a doc target). The judgment
+ * lives in the primitives beside the block-row shape it encodes; this
+ * side owns only the refusal. */
 export async function resolveDocTarget(
 	kernel: WriteKernelClient,
 	boxId: string,
 	name: string,
 	docId: string,
 ): Promise<DocTarget | Envelope> {
-	const rows = await kernel.query(ownershipStmt(boxId, docId));
-	const rootId = rows[0] === undefined ? undefined : String(rows[0].root_id);
-	if (rootId === undefined) {
-		return noSuchDocEnvelope(name, docId);
-	}
-	const root = await rootEcho(kernel, boxId, rootId);
+	const root = await rootEcho(kernel, boxId, docId);
 	if (root === undefined) {
-		return errorEnvelope(
-			`doc '${docId}' has no type='d' root row in KB '${name}'`,
-		);
+		return noSuchDocEnvelope(name, docId);
 	}
 	return { rootId: root.docId, title: root.title };
 }

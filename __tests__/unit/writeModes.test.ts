@@ -317,6 +317,20 @@ describe("edit", () => {
 		).toEqual([{ id: "b-1", data: "corrected body" }]);
 	});
 
+	it("a block id passed as docId reads as no doc — rootEcho's type-'d' discrimination, zero kernel write calls", async () => {
+		// b-1 exists as a block row but is not a doc root; the write path
+		// refuses it instead of normalizing it to its containing doc.
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+			},
+		});
+		const result = await execute({ ...editBase, docId: "b-1" });
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("no doc 'b-1'");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
+	});
+
 	it("concurrent change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
 		// The dialog served "stale paragraph" (the blocks index, baseline
 		// seeded from it at check time); the live tree already holds the

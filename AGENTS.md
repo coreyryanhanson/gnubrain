@@ -216,12 +216,14 @@ re-falsifies the fact there:
   is the exception: that refresh seeds SQL-form content into the baseline
   map the judgment hashes walk-form against — the site the fresh-content
   entry above names. Falsified by the same primitives live case.
-- The type-`'d'` root-row wording in `resolveDocTarget`'s refusal
-  (`writeFlow.ts`) — wording only; the type-`'d'` row semantics the wording
-  describes live in `rootEcho` (the primitives). The same
-  type-`'d'` row fact is also the discovery hint in `kb_read`'s
-  missing-docId refusal (`tools.ts`). Falsified by
-  the primitives live title round-trip and by-ID cases.
+- The type-`'d'` root-row fact behind doc targeting (`writeFlow.ts`
+  `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
+  refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
+  absent, never normalized to its containing doc. The same type-`'d'` row
+  fact is also the discovery hint in `kb_read`'s missing-docId refusal
+  (`tools.ts`, which keeps the unfiltered `ownershipStmt` read: a block id
+  there exports its containing doc). Falsified by the primitives' by-ID
+  live suite (the block-id absent case) and their title round-trip.
 - The insert-shape fact — one `doOperations` entry per markdown insert,
   whole body in its `data` — lives in `insertVerified` (primitives
   `write.ts`). Falsified by the primitives live insert-shape case plus
