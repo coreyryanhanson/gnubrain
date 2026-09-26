@@ -164,10 +164,11 @@ tests drive the extension through it instead of touching real files.
   (`withRowPayload`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`, `RESULT_LIMIT`) and
   `outline.ts` owns outline serving (`serveOutline`/`serveOutlineFromWalk` —
   the required-baselines wrappers: seeding, the inline cut, the spill tail).
-  The notation itself (`renderExtendedOutlineLines` + `containerPrefix`) is
-  the primitives read barrel's canonical extended-outline renderer, so the
-  served lines can never diverge from the section rule; the tool
-  descriptions document the notation the agent sees.
+  The notation itself (`renderExtendedOutlineLines`, the primitives read
+  barrel's canonical extended-outline renderer — `containerPrefix` stays
+  module-internal to the primitives' `outline.ts`) means the served lines
+  can never diverge from the section rule; the tool descriptions document
+  the notation the agent sees.
 - Every tool result is an envelope `{status: ok | near_matches | duplicate |
   error | refused, message, ...}` (`envelope.ts`) — use its factory helpers,
   don't invent statuses. Large payloads spill to session temp files.
@@ -199,9 +200,11 @@ re-falsifies the fact there:
   equivalence (the kernel builds both via `nodeStaticContent`, so walk-form
   and SQL-form baselines hash identically) remains a cross-boundary
   property: the comparison and both reads moved down with the promotion,
-  but this repo's serve sites still seed SQL-form content into the
-  baseline map. Fail-closed on any split (a diverging seed reads as
-  `stale`, named, never silently matched — the retry proceeds). Falsified
+  and the serve seeds ride the walk — the one SQL-form seed left is the
+  success-path `echoTail` refresh in `writeFlow.ts` (the exception the
+  `rememberServedRows` entry below names). Fail-closed on any split (a
+  diverging seed reads as `stale`, named, never silently matched — the
+  retry proceeds). Falsified
   by the primitives live content-equivalence case and their `fresh` unit
   and live suites.
 - The child-order fact — `getChildBlocks` returns a parent's children in
@@ -279,6 +282,12 @@ re-falsifies the fact there:
   is a derived display label, never an address. Wording pinned by the
   local unit suite (`tools.test.ts`); the semantics ride the primitives'
   walk suites.
+- The `kb_read` description claims (`tools.ts`, `READ_DESCRIPTION`) —
+  agent-facing wording over the placement module's notation: the
+  `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
+  write-parent set (`TARGETABLE_CONTAINER_TYPES` in the primitives'
+  placement rule). Wording pinned by the local unit suite
+  (`tools.test.ts`); the semantics ride the primitives' outline suites.
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
   endpoint is no longer a mutation vector and the tool still rejects DML

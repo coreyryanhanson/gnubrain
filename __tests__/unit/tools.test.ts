@@ -717,6 +717,18 @@ describe("read toolset + descriptions", () => {
 			"SELECT id, root_id, box, hpath, updated FROM blocks",
 		);
 	});
+
+	it("the read tool description carries the pinned outline-notation markers", () => {
+		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
+		registerReadToolsAndToolset(pi, hooks);
+		const description = (
+			toolDefs.get("kb_read") as { description?: string } | undefined
+		)?.description as string;
+		// the anchor payload + the kernel write-parent wording
+		expect(description).toContain("→ <blockID>");
+		expect(description).toContain("(not targetable)");
+		expect(description).toContain("[unnamed]");
+	});
 });
 
 describe("degraded session (shape clause, asserted with the registered tools)", () => {
