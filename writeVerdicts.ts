@@ -370,6 +370,7 @@ export function moveDocVerdictEnvelope(
 			// the evidence read just failed, so the message stands alone.
 			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
 				kb: ctx.name,
+				docId: ctx.docId,
 				verificationFailed: true,
 			});
 	}
