@@ -168,16 +168,12 @@ export async function runMoveMode(
 	) {
 		return movePlacementRefusal(outcome);
 	}
-	switch (outcome.kind) {
-		case "drift":
-		case "transport-unverified":
-		case "kernel-refused":
-		case "verification-failed":
-			return mutationFailureEnvelope(outcome, {
-				kb: name,
-				extra: { anchor: echo },
-				tail: () => errorTail(input, doc),
-			});
+	if (outcome.kind !== "judged") {
+		return mutationFailureEnvelope(outcome, {
+			kb: name,
+			extra: { anchor: echo },
+			tail: () => errorTail(input, doc),
+		});
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the move may already be applied (finishWrite doc).

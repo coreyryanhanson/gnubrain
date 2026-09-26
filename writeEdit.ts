@@ -67,15 +67,11 @@ export async function runEditMode(
 		preWrite,
 		rootId: doc.rootId,
 	});
-	switch (outcome.kind) {
-		case "drift":
-		case "transport-unverified":
-		case "kernel-refused":
-		case "verification-failed":
-			return mutationFailureEnvelope(outcome, {
-				kb: name,
-				tail: () => errorTail(input, doc),
-			});
+	if (outcome.kind !== "judged") {
+		return mutationFailureEnvelope(outcome, {
+			kb: name,
+			tail: () => errorTail(input, doc),
+		});
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc). The

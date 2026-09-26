@@ -90,16 +90,12 @@ export async function runReplaceSectionMode(
 		rootId: doc.rootId,
 		preIds: idSet(walk),
 	});
-	switch (outcome.kind) {
-		case "drift":
-		case "transport-unverified":
-		case "kernel-refused":
-		case "verification-failed":
-			return mutationFailureEnvelope(outcome, {
-				kb: name,
-				extra: { anchor: echo },
-				tail: () => errorTail(input, doc),
-			});
+	if (outcome.kind !== "judged") {
+		return mutationFailureEnvelope(outcome, {
+			kb: name,
+			extra: { anchor: echo },
+			tail: () => errorTail(input, doc),
+		});
 	}
 	// Everything from here on is post-mutation — a drop anywhere in the
 	// delete sweep or the echo must never read as "unreachable" while the
