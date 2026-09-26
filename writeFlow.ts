@@ -9,6 +9,7 @@ import {
 	type Envelope,
 	noSuchDocEnvelope,
 	refusedEnvelope,
+	STALE_TARGET_GUIDANCE,
 } from "./envelope.js";
 import {
 	blockContents,
@@ -78,7 +79,7 @@ export async function resolveDocTarget(
 /** The stale-heading refusal — shared by headingInWalk and replace-section's
  * section-membership fallback, which both reject the same target. */
 export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
-	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`;
+	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
 }
 
 /** The heading-target refusal map — wording only. The judgment (membership
@@ -123,9 +124,8 @@ export function headingInWalk(
  * applies the same garnish rule. */
 export async function errorTail(
 	input: WriteFlowBase,
-	doc: DocTarget | undefined,
+	doc: DocTarget,
 ): Promise<Record<string, unknown>> {
-	if (doc === undefined) return {};
 	try {
 		return await echoTail(input, doc);
 	} catch {

@@ -102,11 +102,11 @@ function dispatchTools(
 	toolsetLines: string[],
 ): KbCommandResult {
 	if (verbs.length === 0) {
-		const state =
-			toolsetLines.length > 0
-				? toolsetLines.join("\n")
-				: `kb tools: read toolset ${readsEnabled ? "on" : "off"}, write toolset ${writesEnabled ? "on" : "off"}`; // ponytail: 2-level ternary, splits worse than it reads
-		return { ...NO_CHANGE, message: state, severity: "info" };
+		return {
+			...NO_CHANGE,
+			message: toolsetLines.join("\n"),
+			severity: "info",
+		};
 	}
 	const verb = verbs[0];
 	if (

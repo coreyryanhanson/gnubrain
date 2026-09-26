@@ -330,7 +330,7 @@ type Exec = (params: Record<string, unknown>) => Promise<{
 	details: Record<string, unknown> & { status: string; message: string };
 }>;
 
-export interface GrantCall {
+interface GrantCall {
 	title: string;
 	options: string[];
 	opts?: GrantSelectOptions;
@@ -380,11 +380,11 @@ export function registerKbWrite(
 	return { execute, tool };
 }
 
-export type WriteExec = (
+type WriteExec = (
 	params: Record<string, unknown>,
 ) => Promise<Record<string, unknown> & { status: string; message: string }>;
 
-export interface WriteSetupResult {
+interface WriteSetupResult {
 	/** Details-level result (status/message + echo fields) — the assertion
 	 * surface every write test uses. */
 	execute: WriteExec;
@@ -400,6 +400,27 @@ export interface WriteSetupResult {
 	grantState: ReturnType<typeof createWriteGrantState>;
 	childrenFor: Record<string, unknown[]>;
 	baselines: ContentBaselines;
+}
+
+/** A BLOCK_CONTENTS override serving `stored`'s rows for exactly the
+ * requested ids — the real kernel's IN (...) shape, for tests that need
+ * post-write stored content distinct from the fixtures. */
+export function storedContentStub(
+	harness: Pick<WriteSetupResult, "client">,
+	stored: Record<string, string>,
+): void {
+	const baseQuery = harness.client.query.bind(harness.client);
+	harness.client.query = async (stmt: string) => {
+		if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
+			const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+			return ids.flatMap((id) =>
+				id !== undefined && stored[id] !== undefined
+					? [{ id, content: stored[id] }]
+					: [],
+			);
+		}
+		return baseQuery(stmt);
+	};
 }
 
 /** The one kb_write harness: a fresh kernel stub, fresh baselines map, and

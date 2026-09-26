@@ -111,9 +111,12 @@ tests drive the extension through it instead of touching real files.
 - **Every kb tool call routes through `gate.ts`.** Reads use `runKbCall`;
   writes run the per-KB grant gate (after `guardCall`, before
   `gateWriteAttempt`), then `gateWriteAttempt`, then a flow. The gate
-  order is pinned (shape → breaker → 429 cooldown → `kb` param → mint title →
-  cached-verdict drift refusal → grant) and refuses locally with zero kernel
-  calls before the op runs. Never call the kernel client outside this path.
+  order is pinned (shape → breaker → 429 cooldown → `kb` param → mode/body
+  shape → mint title → cached-verdict drift refusal → grant) and refuses
+  locally with zero kernel calls before the op runs. One deliberate
+  exception: `kb_read`'s `kb: "kbs"` discovery form short-circuits ahead
+  of the gate with zero kernel calls (it must run while the breaker is
+  tripped). Never call the kernel client outside this path.
 - **Toolsets** via `pi-tool-masking`: `gnubrain.read` (registered in
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
@@ -123,16 +126,19 @@ tests drive the extension through it instead of touching real files.
   laced with session state: baselines seeding, spill receipts, move outlines,
   envelope wording. The kernel-coupled cores they compose —
   `findTitleMatches`, `createVerifiedDoc`, `editVerified`, `insertVerified`,
-  `blockInDoc`, `rootEcho`, the fresh-content judgment
-  (`checkFreshContent`), `resolveHeadingTarget` (the heading-target
-  judgment; `headingInWalk` here maps its arms to wording), the verified
-  block/doc moves (`moveBlockVerified` / `moveDocVerified`), the verified
-  delete sweep (`sweepSectionMembers`), the verified deletes
-  (`deleteBlockVerified` / `deleteDocVerified`), and the placement module
-  (the section rule and the anchors derived from it) — live in
-  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions whose
-  shapes and evidence the primitives' AGENTS.md documents (the fresh-content
-  refusal wording lives in `freshContentRefusal`, `writeResult.ts`);
+  `replaceSectionVerified` (the replace-section sequence: enumeration,
+  anchor, insert-before-sweep ordering — the tool layer never sequences
+  kernel mutations), `blockInDoc`, `rootEcho`, `ownership`, the
+  fresh-content judgment (`checkFreshContent`), `resolveHeadingTarget`
+  (the heading-target judgment; `headingInWalk` here maps its arms to
+  wording), the verified block/doc moves (`moveBlockVerified` /
+  `moveDocVerified`), the verified delete sweep (`sweepSectionMembers`),
+  the verified deletes (`deleteBlockVerified` / `deleteDocVerified`), and
+  the placement module (the section rule and the anchors derived from it)
+  — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
+  unions whose shapes and evidence the primitives' AGENTS.md documents
+  (the fresh-content refusal wording lives in `freshContentRefusal`,
+  `writeResult.ts`);
   `writeVerdicts.ts` maps every kind to agent-facing wording via exhaustive
   switches (no default), so a new kind in a primitives release fails
   typecheck until its wording is written here — the anchor echoes ride the
@@ -176,8 +182,8 @@ The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.4"`), the drift probe
 repo consumes them through the read barrel: writes fail closed on a
 `drift` verdict — the gate refuses
 before the op runs, and the probe-taking primitives refuse again inside
-(the sweep takes no probe, so replace-section's drift refusal is the
-gate's alone), reads warn, and the breaker's cooldown rides the barrel's
+(defence-in-depth; the sweep alone takes no probe — it runs mid-sequence
+after the gate's refusal), reads warn, and the breaker's cooldown rides the barrel's
 `authLockDodge`. Change the pin only deliberately, in the primitives repo — its live
 suite asserts the kernel reports the pin exactly, and the checklist above
 gates the bump.
@@ -197,12 +203,14 @@ re-falsifies the changed fact in the primitives.
   (`blocks.content` converges asynchronously), and the walk ≡ SQL
   equivalence (the kernel builds both via `nodeStaticContent`, so walk-form
   and SQL-form baselines hash identically) remains a cross-boundary
-  property: the judgment and both reads live in the primitives, the serve
-  seeds ride the walk, and the one SQL-form seed is the success-path
-  `echoTail` refresh in `writeFlow.ts` (the exception the
-  `rememberServedRows` entry below names). Fail-closed on any split (a
-  diverging seed reads as `stale`, named, never silently matched — the
-  retry proceeds).
+  property: the judgment and both reads live in the primitives, the read
+  tools' serve seeds ride the walk, and the SQL-form seed sites are
+  exactly three — `runEditMode`'s pre-write seed from `blockInDoc`
+  (`writeEdit.ts`), `kb_query`'s served rows (`tools.ts`, via
+  `rememberServedRows`), and the success-path `echoTail` refresh in
+  `writeFlow.ts` (the sites the `rememberServedRows` entry below names).
+  Fail-closed on any split (a diverging seed reads as `stale`, named,
+  never silently matched — the retry proceeds).
 - The child-order fact — `getChildBlocks` returns a parent's children in
   document order, so the first element is the doc's first block — lives in
   `firstChildContent` (primitives `byId.ts`); the near-match
@@ -212,17 +220,18 @@ re-falsifies the changed fact in the primitives.
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing (the same for the `serveOutlineFromWalk` doc comment in
-  `outline.ts`). The `echoTail` baseline-refresh comment in `writeFlow.ts`
-  (the success-path echo tail it cites is the executable-dependence site)
-  is the exception: that refresh seeds SQL-form content into the baseline
-  map the judgment hashes walk-form against — the site the fresh-content
-  entry above names.
+  `outline.ts`). The executable-dependence sites are the three SQL-form
+  seeds the fresh-content entry above names: `runEditMode`'s pre-write
+  seed (`writeEdit.ts`), `kb_query`'s served rows (`tools.ts`), and the
+  `echoTail` baseline-refresh comment in `writeFlow.ts` — all seed
+  SQL-form content into the baseline map the judgment hashes walk-form
+  against.
 - The type-`'d'` root-row fact behind doc targeting (`writeFlow.ts`
   `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
   refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
   absent, never normalized to its containing doc. The same type-`'d'` row
   fact is also the discovery hint in `kb_read`'s missing-docId refusal
-  (`tools.ts`, which keeps the unfiltered `ownershipStmt` read: a block id
+  (`tools.ts`, which keeps the primitives' `ownership` read: a block id
   there exports its containing doc).
 - The insert-shape fact — one `doOperations` entry per markdown insert,
   whole body in its `data` — lives in `insertVerified` (primitives
@@ -260,10 +269,10 @@ re-falsifies the changed fact in the primitives.
 - The delete-cascade fact — the kernel's cascade removes a container
   member's descendants with it, so the sweep deletes only the enumerated
   members — lives in `sweepSectionMembers` (primitives `sweep.ts`);
-  the call-site comment in `writeReplaceSection.ts` is a summary kept for
-  the pre-enumeration rationale, and this repo keeps the sweep's
-  partial-apply envelope wording (byte-identical receipt, do-not-retry
-  guidance).
+  the replace-section sequence itself (`replaceSectionVerified`, the
+  insert-before-sweep ordering and the enumeration timing) also lives in
+  the primitives, and this repo keeps the sweep's partial-apply envelope
+  wording (byte-identical receipt, do-not-retry guidance).
 - The `kb_query` description claims (`tools.ts`, `QUERY_DESCRIPTION`) —
   agent-facing wording: `sort` is a block-type weight, not display order
   (document order comes from the outline or the anchor ids), and `hpath`
@@ -288,6 +297,21 @@ re-falsifies the changed fact in the primitives.
   arms the local cooldown, and any call inside an active lock extends it.
   The extension's half (holder wiring, the genuine-class seam) is pinned
   locally (`breaker.test.ts`).
+- The verbatim-title fact (`writeGuard.ts` wording) — doc titles store
+  verbatim, unescaped, in `blocks.content` (the HTML-escaped form lives
+  only in `blocks.ial`, which the guard does not query); falsified by the
+  primitives' title round-trip live case.
+- The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
+  permits CTEs, so layer 1 is the only line of defense against a WITH
+  shadowing an allowlisted table (pinned locally by `tools.test.ts`).
+- The updateBlock-not-found fact (`writeEdit.ts` wording) — an absent
+  edit target is never refused flow-side; updateBlock's synchronous
+  not-found error surfaces verbatim through the kernel-refused arm (the
+  delete-generation entry is the delete analogue).
+- The re-parse fact (`baselines.ts` wording) — submitted markdown is
+  re-parsed by the kernel, so the stored form is unknowable at submit
+  time and baselines are never seeded from it; owned by the primitives'
+  normalization pin.
 
 If an entry here ever grows executable dependence on a pinned behavior, move
 the code down into the primitives — do not lengthen the list.
@@ -315,8 +339,8 @@ the code down into the primitives — do not lengthen the list.
 - The version-pinned behaviors are falsified by the primitives repo's
   unit + live suites (the fact list under Version coupling names where
   each lives); this repo's live cases pin only tool-surface behavior
-  (envelope wording, partial-replace receipts, insert-before-delete
-  ordering through the gate), never kernel facts.
+  (envelope wording, partial-replace receipts, gate ordering), never
+  kernel facts.
 - The integration suite needs a live SiYuan 3.8.4 kernel and self-skips
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a

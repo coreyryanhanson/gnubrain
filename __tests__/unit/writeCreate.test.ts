@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-	BLOCK_CONTENTS_STMT_HEAD,
 	SiYuanApiError,
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
@@ -17,7 +16,12 @@ import {
 import { VERIFIED_ROOT_STMT_HEAD } from "siyuan-kb-primitives/write";
 import { CircuitBreaker } from "../../breaker.js";
 import { validation } from "./fixtures.js";
-import { type StubConfig, base, setup } from "./writeHarness.js";
+import {
+	type StubConfig,
+	base,
+	setup,
+	storedContentStub,
+} from "./writeHarness.js";
 
 describe("guard-stop staging", () => {
 	const duplicateConfig: StubConfig = {
@@ -117,18 +121,7 @@ describe("guard-stop staging", () => {
 				blockRows: [{ id: "p1", content: "served body" }],
 			},
 		});
-		const baseQuery = harness.client.query.bind(harness.client);
-		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
-				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
-				return ids.flatMap((id) =>
-					id !== undefined && stored[id] !== undefined
-						? [{ id, content: stored[id] }]
-						: [],
-				);
-			}
-			return baseQuery(stmt);
-		};
+		storedContentStub(harness, stored);
 		return harness;
 	}
 

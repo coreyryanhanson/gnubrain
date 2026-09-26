@@ -21,6 +21,7 @@ import {
 	PINNED_SIYUAN_VERSION,
 	ownershipStmt,
 	SiYuanKernelClient,
+	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import {
 	globalSettingsPath,
@@ -39,6 +40,14 @@ export const BASE_URL = process.env.SIYUAN_BASE_URL ?? "";
 export const TOKEN = process.env.SIYUAN_API_TOKEN ?? "";
 /** Live round-trips + fixture-mint polling run well past the unit budget. */
 export const LIVE_TIMEOUT = 30_000;
+
+/** First heading with exactly this content under a doc — the walk lookup
+ * every write-path live case shares. */
+export function heading(walk: WalkedBlock[], content: string): WalkedBlock {
+	const h = walk.find((b) => b.type === "h" && b.content === content);
+	expect(h, `heading '${content}' in walk`).toBeDefined();
+	return h!;
+}
 
 /** The repo root without a trailing slash — the local path-package entry
  * the temp-HOME seeded settings.json `packages` list carries: the child pi

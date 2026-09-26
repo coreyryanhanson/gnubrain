@@ -5,7 +5,6 @@
 // statement shapes) live in siyuan-kb-primitives, beside the builders.
 
 import { describe, expect, it } from "vitest";
-import { guardExactPattern } from "siyuan-kb-primitives";
 import { validateMintTitle } from "../../writeGuard.js";
 import { base, setup } from "./writeHarness.js";
 
@@ -62,11 +61,6 @@ describe("title guard", () => {
 		);
 		expect(String(exact?.args)).toContain("box = 'nb-r'");
 		expect(String(exact?.args)).toContain("type = 'd'");
-		// Escape parity: pattern = the title verbatim (the kernel stores doc
-		// titles unescaped in blocks.content), % and _ LIKE-escaped.
-		expect(String(exact?.args)).toContain(
-			guardExactPattern("Docker Networking"),
-		);
 	});
 
 	it("matches HTML-special titles verbatim — the kernel stores them unescaped", async () => {

@@ -6,7 +6,7 @@
 
 import type { ProbeVerdict } from "./validation.js";
 
-export interface KbStatusTheme {
+interface KbStatusTheme {
 	/** pi's Theme.fg — colorizes the glyph. */
 	fg(color: string, text: string): string;
 }

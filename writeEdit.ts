@@ -14,6 +14,7 @@ import {
 } from "./writeFlow.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
+	driftRefusal,
 	editVerifyFailureReason,
 	blockInDocRefusal,
 	mutationFailureEnvelope,
@@ -29,13 +30,10 @@ export async function runEditMode(
 	const refusal = blockInDocRefusal(row, blockId, doc);
 	if (refusal !== undefined) return refusedEnvelope(refusal);
 	// The pre-write stored pair the landed check must see move off. A block
-	// the index cannot see has no pair — the sentinel makes any post-write
-	// row count as movement (the kernel's own not-found error governs an
-	// update of a truly absent id, never this path).
-	const preWrite =
-		row.kind === "in-doc"
-			? { content: row.content, type: row.type }
-			: { content: "", type: "" };
+	// the index cannot see has no pair — preWrite is omitted and the
+	// primitive counts any post-write row as movement (the kernel's own
+	// not-found error governs an update of a truly absent id, never this
+	// path).
 	if (row.kind === "in-doc") {
 		// Fresh-content precondition: a concurrency guard, not a consent
 		// mechanism (the grant resolved at the kb_write entry). Served content
@@ -64,12 +62,16 @@ export async function runEditMode(
 	const outcome = await editVerified(kernel, input.probe, {
 		blockId,
 		body: input.body,
-		preWrite,
+		preWrite:
+			row.kind === "in-doc"
+				? { content: row.content, type: row.type }
+				: undefined,
 		rootId: doc.rootId,
 	});
 	if (outcome.kind !== "judged") {
 		return mutationFailureEnvelope(outcome, {
 			kb: name,
+			extra: { blockId },
 			tail: () => errorTail(input, doc),
 		});
 	}
@@ -78,12 +80,18 @@ export async function runEditMode(
 	// landed predicate and its kernel-behavior interpretation live in the
 	// primitives' verifyEditLanded (the pin-owning repo); failure wording
 	// rides the shared map (writeVerdicts.editVerifyFailureReason).
-	return finishWrite(name, {}, async () => {
+	return finishWrite(name, { blockId }, async () => {
 		if (outcome.verdict.kind !== "landed") {
 			const failure = editVerifyFailureReason(outcome.verdict, blockId, doc);
 			// The failure tail must not launder a concurrent change past the
 			// precondition — no refreshBlockIds on this path.
 			const tail = await echoTail(input, doc);
+			// Drift renders as the canonical version refusal (same wording as
+			// the gate's static refusal), not the generic unverified error —
+			// defence-in-depth: the gate refuses a drifted session first.
+			if (outcome.verdict.kind === "drift") {
+				return driftRefusal(outcome.verdict.observed);
+			}
 			return errorEnvelope(
 				`verified-edit failed: ${failure} — the update's outcome is ` +
 					`unverified; do NOT retry blindly, re-fetch the outline (kb_read) ` +

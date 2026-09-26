@@ -20,6 +20,7 @@ import {
 	base,
 	registerKbWrite,
 	setup,
+	storedContentStub,
 	walkBlock,
 	writeKernelStub,
 	type StubConfig,
@@ -1472,19 +1473,7 @@ describe("replace-section", () => {
 				},
 			},
 		});
-		const baseQuery = harness.client.query.bind(harness.client);
-		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
-				// Real-kernel mirror: rows for exactly the requested IDs.
-				const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
-				return ids.flatMap((id) =>
-					id !== undefined && stored[id] !== undefined
-						? [{ id, content: stored[id] }]
-						: [],
-				);
-			}
-			return baseQuery(stmt);
-		};
+		storedContentStub(harness, stored);
 		harness.baselines.remember("p1", "served body");
 		const intervention = await harness.execute({
 			kb: "recipes",

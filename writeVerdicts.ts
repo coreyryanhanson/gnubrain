@@ -34,6 +34,7 @@ import {
 	errorEnvelope,
 	refusedEnvelope,
 	versionRefusalEnvelope,
+	STALE_TARGET_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
 
@@ -45,8 +46,9 @@ import {
  * module constant, deliberately: this arm only renders if the gate order
  * is ever violated, and in production the effective pin IS the constant
  * (the session override is a test seam) — the gate stays the one home for
- * the resolution. */
-function driftRefusal(observed: string): Envelope {
+ * the resolution. Exported for the flows' defence-in-depth arms that must
+ * render the canonical refusal rather than the generic unverified error. */
+export function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
 
@@ -181,7 +183,7 @@ function blockInDocRefusalKind(
 		case "doc-id":
 			return `'${blockId}' is a document id, not a block — use a doc-level op or re-target a block from the outline (kb_read)`;
 		case "foreign":
-			return `block '${blockId}' belongs to another doc (root ${outcome.rootId}), not '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`;
+			return `block '${blockId}' belongs to another doc (root ${outcome.rootId}), not '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
 	}
 	outcome satisfies never;
 }
@@ -216,14 +218,13 @@ export function insertLandedRefusal(
 	return undefined;
 }
 
-/** Pre-mutation placement refusals of the verified block move (the
- * primitives own the kernel facts — the no-op self-anchor class and the
- * own-subtree ancestor class the kernel mishandles — and refuse before the
- * mutation, zero kernel calls); the wording lives here. */
 /** The verified block move's pre-mutation refusal family — the placement
  * arms judged on the caller-held pre-move walk, plus the not-in-source
  * scoping arm (the kernel mutates by raw block id with no doc scoping of
- * its own; the judgment rides moveBlockVerified). Every arm words here. */
+ * its own; the judgment rides moveBlockVerified). The primitives own the
+ * kernel facts — the no-op self-anchor class and the own-subtree ancestor
+ * class the kernel mishandles — and refuse before the mutation, zero
+ * kernel calls; every arm words here. */
 export function movePlacementRefusal(
 	outcome: Extract<
 		MoveBlockOutcome,
@@ -242,7 +243,7 @@ export function movePlacementRefusal(
 			);
 		case "not-in-source":
 			return refusedEnvelope(
-				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`,
 			);
 	}
 	outcome satisfies never;
@@ -370,6 +371,13 @@ export async function moveDocVerdictEnvelope(
  * verification-failed arm: the primitive's evidence walk runs before the
  * mutation (raw throws), and the post-mutation reads live in the flow's
  * finishWrite leg. */
+/** The doc-delete outcome mapping, routed through the shared ladder —
+ * `DeleteDocOutcome`'s non-mutated arms are a strict subset of
+ * `MutationFailure`, so the wording is single-homed (a new arm fails
+ * typecheck once). The arm-level comments the ladder's wording carries
+ * live on `mutationFailureEnvelope`; the doc-delete specifics (the
+ * never-render-as-unreachable rationale, the kernel-verbatim surfacing)
+ * are the ladder's own sentences, not a restatement. */
 export async function deleteDocVerdictEnvelope(
 	outcome: Exclude<DeleteDocOutcome, { kind: "mutated" }>,
 	ctx: {
@@ -378,30 +386,11 @@ export async function deleteDocVerdictEnvelope(
 		errorTail: () => Promise<Record<string, unknown>>;
 	},
 ): Promise<Envelope> {
-	switch (outcome.kind) {
-		case "drift":
-			return driftRefusal(outcome.observed);
-		case "transport-unverified":
-			// The delete may already be applied — never render this as
-			// "unreachable", whose retry invitation would duplicate an
-			// applied write. The error-path echo reads run best-effort.
-			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
-				kb: ctx.kb,
-				verificationFailed: true,
-				docId: ctx.docId,
-				...(await ctx.errorTail()),
-			});
-		case "kernel-refused":
-			// A synchronous kernel rejection is not in-flight; it surfaces
-			// verbatim with the fresh outline attached.
-			return errorEnvelope(outcome.message, {
-				kb: ctx.kb,
-				docId: ctx.docId,
-				...(await ctx.errorTail()),
-			});
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled doc-delete verdict");
+	return mutationFailureEnvelope(outcome, {
+		kb: ctx.kb,
+		extra: { docId: ctx.docId },
+		tail: ctx.errorTail,
+	});
 }
 
 /** Envelope mapping for a verified delete-sweep outcome other than the

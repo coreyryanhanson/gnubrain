@@ -75,6 +75,12 @@ export function driftWarning(
 	);
 }
 
+/** Shared recovery guidance for stale/foreign target refusals — one home
+ * so the re-target instruction cannot drift between the flows that word
+ * it. */
+export const STALE_TARGET_GUIDANCE =
+	"stale or foreign target; re-fetch the outline (kb_read) and re-target";
+
 /** version refusal — static text naming the kernel version, the pinned
  * version, and the fix. The one message that fires on any upgrade. */
 export function versionRefusalEnvelope(

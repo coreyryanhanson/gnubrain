@@ -28,7 +28,6 @@ import {
 	SiYuanKernelClient,
 	sqlString,
 	walkBlockTree,
-	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
@@ -38,6 +37,7 @@ import { registerReadToolsAndToolset } from "../../tools.js";
 import { registerWriteTool } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import {
+	heading,
 	INTEGRATION,
 	LIVE_TIMEOUT,
 	TOKEN,
@@ -107,12 +107,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 			): Promise<Record<string, unknown> & { status: string }> =>
 				runToolDetails("kb_read", params, ctx);
 		}
-
-		const heading = (walk: WalkedBlock[], content: string): WalkedBlock => {
-			const h = walk.find((b) => b.type === "h" && b.content === content);
-			expect(h, `heading '${content}' in walk`).toBeDefined();
-			return h!;
-		};
 
 		const paraId = async (docId: string, content: string): Promise<string> => {
 			// The paragraph row lags the doc's ownership row — poll for it.

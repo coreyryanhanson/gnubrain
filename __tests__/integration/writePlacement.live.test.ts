@@ -17,7 +17,6 @@ import {
 	PINNED_SIYUAN_VERSION,
 	SiYuanKernelClient,
 	walkBlockTree,
-	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
@@ -29,6 +28,7 @@ import { type SessionValidation } from "../../validation.js";
 import {
 	awaitIndexed as hAwaitIndexed,
 	mintDoc as hMintDoc,
+	heading,
 	BASE_URL,
 	INTEGRATION,
 	LIVE_TIMEOUT,
@@ -138,12 +138,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 		});
 		expect(res.ok).toBe(true);
 	}
-
-	const heading = (walk: WalkedBlock[], content: string): WalkedBlock => {
-		const h = walk.find((b) => b.type === "h" && b.content === content);
-		expect(h).toBeDefined();
-		return h!;
-	};
 
 	it(
 		"append and replace-section on a callout-nested heading land inside the container; the doc's following blocks survive",
@@ -454,54 +448,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			for (const h of walk.filter((b) => b.type === "h")) {
 				expect(headingInWalk(walk, doc, h.id)).toBe(h);
 			}
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"replace-section sweeps a member heading (a deeper heading belongs to the section), the boundary heading survives",
-		async () => {
-			const execute = liveSetup();
-			const docId = await mintDoc(
-				"deeper heading member",
-				[
-					"# A",
-					"",
-					"A lead",
-					"",
-					"## Sub",
-					"",
-					"sub body",
-					"",
-					"# B",
-					"",
-					"B body",
-					"",
-				].join("\n"),
-			);
-			const walk = await walkBlockTree(client, docId);
-			const a = heading(walk, "A");
-			const sub = heading(walk, "Sub");
-			const b = heading(walk, "B");
-			const replaced = await execute({
-				kb: "live",
-				mode: "replace-section",
-				docId,
-				headingId: a.id,
-				markdown: "replacement body",
-			});
-			expect(replaced.status).toBe("ok");
-			const after = await walkBlockTree(client, docId);
-			// The member heading itself was swept (only kernel-side cascade
-			// surprises would show here); the replacement is A's sole member,
-			// and the boundary heading B survives with its body.
-			expect(after.some((x) => x.id === sub.id)).toBe(false);
-			expect(after.some((x) => x.id === a.id)).toBe(true);
-			expect(sectionOf(after, a.id)!.members.map((m) => m.content)).toEqual([
-				"replacement body",
-			]);
-			expect(heading(after, "B").id).toBe(b.id);
-			expect(after.some((x) => x.content === "B body")).toBe(true);
 		},
 		LIVE_TIMEOUT,
 	);

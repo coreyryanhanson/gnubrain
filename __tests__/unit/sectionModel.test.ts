@@ -12,28 +12,9 @@ describe("refused targets", () => {
 		title: "Docker Networking",
 		rootId: "d-doc",
 	};
-	it("a heading inside a tabs container is refused", () => {
-		const walk: WalkedBlock[] = [
-			{
-				id: "tabs1",
-				type: "tabs",
-				subType: "",
-				content: "tabs",
-				parentId: null,
-				parentType: "d",
-			},
-			{
-				id: "h1",
-				type: "h",
-				subType: "h1",
-				content: "In tabs",
-				parentId: "tabs1",
-				parentType: "tabs",
-			},
-		];
-		const result = headingInWalk(walk, doc, "h1");
-		expect("message" in result && result.message).toContain("'tabs' container");
-	});
+	// The named-container refusal ('tabs') is pinned end-to-end in
+	// writeModes.test.ts through the registered tool; this file keeps the
+	// unnamed-container case, which no mintable live tree can produce.
 	it("a heading inside an unnamed container (a footnote definition) is refused too", () => {
 		const walk: WalkedBlock[] = [
 			{

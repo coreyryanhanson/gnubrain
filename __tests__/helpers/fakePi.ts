@@ -14,7 +14,7 @@ interface EnvelopeShape {
 	reason?: string;
 }
 
-export type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
+type Handler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
 export function createFakePi() {
 	const handlers = new Map<string, Handler[]>();
