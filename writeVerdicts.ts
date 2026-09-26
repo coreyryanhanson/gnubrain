@@ -104,9 +104,10 @@ export async function mutationFailureEnvelope(
 	outcome: MutationFailure,
 	opts: {
 		kb: string;
-		/** The flow's own verdict key — the placement anchor echo, or the
-		 * block delete's blockId — spread verbatim, never re-worded here. */
-		extra?: { anchor: string } | { blockId: string };
+		/** The flow's own verdict key — the placement anchor echo, the
+		 * block delete's blockId, or the doc move's docId — spread verbatim,
+		 * never re-worded here. */
+		extra?: { anchor: string } | { blockId: string } | { docId: string };
 		tail: () => Promise<Record<string, unknown>>;
 	},
 ): Promise<Envelope> {
@@ -349,46 +350,19 @@ export function createVerdictEnvelope(
 }
 
 /** Envelope mapping for a verified doc-level move outcome other than the
- * judged-landed success — byte-identical to the sentences the flow issued
- * before the extraction (the createVerdictEnvelope pattern). The doc-level
- * record carries no echo tail on any failure leg (the pinned shape — the
- * doc move runs with no doc target). */
-export function moveDocVerdictEnvelope(
+ * judged-landed success — a thin binding over the shared failure ladder
+ * (the createVerdictEnvelope pattern). The doc-level record carries no
+ * echo tail on any failure leg (the pinned shape — the doc move runs with
+ * no doc target), so the tail is empty. */
+export async function moveDocVerdictEnvelope(
 	outcome: Exclude<MoveDocOutcome, { kind: "judged" }>,
 	ctx: { name: string; docId: string },
-): Envelope {
-	switch (outcome.kind) {
-		case "drift":
-			return driftRefusal(outcome.observed);
-		case "transport-unverified":
-			// The move may already be applied — never render this as
-			// "unreachable", whose retry invitation would duplicate an
-			// applied write.
-			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
-				kb: ctx.name,
-				docId: ctx.docId,
-				verificationFailed: true,
-			});
-		case "kernel-refused":
-			// A synchronous kernel rejection is not in-flight; it surfaces
-			// verbatim (the pinned doc-level record shape: the mutation's
-			// error alone).
-			return errorEnvelope(outcome.message, {
-				kb: ctx.name,
-				docId: ctx.docId,
-			});
-		case "verification-failed":
-			// The mutation's transport succeeded — the move may already be
-			// applied. Same never-retry-blindly contract as the transport leg;
-			// the evidence read just failed, so the message stands alone.
-			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
-				kb: ctx.name,
-				docId: ctx.docId,
-				verificationFailed: true,
-			});
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled doc-move verdict");
+): Promise<Envelope> {
+	return mutationFailureEnvelope(outcome, {
+		kb: ctx.name,
+		extra: { docId: ctx.docId },
+		tail: async () => ({}),
+	});
 }
 
 /** The doc-delete twin — every non-mutated DeleteDocOutcome arm, the same
