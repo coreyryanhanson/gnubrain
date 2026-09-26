@@ -18,7 +18,7 @@ const INTEGRATION_ORDER = [
 	"harness.live.test.ts",
 	"headlessKb.live.test.ts", // pi -p child process, needs the kernel
 	"readPins.live.test.ts",
-	"writeModes.live.test.ts",
+	"writePlacement.live.test.ts",
 	"writePins.live.test.ts",
 	"gate.live.test.ts", // pi children (masking/scope), in-process
 	"encryptedNotebook.live.test.ts", // encrypted-notebook (no lock arming)

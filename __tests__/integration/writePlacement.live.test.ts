@@ -1,5 +1,8 @@
-// Live write-tool pins against the pinned kernel. Disposable fixture
-// notebook, teardown via removeNotebook; opt-in with SIYUAN_INTEGRATION=1,
+// Live write-mode placement pins against the pinned kernel — where each
+// mode lands (append/replace-section inside the section, moves through the
+// placement rule, the sweep's boundary) plus the placement refusal and the
+// vanished-anchor kernel-error route. Disposable fixture notebook,
+// teardown via removeNotebook; opt-in with SIYUAN_INTEGRATION=1,
 // never in CI.
 //
 // The refused kinds (a heading under `tabs` or an unnamed container) have no
@@ -32,7 +35,7 @@ import {
 	TOKEN,
 } from "./harness.js";
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("live write pins", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 	// Built lazily: a describe body runs during collection even when the suite
 	// is skipped, and BASE_URL/TOKEN are only present in a live run.
 	let client: SiYuanKernelClient;

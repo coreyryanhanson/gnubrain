@@ -231,7 +231,7 @@ re-falsifies the fact there:
 - The insert-shape fact — one `doOperations` entry per markdown insert,
   whole body in its `data` — moved down with `insertVerified` (primitives
   `write.ts`). Falsified by the primitives live insert-shape case plus
-  local append/replace-section round trips (`writeModes.live`).
+  local append/replace-section round trips (`writePlacement.live`).
 - The `lsNotebooks` encrypted-flag fact — `encrypted` is always present in
   the listing regardless of lock state, and the SQL surface cannot see
   encrypted boxes, so one rejection covers both lock states — moved down
