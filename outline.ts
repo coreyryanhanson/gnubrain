@@ -8,6 +8,7 @@
 import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { OUTLINE_HEADINGS, jsonl, spillFile } from "./spill.js";
 import {
+	headingRows,
 	renderExtendedOutlineLines,
 	walkBlockTree,
 	type KernelReadClient,
@@ -28,7 +29,7 @@ export function serveOutlineFromWalk(
 	walk: WalkedBlock[],
 	baselines: ContentBaselines,
 ): { outline: string; fullOutlinePath?: string } {
-	const headings = walk.filter((b) => b.type === "h");
+	const headings = headingRows(walk);
 	rememberServedRows(baselines, headings);
 	const lines = renderExtendedOutlineLines(walk);
 	if (lines.length > OUTLINE_HEADINGS) {

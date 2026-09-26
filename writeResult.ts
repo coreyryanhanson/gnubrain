@@ -12,6 +12,7 @@ import {
 	SiYuanTimeoutError,
 	blockContents,
 	checkFreshContent,
+	headingRows,
 	rootEcho,
 	walkBlockTree,
 	type FreshArm,
@@ -204,7 +205,7 @@ export async function writeEchoTail(input: {
 	// read mechanism, no representation drift.
 	const refreshIds = [
 		...new Set([
-			...walk.filter((b) => b.type === "h").map((b) => b.id),
+			...headingRows(walk).map((b) => b.id),
 			...(refreshBlockIds ?? []),
 		]),
 	];

@@ -5,12 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { createFakePi as fakePi } from "../helpers/fakePi.js";
-import {
-	SiYuanApiError,
-	renderExtendedOutlineLines,
-	walkBlockTree,
-	type KernelReadClient,
-} from "siyuan-kb-primitives";
+import { type KernelReadClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
@@ -673,127 +668,9 @@ describe("read tool", () => {
 		expect(spilled).toHaveLength(250);
 		expect(spilled[0]?.id).toBe("h0");
 		expect(spilled.at(-1)?.id).toBe("h249");
-	});
-
-	it("verification runs on the full walk set, not the capped outline", async () => {
-		// The walk helper itself — the heading filter is rendering-only.
-		const headings = [
-			{ id: "h1", type: "h", subType: "h1", content: "A" },
-			{ id: "p1", type: "p", subType: "", content: "para" },
-		];
-		const client: KernelReadClient = {
-			...kernelStub().client,
-			async getChildBlocks(id) {
-				return id === "d1" ? headings : [];
-			},
-		};
-		const all = await walkBlockTree(client, "d1");
-		expect(all.map((b) => b.id)).toEqual(["h1", "p1"]);
-	});
-
-	it("never walks a heading id: the section rides the owning container's loop (no duplicate entries, container depth)", async () => {
-		// The kernel answers getChildBlocks(headingId) with the heading's
-		// SECTION, and those blocks are already returned by the loop over the
-		// container that owns the heading — recursing into `h` would re-emit
-		// each one at the heading's depth and out of document order. The stub
-		// throws if the walk ever asks, which is the guard.
-		const client: KernelReadClient = {
-			...kernelStub().client,
-			async getChildBlocks(id) {
-				if (id === "d1")
-					return [
-						{ id: "h1", type: "h", subType: "h1", content: "A" },
-						{ id: "p1", type: "p", subType: "", content: "under A" },
-						{ id: "h2", type: "h", subType: "h2", content: "B" },
-						{ id: "p2", type: "p", subType: "", content: "under B" },
-					];
-				throw new Error(`walk recursed into '${id}'`);
-			},
-		};
-		const walk = await walkBlockTree(client, "d1");
-		expect(walk.map((b) => b.id)).toEqual(["h1", "p1", "h2", "p2"]);
-		expect(walk.map((b) => [b.parentId, b.parentType])).toEqual([
-			[null, "d"],
-			[null, "d"],
-			[null, "d"],
-			[null, "d"],
-		]);
-	});
-
-	it("renders the outline notation: level marks, container prefix outermost-first, the → id payload, and the not-targetable marker", async () => {
-		// One fixture per container kind, composed ones included; the walk feeds
-		// the render so parentage comes from the real walk, not a hand-built map.
-		const byId: Record<string, Record<string, unknown>[]> = {
-			d1: [
-				{ id: "h1", type: "h", subType: "h1", content: "Top" },
-				{ id: "b1", type: "b", subType: "", content: "" },
-				{ id: "l1", type: "l", subType: "u", content: "" },
-				{ id: "c1", type: "callout", subType: "NOTE", content: "" },
-				{ id: "s1", type: "s", subType: "", content: "" },
-				{ id: "t1", type: "tab", subType: "", content: "" },
-				{ id: "tt1", type: "tabs", subType: "", content: "" },
-				{ id: "u1", type: "", subType: "", content: "" },
-				{ id: "b2", type: "b", subType: "", content: "" },
-				// the normal tabbed shape: wrapper > pane > heading — the pane is
-				// the parent, so the heading is targetable despite the wrapper
-				{ id: "tt2", type: "tabs", subType: "", content: "" },
-			],
-			b1: [{ id: "hq", type: "h", subType: "h2", content: "In quote" }],
-			l1: [{ id: "i1", type: "i", subType: "", content: "" }],
-			i1: [{ id: "hi", type: "h", subType: "h2", content: "In item" }],
-			c1: [{ id: "hc", type: "h", subType: "h2", content: "In callout" }],
-			s1: [{ id: "hs", type: "h", subType: "h2", content: "In super" }],
-			t1: [{ id: "ht", type: "h", subType: "h2", content: "In tab" }],
-			tt1: [{ id: "htt", type: "h", subType: "h2", content: "In tabs" }],
-			u1: [{ id: "hu", type: "h", subType: "h2", content: "In unnamed" }],
-			b2: [{ id: "l2", type: "l", subType: "u", content: "" }],
-			l2: [{ id: "i2", type: "i", subType: "", content: "" }],
-			i2: [{ id: "hd", type: "h", subType: "h3", content: "Deep" }],
-			tt2: [{ id: "tb1", type: "tab", subType: "", content: "" }],
-			tb1: [{ id: "htb", type: "h", subType: "h2", content: "In tab pane" }],
-		};
-		const client: KernelReadClient = {
-			...kernelStub().client,
-			async getChildBlocks(id) {
-				return byId[id] ?? [];
-			},
-		};
-		const walk = await walkBlockTree(client, "d1");
-		const outline = renderExtendedOutlineLines(walk).join("\n");
-		expect(outline.split("\n")).toEqual([
-			"# Top → h1",
-			">## In quote → hq",
-			"-## In item → hi",
-			"c## In callout → hc",
-			"s## In super → hs",
-			"t## In tab → ht",
-			"[tabs]## In tabs → htt (not targetable)",
-			"[unnamed]## In unnamed → hu (not targetable)",
-			">-### Deep → hd",
-			// full chain prefix, targetable: the pane (t) is the immediate parent —
-			// what the kernel validates — while the wrapper still shows placement
-			"[tabs]t## In tab pane → htb",
-		]);
-	});
-
-	it("read walk tolerates a vanished container (SiYuanApiError ends that branch); strict default propagates", async () => {
-		const boom = new SiYuanApiError(500, -1, "locked");
-		const client: KernelReadClient = {
-			...kernelStub().client,
-			async getChildBlocks(id) {
-				if (id === "gone") throw boom;
-				return id === "d1"
-					? [{ id: "gone", type: "l", subType: "", content: "" }]
-					: [];
-			},
-		};
-		// Read path: the concurrent-deleted container shortens the outline.
-		const tolerant = await walkBlockTree(client, "d1", {
-			tolerateVanished: true,
-		});
-		expect(tolerant.map((b) => b.id)).toEqual(["gone"]);
-		// Default (write verification): the same error propagates.
-		await expect(walkBlockTree(client, "d1")).rejects.toBe(boom);
+		// The served lines ride the canonical renderer — same notation a
+		// write flow's outline echo shows.
+		expect(lines[0]).toBe("## Heading 0 → h0");
 	});
 });
 

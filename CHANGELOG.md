@@ -7,6 +7,12 @@
 - `kb_write` mutation-failure wording now maps the primitives' exported
   `MutationFailure` union — the shared pre-judgment ladder — instead of a
   structural copy.
+- Outline serving and the write-result baseline refresh consume the
+  primitives' shared `headingRows` predicate (one definition of "which
+  walk rows are headings" across rendering, seeding, and judgment); the
+  duplicated primitives-behavior unit tests (walk order, the
+  heading-recursion rule, the notation corpus, `tolerateVanished`) are
+  removed — those facts are falsified in the primitives suites.
 
 - **SiYuan-backed knowledge-base tools for pi.** GNUbrain registers four tools
   against a SiYuan kernel, organized in two toolsets — `gnubrain.read`
