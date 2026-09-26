@@ -285,8 +285,9 @@ re-falsifies the fact there:
 - The `kb_read` description claims (`tools.ts`, `READ_DESCRIPTION`) —
   agent-facing wording over the placement module's notation: the
   `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
-  write-parent set (`TARGETABLE_CONTAINER_TYPES` in the primitives'
-  placement rule). Wording pinned by the local unit suite
+  write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives' shared
+  targetable-container set consumed by both the section rule and the
+  notation's glyph table). Wording pinned by the local unit suite
   (`tools.test.ts`); the semantics ride the primitives' outline suites.
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
