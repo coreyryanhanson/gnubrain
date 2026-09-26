@@ -4,21 +4,6 @@
 
 ### Added
 
-- `kb_write` mutation-failure wording now maps the primitives' exported
-  `MutationFailure` union — the shared pre-judgment ladder — instead of a
-  structural copy; the doc-move failure mapper is now a thin binding over
-  that ladder rather than a second exhaustive switch.
-- Live write suites renamed to match their ground: `writeModes.live` →
-  `writePlacement.live` (mode landing/placement round-trips);
-  `writePins.live` keeps its name with a corrected header (kernel-fact
-  and result-evidence pins).
-- Outline serving and the write-result baseline refresh consume the
-  primitives' shared `headingRows` predicate (one definition of "which
-  walk rows are headings" across rendering, seeding, and judgment); the
-  duplicated primitives-behavior unit tests (walk order, the
-  heading-recursion rule, the notation corpus, `tolerateVanished`) are
-  removed — those facts are falsified in the primitives suites.
-
 - **SiYuan-backed knowledge-base tools for pi.** GNUbrain registers four tools
   against a SiYuan kernel, organized in two toolsets — `gnubrain.read`
   (default-enabled) and `gnubrain.write` (default-enabled, requires
