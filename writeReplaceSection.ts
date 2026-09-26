@@ -121,7 +121,7 @@ export async function runReplaceSectionMode(
 				const rollback = insertLandedRefusal(outcome.verdict);
 				return errorEnvelope(
 					`verified-insert failed: ${rollback} — the transaction rolled back silently behind HTTP success; the old section is untouched`,
-					{ kb: name, anchor: echo },
+					{ kb: name, anchor: appendAnchorEcho(outcome.anchor) },
 				);
 			}
 			case "sweep-interrupted":
@@ -145,7 +145,7 @@ export async function runReplaceSectionMode(
 			case "sweep-refused":
 				return sweepRefusal(outcome.outcome, {
 					kb: name,
-					anchor: echo,
+					anchor: appendAnchorEcho(outcome.anchor),
 					newBlockId: outcome.insertedId,
 					memberIds: outcome.memberIds,
 				});

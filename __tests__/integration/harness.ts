@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
 	PINNED_SIYUAN_VERSION,
-	ownershipStmt,
+	ownership,
 	SiYuanKernelClient,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
@@ -91,7 +91,7 @@ export async function awaitIndexed(
 ): Promise<void> {
 	await pollUntil(
 		`fixture doc ${docId} reaching the blocks index`,
-		async () => (await client.query(ownershipStmt(boxId, docId))).length > 0,
+		async () => (await ownership(client, boxId, docId)) !== undefined,
 		timeoutMs,
 	);
 }

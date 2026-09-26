@@ -5,6 +5,7 @@
 // definition on a fake-pi harness with a SQL-routed kernel stub.
 
 import { describe, expect, it } from "vitest";
+import { headingInWalk } from "../../writeFlow.js";
 import {
 	BLOCK_IN_DOC_STMT_HEAD,
 	SiYuanApiError,
@@ -691,6 +692,20 @@ describe("append", () => {
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",
 			),
 		).toHaveLength(0);
+	});
+
+	it("a heading inside an unnamed container (a footnote definition) is refused too", () => {
+		// No mintable live tree produces a containerless wire type, so this
+		// arm rides the fixture walk directly (headingInWalk is the tool-side
+		// wording map over the primitives' resolveHeadingTarget).
+		const walk = [
+			walkBlock("fn1", "", "", "fn"),
+			walkBlock("h2", "h", "h2", "In footnote", "fn1", ""),
+		];
+		const result = headingInWalk(walk, { title: "Doc", rootId: "d-doc" }, "h2");
+		expect("message" in result && result.message).toContain(
+			"an unnamed container",
+		);
 	});
 
 	it("walk-set diff: a returned id absent from the post-write tree → error (silent rollback)", async () => {
