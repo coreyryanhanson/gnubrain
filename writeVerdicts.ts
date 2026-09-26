@@ -219,20 +219,33 @@ export function insertLandedRefusal(
  * primitives own the kernel facts — the no-op self-anchor class and the
  * own-subtree ancestor class the kernel mishandles — and refuse before the
  * mutation, zero kernel calls); the wording lives here. */
+/** The verified block move's pre-mutation refusal family — the placement
+ * arms judged on the caller-held pre-move walk, plus the not-in-source
+ * scoping arm (the kernel mutates by raw block id with no doc scoping of
+ * its own; the judgment rides moveBlockVerified). Every arm words here. */
 export function movePlacementRefusal(
 	outcome: Extract<
 		MoveBlockOutcome,
-		{ kind: "already-at-destination" | "own-subtree" }
+		{ kind: "already-at-destination" | "own-subtree" | "not-in-source" }
 	>,
+	doc: { title: string; rootId: string },
 ): Envelope {
-	if (outcome.kind === "already-at-destination") {
-		return refusedEnvelope(
-			`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
-		);
+	switch (outcome.kind) {
+		case "already-at-destination":
+			return refusedEnvelope(
+				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
+			);
+		case "own-subtree":
+			return refusedEnvelope(
+				`cannot move block '${outcome.blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
+			);
+		case "not-in-source":
+			return refusedEnvelope(
+				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
+			);
 	}
-	return refusedEnvelope(
-		`cannot move block '${outcome.blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
-	);
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled move placement arm");
 }
 
 /** Reason wording for a verifyMoveLanded outcome, or undefined when the

@@ -1,10 +1,10 @@
 // The move flow: block-level moves ride the primitives' moveBlockVerified
 // (mutation, post-move walks, landed judgment — one call, one snapshot;
-// the placement refusals — self-anchor no-op, own-subtree ancestor — are
-// pre-mutation verdict arms of that call, worded in writeVerdicts); doc-level
-// moves ride moveDocVerified (mutation, live-tree hpath judgment — the moved
-// doc's echo hpath IS the verdict's evidence). Tool-surface scoping stays
-// here.
+// the pre-mutation refusals — foreign blockId, self-anchor no-op,
+// own-subtree ancestor — are verdict arms of that call, worded in
+// writeVerdicts); doc-level moves ride moveDocVerified (mutation,
+// live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
+// evidence). Tool-surface scoping stays here.
 
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
@@ -127,21 +127,16 @@ export async function runMoveMode(
 	);
 	if ("status" in dest) return dest;
 	const sameDoc = dest.rootId === doc.rootId;
-	// Destination outline: cross-doc fetches the destination walk;
-	// same-doc derives from the already-in-hand source walk — no extra call.
-	const sourceWalk = await walkBlockTree(kernel, doc.rootId);
-	// Doc scoping: the kernel mutates by raw block id with no doc scoping of
-	// its own, so a foreign id (another doc or KB) would move a block the
-	// user never saw into the destination and read as success. The walk is
-	// already in hand — membership is the scoping check.
-	if (!sourceWalk.some((b) => b.id === blockId)) {
-		return refusedEnvelope(
-			`blockId '${blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — stale or foreign target; re-fetch the outline (kb_read) and re-target`,
-		);
-	}
-	const destWalk = sameDoc
-		? sourceWalk
-		: await walkBlockTree(kernel, dest.rootId);
+	// Destination outline: cross-doc fetches the destination walk; same-doc
+	// derives from the source walk — no extra call. Cross-doc the flow
+	// holds no source walk: the foreign-blockId scoping refusal rides the
+	// verified move's pre-mutation arm (the kernel mutates by raw block id
+	// with no doc scoping of its own — the same fact blockInDoc refuses
+	// foreign on), and that primitive fetches the source walk itself.
+	const sourceWalk = sameDoc
+		? await walkBlockTree(kernel, doc.rootId)
+		: undefined;
+	const destWalk = sourceWalk ?? (await walkBlockTree(kernel, dest.rootId));
 	if (params.toHeadingId !== undefined) {
 		const heading = headingInWalk(destWalk, dest, params.toHeadingId);
 		if ("status" in heading) return heading;
@@ -164,9 +159,10 @@ export async function runMoveMode(
 	});
 	if (
 		outcome.kind === "already-at-destination" ||
-		outcome.kind === "own-subtree"
+		outcome.kind === "own-subtree" ||
+		outcome.kind === "not-in-source"
 	) {
-		return movePlacementRefusal(outcome);
+		return movePlacementRefusal(outcome, doc);
 	}
 	if (outcome.kind !== "judged") {
 		return mutationFailureEnvelope(outcome, {

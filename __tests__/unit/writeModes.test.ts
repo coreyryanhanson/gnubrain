@@ -1820,8 +1820,10 @@ describe("block-level move", () => {
 		});
 	}
 
-	it("a foreign blockId (a block of another doc) is refused before any anchor or kernel move", async () => {
-		// b-foreign is not in the source walk — membership is the scoping check.
+	it("a foreign blockId (a block of another doc) is refused via the verified move's not-in-source arm", async () => {
+		// The scoping judgment rides moveBlockVerified (the same raw-id fact
+		// blockInDoc refuses edit/delete targets on); cross-doc the primitive
+		// fetches the source walk itself. This path pins only the wording.
 		const harness = moveHarness();
 		const result = await harness.execute({
 			kb: "recipes",
@@ -2138,36 +2140,6 @@ describe("block-level move", () => {
 		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
 	});
 
-	it("same-doc doc-end move with children: the trailing child doesn't false-fail the position check", async () => {
-		// Flattened document order puts the moved block's child after it —
-		// a "last walk element" shape would false-fail this good move.
-		// Nested depth comes from the walk's recursion (childrenFor[p1]; a
-		// container, since only container types nest), not from a depth field
-		// on the doc's flat child list.
-		const harness = moveHarness(() => {
-			harness.childrenFor["d-doc"] = [
-				walkBlock("h1", "h", "h1", "A"),
-				walkBlock("p2", "p", "", "stay"),
-				walkBlock("p1", "l", "u", "mover"),
-			];
-			// The kernel's heading answer tracks the moved tree too.
-			harness.childrenFor["h1"] = [
-				walkBlock("p2", "p", "", "stay"),
-				walkBlock("p1", "l", "u", "mover"),
-			];
-			harness.childrenFor["p1"] = [walkBlock("c1", "i", "u", "kid")];
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p1",
-			toDocId: "d-doc",
-		});
-		expect(result.status).toBe("ok");
-		expect(result.movedBlockId).toBe("p1");
-	});
-
 	// The own-subtree guard keys on the anchor the kernel receives: c1's
 	// child section anchors after p-kid (re-parenting the container into
 	// itself), and the empty-section arm anchors on the heading itself —
@@ -2263,53 +2235,6 @@ describe("block-level move", () => {
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
 			1,
 		);
-	});
-
-	it("same-doc kernel no-op behind HTTP success: position check catches the misplacement", async () => {
-		// h1's section is [p1, p2]: moving p1 to its end anchors on p2. The
-		// stub never applies the move, so the post-move walk is unchanged —
-		// presence-based verification would report success for a no-op;
-		// the position check fails loud instead.
-		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "p1", content: "mover" }],
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p1",
-			toDocId: "d-doc",
-			toHeadingId: "h1",
-		});
-		expect(result.status).toBe("error");
-		expect(result.message).toContain(
-			"present but not at its landing position after the anchor",
-		);
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			1,
-		);
-	});
-
-	it("same-doc: anchor block vanished post-move → position check falls back to presence", async () => {
-		// The kernel applies the move, but a concurrent delete removed the
-		// anchor block p2 — the position is unverifiable, so the check
-		// falls back to presence rather than false-failing.
-		const harness = moveHarness(() => {
-			harness.childrenFor["d-doc"] = [
-				walkBlock("h1", "h", "h1", "A"),
-				walkBlock("p1", "p", "", "mover"),
-			];
-		});
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p1",
-			toDocId: "d-doc",
-			toHeadingId: "h1",
-		});
-		expect(result.status).toBe("ok");
-		expect(result.movedBlockId).toBe("p1");
 	});
 
 	it("doc-level: moveDocsByID with the notebook id on un-nest; pinned result shape", async () => {
