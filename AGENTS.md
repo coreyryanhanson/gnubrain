@@ -162,9 +162,12 @@ tests drive the extension through it instead of touching real files.
   with fixed heads, no parser.
 - **Result shaping** stays here: `spill.ts` owns inline-vs-spill
   (`withRowPayload`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`, `RESULT_LIMIT`) and
-  `outline.ts` owns outline presentation (pure `renderOutlineLines` + the
-  required-baselines serve wrappers `serveOutline`/`serveOutlineFromWalk`).
-  Envelopes (`envelope.ts`) are tool-surface policy and never move.
+  `outline.ts` owns outline serving (`serveOutline`/`serveOutlineFromWalk` —
+  the required-baselines wrappers: seeding, the inline cut, the spill tail).
+  The notation itself (`renderExtendedOutlineLines` + `containerPrefix`) is
+  the primitives read barrel's canonical extended-outline renderer, so the
+  served lines can never diverge from the section rule; the tool
+  descriptions document the notation the agent sees.
 - Every tool result is an envelope `{status: ok | near_matches | duplicate |
   error | refused, message, ...}` (`envelope.ts`) — use its factory helpers,
   don't invent statuses. Large payloads spill to session temp files.

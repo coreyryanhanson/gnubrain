@@ -7,13 +7,13 @@ import { type AST, type Binary, Parser } from "node-sql-parser";
 import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import {
 	SiYuanApiError,
+	renderExtendedOutlineLines,
 	walkBlockTree,
 	type KernelReadClient,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
-import { renderOutlineLines } from "../../outline.js";
 import {
 	inlineOrSpill,
 	PREVIEW_CHARS,
@@ -759,7 +759,7 @@ describe("read tool", () => {
 			},
 		};
 		const walk = await walkBlockTree(client, "d1");
-		const outline = renderOutlineLines(walk).join("\n");
+		const outline = renderExtendedOutlineLines(walk).join("\n");
 		expect(outline.split("\n")).toEqual([
 			"# Top → h1",
 			">## In quote → hq",
