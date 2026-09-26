@@ -6,7 +6,7 @@
 import { kbNameProblem } from "./gate.js";
 import type { SessionValidation } from "./validation.js";
 
-export interface KbCommandResult {
+interface KbCommandResult {
 	message: string;
 	severity: "info" | "warning" | "error";
 	/** Defined only on an actual scope change — the full post-toggle snapshot. */

@@ -31,7 +31,7 @@ import {
 import type { SessionValidation } from "./validation.js";
 
 /** `query`/`search` take an array of names; every other tool exactly one. */
-export type KbArity = "array" | "single";
+type KbArity = "array" | "single";
 
 /** Empty-scope wording — shared by the gate and the `kbs` discovery
  * form (kb_read), which reuses it verbatim for an empty active set. */

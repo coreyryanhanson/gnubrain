@@ -214,11 +214,11 @@ re-falsifies the fact there:
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing (the same for the `serveOutlineFromWalk` doc comment in
-  `outline.ts`). The `writeResult.ts` baseline-refresh comment is the
-  exception: that refresh seeds SQL-form content into the baseline map the
-  judgment hashes walk-form against — an executable dependence on the
-  equivalence, the site the fresh-content entry above names. Falsified by
-  the same primitives live case.
+  `outline.ts`). The `echoTail` baseline-refresh comment in `writeFlow.ts`
+  (the success-path echo tail it cites is the executable-dependence site)
+  is the exception: that refresh seeds SQL-form content into the baseline
+  map the judgment hashes walk-form against — the site the fresh-content
+  entry above names. Falsified by the same primitives live case.
 - The type-`'d'` root-row wording in `resolveDocTarget`'s refusal
   (`writeFlow.ts`) — wording only; the type-`'d'` row semantics the wording
   describes moved with the pin (`rootEcho` in the primitives). The same

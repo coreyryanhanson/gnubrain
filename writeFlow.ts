@@ -11,16 +11,19 @@ import {
 	refusedEnvelope,
 } from "./envelope.js";
 import {
+	blockContents,
+	headingRows,
 	ownershipStmt,
 	resolveHeadingTarget,
 	rootEcho,
+	walkBlockTree,
 	type KernelProbeResult,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import { inlineOrSpill, jsonl } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
-import { writeEchoTail } from "./writeResult.js";
+import { serveOutlineFromWalk } from "./outline.js";
 import type { WriteParams } from "./writeSchema.js";
 
 /** Flow input shared by every mode, create included — one declaration so
@@ -137,25 +140,67 @@ export async function errorTail(
 	}
 }
 
-/** writeEchoTail with the flow's fixed identity args bound — call sites
- * pass only an optional pre-fetched verification walk and the write's own
- * block IDs (only on the success paths — a write that did not land
- * refreshes nothing, or it would launder a concurrent change). */
+/** Fresh outline + root echo + content-baseline refresh — the success-path
+ * tail every doc-targeting result shares; call sites pass only an optional
+ * pre-fetched verification walk and the write's own block IDs (only on the
+ * success paths — a write that did not land refreshes nothing, or it would
+ * launder a concurrent change). One full unfiltered walk; a pre-fetched
+ * walk (the verification evidence the flow already holds) is reused
+ * instead of re-traversing. The refresh block IDs are the blocks the write
+ * itself produced (the edited target, a newBlockId, a movedBlockId) —
+ * baselined from stored form so a follow-up edit compares like-for-like. */
 export async function echoTail(
 	input: WriteFlowBase,
 	doc: DocTarget,
 	walk?: WalkedBlock[] | undefined,
 	refreshBlockIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
-	return writeEchoTail({
-		kernel: input.kernel,
-		sessionId: input.sessionId,
-		boxId: input.boxId,
-		docId: doc.rootId,
-		baselines: input.baselines,
-		walk,
-		refreshBlockIds,
-	});
+	const { kernel, sessionId, boxId, baselines } = input;
+	const docId = doc.rootId;
+	const fullWalk = walk ?? (await walkBlockTree(kernel, docId));
+	// The serve seeds all walk headings at echo time — the SQL refresh
+	// below overwrites those rows from the index read in the same call when
+	// the index returns them; a missing row keeps the walk-form hash, which
+	// is the same string on the pinned kernel.
+	const outline = serveOutlineFromWalk(
+		sessionId,
+		"kb_write",
+		fullWalk,
+		baselines,
+	);
+	const root = await rootEcho(kernel, boxId, docId);
+	const envelope: Record<string, unknown> = { outline: outline.outline };
+	if (outline.fullOutlinePath !== undefined) {
+		envelope.fullOutlinePath = outline.fullOutlinePath;
+	}
+	if (root !== undefined) {
+		envelope.docId = root.docId;
+		envelope.title = root.title;
+		envelope.hpath = root.hpath;
+	}
+	// Refresh baselines only for blocks whose content the result actually
+	// carried: the outline's heading rows, plus the write's own block IDs.
+	// Anything else keeps its read-served baseline — a broad refresh would
+	// launder a concurrent change to an unserved block past the
+	// fresh-content precondition (an intervening write would make the next
+	// edit on it hash-match the laundered content). The SQL read (not walk
+	// rows) keeps the map's single-source invariant explicit: the walk's
+	// content IS blocks.content (the kernel builds both via
+	// nodeStaticContent), but a walk taken mid-write races the index
+	// differently than the judgment's SQL seed read — same source, same
+	// read mechanism, no representation drift.
+	const refreshIds = [
+		...new Set([
+			...headingRows(fullWalk).map((b) => b.id),
+			...(refreshBlockIds ?? []),
+		]),
+	];
+	if (refreshIds.length > 0) {
+		for (const row of await blockContents(kernel, refreshIds)) {
+			baselines.remember(row.id, row.content);
+		}
+	}
+	return envelope;
 }
 
 /** The delete receipt: what a delete-bearing op removed — block ids and

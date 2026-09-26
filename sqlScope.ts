@@ -21,9 +21,7 @@ function containsNestedSelect(value: unknown): boolean {
 	return Object.values(value).some(containsNestedSelect);
 }
 
-export type CertResult =
-	| { ok: true; ast: Select }
-	| { ok: false; reason: string };
+type CertResult = { ok: true; ast: Select } | { ok: false; reason: string };
 
 /** layer 1 — parser-based certification, never a token scan. Worst case
  * at every rung is a rejection with the reason named, never a guess. */
@@ -132,7 +130,7 @@ function boxInAst(boxes: string[]): Binary {
 	};
 }
 
-export interface RebuiltStatement {
+interface RebuiltStatement {
 	stmt: string;
 	limit: number;
 }

@@ -5,12 +5,7 @@
 
 import { AUTH_DODGE_THRESHOLD as BREAKER_THRESHOLD } from "siyuan-kb-primitives";
 
-export type EnvelopeStatus =
-	| "ok"
-	| "near_matches"
-	| "duplicate"
-	| "error"
-	| "refused";
+type EnvelopeStatus = "ok" | "near_matches" | "duplicate" | "error" | "refused";
 
 export interface Envelope {
 	status: EnvelopeStatus;

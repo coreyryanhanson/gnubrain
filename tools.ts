@@ -78,7 +78,7 @@ Discovery pattern: include hpath in discovery SELECTs — SELECT id, root_id, bo
 
 Rules: exactly one top-level SELECT; FROM blocks or refs only; single-table FROM (no JOINs, subqueries, CTEs, UNION, or HAVING). LIMIT is injected as 64 when absent; an agent-supplied LIMIT passes through uncapped. Aggregate queries (COUNT/GROUP BY) are allowed — their rows carry no box and are exempt from re-scoping.`;
 
-export function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
+function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 	pi.registerTool({
 		name: "kb_query",
 		label: "KB Query",
@@ -297,7 +297,7 @@ export function kbsDiscoveryEnvelope(validation: SessionValidation): Envelope {
 	};
 }
 
-export function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
+function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 	pi.registerTool({
 		name: "kb_read",
 		label: "KB Read",
