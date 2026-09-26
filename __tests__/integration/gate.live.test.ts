@@ -5,8 +5,6 @@
 // pi.getAllTools()/getActiveTools() to a file so the tool-registration and
 // masking asserts are mechanical, never eyeballed; seeded session files
 // (harness seedSession) put the resumed child through the real restore path.
-// The in-process auth-breaker cases (401 → breaker, live 429 → cooldown)
-// live in breaker.live.test.ts.
 //
 // Opt-in with SIYUAN_INTEGRATION=1, never in CI.
 

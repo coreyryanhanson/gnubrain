@@ -3,7 +3,7 @@
 // markers, never statuses; success results carry
 // `status: "ok"` plus their payload.
 
-import { BREAKER_THRESHOLD } from "./breaker.js";
+import { AUTH_DODGE_THRESHOLD as BREAKER_THRESHOLD } from "siyuan-kb-primitives";
 
 export type EnvelopeStatus =
 	| "ok"

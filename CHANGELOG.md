@@ -4,6 +4,10 @@
 
 ### Added
 
+- `kb_write` mutation-failure wording now maps the primitives' exported
+  `MutationFailure` union — the shared pre-judgment ladder — instead of a
+  structural copy.
+
 - **SiYuan-backed knowledge-base tools for pi.** GNUbrain registers four tools
   against a SiYuan kernel, organized in two toolsets — `gnubrain.read`
   (default-enabled) and `gnubrain.write` (default-enabled, requires

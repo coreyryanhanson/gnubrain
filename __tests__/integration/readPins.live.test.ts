@@ -11,7 +11,6 @@ import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { ContentBaselines } from "../../baselines.js";
 import { CircuitBreaker } from "../../breaker.js";
 import { globalSettingsPath, loadGnubrainSettings } from "../../settings.js";
-import { RESULT_LIMIT } from "../../spill.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { registerWriteTool } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
@@ -184,58 +183,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			});
 			expect(readBack.status).toBe("ok");
 			expect(readBack.docId).toBe(hit.root_id);
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"two-KB saturation — one saturated KB never crowds the other out (fan-out pin)",
-		async () => {
-			const term = unique("saturate").replaceAll(" ", "-");
-			// RESULT_LIMIT + 1 matching paragraphs in fixture-a saturate its
-			// per-KB window (pageSize = RESULT_LIMIT); exactly one hit in b.
-			const paragraphs = Array.from(
-				{ length: RESULT_LIMIT + 1 },
-				(_, i) => `${term} paragraph ${i}`,
-			).join("\n\n");
-			await mintDoc(
-				client,
-				fixtures.notebookIds.fixtureA,
-				unique("/saturate-a"),
-				`# saturate a\n\n${paragraphs}\n`,
-			);
-			await awaitSearchable(
-				client,
-				[fixtures.notebookIds.fixtureA],
-				term,
-				RESULT_LIMIT,
-			);
-			const bPath = unique("/saturate-b");
-			await mintDoc(
-				client,
-				fixtures.notebookIds.fixtureB,
-				bPath,
-				`# saturate b\n\n${term} single hit\n`,
-			);
-
-			const read = readSetup();
-			const res = await read("kb_search", {
-				kb: ["fixture-a", "fixture-b"],
-				query: term,
-			});
-			expect(res.status).toBe("ok");
-			// fixture-a's window saturated → the truncation marker names 1 of 2.
-			expect(String(res.truncated)).toContain("1 of 2");
-			// The fan-out guarantee: fixture-b's hit survives the saturated
-			// sibling window. The echo contract carries no content — the row's
-			// hpath is the minted doc's.
-			const rows = rowsOf(res);
-			const bRow = rows.find((r) => r.box === "fixture-b");
-			expect(bRow).toBeDefined();
-			expect(String(bRow!.hpath)).toBe(bPath);
-			expect(rows.filter((r) => r.box === "fixture-a").length).toBe(
-				RESULT_LIMIT,
-			);
 		},
 		LIVE_TIMEOUT,
 	);

@@ -54,38 +54,6 @@ if (INTEGRATION && BASE_URL === "") {
 	);
 }
 
-/** Raw direct kernel call — a POST fetch with a Token header, bypassing the
- * typed client entirely. `token` override is what bogus-token arming uses. */
-export interface RawKernelResult {
-	status: number;
-	headers: Headers;
-	/** Parsed JSON body when parseable, undefined otherwise (throttle/lock
-	 * responses may carry non-JSON bodies). */
-	body: unknown;
-}
-
-export async function rawKernelCall(
-	path: string,
-	body: unknown,
-	opts: { token?: string; baseUrl?: string } = {},
-): Promise<RawKernelResult> {
-	const res = await fetch(`${opts.baseUrl ?? BASE_URL}${path}`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Token ${opts.token ?? TOKEN}`,
-		},
-		body: JSON.stringify(body ?? {}),
-	});
-	let parsed: unknown;
-	try {
-		parsed = await res.json();
-	} catch {
-		// non-JSON body (e.g. a throttle response) — status/headers still speak
-	}
-	return { status: res.status, headers: res.headers, body: parsed };
-}
-
 // --- live-case helpers (shared by the 5b case files) ---
 
 /** Poll a condition with a deadline — the bounded-wait shape every

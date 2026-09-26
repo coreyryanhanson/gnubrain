@@ -23,6 +23,7 @@ import type {
 	DeleteDocOutcome,
 	EditVerifyOutcome,
 	InsertLandedOutcome,
+	MutationFailure,
 	MoveAnchor,
 	MoveBlockOutcome,
 	MoveDocJudgment,
@@ -98,11 +99,7 @@ export function verificationReadsFailedMessage(detail: string): string {
  * The tail is a thunk, not a value: errorTail performs kernel reads and
  * must stay off the arms that refuse without them. */
 export async function mutationFailureEnvelope(
-	outcome:
-		| { kind: "drift"; observed: string }
-		| { kind: "transport-unverified"; detail: string }
-		| { kind: "kernel-refused"; message: string }
-		| { kind: "verification-failed"; detail: string },
+	outcome: MutationFailure,
 	opts: {
 		kb: string;
 		anchor?: string;

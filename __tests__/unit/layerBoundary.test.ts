@@ -29,9 +29,11 @@ describe("layering — primitives entry points only", () => {
 	});
 
 	it("primitives imports use only the two entry points (no deep imports)", () => {
+		const matched: string[] = [];
 		for (const name of SOURCES) {
 			for (const spec of importSpecifiers(name)) {
 				if (spec.startsWith("siyuan-kb-primitives")) {
+					matched.push(`${name}: ${spec}`);
 					expect(
 						["siyuan-kb-primitives", "siyuan-kb-primitives/write"],
 						`${name}: ${spec}`,
@@ -39,5 +41,8 @@ describe("layering — primitives entry points only", () => {
 				}
 			}
 		}
+		// Guard against the assertion passing vacuously: with no
+		// primitives imports at all, the loop above would check nothing.
+		expect(matched.length).toBeGreaterThan(0);
 	});
 });

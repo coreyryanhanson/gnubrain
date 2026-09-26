@@ -9,11 +9,10 @@ import { BaseSequencer } from "vitest/node";
 import type { TestSpecification } from "vitest/node";
 
 // Execution order for the live integration suite (endsWith match on the
-// file name). The throttle schedule pin lives in the primitives live suite;
-// the one lock-arming case here (breaker.live's 429 cooldown case, opt-in
-// via SIYUAN_INTEGRATION_THROTTLE=1) arms a minimal ~2 min lock and must run
-// last — while it is held, every other live case on this IP would 429.
-// Without the flag nothing arms the lock and the ordering is convention.
+// file name). No case here arms the kernel's per-IP lock: the throttle
+// schedule pin — and its one lock-arming case — live in the primitives'
+// live suite (throttle.live, strictly last there). The order below is
+// convention (cheapest falsifier first, pi children last).
 const INTEGRATION_ORDER = [
 	"smoke.live.test.ts", // search-shape first (cheapest falsifier)
 	"harness.live.test.ts",
@@ -23,7 +22,6 @@ const INTEGRATION_ORDER = [
 	"writePins.live.test.ts",
 	"gate.live.test.ts", // pi children (masking/scope), in-process
 	"encryptedNotebook.live.test.ts", // encrypted-notebook (no lock arming)
-	"breaker.live.test.ts", // 401 breaker + 429 cooldown (arms a lock under THROTTLE — last)
 ];
 
 class OrderedSequencer extends BaseSequencer {

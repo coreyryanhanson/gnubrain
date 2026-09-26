@@ -7,6 +7,7 @@ import {
 	SiYuanApiError,
 	docMarkdown,
 	findTitleMatches,
+	firstChildContent,
 	walkBlockTree,
 	type GuardRow,
 	type WalkedBlock,
@@ -115,15 +116,15 @@ async function nearMatchStop(
 	const { kernel, name } = input;
 	const candidates: Record<string, unknown>[] = [];
 	for (const row of rows) {
-		// First paragraph of each candidate: the first child block's
-		// content — cheap and excerpt-only by design (near-match tier).
+		// First child block's content — cheap and excerpt-only by design
+		// (near-match tier). The document-order read itself lives in the
+		// primitives; only the swallow policy stays here (a vanished
+		// candidate mid-scan means an empty excerpt, row still shown;
+		// auth/rate-limit/network rethrow for runKbCall's classification).
 		let firstParagraph = "";
 		try {
-			const children = await kernel.getChildBlocks(row.root_id);
-			firstParagraph = String(children[0]?.content ?? "");
+			firstParagraph = (await firstChildContent(kernel, row.root_id)) ?? "";
 		} catch (err) {
-			// Vanished candidate mid-scan — empty excerpt, row still shown.
-			// Auth/rate-limit/network rethrow for runKbCall's classification.
 			if (!(err instanceof SiYuanApiError)) throw err;
 			firstParagraph = "";
 		}

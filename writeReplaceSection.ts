@@ -49,6 +49,9 @@ export async function runReplaceSectionMode(
 	const heading = headingInWalk(walk, doc, headingId);
 	if ("status" in heading) return heading;
 	const deleteSet = sectionOf(walk, headingId);
+	// Unreachable against the current wiring — headingInWalk and sectionOf
+	// re-find the heading with the same predicate on the same walk — kept
+	// as a fail-closed tripwire if those two lookups ever drift apart.
 	if (deleteSet === undefined) {
 		return refusedEnvelope(staleHeadingMessage(headingId, doc));
 	}

@@ -140,16 +140,21 @@ tests drive the extension through it instead of touching real files.
   pre-judgment failure ladder of the verified mutation flows
   (`mutationFailureEnvelope`: drift / transport-unverified / kernel-refused /
   verification-failed) is worded there too, so a new failure arm fails
-  typecheck once, not per flow.
+  typecheck once, not per flow — the ladder's arms are the primitives'
+  exported `MutationFailure` union (composed by the insert / edit /
+  block-move / doc-move / block-delete outcomes; create and doc-delete keep
+  their distinct arms).
   Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
   policy in `writeGuard.ts` (`validateMintTitle` — the guard's stmt
   builders and the mint-title kernel facts both moved down; only the
   wording stays).
 - **Session state** stays here: `baselines.ts` (what this chat was shown),
-  `breaker.ts` (consecutive-failure state machine; its cooldown floor derives
-  from the barrel's `authLockSeconds(6)` — it dodges the kernel's per-IP lock,
-  never calls into one), grant state, spill receipts. These are
-  session-lifetime policy, not kernel facts.
+  `breaker.ts` (thin session holder over the barrel's `authLockDodge` —
+  session scoping, the genuine-error→event seam, and wording state; the
+  dodge schedule itself — trip threshold held in reserve under the kernel's
+  6-failure lock, cooldown floor, deadline extension, reset-on-success —
+  moved down), grant state, spill receipts. These are session-lifetime
+  policy, not kernel facts.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
   only single-table `SELECT` from `blocks`/`refs`; scope is spliced into the
   AST and re-parsed for verification. It stays here because model-authored SQL
@@ -172,8 +177,8 @@ The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.4"`), the drift probe
 `validation.ts`. This repo consumes them through the read barrel: writes fail closed on a `drift` verdict — the gate refuses
 before the op runs, and the probe-taking primitives refuse again inside
 (the sweep takes no probe, so replace-section's drift refusal is the
-gate's alone), reads warn, and the breaker derives its cooldown floor from
-the formula. Change the pin only deliberately, in the primitives repo — its live
+gate's alone), reads warn, and the breaker's cooldown rides the barrel's
+`authLockDodge`. Change the pin only deliberately, in the primitives repo — its live
 suite asserts the kernel reports the pin exactly, and the checklist above
 gates the bump.
 
@@ -196,6 +201,13 @@ re-falsifies the fact there:
   `stale`, named, never silently matched — the retry proceeds). Falsified
   by the primitives live content-equivalence case and their `fresh` unit
   and live suites.
+- The child-order fact — `getChildBlocks` returns a parent's children in
+  document order, so the first element is the doc's first block — moved
+  down with `firstChildContent` (primitives `byId.ts`); the near-match
+  excerpt read (`writeCreate.ts`) keeps only the swallow policy (a
+  vanished candidate mid-scan → empty excerpt, kernel errors rethrown
+  for classification). Falsified by the primitives' `walk.live`
+  (document-order walk) and `byId.test.ts` (the rethrow-verbatim arm).
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing (the same for the `serveOutlineFromWalk` doc comment in
@@ -245,6 +257,12 @@ re-falsifies the fact there:
   immediately after the move), so the landed judgment and the echoed hpath
   ride the live tree — moved down with `moveDocVerified`. Falsified by the
   primitives' `move.live` (the SQL-lag pin).
+- The search-window fact — the kernel shares one `pageSize` window across
+  every `paths` entry of a full-text search call, so a hit-rich KB fills
+  the pre-filter window and silently drops the other KBs' matches — moved
+  down with `searchBoxes` (primitives `search.ts`); the tool side owns only
+  the resolve/echo/spill around the per-box fan-out. Falsified by the
+  primitives' `search.live` (shared-window premise + per-box strategy).
 - The delete-cascade fact — the kernel's cascade removes a container
   member's descendants with it, so the sweep deletes only the enumerated
   members — moved down with `sweepSectionMembers` (primitives `sweep.ts`);
@@ -264,13 +282,16 @@ re-falsifies the fact there:
   by shape. Pinned by the primitives live suite (silent-DML no-op case,
   `writePins.live`); the tool-side shape rejection is pinned locally
   (`tools.test.ts`).
-- The breaker-floor and probe/cooldown comments (`breaker.ts`,
-  `gateWriteAttempt` in `gate.ts`) — the cooldown floor derives from the
-  barrel's `authLockSeconds(6)`; a `getVersion` probe is unauthenticated so
-  it never counts as breaker contact; a 429 arms the local cooldown, and
-  any call inside an active lock extends it. Schedule and extension
-  falsified by the primitives' `throttle.live`; the extension's half by
-  `breaker.live` (under `SIYUAN_INTEGRATION_THROTTLE=1`).
+- The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
+  cooldown is the barrel's `authLockDodge` reducer (trip threshold 3 held
+  in reserve under the kernel's 6-failure per-IP lock, floor
+  `authLockSeconds(6)`, monotonic deadline extension), held as session
+  state by `breaker.ts`; a `getVersion` probe is unauthenticated so it
+  never counts as breaker contact; a 429 arms the local cooldown, and any
+  call inside an active lock extends it. Schedule and dodge falsified by
+  the primitives' unit suite plus `throttle.live`; the extension's half
+  (holder wiring, the genuine-class seam) by the local unit seam suite
+  (`breaker.test.ts`).
 
 If an entry here ever grows executable dependence on a pinned behavior, move
 the code down into the primitives (the `rootEcho` promotion is the template) —
@@ -294,12 +315,10 @@ survives as a qualified cross-boundary property, recorded in that entry.
 
 - `__tests__/unit` runs with default parallelism; `__tests__/integration` sets
   `fileParallelism: false` and an explicit `INTEGRATION_ORDER` in
-  `vitest.config.ts`. The throttle schedule pin lives in the primitives live
-  suite; the extension's half of the throttle story
-  (`breaker.live.test.ts`) arms a minimal lock under
-  `SIYUAN_INTEGRATION_THROTTLE=1` (6 bogus auths + the one observation call;
-  ~2 min self-heal) and must run last — while it is held, every other live
-  case on this IP would 429.
+  `vitest.config.ts`. The throttle schedule pin — and its one lock-arming
+  live case — lives in the primitives' live suite (`throttle.live`, run
+  last there); no case in this repo's live suite arms the kernel's per-IP
+  lock (the extension's dodge wiring is unit-pinned in `breaker.test.ts`).
 - Unit tests use `__tests__/helpers/fakePi.ts` and SQL-routed kernel stubs
   (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
 - The version-pinned behaviors (walk order/parentage, verdict primitives,
@@ -322,7 +341,7 @@ survives as a qualified cross-boundary property, recorded in that entry.
   barrel — fed by the barrel's `docMarkdown` (the promoted `exportMdContent`
   read)/`query/sql`, never a second writer; it
   must never import `siyuan-kb-primitives/write`, and composes the same
-  auth-lock dodge the breaker does, from the barrel's `authLockSeconds`. Store
+  auth-lock dodge the breaker does, from the barrel's `authLockDodge`. Store
   the embedding model id per-vector so model swaps are re-embeds, not
   migrations.
 - Embedding-assisted dedup as primary identity; title guard stays as the

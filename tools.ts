@@ -28,6 +28,7 @@ import {
 import {
 	docMarkdown,
 	ownershipStmt,
+	searchBoxes,
 	type KernelReadClient,
 } from "siyuan-kb-primitives";
 import {
@@ -221,34 +222,31 @@ export async function runSearchFanOut(
 	query: string,
 	contact: () => void,
 ): Promise<Envelope> {
-	// One kernel call per resolved KB (paths: [<boxId>]) — never one call
-	// with multiple paths under a single pageSize, which lets a hit-rich KB
-	// fill the pre-filter window and silently drop the other KBs' matches.
-	const nameBoxPairs = names.map((name) => ({
-		name,
-		boxId: resolveBox(name, validation),
-	}));
+	// One kernel call per resolved KB rides the barrel's searchBoxes — the
+	// shared pre-filter window (a hit-rich KB silently dropping the other
+	// KBs' matches) is kernel behavior the primitives own; this side owns
+	// resolve, echo, and spill.
+	contact();
+	const results = await searchBoxes(kernel, {
+		query,
+		boxIds: names.map((name) => resolveBox(name, validation)),
+		pageSize: RESULT_LIMIT,
+	});
 	const merged: Record<string, unknown>[] = [];
 	let dropped = 0;
 	let truncatedKBs = 0;
 	let truncatedRows = 0;
-	for (const { name, boxId } of nameBoxPairs) {
-		contact();
-		const result = await kernel.search({
-			query,
-			paths: [boxId],
-			pageSize: RESULT_LIMIT,
-		});
-		for (const block of result.blocks) {
-			// Post-filter backstop: merged rows dropped unless box ∈ resolved
-			// set. Unreachable against a well-behaved kernel (each call was
-			// scoped to one box); the drop path exists for contamination.
-			if (block.box !== boxId) {
-				dropped++;
-				continue;
-			}
-			// Echo contract: id, root_id (renamed from rootID), hpath (renamed
-			// from hPath), box → resolved KB name, updated — never raw.
+	for (const [i, name] of names.entries()) {
+		const box = results[i];
+		if (box === undefined) {
+			throw new Error("internal: search fan-out lost a box result");
+		}
+		dropped += box.dropped;
+		if (box.hidden > 0) truncatedKBs++;
+		truncatedRows += box.hidden;
+		// Echo contract: id, root_id (renamed from rootID), hpath (renamed
+		// from hPath), box → resolved KB name, updated — never raw.
+		for (const block of box.rows) {
 			merged.push({
 				id: block.id,
 				root_id: block.rootID,
@@ -256,12 +254,6 @@ export async function runSearchFanOut(
 				box: name,
 				updated: block.updated,
 			});
-		}
-		if (result.matchedBlockCount > result.blocks.length) {
-			truncatedKBs++;
-			// Surplus only: rows the agent didn't see, so shown (count) +
-			// hidden (truncatedRows) = the kernel's total matches.
-			truncatedRows += result.matchedBlockCount - result.blocks.length;
 		}
 	}
 	const envelope: Envelope = {
