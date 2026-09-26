@@ -159,10 +159,11 @@ tests drive the extension through it instead of touching real files.
   `outline.ts` owns outline serving (`serveOutline`/`serveOutlineFromWalk` —
   the required-baselines wrappers: seeding, the inline cut, the spill tail).
   The notation itself (`renderExtendedOutlineLines`, the primitives read
-  barrel's canonical extended-outline renderer — `containerPrefix` stays
-  module-internal to the primitives' `outline.ts`) means the served lines
-  can never diverge from the section rule; the tool descriptions document
-  the notation the agent sees.
+  barrel's canonical extended-outline renderer — its `containerPrefix`
+  helper lives in the primitives' `outline.ts`, exported there but not
+  re-exported through the barrel) means the served lines can never diverge
+  from the section rule; the tool descriptions document the notation the
+  agent sees.
 - Every tool result is an envelope `{status: ok | near_matches | duplicate |
   error | refused, message, ...}` (`envelope.ts`) — use its factory helpers,
   don't invent statuses. Large payloads spill to session temp files.
@@ -283,9 +284,10 @@ re-falsifies the fact there:
   agent-facing wording over the placement module's notation: the
   `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
   write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives' shared
-  targetable-container set consumed by both the section rule and the
-  notation's glyph table). Wording pinned by the local unit suite
-  (`tools.test.ts`); the semantics ride the primitives' outline suites.
+  targetable-container set consumed by the heading-target judgment
+  (`walk.ts`) and the notation's glyph table (`outline.ts`)). Wording pinned
+  by the local unit suite (`tools.test.ts`); the semantics ride the
+  primitives' outline suites.
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
   endpoint is no longer a mutation vector and the tool still rejects DML
