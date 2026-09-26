@@ -130,30 +130,24 @@ tests drive the extension through it instead of touching real files.
   delete sweep (`sweepSectionMembers`), the verified deletes
   (`deleteBlockVerified` / `deleteDocVerified`), and the placement module
   (the section rule and the anchors derived from it) — live in
-  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions (the
-  fresh-content judgment instead returns its arms and the judged walk as
-  evidence; the doctrine over them stays in `freshContentRefusal`);
+  `siyuan-kb-primitives` and return closed `{ kind, …detail }` unions whose
+  shapes and evidence the primitives' AGENTS.md documents (the fresh-content
+  refusal wording lives in `freshContentRefusal`, `writeResult.ts`);
   `writeVerdicts.ts` maps every kind to agent-facing wording via exhaustive
   switches (no default), so a new kind in a primitives release fails
   typecheck until its wording is written here — the anchor echoes ride the
   same rule (`appendAnchorEcho` / `moveAnchorEcho`), and the shared
   pre-judgment failure ladder of the verified mutation flows
-  (`mutationFailureEnvelope`: drift / transport-unverified / kernel-refused /
-  verification-failed) is worded there too, so a new failure arm fails
-  typecheck once, not per flow — the ladder's arms are the primitives'
-  exported `MutationFailure` union (composed by the insert / edit /
-  block-move / doc-move / block-delete outcomes; create and doc-delete keep
-  their distinct arms).
+  (`mutationFailureEnvelope`) is worded there too, so a new failure arm
+  fails typecheck once, not per flow.
   Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
-  policy in `writeGuard.ts` (`validateMintTitle` — the guard's stmt
-  builders and the mint-title kernel facts both moved down; only the
-  wording stays).
+  policy in `writeGuard.ts` (`validateMintTitle` — wording only; the
+  mint-title kernel facts live in the primitives' `mintTitleProblem`).
 - **Session state** stays here: `baselines.ts` (what this chat was shown),
   `breaker.ts` (thin session holder over the barrel's `authLockDodge` —
   session scoping, the genuine-error→event seam, and wording state; the
-  dodge schedule itself — trip threshold held in reserve under the kernel's
-  6-failure lock, cooldown floor, deadline extension, reset-on-success —
-  moved down), grant state, spill receipts. These are session-lifetime
+  dodge schedule itself lives in the primitives), grant state, spill
+  receipts. These are session-lifetime
   policy, not kernel facts.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
   only single-table `SELECT` from `blocks`/`refs`; scope is spliced into the
@@ -177,8 +171,9 @@ tests drive the extension through it instead of touching real files.
 
 The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.4"`), the drift probe
 (`probeKernel` → `KernelProbeResult`), and the pinned lock schedule
-(`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts` — not in
-`validation.ts`. This repo consumes them through the read barrel: writes fail closed on a `drift` verdict — the gate refuses
+(`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts`. This
+repo consumes them through the read barrel: writes fail closed on a
+`drift` verdict — the gate refuses
 before the op runs, and the probe-taking primitives refuse again inside
 (the sweep takes no probe, so replace-section's drift refusal is the
 gate's alone), reads warn, and the breaker's cooldown rides the barrel's
@@ -199,17 +194,16 @@ re-falsifies the fact there:
   (`blocks.content` converges asynchronously), and the walk ≡ SQL
   equivalence (the kernel builds both via `nodeStaticContent`, so walk-form
   and SQL-form baselines hash identically) remains a cross-boundary
-  property: the comparison and both reads moved down with the promotion,
-  and the serve seeds ride the walk — the one SQL-form seed left is the
-  success-path `echoTail` refresh in `writeFlow.ts` (the exception the
+  property: the judgment and both reads live in the primitives, the serve
+  seeds ride the walk, and the one SQL-form seed is the success-path
+  `echoTail` refresh in `writeFlow.ts` (the exception the
   `rememberServedRows` entry below names). Fail-closed on any split (a
   diverging seed reads as `stale`, named, never silently matched — the
-  retry proceeds). Falsified
-  by the primitives live content-equivalence case and their `fresh` unit
-  and live suites.
+  retry proceeds). Falsified by the primitives live content-equivalence
+  case and their `fresh` unit and live suites.
 - The child-order fact — `getChildBlocks` returns a parent's children in
-  document order, so the first element is the doc's first block — moved
-  down with `firstChildContent` (primitives `byId.ts`); the near-match
+  document order, so the first element is the doc's first block — lives in
+  `firstChildContent` (primitives `byId.ts`); the near-match
   excerpt read (`writeCreate.ts`) keeps only the swallow policy (a
   vanished candidate mid-scan → empty excerpt, kernel errors rethrown
   for classification). Falsified by the primitives' `walk.live`
@@ -224,57 +218,58 @@ re-falsifies the fact there:
   entry above names. Falsified by the same primitives live case.
 - The type-`'d'` root-row wording in `resolveDocTarget`'s refusal
   (`writeFlow.ts`) — wording only; the type-`'d'` row semantics the wording
-  describes moved with the pin (`rootEcho` in the primitives). The same
+  describes live in `rootEcho` (the primitives). The same
   type-`'d'` row fact is also the discovery hint in `kb_read`'s
   missing-docId refusal (`tools.ts`). Falsified by
   the primitives live title round-trip and by-ID cases.
 - The insert-shape fact — one `doOperations` entry per markdown insert,
-  whole body in its `data` — moved down with `insertVerified` (primitives
+  whole body in its `data` — lives in `insertVerified` (primitives
   `write.ts`). Falsified by the primitives live insert-shape case plus
   local append/replace-section round trips (`writePlacement.live`).
 - The `lsNotebooks` encrypted-flag fact — `encrypted` is always present in
   the listing regardless of lock state, and the SQL surface cannot see
-  encrypted boxes, so one rejection covers both lock states — moved down
-  with `resolveNotebooks` (primitives `notebooks.ts`); only the rejection
-  wording and the warn-and-drop policy stay in `validation.ts`. Falsified
+  encrypted boxes, so one rejection covers both lock states — lives in
+  `resolveNotebooks` (primitives `notebooks.ts`); this repo keeps the
+  rejection wording and the warn-and-drop policy (`validation.ts`). Falsified
   by the primitives' `notebooks.live` (both lock states) beside the branch,
   plus the local tool-path case (`encryptedNotebook.live`).
 - The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
-  found" — moved down with `deleteBlockVerified` / `deleteDocVerified`
-  (primitives `delete.ts`); the flow-side wording (kernel error verbatim
-  with the fresh outline, the targetGone receipt gate) stays tool-side.
+  found" — lives in `deleteBlockVerified` / `deleteDocVerified`
+  (primitives `delete.ts`); this repo keeps the flow-side wording (kernel
+  error verbatim with the fresh outline, the targetGone receipt gate).
   Falsified by the primitives' `delete.live` (tree-not-found case) and
   their `sweep.live` cascade case.
 - The mint-policy claims (`validateMintTitle`, `writeGuard.ts`) —
   wording only; the facts themselves (the `normalizeDocTitle` 512-rune
-  truncation bound, the `/` path-separator rule) moved down as
-  `mintTitleProblem` in the primitives' `/write` entry (`rootEcho`
-  promotion template), falsified by the primitives title round-trip and
-  their own unit suite; the rejection set remains a superset claim over
-  `normalizeDocTitle`, pinned live by the same round-trip.
+  truncation bound, the `/` path-separator rule) live in the primitives'
+  `mintTitleProblem` (`/write` entry), falsified by the primitives title
+  round-trip and their own unit suite; the rejection set remains a
+  superset claim over `normalizeDocTitle`, pinned live by the same
+  round-trip.
 - The synchronous-move-rejection fact — the kernel rejects ancestor moves
   synchronously ("Cannot move to this location", doc-level record, no echo
-  tail) — moved down with `moveDocVerified` (primitives `move.ts`); the
-  doc-level move record shape (outline + title/hpath echo, no
-  anchor/newBlockId/destOutline) stays tool-side wording. Falsified by the
+  tail) — lives in `moveDocVerified` (primitives `move.ts`); this repo
+  keeps the doc-level move record shape wording (outline + title/hpath
+  echo, no anchor/newBlockId/destOutline). Falsified by the
   primitives' `move.live` (ancestor-move case).
 - The hpath-rebuild fact — `blocks.hpath` is a derived column the index
   rebuilds asynchronously after `moveDocsByID` (still the pre-move value
   immediately after the move), so the landed judgment and the echoed hpath
-  ride the live tree — moved down with `moveDocVerified`. Falsified by the
-  primitives' `move.live` (the SQL-lag pin).
+  ride the live tree — the fact lives in `moveDocVerified` (primitives
+  `move.ts`). Falsified by the primitives' `move.live` (the SQL-lag pin).
 - The search-window fact — the kernel shares one `pageSize` window across
   every `paths` entry of a full-text search call, so a hit-rich KB fills
-  the pre-filter window and silently drops the other KBs' matches — moved
-  down with `searchBoxes` (primitives `search.ts`); the tool side owns only
+  the pre-filter window and silently drops the other KBs' matches — lives
+  in `searchBoxes` (primitives `search.ts`); the tool side owns only
   the resolve/echo/spill around the per-box fan-out. Falsified by the
   primitives' `search.live` (shared-window premise + per-box strategy).
 - The delete-cascade fact — the kernel's cascade removes a container
   member's descendants with it, so the sweep deletes only the enumerated
-  members — moved down with `sweepSectionMembers` (primitives `sweep.ts`);
+  members — lives in `sweepSectionMembers` (primitives `sweep.ts`);
   the call-site comment in `writeReplaceSection.ts` is a summary kept for
-  the pre-enumeration rationale, and the sweep's partial-apply envelope
-  wording (byte-identical receipt, do-not-retry guidance) stays tool-side.
+  the pre-enumeration rationale, and this repo keeps the sweep's
+  partial-apply envelope wording (byte-identical receipt, do-not-retry
+  guidance).
   Falsified by the primitives' `sweep.live` (cascade case).
 - The `kb_query` description claims (`tools.ts`, `QUERY_DESCRIPTION`) —
   agent-facing wording: `sort` is a block-type weight, not display order
@@ -296,23 +291,16 @@ re-falsifies the fact there:
   `writePins.live`); the tool-side shape rejection is pinned locally
   (`tools.test.ts`).
 - The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
-  cooldown is the barrel's `authLockDodge` reducer (trip threshold 3 held
-  in reserve under the kernel's 6-failure per-IP lock, floor
-  `authLockSeconds(6)`, monotonic deadline extension), held as session
-  state by `breaker.ts`; a `getVersion` probe is unauthenticated so it
-  never counts as breaker contact; a 429 arms the local cooldown, and any
-  call inside an active lock extends it. Schedule and dodge falsified by
-  the primitives' unit suite plus `throttle.live`; the extension's half
-  (holder wiring, the genuine-class seam) by the local unit seam suite
-  (`breaker.test.ts`).
+  cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
+  the primitives; `breaker.ts` holds it as session state); a `getVersion`
+  probe is unauthenticated so it never counts as breaker contact; a 429
+  arms the local cooldown, and any call inside an active lock extends it.
+  Schedule and dodge falsified by the primitives' unit suite plus
+  `throttle.live`; the extension's half (holder wiring, the
+  genuine-class seam) by the local unit seam suite (`breaker.test.ts`).
 
 If an entry here ever grows executable dependence on a pinned behavior, move
-the code down into the primitives (the `rootEcho` promotion is the template) —
-do not lengthen the list. Sole deliberate exception, narrowed: the
-fresh-content judgment's comparison-and-both-reads half moved down
-(`checkFreshContent`, the primitives' read barrel), but the tool-side seed
-sites' reliance on the walk ≡ SQL equivalence remains — the exception
-survives as a qualified cross-boundary property, recorded in that entry.
+the code down into the primitives — do not lengthen the list.
 
 ## Settings
 
@@ -351,8 +339,8 @@ survives as a qualified cross-boundary property, recorded in that entry.
 ## Roadmap (parked)
 
 - RAG / vector sidecar (v2 primary): a third consumer of the primitives read
-  barrel — fed by the barrel's `docMarkdown` (the promoted `exportMdContent`
-  read)/`query/sql`, never a second writer; it
+  barrel — fed by the barrel's `docMarkdown` read/`query/sql`, never a
+  second writer; it
   must never import `siyuan-kb-primitives/write`, and composes the same
   auth-lock dodge the breaker does, from the barrel's `authLockDodge`. Store
   the embedding model id per-vector so model swaps are re-embeds, not
