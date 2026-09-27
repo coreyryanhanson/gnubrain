@@ -132,9 +132,9 @@ tests drive the extension through it instead of touching real files.
   fresh-content judgment (`checkFreshContent`), `resolveHeadingTarget`
   (the heading-target judgment; `headingInWalk` here maps its arms to
   wording), the verified block/doc moves (`moveBlockVerified` /
-  `moveDocVerified`), the verified delete sweep (`sweepSectionMembers`),
-  the verified deletes (`deleteBlockVerified` / `deleteDocVerified`), and
-  the placement module (the section rule and the anchors derived from it)
+  `moveDocVerified`), the verified deletes (`deleteBlockVerified` /
+  `deleteDocVerified`), and the placement module (the section rule and
+  the anchors derived from it)
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,

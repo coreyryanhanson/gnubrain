@@ -26,7 +26,7 @@ import type {
 	MoveBlockOutcome,
 	MoveDocJudgment,
 	MoveLandedOutcome,
-	SweepOutcome,
+	SweepRefusal,
 } from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
@@ -355,17 +355,18 @@ export function createVerdictEnvelope(
  * `interrupted` (the error instance must ride to the catch sites with its
  * partial state attached, so it cannot render here) and `walk-failed`
  * (likewise rethrown — the sweep is complete but unjudged, rendered by
- * the finish-write classifier, never here). Byte-identical to
+ * the finish-write classifier, never here). The parameter is the
+ * primitives' own `SweepRefusal` (owned by sweep.ts, discriminant-only
+ * exclusion in the module that owns the union), so an arm-shape change
+ * upstream re-derives this set here instead of a restated `Exclude`
+ * silently re-admitting a terminal arm. Byte-identical to
  * the sentences the flow issued before the extraction (the
  * createVerdictEnvelope pattern). `members-survived` is the one arm with
  * no pre-extraction sentence — the old flow trusted the deletes' results
  * and rendered a lying ok receipt; the judgment never rendered this arm
  * before, so its wording is new, not a rewrite. */
 export function sweepRefusal(
-	outcome: Exclude<
-		SweepOutcome,
-		{ kind: "swept" } | { kind: "interrupted" } | { kind: "walk-failed" }
-	>,
+	outcome: SweepRefusal,
 	ctx: {
 		kb: string;
 		anchor: string;
