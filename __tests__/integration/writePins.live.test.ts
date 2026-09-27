@@ -34,7 +34,7 @@ import { ContentBaselines } from "../../baselines.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { sectionOf } from "siyuan-kb-primitives/write";
 import { registerReadToolsAndToolset } from "../../tools.js";
-import { registerWriteTool } from "../../write.js";
+import { registerWriteToolAndToolset } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import {
 	heading,
@@ -75,7 +75,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 			} = {},
 		) {
 			const { pi, runToolDetails } = createFakePi();
-			registerWriteTool(pi, {
+			registerWriteToolAndToolset(pi, {
 				getValidation: () => fixtures.validation,
 				getKernel: () => client,
 				breaker: new CircuitBreaker(),

@@ -3,7 +3,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { defineToolset, TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
+import { TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
@@ -22,7 +22,7 @@ import {
 	runSessionValidation,
 	type SessionValidation,
 } from "./validation.js";
-import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
+import { registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import {
 	clearInteractionGrants,
@@ -30,11 +30,7 @@ import {
 	createWriteGrantState,
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
-import {
-	registerWriteTool,
-	WRITE_TOOLSET_ID,
-	WRITE_TOOLSET_PERSIST_KEY,
-} from "./write.js";
+import { registerWriteToolAndToolset } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -97,27 +93,12 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// Write tool: rides the same gate + probe verdict. The grant state is
 	// session-scoped machinery, same lifecycle class as the breaker.
 	const grantState = createWriteGrantState();
-	registerWriteTool(pi, {
+	const writeToolset: Toolset = registerWriteToolAndToolset(pi, {
 		getValidation: () => validation,
 		getKernel: () => kernelClient,
 		breaker,
 		grantState,
 		baselines,
-	});
-
-	// Write toolset (tool-masking record): one tool, all mutation modes;
-	// requires the read toolset — enabling writes cascades reads on,
-	// disabling reads cascades writes off (live toggles only; the settings
-	// tier applies pins per-toolset without the cascade — the documented
-	// write-without-read boundary, backstopped by the per-KB write grant +
-	// headless default-deny).
-	const writeToolset: Toolset = defineToolset(pi, {
-		id: WRITE_TOOLSET_ID,
-		label: "GNUbrain KB writes",
-		names: new Set(["kb_write"]),
-		persistKey: WRITE_TOOLSET_PERSIST_KEY,
-		defaultEnabled: true,
-		requires: [READ_TOOLSET_ID],
 	});
 
 	const statusInput = (

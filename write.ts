@@ -10,6 +10,8 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { defineToolset, type Toolset } from "pi-tool-masking";
+import { READ_TOOLSET_ID } from "./tools.js";
 import type { CircuitBreaker } from "./breaker.js";
 import {
 	errorEnvelope,
@@ -68,7 +70,7 @@ export interface WriteToolHooks {
 // ---------------------------------------------------------------------------
 
 export const WRITE_TOOLSET_ID = "gnubrain.write";
-export const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
+const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
 
 const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create — mint a new doc by title (topic), optionally nested under an echoed parentId; edit — updateBlock on a blockId target (the outline carries heading IDs only; non-heading block IDs come from kb_query rows); replace-section — swap a section's body in one call (the heading ID survives); append — insert new content under a heading (omitted headingId → doc end; the anchor is always tool-derived); delete — a block, or a whole doc with doc: true; move — block-level (toDocId + optional toHeadingId) or doc-level (doc: true; omitted toDocId → notebook root).
 
@@ -211,7 +213,16 @@ async function prepareWrite(
 	}
 }
 
-export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
+/** Register kb_write and declare the write toolset (one tool, all
+ * mutation modes; requires the read toolset — enabling writes cascades
+ * reads on, disabling reads cascades writes off; live toggles only — the
+ * settings tier applies pins per-toolset without the cascade, the
+ * documented write-without-read boundary, backstopped by the per-KB write
+ * grant + headless default-deny). */
+export function registerWriteToolAndToolset(
+	pi: ExtensionAPI,
+	hooks: WriteToolHooks,
+): Toolset {
 	pi.registerTool({
 		name: "kb_write",
 		label: "KB Write",
@@ -236,5 +247,13 @@ export function registerWriteTool(pi: ExtensionAPI, hooks: WriteToolHooks) {
 			);
 			return textResult(envelope);
 		},
+	});
+	return defineToolset(pi, {
+		id: WRITE_TOOLSET_ID,
+		label: "GNUbrain KB writes",
+		names: new Set(["kb_write"]),
+		persistKey: WRITE_TOOLSET_PERSIST_KEY,
+		defaultEnabled: true,
+		requires: [READ_TOOLSET_ID],
 	});
 }

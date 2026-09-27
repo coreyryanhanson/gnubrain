@@ -12,7 +12,7 @@ import { ContentBaselines } from "../../baselines.js";
 import { CircuitBreaker } from "../../breaker.js";
 import { globalSettingsPath, loadGnubrainSettings } from "../../settings.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
-import { registerWriteTool } from "../../write.js";
+import { registerWriteToolAndToolset } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import {
 	runSessionValidation,
@@ -79,7 +79,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			},
 		}) as SiYuanKernelClient;
 		const { pi, runToolDetails } = createFakePi();
-		registerWriteTool(pi, {
+		registerWriteToolAndToolset(pi, {
 			getValidation: () => validation,
 			getKernel: () => kernel,
 			breaker: new CircuitBreaker(),

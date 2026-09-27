@@ -34,7 +34,10 @@ import {
 	type GrantSelectFn,
 	type GrantSelectOptions,
 } from "../../writeConfirm.js";
-import { registerWriteTool, type WriteToolHooks } from "../../write.js";
+import {
+	registerWriteToolAndToolset,
+	type WriteToolHooks,
+} from "../../write.js";
 import { validation } from "./fixtures.js";
 
 export { validation };
@@ -349,7 +352,7 @@ export function registerKbWrite(
 	} = {},
 ) {
 	const { pi, toolDefs } = createFakePi();
-	registerWriteTool(pi, hooks);
+	registerWriteToolAndToolset(pi, hooks);
 	// The default dialog grants the turn; tests inject overrides via ctx.
 	const { ctx } = createFakeCtx({
 		hasUI: opts.hasUI ?? true,
