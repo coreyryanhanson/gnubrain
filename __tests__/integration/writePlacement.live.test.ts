@@ -14,6 +14,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	isHeadingBlock,
 	PINNED_SIYUAN_VERSION,
 	SiYuanKernelClient,
 	walkBlockTree,
@@ -278,7 +279,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			await awaitIndexed(emptyId);
 			const blankWalk = await walkBlockTree(client, emptyId);
 			const srcWalk2 = await walkBlockTree(client, srcId);
-			const mover2 = srcWalk2.find((b) => b.type === "h")!;
+			const mover2 = srcWalk2.find((b) => isHeadingBlock(b))!;
 			const moved2 = await execute({
 				kb: "live",
 				mode: "move",
@@ -445,7 +446,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				rootId: docId,
 				title: "refusal walk",
 			};
-			for (const h of walk.filter((b) => b.type === "h")) {
+			for (const h of walk.filter((b) => isHeadingBlock(b))) {
 				expect(headingInWalk(walk, doc, h.id)).toBe(h);
 			}
 		},

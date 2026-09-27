@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { expect } from "vitest";
 import {
+	isHeadingBlock,
 	PINNED_SIYUAN_VERSION,
 	ownership,
 	SiYuanKernelClient,
@@ -45,7 +46,7 @@ export const LIVE_TIMEOUT = 30_000;
 /** First heading with exactly this content under a doc — the walk lookup
  * every write-path live case shares. */
 export function heading(walk: WalkedBlock[], content: string): WalkedBlock {
-	const h = walk.find((b) => b.type === "h" && b.content === content);
+	const h = walk.find((b) => isHeadingBlock(b) && b.content === content);
 	expect(h, `heading '${content}' in walk`).toBeDefined();
 	return h!;
 }

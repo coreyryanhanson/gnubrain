@@ -194,7 +194,9 @@ here is falsified in the primitives repo's unit + live suites (an upgrade
 pass re-runs them wholesale); this repo's suites exercise them transitively
 and never sole-falsify a pinned fact, so entries name a test only where
 this repo pins something of its own — tool-surface wording, or a live case
-riding the tool path. The tool-side code at each spot is wording and
+riding the tool path. The two `sqlScope.ts` entries are the standing
+exception named in the rule below: their guard is tool-surface by design,
+so this repo falsifies them itself. The tool-side code at each spot is wording and
 precondition, not the fact itself; an upgrade pass re-reads this list and
 re-falsifies the changed fact in the primitives.
 
@@ -307,12 +309,11 @@ re-falsifies the changed fact in the primitives.
 - The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
   permits CTEs, so layer 1 is the only line of defense against a WITH
   shadowing an allowlisted table (pinned locally by `tools.test.ts`).
-- The aggregate-row fact (`sqlScope.ts`) — the query endpoint's per-type
-  aggregates carry no `box` field, and `postFilterRows` exempts exactly
-  those rows. The shape is kernel-pinned but not falsified by any suite —
-  the live case only checks the `box` column's contents on aggregate rows
-  (`readPins.live`), so an upgrade pass re-checks it against the live row
-  shape.
+- The aggregate-row claim (`sqlScope.ts`) — SQL projection semantics, not
+  kernel behavior: rows whose projection omits `box` (per-type aggregates
+  like `SELECT type, COUNT(*)`) carry no `box` field, and `postFilterRows`
+  exempts exactly those rows. Re-checked against the live row shape on an
+  upgrade pass (`readPins.live`).
 - The updateBlock-not-found fact (`writeEdit.ts` wording) — an absent
   edit target is never refused flow-side; updateBlock's synchronous
   not-found error surfaces verbatim through the kernel-refused arm (the
@@ -323,7 +324,11 @@ re-falsifies the changed fact in the primitives.
   normalization pin.
 
 If an entry here ever grows executable dependence on a pinned behavior, move
-the code down into the primitives — do not lengthen the list.
+the code down into the primitives — do not lengthen the list. The standing
+exception is the SQL scope (`sqlScope.ts`): the model-authored-SQL guard is
+a tool-surface problem (the primitives' own statements are hand-built and
+parser-free), so its kernel assumptions stay here and are re-checked against
+the live kernel on an upgrade pass.
 
 ## Settings
 

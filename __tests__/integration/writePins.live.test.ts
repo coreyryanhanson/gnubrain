@@ -25,6 +25,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	isHeadingBlock,
 	SiYuanKernelClient,
 	sqlString,
 	walkBlockTree,
@@ -136,7 +137,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 
 		const walkHeadingIds = async (docId: string): Promise<string[]> =>
 			(await walkBlockTree(client, docId))
-				.filter((b) => b.type === "h")
+				.filter((b) => isHeadingBlock(b))
 				.map((b) => b.id);
 
 		// -------------------------------------------------------------------
