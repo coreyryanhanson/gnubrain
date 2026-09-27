@@ -65,10 +65,7 @@ export async function runDeleteMode(
 				status: "ok",
 				message: `deleted doc '${doc.title}' (${doc.rootId}) in KB ${name} — ${invalidRefs.count} doc(s) with orphaned refs`,
 				kb: name,
-				invalidRefs: {
-					count: invalidRefs.count,
-					hpaths: invalidRefs.hpaths,
-				},
+				invalidRefs,
 				...deletedBlocksTail(input.sessionId, outcome.preWalk),
 			};
 		});
@@ -123,10 +120,7 @@ export async function runDeleteMode(
 			kb: name,
 			blockId,
 			targetGone: outcome.targetGone,
-			invalidRefs: {
-				count: invalidRefs.count,
-				hpaths: invalidRefs.hpaths,
-			},
+			invalidRefs,
 			...receipt,
 			...tail,
 		};

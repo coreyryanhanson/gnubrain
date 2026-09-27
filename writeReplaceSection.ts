@@ -167,10 +167,7 @@ export async function runReplaceSectionMode(
 					kb: name,
 					anchor: appendAnchorEcho(outcome.anchor),
 					newBlockId: outcome.insertedId,
-					invalidRefs: {
-						count: invalidRefs.count,
-						hpaths: invalidRefs.hpaths,
-					},
+					invalidRefs,
 					...deletedBlocksTail(sessionId, outcome.closure),
 					...tail,
 				};
