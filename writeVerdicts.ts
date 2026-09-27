@@ -19,7 +19,7 @@ import {
 import type {
 	AppendAnchor,
 	CreateDocOutcome,
-	EditVerifyOutcome,
+	EditJudgedVerdict,
 	InsertLandedOutcome,
 	MutationFailure,
 	MoveAnchor,
@@ -277,7 +277,7 @@ export function moveLandedRefusal(
  * landed. `lastServed` is kernel content shown verbatim — the truncation
  * is a detail of this sentence, not of the primitive. */
 export function editVerifyFailureReason(
-	outcome: EditVerifyOutcome,
+	outcome: EditJudgedVerdict,
 	blockId: string,
 	doc: { title: string; rootId: string },
 ): string | undefined {
@@ -297,8 +297,6 @@ export function editVerifyFailureReason(
 			);
 		case "landed":
 			return undefined;
-		case "drift":
-			return driftRefusal(outcome.observed).message;
 	}
 	outcome satisfies never;
 	return undefined;

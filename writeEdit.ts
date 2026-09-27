@@ -13,11 +13,7 @@ import {
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
-import {
-	driftRefusal,
-	editVerifyFailureReason,
-	blockInDocRefusal,
-} from "./writeVerdicts.js";
+import { editVerifyFailureReason, blockInDocRefusal } from "./writeVerdicts.js";
 
 export async function runEditMode(
 	input: WriteFlowInput,
@@ -77,12 +73,6 @@ export async function runEditMode(
 	// rides the shared map (writeVerdicts.editVerifyFailureReason).
 	return finishWrite(name, { blockId }, async () => {
 		if (outcome.verdict.kind !== "landed") {
-			// Drift renders as the canonical version refusal (same wording as
-			// the gate's static refusal), not the generic unverified error —
-			// defence-in-depth: the gate refuses a drifted session first.
-			if (outcome.verdict.kind === "drift") {
-				return driftRefusal(outcome.verdict.observed);
-			}
 			const failure = editVerifyFailureReason(outcome.verdict, blockId, doc);
 			// The failure tail must not launder a concurrent change past the
 			// precondition — no refreshBlockIds on this path.
