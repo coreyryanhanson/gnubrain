@@ -9,7 +9,20 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const SOURCES = readdirSync(ROOT).filter((f) => f.endsWith(".ts"));
+const list = (dir: string, ext: string): string[] =>
+	readdirSync(join(ROOT, dir), { recursive: true })
+		.filter((f): f is string => typeof f === "string")
+		.filter((f) => f.endsWith(ext))
+		.map((f) => join(dir, f));
+
+// Everything the repo ships or runs — root sources, tests, scripts — not
+// just the root modules. The boundary test itself is excluded: its own
+// name cites the layer-1 package.
+const SOURCES = [
+	...readdirSync(ROOT).filter((f) => f.endsWith(".ts")),
+	...list("__tests__", ".ts"),
+	...list("scripts", ".mjs"),
+].filter((f) => !f.endsWith("layerBoundary.test.ts"));
 
 function read(name: string): string {
 	return readFileSync(join(ROOT, name), "utf8");
@@ -22,7 +35,7 @@ function importSpecifiers(name: string): string[] {
 }
 
 describe("layering — primitives entry points only", () => {
-	it("no root module names siyuan-kernel-api (one layer-1 copy)", () => {
+	it("no shipped module names siyuan-kernel-api (one layer-1 copy)", () => {
 		for (const name of SOURCES) {
 			expect(read(name).includes("siyuan-kernel-api")).toBe(false);
 		}
@@ -44,5 +57,16 @@ describe("layering — primitives entry points only", () => {
 		// Guard against the assertion passing vacuously: with no
 		// primitives imports at all, the loop above would check nothing.
 		expect(matched.length).toBeGreaterThan(0);
+	});
+
+	it("package.json has no direct layer-1 dependency", () => {
+		const pkg = JSON.parse(read("package.json")) as {
+			dependencies?: Record<string, string>;
+		};
+		expect(
+			Object.keys(pkg.dependencies ?? {}).filter((d) =>
+				d.startsWith("siyuan-kernel-"),
+			),
+		).toEqual([]);
 	});
 });

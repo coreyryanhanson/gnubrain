@@ -16,6 +16,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import { expect } from "vitest";
 import {
 	PINNED_SIYUAN_VERSION,
@@ -151,9 +152,9 @@ export function seedHome(
 	settings: unknown,
 	packages: string[],
 ): void {
-	mkdirSync(`${home}/.pi/agent`, { recursive: true });
+	mkdirSync(dirname(globalSettingsPath(home)), { recursive: true });
 	writeFileSync(
-		`${home}/.pi/agent/settings.json`,
+		globalSettingsPath(home),
 		JSON.stringify({ packages, gnubrain: settings }),
 	);
 }

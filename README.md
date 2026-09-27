@@ -88,7 +88,7 @@ History lookup has something to search for.
 | `/kb tools write` | Read + write mode |
 | `/kb tools off` | Disable the extension's tools |
 
-Scope changes persist across sessions.
+Scope changes survive restart and resume.
 
 ## Options
 
@@ -100,7 +100,7 @@ Scope changes persist across sessions.
 
 > [!NOTE]
 > Requires SiYuan 3.8.4 exactly. Any other kernel version refuses writes and
-> warns on reads (see the status indicator for the reported version).
+> warns on reads (the refusal message names both versions).
 
 ## Architecture
 

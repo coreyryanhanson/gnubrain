@@ -65,6 +65,25 @@ function checkName(name: string, errors: string[]): void {
 	}
 }
 
+// Shared by both validators — one home for the rule and its message, so
+// the global and project wordings can't drift apart. Absent is fine; a
+// wrong shape is the only error here. Unknown names are not an error:
+// scope resolution in validation.ts warns and drops them, whatever file
+// supplied them.
+function checkDefaultKBs(
+	value: unknown,
+	errors: string[],
+): string[] | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (!Array.isArray(value) || !value.every((n) => typeof n === "string")) {
+		errors.push("defaultKBs must be an array of KB name strings");
+		return undefined;
+	}
+	return value;
+}
+
 // A project settings.json needs no `gnubrain` key at all (other extensions
 // share the file); when present, only `defaultKBs` may live under it.
 export interface ProjectValidation {
@@ -98,18 +117,7 @@ export function validateProjectSettings(raw: unknown): ProjectValidation {
 			);
 		}
 	}
-	let defaultKBs: string[] | undefined;
-	if (config.defaultKBs !== undefined) {
-		if (
-			!Array.isArray(config.defaultKBs) ||
-			!config.defaultKBs.every((n) => typeof n === "string")
-		) {
-			// Same class as the global file's shape failure — message reused verbatim.
-			errors.push("defaultKBs must be an array of KB name strings");
-		} else {
-			defaultKBs = config.defaultKBs;
-		}
-	}
+	const defaultKBs = checkDefaultKBs(config.defaultKBs, errors);
 	return { errors, defaultKBs };
 }
 
@@ -222,20 +230,7 @@ export function validateGnubrainSettings(raw: unknown): ValidationResult {
 		errors.push("kbs is required and must be an array");
 	}
 
-	let defaultKBs: string[] | undefined;
-	if (config.defaultKBs !== undefined) {
-		if (
-			!Array.isArray(config.defaultKBs) ||
-			!config.defaultKBs.every((n) => typeof n === "string")
-		) {
-			errors.push("defaultKBs must be an array of KB name strings");
-		} else {
-			// Unknown names are not an error here: scope resolution
-			// (validation.ts) warns and drops them per the stale-notebook
-			// precedent, whether they came from the global or project file.
-			defaultKBs = config.defaultKBs;
-		}
-	}
+	const defaultKBs = checkDefaultKBs(config.defaultKBs, errors);
 
 	if (
 		config.allowUnattendedWrites !== undefined &&

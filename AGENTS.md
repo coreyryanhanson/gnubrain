@@ -307,6 +307,12 @@ re-falsifies the changed fact in the primitives.
 - The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
   permits CTEs, so layer 1 is the only line of defense against a WITH
   shadowing an allowlisted table (pinned locally by `tools.test.ts`).
+- The aggregate-row fact (`sqlScope.ts`) — the query endpoint's per-type
+  aggregates carry no `box` field, and `postFilterRows` exempts exactly
+  those rows. The shape is kernel-pinned but not falsified by any suite —
+  the live case only checks the `box` column's contents on aggregate rows
+  (`readPins.live`), so an upgrade pass re-checks it against the live row
+  shape.
 - The updateBlock-not-found fact (`writeEdit.ts` wording) — an absent
   edit target is never refused flow-side; updateBlock's synchronous
   not-found error surfaces verbatim through the kernel-refused arm (the
@@ -338,7 +344,8 @@ the code down into the primitives — do not lengthen the list.
   last there); no case in this repo's live suite arms the kernel's per-IP
   lock (the extension's dodge wiring is unit-pinned in `breaker.test.ts`).
 - Unit tests use `__tests__/helpers/fakePi.ts` and SQL-routed kernel stubs
-  (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
+  (`__tests__/unit/writeHarness.ts` is the `kb_write` flow harness;
+  `index.test.ts` drives `kb_write` through the real `register()`).
 - The version-pinned behaviors are falsified by the primitives repo's
   unit + live suites (the fact list under Version coupling names where
   each lives); this repo's live cases pin tool-surface behavior (envelope
