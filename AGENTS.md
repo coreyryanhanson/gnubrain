@@ -230,9 +230,10 @@ re-falsifies the changed fact in the primitives.
   `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
   refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
   absent, never normalized to its containing doc. The same type-`'d'` row
-  fact is also the discovery hint in `kb_read`'s missing-docId refusal
-  (`tools.ts`, which keeps the primitives' `ownership` read: a block id
-  there exports its containing doc).
+  fact is exercised by `kb_read`'s doc resolution (`runRead` in `tools.ts`,
+  via the primitives' `ownership` read: a block id there exports its
+  containing doc); the missing-docId refusal is wording-only and names
+  the same fact.
 - The insert-shape fact — one `doOperations` entry per markdown insert,
   whole body in its `data` — lives in `insertVerified` (primitives
   `write.ts`).
@@ -340,9 +341,11 @@ the code down into the primitives — do not lengthen the list.
   (`__tests__/unit/writeHarness.ts` is the one `kb_write` setup).
 - The version-pinned behaviors are falsified by the primitives repo's
   unit + live suites (the fact list under Version coupling names where
-  each lives); this repo's live cases pin only tool-surface behavior
-  (envelope wording, partial-replace receipts, gate ordering), never
-  kernel facts.
+  each lives); this repo's live cases pin tool-surface behavior (envelope
+  wording, partial-replace receipts, gate ordering) — where a case also
+  asserts kernel landing shape (`writePlacement.live` does, via the
+  primitives' own predicates), the fact it exercises is falsified
+  down-repo, never solely here.
 - The integration suite needs a live SiYuan 3.8.4 kernel and self-skips
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a
