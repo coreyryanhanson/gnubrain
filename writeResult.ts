@@ -97,10 +97,7 @@ export async function freshContentRefusal(
 				blockId: arm.blockId,
 				currentContent: arm.currentContent,
 			})),
-			outline: fresh.outline,
-			...(fresh.fullOutlinePath !== undefined
-				? { fullOutlinePath: fresh.fullOutlinePath }
-				: {}),
+			...fresh,
 		},
 	);
 }

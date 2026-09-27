@@ -414,10 +414,7 @@ export async function runRead(
 		rootId,
 		baselines,
 	);
-	envelope.outline = outline.outline;
-	if (outline.fullOutlinePath !== undefined) {
-		envelope.fullOutlinePath = outline.fullOutlinePath;
-	}
+	Object.assign(envelope, outline);
 
 	// read budget: the spill mechanism is the only limit — large docs spill
 	// in full while the inline result keeps the newline-boundary preview.

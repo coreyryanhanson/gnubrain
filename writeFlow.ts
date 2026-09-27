@@ -184,10 +184,7 @@ export async function echoTail(
 		baselines,
 	);
 	const root = await rootEcho(kernel, boxId, docId);
-	const envelope: Record<string, unknown> = { outline: outline.outline };
-	if (outline.fullOutlinePath !== undefined) {
-		envelope.fullOutlinePath = outline.fullOutlinePath;
-	}
+	const envelope: Record<string, unknown> = { ...outline };
 	if (root !== undefined) {
 		envelope.docId = root.docId;
 		envelope.title = root.title;

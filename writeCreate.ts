@@ -214,10 +214,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 			docId: outcome.docId,
 			title: outcome.content,
 			hpath: outcome.hpath,
-			outline: outline.outline,
-			...(outline.fullOutlinePath !== undefined
-				? { fullOutlinePath: outline.fullOutlinePath }
-				: {}),
+			...outline,
 		};
 	});
 }
