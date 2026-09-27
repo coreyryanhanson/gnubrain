@@ -17,8 +17,8 @@ import { walkBlockTree, type WalkedBlock } from "siyuan-kb-primitives";
 import {
 	echoTail,
 	headingInWalk,
+	mutationFailure,
 	resolveDocTarget,
-	errorTail,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -26,7 +26,6 @@ import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
 	moveDocJudgmentRefusal,
-	moveDocVerdictEnvelope,
 	moveLandedRefusal,
 	movePlacementRefusal,
 	mutationFailureEnvelope,
@@ -87,9 +86,15 @@ export async function runMoveMode(
 		});
 		// The outcome→envelope map lives in writeVerdicts (the exhaustive
 		// wording home for every primitives union, the createVerdictEnvelope
-		// pattern).
+		// pattern). The doc-level record carries no echo tail on any failure
+		// leg (the pinned shape — the doc move runs with no doc target), so
+		// the tail is empty.
 		if (outcome.kind !== "judged") {
-			return moveDocVerdictEnvelope(outcome, { name, docId: doc.rootId });
+			return mutationFailureEnvelope(outcome, {
+				kb: name,
+				extra: { docId: doc.rootId },
+				tail: async () => ({}),
+			});
 		}
 		const failed = moveDocJudgmentRefusal(outcome.verdict, {
 			name,
@@ -160,11 +165,7 @@ export async function runMoveMode(
 		return movePlacementRefusal(outcome, doc);
 	}
 	if (outcome.kind !== "judged") {
-		return mutationFailureEnvelope(outcome, {
-			kb: name,
-			extra: { anchor: echo },
-			tail: () => errorTail(input, doc),
-		});
+		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the move may already be applied (finishWrite doc).

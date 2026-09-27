@@ -24,7 +24,7 @@ import {
 	echoTail,
 	deletedBlocksTail,
 	headingInWalk,
-	errorTail,
+	mutationFailure,
 	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
@@ -33,7 +33,6 @@ import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	appendAnchorEcho,
 	insertLandedRefusal,
-	mutationFailureEnvelope,
 	sweepRefusal,
 } from "./writeVerdicts.js";
 
@@ -92,11 +91,7 @@ export async function runReplaceSectionMode(
 		outcome.kind === "kernel-refused" ||
 		outcome.kind === "verification-failed"
 	) {
-		return mutationFailureEnvelope(outcome, {
-			kb: name,
-			extra: { anchor: echo },
-			tail: () => errorTail(input, doc),
-		});
+		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
 	if (outcome.kind === "no-section") {
 		// Unreachable — the sequence re-derives the same section from the

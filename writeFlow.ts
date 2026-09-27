@@ -20,7 +20,11 @@ import {
 	type KernelProbeResult,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
-import type { WriteKernelClient } from "siyuan-kb-primitives/write";
+import type {
+	MutationFailure,
+	WriteKernelClient,
+} from "siyuan-kb-primitives/write";
+import { mutationFailureEnvelope } from "./writeVerdicts.js";
 import { inlineOrSpill, jsonl } from "./spill.js";
 import type { ContentBaselines } from "./baselines.js";
 import { serveOutlineFromWalk } from "./outline.js";
@@ -131,6 +135,24 @@ export async function errorTail(
 	} catch {
 		return {};
 	}
+}
+
+/** The shared failure ladder's flow-side binding — every mode's
+ * non-judged arms differ only in the verdict key (extra); the kb name and
+ * the error-path echo tail are the same at every site. The one exception
+ * is the doc move's failure legs (empty tail, the pinned no-doc-target
+ * shape), which bind mutationFailureEnvelope directly. */
+export function mutationFailure(
+	outcome: MutationFailure,
+	input: WriteFlowBase,
+	doc: DocTarget,
+	extra: { anchor: string } | { blockId: string } | { docId: string },
+): Promise<Envelope> {
+	return mutationFailureEnvelope(outcome, {
+		kb: input.name,
+		extra,
+		tail: () => errorTail(input, doc),
+	});
 }
 
 /** Fresh outline + root echo + content-baseline refresh — the success-path

@@ -8,7 +8,7 @@ import { editVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	echoTail,
-	errorTail,
+	mutationFailure,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -17,7 +17,6 @@ import {
 	driftRefusal,
 	editVerifyFailureReason,
 	blockInDocRefusal,
-	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
 
 export async function runEditMode(
@@ -69,11 +68,7 @@ export async function runEditMode(
 		rootId: doc.rootId,
 	});
 	if (outcome.kind !== "judged") {
-		return mutationFailureEnvelope(outcome, {
-			kb: name,
-			extra: { blockId },
-			tail: () => errorTail(input, doc),
-		});
+		return mutationFailure(outcome, input, doc, { blockId });
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the edit is already applied (finishWrite doc). The

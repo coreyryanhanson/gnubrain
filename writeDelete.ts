@@ -5,7 +5,7 @@
 // receipt/invalidRefs evidence). Tool-surface scoping stays here; the
 // non-judged arms' envelope wording rides writeVerdicts' exhaustive
 // mappers (the shared mutationFailureEnvelope — the block-delete failure
-// half IS MutationFailure by type / deleteDocVerdictEnvelope). The
+// half IS MutationFailure by type). The
 // generation-coupled fact (3.8.3 success no-op vs 3.8.4
 // "tree not found") lives in the primitives' delete.ts and surfaces
 // verbatim through the kernel-refused arm.
@@ -19,16 +19,12 @@ import { refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	deletedBlocksTail,
 	echoTail,
-	errorTail,
+	mutationFailure,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite } from "./writeResult.js";
-import {
-	blockInDocRefusal,
-	deleteDocVerdictEnvelope,
-	mutationFailureEnvelope,
-} from "./writeVerdicts.js";
+import { blockInDocRefusal } from "./writeVerdicts.js";
 
 export async function runDeleteMode(
 	input: WriteFlowInput,
@@ -47,16 +43,13 @@ export async function runDeleteMode(
 			docId: doc.rootId,
 		});
 		if (outcome.kind !== "mutated") {
-			// The exhaustive wording home (the createVerdictEnvelope pattern):
-			// a new arm in a primitives release fails typecheck until its
-			// envelope is written here. The lazy errorTail supplier keeps the
-			// per-arm garnish rule — only the arms that attach the echo reads
-			// fire them.
-			return deleteDocVerdictEnvelope(outcome, {
-				kb: name,
-				docId: doc.rootId,
-				errorTail: () => errorTail(input, doc),
-			});
+			// Rides the shared ladder (the exhaustive wording home — a new
+			// arm in a primitives release fails typecheck there, not per
+			// flow). The union has no verification-failed arm: the
+			// primitive's evidence walk runs before the mutation (raw
+			// throws), and the post-mutation reads live in this flow's
+			// finishWrite leg.
+			return mutationFailure(outcome, input, doc, { docId: doc.rootId });
 		}
 		// Post-mutation reads: a network drop here must never read as
 		// "unreachable" — the doc may already be gone (finishWrite doc).
@@ -103,11 +96,7 @@ export async function runDeleteMode(
 		// blockId as the flow's verdict key. The lazy tail supplier keeps the
 		// per-arm garnish rule — only the arms that attach the echo reads
 		// fire them.
-		return mutationFailureEnvelope(outcome, {
-			kb: name,
-			extra: { blockId },
-			tail: () => errorTail(input, doc),
-		});
+		return mutationFailure(outcome, input, doc, { blockId });
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the delete may already be applied (finishWrite doc).

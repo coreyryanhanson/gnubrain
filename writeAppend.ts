@@ -13,16 +13,12 @@ import { errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	echoTail,
 	headingInWalk,
-	errorTail,
+	mutationFailure,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite } from "./writeResult.js";
-import {
-	appendAnchorEcho,
-	insertLandedRefusal,
-	mutationFailureEnvelope,
-} from "./writeVerdicts.js";
+import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
 
 export async function runAppendMode(
 	input: WriteFlowInput,
@@ -57,11 +53,7 @@ export async function runAppendMode(
 		preIds: idSet(walk),
 	});
 	if (outcome.kind !== "judged") {
-		return mutationFailureEnvelope(outcome, {
-			kb: name,
-			extra: { anchor: echo },
-			tail: () => errorTail(input, doc),
-		});
+		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
 	// Post-mutation reads: a network drop here must never read as
 	// "unreachable" — the insert is already applied (finishWrite doc). The

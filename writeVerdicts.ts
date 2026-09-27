@@ -19,14 +19,12 @@ import {
 import type {
 	AppendAnchor,
 	CreateDocOutcome,
-	DeleteDocOutcome,
 	EditVerifyOutcome,
 	InsertLandedOutcome,
 	MutationFailure,
 	MoveAnchor,
 	MoveBlockOutcome,
 	MoveDocJudgment,
-	MoveDocOutcome,
 	MoveLandedOutcome,
 	SweepOutcome,
 } from "siyuan-kb-primitives/write";
@@ -350,49 +348,6 @@ export function createVerdictEnvelope(
 	}
 	outcome satisfies never;
 	return errorEnvelope("internal: unhandled create verdict");
-}
-
-/** Envelope mapping for a verified doc-level move outcome other than the
- * judged-landed success — a thin binding over the shared failure ladder
- * (the createVerdictEnvelope pattern). The doc-level record carries no
- * echo tail on any failure leg (the pinned shape — the doc move runs with
- * no doc target), so the tail is empty. */
-export async function moveDocVerdictEnvelope(
-	outcome: Exclude<MoveDocOutcome, { kind: "judged" }>,
-	ctx: { name: string; docId: string },
-): Promise<Envelope> {
-	return mutationFailureEnvelope(outcome, {
-		kb: ctx.name,
-		extra: { docId: ctx.docId },
-		tail: async () => ({}),
-	});
-}
-
-/** The doc-delete twin — every non-mutated DeleteDocOutcome arm, the same
- * lazy-garnish rule as the shared ladder. The union has no
- * verification-failed arm: the primitive's evidence walk runs before the
- * mutation (raw throws), and the post-mutation reads live in the flow's
- * finishWrite leg. */
-/** The doc-delete outcome mapping, routed through the shared ladder —
- * `DeleteDocOutcome`'s non-mutated arms are a strict subset of
- * `MutationFailure`, so the wording is single-homed (a new arm fails
- * typecheck once). The arm-level comments the ladder's wording carries
- * live on `mutationFailureEnvelope`; the doc-delete specifics (the
- * never-render-as-unreachable rationale, the kernel-verbatim surfacing)
- * are the ladder's own sentences, not a restatement. */
-export async function deleteDocVerdictEnvelope(
-	outcome: Exclude<DeleteDocOutcome, { kind: "mutated" }>,
-	ctx: {
-		kb: string;
-		docId: string;
-		errorTail: () => Promise<Record<string, unknown>>;
-	},
-): Promise<Envelope> {
-	return mutationFailureEnvelope(outcome, {
-		kb: ctx.kb,
-		extra: { docId: ctx.docId },
-		tail: ctx.errorTail,
-	});
 }
 
 /** Envelope mapping for a verified delete-sweep outcome other than the
