@@ -153,7 +153,7 @@ export const writeSchema = Type.Object({
 	placement: Type.Optional(
 		Type.String({
 			description:
-				'mode "append" only: "section-end" (default, end of the target section) or "section-start" (after the heading\'s leading content, before its first deeper sibling heading — a heading nested inside a container does not count, and with none the landing is identical to section-end)',
+				'mode "append" only: "section-end" (default, end of the target section) or "section-start" (top of the target section, before its subsections)',
 		}),
 	),
 	doc: Type.Optional(
