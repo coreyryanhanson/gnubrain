@@ -7,6 +7,7 @@
 import {
 	SiYuanKernelError,
 	backlinkCheck,
+	rootEcho,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
 import {
@@ -20,6 +21,7 @@ import {
 	refusedEnvelope,
 	type Envelope,
 } from "./envelope.js";
+import { serveOutlineFromWalk } from "./outline.js";
 import {
 	echoTail,
 	deletedBlocksTail,
@@ -137,13 +139,52 @@ export async function runReplaceSectionMode(
 					});
 				}
 				throw outcome.error;
-			case "sweep-refused":
-				return sweepRefusal(outcome.outcome, {
+			case "sweep-refused": {
+				// The two terminal arms carry the certified post-sweep walk;
+				// serve it as the inline outline — the recovery evidence the
+				// wording used to send the agent to re-fetch — and seed the
+				// baselines from that walk (the snapshot the judgment was
+				// rendered from). Deliberately not echoTail: its SQL refresh is
+				// a post-walk read that could launder a concurrent change into
+				// the baseline on a failure path, and would add a fourth
+				// SQL-form seed site (contrast insert-rolled-back above; the
+				// success path is safe because the write landed). The root echo
+				// is addressing info, never a baseline. `partial` stopped
+				// before its verification walk — no certified snapshot to serve.
+				const certifiedWalk =
+					outcome.outcome.kind === "cascade-consumed" ||
+					outcome.outcome.kind === "members-survived"
+						? outcome.outcome.postWalk
+						: undefined;
+				const refusalCtx = {
 					kb: name,
 					anchor: appendAnchorEcho(outcome.anchor),
 					newBlockId: outcome.insertedId,
 					memberIds: outcome.memberIds,
+				};
+				if (certifiedWalk === undefined) {
+					return sweepRefusal(outcome.outcome, refusalCtx);
+				}
+				const outline = serveOutlineFromWalk(
+					sessionId,
+					"kb_write",
+					certifiedWalk,
+					baselines,
+				);
+				const root = await rootEcho(kernel, input.boxId, doc.rootId);
+				return sweepRefusal(outcome.outcome, {
+					...refusalCtx,
+					tail:
+						root === undefined
+							? outline
+							: {
+									...outline,
+									docId: root.docId,
+									title: root.title,
+									hpath: root.hpath,
+								},
 				});
+			}
 			case "swept": {
 				// invalidRefs: post-write echo over the section's closure —
 				// what actually got orphaned, verified.

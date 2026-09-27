@@ -1114,6 +1114,9 @@ describe("replace-section", () => {
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("cascade consumed the replacement");
 		expect(result.message).toContain("do not retry");
+		// The certified post-sweep walk rides the refusal as the inline
+		// outline — recovery evidence without a re-fetch round trip.
+		expect(result.outline).toBeDefined();
 	});
 
 	it("a success-reported delete that left the block in the tree fails loud (members-survived), never ok", async () => {
@@ -1140,6 +1143,9 @@ describe("replace-section", () => {
 			"reported success but the block(s) are still present",
 		);
 		expect(result.message).toContain("do not retry blindly");
+		// The verdict's postWalk is served inline, not pointed at kb_read.
+		expect(result.message).not.toContain("re-fetch the outline");
+		expect(result.outline).toBeDefined();
 		expect(result.partialReplace).toBe(true);
 		expect(result.deletedBlockIds).toEqual([]);
 		expect(result.remainingBlockIds).toEqual(["p1", "p2"]);
@@ -1170,6 +1176,9 @@ describe("replace-section", () => {
 		expect(result.status).toBe("error");
 		expect(result.partialReplace).toBe(true);
 		expect(result.deletedBlockIds).toEqual(["p1"]);
+		// The sweep stopped before its verification walk, so no certified
+		// snapshot exists to serve — the partial arm carries no outline.
+		expect(result.outline).toBeUndefined();
 		// Roots only: no container paired with its descendants, so the
 		// recovery deletes can run in any order without cascading errors.
 		expect(result.remainingBlockIds).toEqual(["l1"]);

@@ -366,6 +366,12 @@ export function sweepRefusal(
 		anchor: string;
 		newBlockId: string;
 		memberIds: string[];
+		/** The echo tail over the verdict's certified post-sweep walk, served
+		 * on the two terminal arms — the recovery evidence inline, so the
+		 * agent never re-fetches state the verdict already holds. `partial`
+		 * carries no walk (the sweep stopped before the verification walk),
+		 * so its tail stays undefined. */
+		tail?: Record<string, unknown> | undefined;
 	},
 ): Envelope {
 	switch (outcome.kind) {
@@ -397,11 +403,12 @@ export function sweepRefusal(
 					partialReplace: true,
 					deletedBlockIds: ctx.memberIds,
 					remainingBlockIds: [],
+					...ctx.tail,
 				},
 			);
 		case "members-survived":
 			return errorEnvelope(
-				`verified-sweep failed: the delete of '${outcome.survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly, re-fetch the outline (kb_read) and delete the surviving block(s)`,
+				`verified-sweep failed: the delete of '${outcome.survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id`,
 				{
 					kb: ctx.kb,
 					anchor: ctx.anchor,
@@ -411,6 +418,7 @@ export function sweepRefusal(
 						(id) => !outcome.survivedIds.includes(id),
 					),
 					remainingBlockIds: outcome.survivedIds,
+					...ctx.tail,
 				},
 			);
 	}
