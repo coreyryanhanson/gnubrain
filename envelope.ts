@@ -56,9 +56,14 @@ export function takePartialReplace(
 		.partialReplaceState;
 }
 
-/** Unreachable-kernel error — reads while the kernel is unreachable — `{status: error, message: SiYuan unreachable at <baseUrl>}`. */
-export function kernelUnreachable(baseUrl: string): Envelope {
-	return errorEnvelope(`SiYuan unreachable at ${baseUrl}`);
+/** Unreachable-kernel envelope — one home for the sentence; the status
+ * differs by path (a failed read is an error, a blocked write is a
+ * refusal). */
+export function kernelUnreachable(
+	baseUrl: string,
+	status: "error" | "refused",
+): Envelope {
+	return { status, message: `SiYuan unreachable at ${baseUrl}` };
 }
 
 /** Read-path version-drift warning — reads warn and proceed: the op

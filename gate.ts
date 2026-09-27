@@ -304,7 +304,7 @@ export async function gateWriteAttempt(input: {
 		validation.probe = { verdict: "unreachable" };
 		return {
 			ok: false,
-			envelope: refusedEnvelope(`SiYuan unreachable at ${kernel.baseUrl}`),
+			envelope: kernelUnreachable(kernel.baseUrl, "refused"),
 		};
 	}
 }
@@ -362,7 +362,10 @@ export async function runKbCall(
 			err instanceof SiYuanNetworkError ||
 			err instanceof SiYuanTimeoutError
 		) {
-			return kernelUnreachable(input.validation.settings?.baseUrl ?? "");
+			return kernelUnreachable(
+				input.validation.settings?.baseUrl ?? "",
+				"error",
+			);
 		}
 		return errorEnvelope(err instanceof Error ? err.message : String(err));
 	}

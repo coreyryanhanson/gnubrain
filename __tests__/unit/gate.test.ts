@@ -521,6 +521,7 @@ describe("write gate", () => {
 		expect(envelope !== undefined && !envelope.ok).toBe(true);
 		if (envelope === undefined || envelope.ok)
 			throw new Error("expected refusal");
+		expect(envelope.envelope.status).toBe("refused");
 		expect(envelope.envelope.message).toContain(
 			"SiYuan unreachable at http://127.0.0.1:6806",
 		);
