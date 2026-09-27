@@ -94,7 +94,13 @@ export async function runEditMode(
 				{ kb: name, blockId, ...tail },
 			);
 		}
-		const tail = await echoTail(input, doc, undefined, [blockId]);
+		const tail = await echoTail(input, doc);
+		// The landed verdict carries the stored pair it judged — baseline the
+		// write's own block from it instead of the SQL refresh (a concurrent
+		// change landing in the echo window would be laundered into the
+		// baseline). Remembered after the echo so the index form wins over
+		// the walk seeding, exactly as the refresh did.
+		baselines.remember(blockId, outcome.verdict.stored.content);
 		return {
 			status: "ok",
 			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,

@@ -162,8 +162,10 @@ export function mutationFailure(
  * launder a concurrent change). One full unfiltered walk; a pre-fetched
  * walk (the verification evidence the flow already holds) is reused
  * instead of re-traversing. The refresh block IDs are the blocks the write
- * itself produced (the edited target, a newBlockId, a movedBlockId) —
- * baselined from stored form so a follow-up edit compares like-for-like. */
+ * itself produced (a newBlockId, a movedBlockId) — baselined from stored
+ * form so a follow-up edit compares like-for-like. The edit's target is
+ * not among them: its landed verdict carries the stored pair, and the
+ * flow baselines from that instead of a refresh read. */
 export async function echoTail(
 	input: WriteFlowBase,
 	doc: DocTarget,

@@ -351,16 +351,21 @@ export function createVerdictEnvelope(
 }
 
 /** Envelope mapping for a verified delete-sweep outcome other than the
- * two the flow handles itself — `swept` (the success path continues) and
+ * three the flow handles itself — `swept` (the success path continues),
  * `interrupted` (the error instance must ride to the catch sites with its
- * partial state attached, so it cannot render here). Byte-identical to
+ * partial state attached, so it cannot render here) and `walk-failed`
+ * (likewise rethrown — the sweep is complete but unjudged, rendered by
+ * the finish-write classifier, never here). Byte-identical to
  * the sentences the flow issued before the extraction (the
  * createVerdictEnvelope pattern). `members-survived` is the one arm with
  * no pre-extraction sentence — the old flow trusted the deletes' results
  * and rendered a lying ok receipt; the judgment never rendered this arm
  * before, so its wording is new, not a rewrite. */
 export function sweepRefusal(
-	outcome: Exclude<SweepOutcome, { kind: "swept" } | { kind: "interrupted" }>,
+	outcome: Exclude<
+		SweepOutcome,
+		{ kind: "swept" } | { kind: "interrupted" } | { kind: "walk-failed" }
+	>,
 	ctx: {
 		kb: string;
 		anchor: string;

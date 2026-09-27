@@ -139,6 +139,23 @@ export async function runReplaceSectionMode(
 					});
 				}
 				throw outcome.error;
+			case "sweep-walk-failed":
+				// Every member delete acked but the verification walk itself
+				// failed — the sweep is complete but unjudged, so this must
+				// never surface as a raw transport error ("SiYuan unreachable")
+				// while the whole write is applied. Rethrow inside the
+				// finish-write wrapper with the partial state attached: the
+				// fully-swept delete set rides as the receipt, nothing remains
+				// pending, and the classifier renders verificationFailed.
+				if (outcome.error instanceof SiYuanKernelError) {
+					markPartialReplace(outcome.error, {
+						partialReplace: true,
+						newBlockId: outcome.insertedId,
+						deletedBlockIds: outcome.deletedBlockIds,
+						remainingBlockIds: [],
+					});
+				}
+				throw outcome.error;
 			case "sweep-refused": {
 				// The two terminal arms carry the certified post-sweep walk;
 				// serve it as the inline outline — the recovery evidence the

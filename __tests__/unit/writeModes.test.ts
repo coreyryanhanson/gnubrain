@@ -496,7 +496,7 @@ describe("edit", () => {
 		expect(result.status).toBe("ok");
 	});
 
-	it("the successful write result refreshes the served-content baseline", async () => {
+	it("the successful edit baselines its own block from the verdict's carried pair", async () => {
 		const harness = setup({
 			config: {
 				blockRows: [{ id: "b-1", content: "stale paragraph" }],
@@ -507,24 +507,44 @@ describe("edit", () => {
 		});
 		// A prior serve seeds the baseline, so the pre-write fallback (which
 		// only fills missing entries) cannot mask the refresh: only the
-		// post-write refresh can move the hash off the original serve. The
+		// verdict-carried pair can move the hash off the original serve. The
 		// tree holds the served form so the precondition matches.
 		harness.baselines.remember("b-1", "served body");
+		let blockReads = 0;
 		const baseQuery = harness.client.query.bind(harness.client);
 		harness.client.query = async (stmt: string) => {
+			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+				blockReads += 1;
+				// Read 1 is the pre-write target read; read 2 the post-write
+				// verification read, serving a kernel-normalized stored form
+				// distinct from the submitted markdown.
+				return blockReads === 1
+					? baseQuery(stmt)
+					: [
+							{
+								id: "b-1",
+								root_id: "d-doc",
+								type: "p",
+								content: "correctd body",
+							},
+						];
+			}
 			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
-				// The post-write refresh serving the new stored form — the only
-				// baseline-content read left on this path.
-				return [{ id: "b-1", content: "edited body" }];
+				// No baseline-content refresh rides the edit's success path —
+				// the landed verdict carries the stored pair it judged. A
+				// broad refresh here would launder a concurrent change into
+				// the baseline.
+				throw new Error("unexpected blocks.content refresh");
 			}
 			return baseQuery(stmt);
 		};
 		const result = await harness.execute(editBase);
 		expect(result.status).toBe("ok");
-		// The refresh carried the post-write stored form — a follow-up edit
-		// on the same block compares against it, not the pre-write serve.
+		// The verdict carried the post-write stored (index) form — a
+		// follow-up edit compares against it, not the submitted markdown
+		// and not the pre-write serve.
 		expect(harness.baselines.servedHash("b-1")).toBe(
-			contentHash("edited body"),
+			contentHash("correctd body"),
 		);
 	});
 });
@@ -1253,6 +1273,43 @@ describe("replace-section", () => {
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 		expect(result.message).toContain("partially applied");
 		expect(result.message).toContain("do NOT re-run");
+		expect(result.message).not.toContain("SiYuan unreachable");
+	});
+
+	it("post-sweep walk drop after landed deletes → verificationFailed carrying the fully-swept set", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		let deletes = 0;
+		const harness = setup({
+			config: {
+				childrenFor: REPLACE_DOC,
+				armWalkError: (set) => {
+					arm = set;
+				},
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+					];
+				},
+				onDelete: () => {
+					deletes += 1;
+					// Both deletes acked — the next walk is the sweep's own
+					// verification read, after the sweep is complete.
+					if (deletes === 2) arm?.(new SiYuanNetworkError());
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.verificationFailed).toBe(true);
+		// A fully-applied write must never read as "unreachable" — the
+		// receipt rides the envelope, and nothing remains pending.
+		expect(result.partialReplace).toBe(true);
+		expect(result.newBlockId).toBe("b-new");
+		expect(result.deletedBlockIds).toEqual(["p1", "p2"]);
+		expect(result.remainingBlockIds).toEqual([]);
+		expect(result.message).toContain("partially applied");
 		expect(result.message).not.toContain("SiYuan unreachable");
 	});
 
