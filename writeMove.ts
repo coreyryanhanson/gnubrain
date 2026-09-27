@@ -6,7 +6,7 @@
 // live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
 // evidence). Tool-surface scoping stays here.
 
-import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	deriveMoveAnchor,
 	moveBlockVerified,
@@ -74,16 +74,11 @@ export async function runMoveMode(
 			destId = dest.rootId;
 			destLabel = `'${dest.title}' (${dest.rootId})`;
 		}
-		if (destId === doc.rootId) {
-			return refusedEnvelope(
-				`cannot move doc '${doc.title}' (${doc.rootId}) into itself — choose a destination outside the doc's own subtree`,
-			);
-		}
 		// The verified doc-level move: the mutation and the live-tree hpath
-		// judgment are one primitive call. The self-target case is pre-checked
-		// above (a zero-kernel-call identity check); the 7-level depth cap and
-		// ancestor moves reject synchronously kernel-side and surface verbatim
-		// (the kernel-refused arm).
+		// judgment are one primitive call. Identity and ancestor moves and
+		// the 7-level depth cap reject synchronously kernel-side and surface
+		// verbatim (the kernel-refused arm) — the flows carry no pre-mutation
+		// check of their own.
 		const outcome = await moveDocVerified(kernel, input.probe, {
 			docId: doc.rootId,
 			title: doc.title,

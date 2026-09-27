@@ -2281,8 +2281,14 @@ describe("block-level move", () => {
 		expect(result.destOutline).toBeUndefined();
 	});
 
-	it("doc-level: moving a doc into itself is refused before the kernel", async () => {
-		const harness = moveHarness();
+	it("doc-level: the kernel rejects an identity move synchronously — surfaces verbatim", async () => {
+		// No pre-mutation self-check in the flow: the kernel owns the whole
+		// synchronous-rejection class (the identity member included, live-pinned
+		// primitives-side, move.live), and the kernel-refused arm surfaces it
+		// verbatim — the same shape as the ancestor and depth-cap rejections.
+		const harness = moveHarness(() => {
+			throw new SiYuanApiError(200, -1, "Cannot move to this location");
+		});
 		const result = await harness.execute({
 			kb: "recipes",
 			mode: "move",
@@ -2290,11 +2296,15 @@ describe("block-level move", () => {
 			doc: true,
 			toDocId: "d-doc",
 		});
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain("own subtree");
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("Cannot move to this location");
+		expect(result.verificationFailed).toBeUndefined();
+		// Bare doc-level record on the kernel-refused arm: no echo tail.
+		expect(result.outline).toBeUndefined();
+		expect(result.hpath).toBeUndefined();
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
-		).toHaveLength(0);
+		).toHaveLength(1);
 	});
 
 	it("doc-level: silent rollback behind HTTP success → verified-move failed, never ok", async () => {

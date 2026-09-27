@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Doc-level `kb_write` moves surface the kernel's own synchronous rejection of
+  identity moves (moving a doc into itself) verbatim through the kernel-refused
+  arm — the flow-side pre-check is gone; the kernel owns the whole
+  ancestor-move class (identity member included, live-pinned
+  primitives-side).
+
 ### Added
 
 - **SiYuan-backed knowledge-base tools for pi.** GNUbrain registers four tools

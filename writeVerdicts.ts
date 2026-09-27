@@ -136,6 +136,8 @@ export async function mutationFailureEnvelope(
 				verificationFailed: true,
 			});
 	}
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled mutation failure");
 }
 
 /** Anchor echo wording — the agent-facing rendering of the placement

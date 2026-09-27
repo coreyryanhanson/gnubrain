@@ -616,7 +616,10 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				});
 				expect(followUp.status).toBe("ok");
 
-				// Self move refused.
+				// Identity move: the kernel's synchronous ancestor-move class
+				// (the identity member included) surfaces verbatim through the
+				// kernel-refused arm — the flow carries no pre-mutation
+				// self-check of its own.
 				const self = await w.run({
 					kb: "fixture-a",
 					mode: "move",
@@ -624,8 +627,8 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					doc: true,
 					toDocId: rootDoc,
 				});
-				expect(self.status).toBe("refused");
-				expect(String(self.message)).toContain("into itself");
+				expect(self.status).toBe("error");
+				expect(String(self.message)).toContain("Cannot move to this location");
 
 				// Own-descendant move: the primitive's kernel-refused arm surfaces
 				// the kernel's synchronous ancestor-move rejection verbatim (the

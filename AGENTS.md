@@ -251,11 +251,13 @@ re-falsifies the changed fact in the primitives.
   truncation bound, the `/` path-separator rule) live in the primitives'
   `mintTitleProblem` (`/write` entry); the rejection set remains a
   superset claim over `normalizeDocTitle`.
-- The synchronous-move-rejection fact — the kernel rejects ancestor moves
-  synchronously ("Cannot move to this location", doc-level record, no echo
-  tail) — lives in `moveDocVerified` (primitives `move.ts`); this repo
-  keeps the doc-level move record shape wording (outline + title/hpath
-  echo, no anchor/newBlockId/destOutline).
+- The synchronous-move-rejection fact — the kernel rejects ancestor and
+  identity moves synchronously ("Cannot move to this location", doc-level
+  record, no echo tail; the identity member live-pinned in the primitives'
+  `move.live`) — lives in `moveDocVerified` (primitives `move.ts`); this
+  repo keeps the doc-level move record shape wording (outline + title/hpath
+  echo, no anchor/newBlockId/destOutline) and carries no pre-mutation
+  self-check of its own.
 - The hpath-rebuild fact — `blocks.hpath` is a derived column the index
   rebuilds asynchronously after `moveDocsByID` (still the pre-move value
   immediately after the move), so the landed judgment and the echoed hpath
