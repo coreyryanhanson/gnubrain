@@ -193,10 +193,19 @@ export function blockInDocRefusal(
 	blockId: string,
 	doc: { title: string; rootId: string },
 ): string | undefined {
-	if (outcome.kind === "doc-id" || outcome.kind === "foreign") {
-		return blockInDocRefusalKind(outcome, blockId, doc);
+	// Exhaustive over all four arms: a new BlockInDocResult kind added
+	// upstream must fail typecheck here — the flows early-return on
+	// undefined, so an implicit fallthrough would read it as in-doc and
+	// proceed past the precondition.
+	switch (outcome.kind) {
+		case "doc-id":
+		case "foreign":
+			return blockInDocRefusalKind(outcome, blockId, doc);
+		case "in-doc":
+		case "absent":
+			return undefined;
 	}
-	return undefined;
+	outcome satisfies never;
 }
 
 /** Refusal wording for an insertLanded outcome, or undefined when the

@@ -157,22 +157,22 @@ export async function runReplaceSectionMode(
 				}
 				throw outcome.error;
 			case "sweep-refused": {
-				// The two terminal arms carry the certified post-sweep walk;
-				// serve it as the inline outline — the recovery evidence the
-				// wording used to send the agent to re-fetch — and seed the
+				// Any refusal arm carrying a certified post-sweep walk serves
+				// it as the inline outline — the recovery evidence the
+				// wording used to send the agent to re-fetch — and seeds the
 				// baselines from that walk (the snapshot the judgment was
-				// rendered from). Deliberately not echoTail: its SQL refresh is
-				// a post-walk read that could launder a concurrent change into
-				// the baseline on a failure path, and would add a fourth
-				// SQL-form seed site (contrast insert-rolled-back above; the
-				// success path is safe because the write landed). The root echo
-				// is addressing info, never a baseline. `partial` stopped
-				// before its verification walk — no certified snapshot to serve.
+				// rendered from). Derived from the arm's own payload, not its
+				// kind, so a future arm carrying a walk serves the outline too;
+				// `partial` declares none and stops before its verification
+				// walk — no certified snapshot to serve. Deliberately not
+				// echoTail: its SQL refresh is a post-walk read that could
+				// launder a concurrent change into the baseline on a failure
+				// path, and would add a fourth SQL-form seed site (contrast
+				// insert-rolled-back above; the success path is safe because
+				// the write landed). The root echo is addressing info, never a
+				// baseline.
 				const certifiedWalk =
-					outcome.outcome.kind === "cascade-consumed" ||
-					outcome.outcome.kind === "members-survived"
-						? outcome.outcome.postWalk
-						: undefined;
+					"postWalk" in outcome.outcome ? outcome.outcome.postWalk : undefined;
 				const refusalCtx = {
 					kb: name,
 					anchor: appendAnchorEcho(outcome.anchor),

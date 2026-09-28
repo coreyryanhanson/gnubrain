@@ -174,11 +174,19 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	// primitive fires the single pre-legs contact (reset-on-success) itself.
 	if (!input.confirmNew) {
 		const matches = await findTitleMatches(kernel, input.contact, boxId, title);
-		if (matches.kind === "duplicate") {
-			return duplicateStop(input, title, matches.rows);
-		}
-		if (matches.kind === "near") {
-			return nearMatchStop(input, title, matches.rows);
+		switch (matches.kind) {
+			case "duplicate":
+				return duplicateStop(input, title, matches.rows);
+			case "near":
+				return nearMatchStop(input, title, matches.rows);
+			case "clear":
+				break;
+			default:
+				// Exhaustive: a new guard kind added upstream must fail
+				// typecheck here — an implicit fallthrough would read it as
+				// "clear" and create past the guard. Fail closed if ever hit.
+				matches.kind satisfies never;
+				throw new Error("internal: unhandled title-guard kind");
 		}
 	}
 

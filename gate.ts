@@ -284,16 +284,23 @@ export async function gateWriteAttempt(input: {
 	try {
 		const fresh = await probeKernel(kernel, effectivePin(validation));
 		validation.probe = fresh;
-		if (fresh.verdict === "drift") {
-			return {
-				ok: false,
-				envelope: versionRefusalEnvelope(
-					fresh.kernelVersion,
-					effectivePin(validation),
-				),
-			};
+		// Exhaustive over both verdict arms: a new KernelProbeResult kind
+		// added upstream must fail typecheck here — a fallthrough would
+		// count it as writable.
+		switch (fresh.verdict) {
+			case "drift":
+				return {
+					ok: false,
+					envelope: versionRefusalEnvelope(
+						fresh.kernelVersion,
+						effectivePin(validation),
+					),
+				};
+			case "ok":
+				return { ok: true, probe: fresh };
 		}
-		return { ok: true, probe: fresh };
+		fresh satisfies never;
+		throw new Error("internal: unhandled probe verdict");
 	} catch (err) {
 		const classified = classifyKernelError(
 			err,
