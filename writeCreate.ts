@@ -170,10 +170,9 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	const { kernel, sessionId, name, boxId } = input;
 	const title = input.title;
 
-	// Guard — exact leg first; only an empty exact leg runs the scan. The
-	// primitive fires the single pre-legs contact (reset-on-success) itself.
+	// Guard — exact leg first; only an empty exact leg runs the scan.
 	if (!input.confirmNew) {
-		const matches = await findTitleMatches(kernel, input.contact, boxId, title);
+		const matches = await findTitleMatches(kernel, boxId, title);
 		switch (matches.kind) {
 			case "duplicate":
 				return duplicateStop(input, title, matches.rows);
@@ -194,7 +193,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	// mint, and the verified-create asserts — lives in the primitive; its
 	// required probe carries the gate's verdict and the drift refusal is
 	// the primitive's own arm.
-	const outcome = await createVerifiedDoc(kernel, input.probe, input.contact, {
+	const outcome = await createVerifiedDoc(kernel, input.probe, {
 		boxId,
 		title,
 		body: input.body,

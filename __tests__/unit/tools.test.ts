@@ -373,7 +373,6 @@ describe("search tool", () => {
 			validation(),
 			["recipes", "projects"],
 			"docker",
-			() => {},
 		);
 		const searches = calls.filter((c) => c.method === "search");
 		expect(searches).toHaveLength(2);
@@ -438,7 +437,6 @@ describe("search tool", () => {
 			validation(),
 			["recipes"],
 			"docker",
-			() => {},
 		);
 		expect(result.post_filtered).toBe(true);
 		expect(result.count).toBe(1);
@@ -446,14 +444,7 @@ describe("search tool", () => {
 
 	it("a single active KB degenerates to the single-call shape", async () => {
 		const { calls, client } = kernelStub();
-		await runSearchFanOut(
-			"sess-1",
-			client,
-			validation(),
-			["recipes"],
-			"q",
-			() => {},
-		);
+		await runSearchFanOut("sess-1", client, validation(), ["recipes"], "q");
 		expect(calls.filter((c) => c.method === "search")).toHaveLength(1);
 	});
 
@@ -482,7 +473,6 @@ describe("search tool", () => {
 			validation(),
 			["recipes", "projects"],
 			"q",
-			() => {},
 		);
 		// 2 KBs × (RESULT_LIMIT + 10 − (RESULT_LIMIT − 1)) = 22 hidden rows.
 		expect(String(result.truncated)).toContain(
@@ -628,7 +618,6 @@ describe("read tool", () => {
 			validation(),
 			"recipes",
 			"foreign-doc",
-			() => {},
 			ContentBaselines.create(),
 		);
 		expect(result.status).toBe("error");
@@ -654,7 +643,6 @@ describe("read tool", () => {
 			validation(),
 			"recipes",
 			"d1",
-			() => {},
 			ContentBaselines.create(),
 		);
 		const lines = String(result.outline).split("\n");

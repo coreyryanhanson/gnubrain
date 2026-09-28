@@ -117,6 +117,19 @@ tests drive the extension through it instead of touching real files.
   exception: `kb_read`'s `kb: "kbs"` discovery form short-circuits ahead
   of the gate with zero kernel calls (it must run while the breaker is
   tripped). Never call the kernel client outside this path.
+- **Kernel contact is structural, not signaled.** `runKbCall` wraps the
+  op's client in a tracked proxy (`trackKernel`) and only the op receives
+  it: any method invocation marks contact, and contact alone drives
+  `breaker.recordSuccess()`. Two load-bearing assumptions — every public
+  client method except `getVersion` is an authenticated route (`getVersion`'s
+  route needs no token, live-pinned by the primitives' `version.live`; the
+  other half — no token fails every other route — by layer 1's auth smoke
+  matrix), and an op reaches the
+  kernel only through the client the gate passed it — so a flow that
+  captured or rebuilt a client would silently stop resetting the
+  breaker. The probe is target-bound and marks nothing, so a
+  probe-only refusal (drift, 429, unreachable retry) never resets the
+  consecutive-auth-failure count.
 - **Toolsets** via `pi-tool-masking`: `gnubrain.read` (registered in
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
@@ -297,11 +310,15 @@ re-falsifies the changed fact in the primitives.
   (`tools.test.ts`).
 - The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
   cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
-  the primitives; `breaker.ts` holds it as session state); a `getVersion`
-  probe is unauthenticated so it never counts as breaker contact; a 429
-  arms the local cooldown, and any call inside an active lock extends it.
-  The extension's half (holder wiring, the genuine-class seam) is pinned
-  locally (`breaker.test.ts`).
+  the primitives; `breaker.ts` holds it as session state); the version
+  endpoint is unauthenticated so a probe never counts as breaker contact
+  (falsified live by the primitives' `version.live`), a 429 arms the
+  local cooldown, and any call inside an active lock extends it. The
+  extension's half (holder wiring, the genuine-class seam) is pinned
+  locally (`breaker.test.ts`), and the structural-contact policy on top
+  of that fact (probe marks nothing, a real call resets once) is pinned
+  by the gate unit suite (`gate.test.ts` with the prototype-shaped
+  `ProbeShapeKernel` stub, `writeCreate.test.ts`).
 - The verbatim-title fact (`writeGuard.ts` wording) — doc titles store
   verbatim, unescaped, in `blocks.content` (the HTML-escaped form lives
   only in `blocks.ial`, which the guard does not query); falsified by the

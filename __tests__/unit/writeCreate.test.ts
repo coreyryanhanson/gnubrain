@@ -442,12 +442,12 @@ describe("transport failure on the create call itself", () => {
 	});
 });
 
-describe("contact-site contract (breaker reset)", () => {
-	/** The gate's observable for the contact contract is recordSuccess: an op
-	 * that reached the kernel resets the consecutive count exactly once per
-	 * call, an op-internal zero-contact refusal (drift) must not. The per-site
-	 * contact counts (once before the guard legs, once pre-submission, none on
-	 * verification) are pinned primitives-side. */
+describe("breaker reset (structural contact)", () => {
+	/** The gate's observable is recordSuccess: an op that reached the kernel
+	 * resets the consecutive count exactly once per call, an op-internal
+	 * zero-contact refusal (drift) must not. Contact is observed
+	 * structurally — the op runs against the gate's tracked client, so any
+	 * method invocation marks it and the probe (getVersion) does not. */
 
 	const duplicateConfig: StubConfig = {
 		exactRows: [
@@ -460,7 +460,7 @@ describe("contact-site contract (breaker reset)", () => {
 		],
 	};
 
-	it("guard contact resets the count on a duplicate stop", async () => {
+	it("a duplicate stop that reached the kernel resets the count", async () => {
 		const breaker = new CircuitBreaker();
 		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
 		const { execute } = setup({ breaker, config: duplicateConfig });
@@ -469,7 +469,7 @@ describe("contact-site contract (breaker reset)", () => {
 		expect(recordSuccess).toHaveBeenCalledTimes(1);
 	});
 
-	it("confirmNew bypass still fires the pre-submission contact", async () => {
+	it("confirmNew bypass resets the count — the mint reached the kernel", async () => {
 		const breaker = new CircuitBreaker();
 		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
 		const { execute } = setup({ breaker });
@@ -478,7 +478,7 @@ describe("contact-site contract (breaker reset)", () => {
 		expect(recordSuccess).toHaveBeenCalledTimes(1);
 	});
 
-	it("drift refusal fires no contact — count not reset", async () => {
+	it("a drift refusal invokes no method — count not reset", async () => {
 		const breaker = new CircuitBreaker();
 		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
 		const { execute } = setup({

@@ -42,9 +42,6 @@ export interface WriteFlowBase {
 	/** Captured content body ("" on body-less modes). */
 	body: string;
 	baselines: ContentBaselines;
-	/** Fires at the flow's first kernel call — kernel-free refusals
-	 * (shape, grant, drift) must not reset the breaker's consecutive count. */
-	contact: () => void;
 	/** The gate's probe verdict, stamped by prepareWrite's caller — the
 	 * session-start value, or the fresh re-probe on the retry path. The
 	 * verdict primitives require it; the gate refuses the

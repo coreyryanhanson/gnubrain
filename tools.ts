@@ -103,7 +103,7 @@ function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				hooks,
 				params.kb,
 				"array",
-				async (kernel, validation, names, contact) => {
+				async (kernel, validation, names) => {
 					const boxes = names.map((n) => resolveBox(n, validation));
 					const certified = certifySelect(params.sql);
 					if (!certified.ok) {
@@ -123,7 +123,6 @@ function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					if (problem !== undefined) {
 						return errorEnvelope(`internal: ${problem}`);
 					}
-					contact();
 					const rows = await kernel.query(rebuilt.stmt);
 					return buildQueryEnvelope(
 						ctx.sessionManager.getSessionId(),
@@ -199,14 +198,13 @@ export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				hooks,
 				params.kb,
 				"array",
-				(kernel, validation, names, contact) =>
+				(kernel, validation, names) =>
 					runSearchFanOut(
 						ctx.sessionManager.getSessionId(),
 						kernel,
 						validation,
 						names,
 						params.query,
-						contact,
 					),
 			);
 			return textResult(envelope);
@@ -220,13 +218,11 @@ export async function runSearchFanOut(
 	validation: SessionValidation,
 	names: string[],
 	query: string,
-	contact: () => void,
 ): Promise<Envelope> {
 	// One kernel call per resolved KB rides the barrel's searchBoxes — the
 	// shared pre-filter window (a hit-rich KB silently dropping the other
 	// KBs' matches) is kernel behavior the primitives own; this side owns
 	// resolve, echo, and spill.
-	contact();
 	const results = await searchBoxes(kernel, {
 		query,
 		boxIds: names.map((name) => resolveBox(name, validation)),
@@ -345,7 +341,7 @@ function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 				hooks,
 				params.kb,
 				"single",
-				(kernel, validation, names, contact) => {
+				(kernel, validation, names) => {
 					// The missing-docId refusal lives inside the gated op, after
 					// the gate resolved a valid kb: a typo'd kb with no docId must
 					// get the unknown-KB rejection, not the guidance. Returned as
@@ -369,7 +365,6 @@ function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 						validation,
 						names[0] as string,
 						docId,
-						contact,
 						hooks.baselines,
 					);
 				},
@@ -385,7 +380,6 @@ export async function runRead(
 	validation: SessionValidation,
 	name: string,
 	docId: string,
-	contact: () => void,
 	baselines: ContentBaselines,
 ): Promise<Envelope> {
 	const boxId = resolveBox(name, validation);
@@ -393,7 +387,6 @@ export async function runRead(
 	// docMarkdown pin. The kernel route takes a bare stmt (no bind
 	// params), so trusted ids ride escaped literals (the primitives'
 	// ownership read).
-	contact();
 	const rootId = await ownership(kernel, boxId, docId);
 	if (rootId === undefined) {
 		return noSuchDocEnvelope(name, docId);

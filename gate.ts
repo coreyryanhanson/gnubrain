@@ -256,10 +256,11 @@ type WriteProbeGate =
  * Write-path gate: a successful probe must precede any write. Version
  * drift refuses statically; an unreachable kernel retries the probe per write
  * attempt — a still-failed retry refuses only that write. Returns the stamp
- * (the verdict to carry into the flow) on success. The probe does not fire
- * `contact`: the breaker's reset-on-success contract counts only
- * authenticated calls, and getVersion is unauthenticated — the op's own
- * contact covers any write that actually reaches the kernel. A probe that
+ * (the verdict to carry into the flow) on success. The probe marks no
+ * kernel contact: the breaker's reset-on-success contract counts only
+ * authenticated calls, and getVersion is unauthenticated — the tracked
+ * client excludes it, while any write that actually reaches the kernel
+ * marks contact through that same client. A probe that
  * comes back 429/auth classifies like any kernel call: the 429 arms the
  * local cooldown (retrying writes then refuse locally with zero kernel
  * calls — any call inside an active lock extends it), and the verdict stays
@@ -334,33 +335,79 @@ function withPartialState(envelope: Envelope, err: unknown): Envelope {
 }
 
 /**
+ * Marks kernel contact on any method invocation except the version probe:
+ * the breaker's reset-on-success contract counts only authenticated calls,
+ * and getVersion is unauthenticated — gateWriteAttempt probes with this
+ * same tracked client on the retry path. Every other method an op can
+ * reach is an authenticated route, so invocation = contact; an op-internal
+ * refusal that invokes no method (shape, missing docId, drift) stays
+ * unmarked. Property reads (baseUrl) pass through untouched, and every
+ * method access returns a fresh target-bound wrapper — never a
+ * wrapper-on-wrapper. The trap wraps any function-valued property read,
+ * inherited Object.prototype members included — a destructure is safe
+ * (the wrapper is already target-bound), but no op coerces the client
+ * (a `toString` read would mark without a kernel call) or constructs
+ * through client.constructor (escaping the trap entirely); one that
+ * ever did would need the wrapping restricted to the client's own and
+ * prototype methods.
+ * Per-op by construction: runKbCall builds one tracked client per gated
+ * call, so concurrent ops share no flag.
+ */
+function trackKernel<K extends object>(kernel: K, mark: () => void): K {
+	return new Proxy(kernel, {
+		get(target, prop, receiver) {
+			const value = Reflect.get(target, prop, receiver);
+			if (typeof value !== "function") {
+				return value;
+			}
+			// getVersion is the probe: it must run bound to the raw target but
+			// mark nothing. Returning it unwrapped would hand it `this = proxy`,
+			// and its own internal `this.request` would re-enter this trap and
+			// mark contact for an unauthenticated route.
+			return (...args: unknown[]) => {
+				if (prop !== "getVersion") mark();
+				return (value as (...a: unknown[]) => unknown).apply(target, args);
+			};
+		},
+	});
+}
+
+/**
  * Guard + run + classify. Reads never check the probe verdict: the kernel
  * attempt happens and its failure maps to the error envelope, so reads
  * recover per-call with no recovery step once the kernel returns. The op
- * signals actual kernel contact via `contact` — op-internal refusals (shape,
- * missing docId) made zero kernel calls and must not reset the breaker's
+ * runs against a tracked client: kernel contact is observed structurally
+ * (any method invocation), so op-internal refusals that make zero kernel
+ * calls (shape, missing docId) cannot reset the breaker's
  * consecutive-auth-failure count.
  */
-export async function runKbCall(
+export async function runKbCall<K extends object>(
 	input: {
 		validation: SessionValidation;
 		breaker: CircuitBreaker;
+		/** The op's client — absent when the session built no kernel. Ops
+		 * receive the tracked wrapper (or undefined) and own the
+		 * missing-kernel refusal inside the gated op. */
+		kernel?: K | undefined;
 		kb: unknown;
 		arity: KbArity;
 		now?: number;
 	},
-	op: (names: string[], contact: () => void) => Promise<Envelope>,
+	op: (names: string[], kernel: K | undefined) => Promise<Envelope> | Envelope,
 ): Promise<Envelope> {
 	const gate = guardCall(input);
 	if (!gate.ok) return gate.envelope;
 
 	let kernelContact = false;
-	const contact = (): void => {
-		kernelContact = true;
-	};
+	const tracked =
+		input.kernel === undefined
+			? undefined
+			: trackKernel(input.kernel, () => {
+					kernelContact = true;
+				});
 	let result: Envelope;
 	try {
-		result = await op(gate.names, contact);
+		result = await op(gate.names, tracked);
 	} catch (err) {
 		const now = input.now ?? Date.now();
 		const classified = classifyKernelError(err, input.breaker, now);
@@ -406,7 +453,7 @@ export async function runKbCall(
  * tripped breaker/cooldown, reordering the pinned gate. kb_read's `kb:
  * "kbs"` discovery form deliberately bypasses this helper (it must run
  * while the breaker is tripped); see tools.ts. */
-export async function runGatedTool<K>(
+export async function runGatedTool<K extends object>(
 	hooks: {
 		getValidation(): SessionValidation | undefined;
 		getKernel(): K | undefined;
@@ -418,7 +465,6 @@ export async function runGatedTool<K>(
 		kernel: K,
 		validation: SessionValidation,
 		names: string[],
-		contact: () => void,
 	) => Promise<Envelope> | Envelope,
 ): Promise<Envelope> {
 	const validation = hooks.getValidation();
@@ -427,12 +473,12 @@ export async function runGatedTool<K>(
 	}
 	const kernel = hooks.getKernel();
 	return runKbCall(
-		{ validation, breaker: hooks.breaker, kb, arity },
-		async (names, contact) => {
-			if (kernel === undefined) {
+		{ validation, breaker: hooks.breaker, kernel, kb, arity },
+		async (names, tracked) => {
+			if (tracked === undefined) {
 				return errorEnvelope(NOT_READY_KERNEL);
 			}
-			return op(kernel, validation, names, contact);
+			return op(tracked, validation, names);
 		},
 	);
 }

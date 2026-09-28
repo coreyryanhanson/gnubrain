@@ -88,7 +88,6 @@ async function prepareWrite(
 	kernel: WriteKernelClient,
 	validation: SessionValidation,
 	names: string[],
-	contact: () => void,
 	ctx: ExtensionContext,
 	signal: AbortSignal | undefined,
 ): Promise<Envelope> {
@@ -155,14 +154,13 @@ async function prepareWrite(
 		state: hooks.grantState,
 	});
 	if (grant !== null) return grant;
-	// Write-path probe gate: a successful probe (or a
-	// per-attempt retry) must precede any write. The probe is
-	// unauthenticated, so it does not fire `contact` — the breaker's
-	// reset-on-success contract counts only authenticated calls;
-	// the op's own contact covers any write that reaches the kernel.
-	// The returned verdict is the stamp the flow input carries: the
-	// cached-ok verdict on the cached path, the fresh re-probe result on
-	// the retry path.
+	// Write-path probe gate: a successful probe (or a per-attempt retry)
+	// must precede any write. The probe is unauthenticated, so it marks no
+	// kernel contact — the breaker's reset-on-success contract counts only
+	// authenticated calls, and the gate's tracked client marks nothing for
+	// getVersion. The returned verdict is the stamp the flow input
+	// carries: the cached-ok verdict on the cached path, the fresh
+	// re-probe result on the retry path.
 	const probeGate = await gateWriteAttempt({
 		validation,
 		kernel,
@@ -176,7 +174,6 @@ async function prepareWrite(
 		boxId,
 		body: body ?? "",
 		baselines: hooks.baselines,
-		contact,
 		probe: probeGate.probe,
 	};
 	if (p.mode === "create") {
@@ -192,7 +189,6 @@ async function prepareWrite(
 	// table) was already validated by modeShapeProblem at the entry, and
 	// the per-KB grant already resolved before the probe gate — a denied
 	// write costs zero kernel round-trips.
-	contact();
 	const target = await resolveDocTarget(kernel, boxId, name, p.docId as string);
 	if ("status" in target) return target;
 	switch (p.mode) {
@@ -233,14 +229,13 @@ export function registerWriteToolAndToolset(
 				hooks,
 				params.kb,
 				"single",
-				(kernel, validation, names, contact) =>
+				(kernel, validation, names) =>
 					prepareWrite(
 						params as WriteParams,
 						hooks,
 						kernel,
 						validation,
 						names,
-						contact,
 						ctx,
 						signal,
 					),

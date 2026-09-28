@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
+	type NotebookList,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import {
@@ -30,8 +31,29 @@ function kernelStub(getVersion: () => Promise<string> = async () => "3.8.4") {
 				calls.push("listNotebooks");
 				throw new Error("not used");
 			},
+			async query() {
+				calls.push("query");
+				return [];
+			},
 		},
 	};
+}
+
+// Mirrors SiYuanKernelClient's shape: getVersion is a prototype method that
+// reaches the transport through another method via `this`. A this-free stub
+// cannot falsify the probe-contact contract — the tracked client's exclusion
+// works by binding, and only a member-calling getVersion exercises it.
+class ProbeShapeKernel {
+	readonly baseUrl = "http://127.0.0.1:6806";
+	async getVersion(): Promise<string> {
+		return this.request("/api/system/version");
+	}
+	async request(_path: string): Promise<string> {
+		return "3.8.4";
+	}
+	async listNotebooks(): Promise<NotebookList> {
+		return { notebooks: [] };
+	}
 }
 
 describe("kb param contract", () => {
@@ -187,12 +209,13 @@ describe("runKbCall version-drift warning", () => {
 			{
 				validation: v,
 				breaker: new CircuitBreaker(),
+				kernel: kernelStub().client,
 				kb: "recipes",
 				arity: "single",
 				now: NOW,
 			},
-			async (_names, contact) => {
-				contact();
+			async (_names, kernel) => {
+				await kernel?.query();
 				return { status: "ok", message: "2 rows" };
 			},
 		);
@@ -213,12 +236,13 @@ describe("runKbCall version-drift warning", () => {
 			{
 				validation: v,
 				breaker: new CircuitBreaker(),
+				kernel: kernelStub().client,
 				kb: "recipes",
 				arity: "single",
 				now: NOW,
 			},
-			async (_names, contact) => {
-				contact();
+			async (_names, kernel) => {
+				await kernel?.query();
 				return { status: "ok", message: "2 rows" };
 			},
 		);
@@ -381,18 +405,35 @@ describe("runKbCall error classification", () => {
 		const v = validation();
 		let fail = true;
 		const envelope = await runKbCall(
-			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
-			async (_names, contact) => {
+			{
+				validation: v,
+				breaker,
+				kernel: kernelStub().client,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, kernel) => {
 				if (fail) throw new SiYuanAuthError(403);
-				contact();
+				await kernel?.query();
 				return { status: "ok", message: "" };
 			},
 		);
 		expect(envelope.status).toBe("error");
 		fail = false;
 		await runKbCall(
-			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
-			async () => ({ status: "ok", message: "" }),
+			{
+				validation: v,
+				breaker,
+				kernel: kernelStub().client,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, kernel) => {
+				await kernel?.query();
+				return { status: "ok", message: "" };
+			},
 		);
 		fail = true;
 		await runKbCall(
@@ -606,16 +647,23 @@ describe("write gate", () => {
 		expect(v.probe.verdict).toBe("drift");
 	});
 
-	it("a successful probe retry does not reset the breaker's consecutive count — the probe is unauthenticated", async () => {
+	it("an auth failure after a probe retry trips the breaker — classification sees the thrown error", async () => {
 		const breaker = new CircuitBreaker();
 		breaker.recordAuthFailure();
 		breaker.recordAuthFailure();
 		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel } = kernelStub();
 		const envelope = await runKbCall(
-			{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
-			async (_names) => {
-				await gateWriteAttempt({ validation: v, kernel, breaker });
+			{
+				validation: v,
+				breaker,
+				kernel,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, tracked) => {
+				await gateWriteAttempt({ validation: v, kernel: tracked!, breaker });
 				throw new SiYuanAuthError(403); // token still bad after the probe
 			},
 		);
@@ -624,6 +672,40 @@ describe("write gate", () => {
 		// 2 previous failures + this one = tripped; the probe must not have
 		// cleared the count.
 		expect(breaker.tripped).toBe(true);
+	});
+
+	it("a probe-only write refusal resets no breaker count — the probe marks no contact", async () => {
+		const breaker = new CircuitBreaker();
+		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
+		const v = validation({ probe: { verdict: "unreachable" } });
+		const envelope = await runKbCall(
+			{
+				validation: v,
+				breaker,
+				kernel: new ProbeShapeKernel(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, tracked) => {
+				// A property read passes through unmarked — the probe
+				// succeeds below, so this line is the only property read
+				// through the proxy in this op.
+				void tracked!.baseUrl;
+				// The retry-path probe runs against the tracked client; the
+				// write itself refuses above the mutation (probe-only).
+				await gateWriteAttempt({
+					validation: v,
+					kernel: tracked!,
+					breaker,
+				});
+				return { status: "refused", message: "probe-only refusal" };
+			},
+		);
+		expect(v.probe.verdict).toBe("ok"); // the probe did reach the kernel
+		expect(envelope.status).toBe("refused");
+		// An unauthenticated probe must not reset the consecutive count.
+		expect(recordSuccess).not.toHaveBeenCalled();
 	});
 });
 
