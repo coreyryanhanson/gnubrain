@@ -4,6 +4,7 @@
 // `status: "ok"` plus their payload.
 
 import { AUTH_DODGE_THRESHOLD as BREAKER_THRESHOLD } from "siyuan-kb-primitives";
+import type { VerificationCause } from "siyuan-kb-primitives/write";
 
 type EnvelopeStatus = "ok" | "near_matches" | "duplicate" | "error" | "refused";
 
@@ -54,6 +55,32 @@ export function takePartialReplace(
 	if (typeof err !== "object" || err === null) return undefined;
 	return (err as { partialReplaceState?: PartialReplaceState })
 		.partialReplaceState;
+}
+
+/** The envelope marker carrying a verification-phase auth/lock event (401
+ * or the kernel's per-IP 429) out of a write flow. The primitives classify
+ * verification-phase auth errors into `verification-failed` instead of
+ * rethrowing — the mutation already acked — so the breaker accounting the
+ * rethrow used to receive in runKbCall's catch instead rides the verdict
+ * envelope under this key. Same role as `partialReplaceState` above:
+ * structured state attached to a result, read by the gate, never worded
+ * here. */
+export type AuthLockEvent = Extract<
+	VerificationCause,
+	{ kind: "auth" | "rate-limit" }
+>;
+
+export function authLockEventOf(result: unknown): AuthLockEvent | undefined {
+	if (typeof result === "object" && result !== null && "authEvent" in result) {
+		const event = (result as { authEvent: unknown }).authEvent;
+		if (typeof event === "object" && event !== null) {
+			const kind = (event as { kind?: unknown }).kind;
+			if (kind === "auth" || kind === "rate-limit") {
+				return event as AuthLockEvent;
+			}
+		}
+	}
+	return undefined;
 }
 
 /** Unreachable-kernel envelope — one home for the sentence; the status

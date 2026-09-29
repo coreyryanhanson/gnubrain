@@ -2,8 +2,10 @@
 // (authLockDodge): the schedule-shaped judgment — the trip threshold held in
 // reserve under the kernel's 6-failure per-IP lock, the 429 cooldown floor,
 // deadline extension, reset-on-success — lives beside authLockSeconds in
-// siyuan-kb-primitives. This side owns only session scoping, the genuine
-// SiYuanRateLimitError → event seam, and the wording state.
+// siyuan-kb-primitives. This side owns only session scoping, the
+// SiYuanRateLimitError → event seams (a thrown error from the client, or a
+// verification-phase 429 verdict via recordRateLimitFromVerdict), and the
+// wording state.
 //
 // Session-lifetime by design, and deliberately not persisted across sessions
 // or processes: pi re-registers the extension per session, so a fresh
@@ -48,6 +50,25 @@ export class CircuitBreaker {
 		this.state = authLockDodge(
 			this.state,
 			{ kind: "rate-limit", servedRetryAfterSeconds: err.retryAfterSeconds },
+			now,
+		);
+	}
+
+	/** Verdict-sourced 429 — same accounting as `recordRateLimit` for a
+	 * rate-limit event that arrived inside a verification-failed envelope
+	 * instead of as a thrown error (the primitives classify
+	 * verification-phase auth/429 because the mutation already acked; the
+	 * served Retry-After rides the verdict's cause leg). The primitives'
+	 * `instanceof` classifier is the trust boundary, so no synthetic-shape
+	 * guard is needed here. */
+	recordRateLimitFromVerdict(
+		servedRetryAfterSeconds: number | undefined,
+		now: number = Date.now(),
+	): void {
+		this.lastRetryAfterSeconds = servedRetryAfterSeconds;
+		this.state = authLockDodge(
+			this.state,
+			{ kind: "rate-limit", servedRetryAfterSeconds },
 			now,
 		);
 	}

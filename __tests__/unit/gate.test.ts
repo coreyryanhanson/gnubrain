@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	AUTH_DODGE_THRESHOLD,
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
@@ -7,6 +8,7 @@ import {
 	type NotebookList,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
+import { errorEnvelope } from "../../envelope.js";
 import {
 	gateWriteAttempt,
 	guardCall,
@@ -728,5 +730,52 @@ describe("reads never gate on the cached unreachable verdict", () => {
 		);
 		expect(kernelCalls).toBe(1);
 		expect(envelope.status).toBe("ok");
+	});
+});
+
+describe("runKbCall verification-phase auth accounting", () => {
+	const gatedWrite = (breaker: CircuitBreaker) => ({
+		validation: validation(),
+		breaker,
+		kernel: kernelStub().client,
+		kb: "recipes" as const,
+		arity: "single" as const,
+		now: NOW,
+	});
+
+	it("a rate-limit verdict arms the cooldown — reset-on-success is skipped", async () => {
+		const breaker = new CircuitBreaker();
+		const envelope = await runKbCall(gatedWrite(breaker), async () =>
+			errorEnvelope(
+				"the kernel's per-IP auth lock refused the write's verification read (HTTP 429): SiYuan rate-limited the request (HTTP 429, Retry-After 90s)",
+				{
+					kb: "recipes",
+					verificationFailed: true,
+					authEvent: { kind: "rate-limit", retryAfterSeconds: 90 },
+				},
+			),
+		);
+		// The verdict carried the served Retry-After and the cooldown is
+		// armed: the transport success did not reset the breaker over it.
+		expect(envelope.status).toBe("error");
+		expect(breaker.inCooldown(NOW)).toBe(true);
+		expect(breaker.lastRetryAfterSeconds).toBe(90);
+	});
+
+	it("auth verdicts accumulate to the trip threshold instead of resetting", async () => {
+		const breaker = new CircuitBreaker();
+		for (let i = 0; i < AUTH_DODGE_THRESHOLD; i++) {
+			await runKbCall(gatedWrite(breaker), async () =>
+				errorEnvelope(
+					"SiYuan rejected the write's verification read (auth failure): SiYuan auth rejected the request (HTTP 401)",
+					{
+						kb: "recipes",
+						verificationFailed: true,
+						authEvent: { kind: "auth" },
+					},
+				),
+			);
+		}
+		expect(breaker.tripped).toBe(true);
 	});
 });

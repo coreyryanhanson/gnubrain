@@ -33,6 +33,7 @@ import {
 	refusedEnvelope,
 	versionRefusalEnvelope,
 	STALE_TARGET_GUIDANCE,
+	type AuthLockEvent,
 	type Envelope,
 } from "./envelope.js";
 
@@ -77,6 +78,30 @@ export function verificationReadsFailedMessage(detail: string): string {
 		`${detail} — the write's ` +
 		`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
 		`(kb_read) and confirm the write landed before repeating it`
+	);
+}
+
+/** The auth/lock twin of verificationReadsFailedMessage: the verification
+ * read itself failed on an auth event (a 401/403 or the kernel's per-IP
+ * 429 lock). The primitives classify these instead of rethrowing because
+ * the mutation has already acked — so the wording must keep the
+ * may-already-be-applied fact the raw rethrow erased, and add the lock
+ * fact: every authed call re-arms the lock, so the wait comes first. The
+ * marker type/guard live in envelope.ts beside `partialReplaceState`, the
+ * other gate-read result marker. */
+function verificationAuthEventMessage(
+	cause: AuthLockEvent,
+	detail: string,
+): string {
+	const lead =
+		cause.kind === "auth"
+			? "SiYuan rejected the write's verification read (auth failure)"
+			: "the kernel's per-IP auth lock refused the write's verification read (HTTP 429)";
+	return (
+		`${lead}: ${detail} — the write call returned success, so it may ` +
+		`already be applied; do NOT retry now (every authed call re-arms the ` +
+		`lock) — wait out the lockout, then re-fetch the outline (kb_read) ` +
+		`and confirm the write landed before repeating it`
 	);
 }
 
@@ -128,6 +153,20 @@ export async function mutationFailureEnvelope(
 				...(await opts.tail()),
 			});
 		case "verification-failed":
+			if (
+				outcome.cause.kind === "auth" ||
+				outcome.cause.kind === "rate-limit"
+			) {
+				return errorEnvelope(
+					verificationAuthEventMessage(outcome.cause, outcome.detail),
+					{
+						kb: opts.kb,
+						...opts.extra,
+						verificationFailed: true,
+						authEvent: outcome.cause,
+					},
+				);
+			}
 			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
 				kb: opts.kb,
 				...opts.extra,
@@ -345,6 +384,20 @@ export function createVerdictEnvelope(
 		case "kernel-refused":
 			return errorEnvelope(outcome.message, { kb: ctx.name });
 		case "verification-failed":
+			if (
+				outcome.cause.kind === "auth" ||
+				outcome.cause.kind === "rate-limit"
+			) {
+				return errorEnvelope(
+					verificationAuthEventMessage(outcome.cause, outcome.detail),
+					{
+						docId: outcome.returnedId,
+						kb: ctx.name,
+						verificationFailed: true,
+						authEvent: outcome.cause,
+					},
+				);
+			}
 			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
 				docId: outcome.returnedId,
 				kb: ctx.name,

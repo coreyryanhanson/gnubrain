@@ -129,7 +129,12 @@ tests drive the extension through it instead of touching real files.
   captured or rebuilt a client would silently stop resetting the
   breaker. The probe is target-bound and marks nothing, so a
   probe-only refusal (drift, 429, unreachable retry) never resets the
-  consecutive-auth-failure count.
+  consecutive-auth-failure count. The one exception to contact-drives-
+  reset: a verification-phase auth/lock verdict (`authEvent` marker on the
+  envelope — the primitives classify verification-phase 401/429 into
+  `verification-failed` because the mutation already acked) is counted
+  instead, and reset-on-success is skipped for that op — the kernel's
+  per-IP FailCount advanced behind the transport success.
 - **Toolsets** via `pi-tool-masking`: `gnubrain.read` (registered in
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.

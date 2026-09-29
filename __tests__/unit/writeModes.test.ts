@@ -1757,6 +1757,39 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});
 
+	it("a verification-phase 429 keeps the may-already-be-applied fact the rethrow erased", async () => {
+		// The mutation acked, the post-delete walk hit the per-IP lock: the
+		// verdict must word the lock (every authed call re-arms it), keep the
+		// applied fact, and carry the authEvent marker runKbCall's breaker
+		// accounting consumes.
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: { "d-doc": [walkBlock("p1", "p", "", "doomed")] },
+				armWalkError: (set) => {
+					arm = set;
+				},
+				onDelete: () => arm?.(new SiYuanRateLimitError(429, 90)),
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("error");
+		expect(result.verificationFailed).toBe(true);
+		expect(result.message).toContain("may already be applied");
+		expect(result.message).toContain("re-arms the");
+		expect(result.authEvent).toEqual({
+			kind: "rate-limit",
+			retryAfterSeconds: 90,
+		});
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+	});
+
 	it("a transport drop mid-delete reads as outcome-unverified with the outline attached, never a blind-retry invitation", async () => {
 		// The delete may already be applied when the transport fails — the
 		// primitive's transport-unverified arm, not runKbCall's retry

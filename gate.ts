@@ -17,6 +17,7 @@ import {
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import {
+	authLockEventOf,
 	breakerRefusalEnvelope,
 	configRefusalEnvelope,
 	errorEnvelope,
@@ -426,7 +427,22 @@ export async function runKbCall<K extends object>(
 	// A call that actually reached the kernel resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone. This
 	// includes a malformed result: the transport succeeded, so contact is real.
-	if (kernelContact) input.breaker.recordSuccess();
+	// Exception: a verification-phase auth/lock verdict (the primitives
+	// classify those instead of rethrowing — the mutation already acked, so
+	// the marker replaces the accounting the rethrow used to feed in this
+	// function's catch). The kernel's per-IP FailCount advanced behind this
+	// op's transport success, so the event is counted and reset-on-success
+	// is skipped — resetting would let the next write pass a gate the
+	// kernel is actively refusing.
+	const now = input.now ?? Date.now();
+	const authEvent = authLockEventOf(result);
+	if (authEvent?.kind === "auth") {
+		input.breaker.recordAuthFailure();
+	} else if (authEvent?.kind === "rate-limit") {
+		input.breaker.recordRateLimitFromVerdict(authEvent.retryAfterSeconds, now);
+	} else if (kernelContact) {
+		input.breaker.recordSuccess();
+	}
 	// An op that resolves to a non-envelope (a flow's union discrimination
 	// letting a `null` transport result through) must render as an error
 	// envelope, never a TypeError out of execute.
