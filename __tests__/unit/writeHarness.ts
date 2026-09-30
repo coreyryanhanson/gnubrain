@@ -9,6 +9,7 @@
 import {
 	BLOCK_CONTENTS_STMT_HEAD,
 	BLOCK_IN_DOC_STMT_HEAD,
+	GUARD_NEAR_CAP,
 	GUARD_STMT_HEAD,
 	OWNERSHIP_STMT_HEAD,
 	REFERRING_HPATHS_STMT_HEAD,
@@ -210,10 +211,12 @@ export function writeKernelStub(config: StubConfig = {}) {
 			}
 			// Create-flow routes:
 			if (stmt.startsWith(GUARD_STMT_HEAD)) {
-				// The exact leg has no LIMIT; the near scan always ends LIMIT
-				// 21. (A " OR " check would misroute a fixture title that
-				// embeds " OR " — the exact pattern carries the title verbatim.)
-				return stmt.includes("LIMIT")
+				// The exact leg is a verbatim `content =` equality and carries
+				// no LIMIT; the near scan always ends LIMIT (cap + 1). Keying
+				// on the terminating LIMIT is spoof-proof: the exact leg always
+				// ends in the title's closing quote, so no embeddable title
+				// text (" OR ", "LIMIT", even "LIMIT 21") can match it.
+				return stmt.endsWith(`LIMIT ${GUARD_NEAR_CAP + 1}`)
 					? (config.nearRows ?? [])
 					: (config.exactRows ?? []);
 			}

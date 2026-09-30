@@ -5,6 +5,7 @@
 // statement shapes) live in siyuan-kb-primitives, beside the builders.
 
 import { describe, expect, it } from "vitest";
+import { GUARD_STMT_HEAD } from "siyuan-kb-primitives";
 import { validateMintTitle } from "../../writeGuard.js";
 import { base, setup } from "./writeHarness.js";
 
@@ -39,7 +40,7 @@ describe("mint policy", () => {
 });
 
 describe("title guard", () => {
-	it("runs the exact leg against the single notebook, ASCII-cased variants included via LIKE", async () => {
+	it("runs the exact leg as a verbatim equality against the single notebook", async () => {
 		const { execute, calls } = setup({
 			config: {
 				exactRows: [
@@ -52,24 +53,29 @@ describe("title guard", () => {
 				],
 			},
 		});
-		// Submitted casing differs only in ASCII case — the exact leg matches
-		// (LIKE is ASCII-case-insensitive) and returns a uniform duplicate stop.
-		const r = await execute({ ...base, topic: "Docker Networking" });
+		// Verbatim submission: the exact leg is a `content =` equality
+		// (BINARY collation — case-sensitive), so only the verbatim title
+		// stops as a duplicate; an ASCII case variant falls to the near leg
+		// (LIKE folds case there) and classifies `near`.
+		const r = await execute({ ...base, topic: "docker networking" });
 		expect(r.status).toBe("duplicate");
 		const exact = calls.find(
-			(c) => c.method === "query" && String(c.args).includes("LIKE"),
+			(c) => c.method === "query" && String(c.args).includes("content ="),
 		);
 		expect(String(exact?.args)).toContain("box = 'nb-r'");
 		expect(String(exact?.args)).toContain("type = 'd'");
+		expect(String(exact?.args)).toContain("content = 'docker networking'");
+		expect(String(exact?.args)).not.toContain("LIKE");
+		expect(String(exact?.args)).not.toContain("LIMIT");
 	});
 
 	it("matches HTML-special titles verbatim — the kernel stores them unescaped", async () => {
 		const { execute, calls } = setup();
 		await execute({ ...base, topic: "R&D" });
 		const exact = calls.find(
-			(c) => c.method === "query" && String(c.args).includes("LIKE"),
+			(c) => c.method === "query" && String(c.args).includes("content ="),
 		);
-		expect(String(exact?.args)).toContain("R&D");
+		expect(String(exact?.args)).toContain("content = 'R&D'");
 	});
 
 	it("separator-only titles mint instead of failing on malformed SQL", async () => {
@@ -181,9 +187,10 @@ describe("title guard", () => {
 		});
 		const r = await execute({ ...base, confirmNew: true });
 		expect(r.status).toBe("ok");
-		// Only verified-create's read-back runs — no LIKE (guard) statements.
+		// Only verified-create's read-back runs — no guard leg (exact or near)
+		// fires behind confirmNew.
 		const guardQueries = calls.filter(
-			(c) => c.method === "query" && String(c.args).includes("LIKE"),
+			(c) => c.method === "query" && String(c.args).startsWith(GUARD_STMT_HEAD),
 		);
 		expect(guardQueries).toHaveLength(0);
 	});
