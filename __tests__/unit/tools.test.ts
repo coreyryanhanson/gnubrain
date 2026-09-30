@@ -321,7 +321,6 @@ describe("spill budgets", () => {
 function kernelStub() {
 	const calls: { method: string; args: unknown }[] = [];
 	const client: KernelReadClient = {
-		baseUrl: "http://127.0.0.1:6806",
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
 			return [{ id: "b1", root_id: "d1", box: "nb-r" }];
