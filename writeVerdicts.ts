@@ -7,8 +7,10 @@
 // a map that forgets an arm changes the rendered message and fails the
 // suites, which is the catch, not the hazard).
 //
-// Tool-side policy refusals (grant, breaker, 429 cooldown, mint title)
-// never cross the boundary and keep their existing homes; the fresh-content
+// Tool-side policy refusals (grant, breaker, 429 cooldown) never cross the
+// boundary and keep their existing homes; the mint-title judgment runs on
+// both sides — the tool-surface pre-flight and the primitives' own
+// `mint-title` arm, worded once by mintTitleMessage. The fresh-content
 // judgment itself moved down (the primitives' checkFreshContent) — only
 // its refusal envelope stays tool-side (freshContentRefusal, writeResult).
 
@@ -28,6 +30,7 @@ import type {
 	MoveLandedOutcome,
 	SweepRefusal,
 } from "siyuan-kb-primitives/write";
+import { mintTitleMessage } from "./writeGuard.js";
 import {
 	errorEnvelope,
 	refusedEnvelope,
@@ -403,6 +406,12 @@ export function createVerdictEnvelope(
 				kb: ctx.name,
 				verificationFailed: true,
 			});
+		case "mint-title":
+			// The primitives run the mint-title judgment internally; the
+			// tool-surface pre-flight (validateMintTitle) normally refuses
+			// first, so this arm is defense-in-depth behind it — same words,
+			// one home.
+			return errorEnvelope(mintTitleMessage(outcome.problem));
 		case "drift":
 			return driftRefusal(outcome.observed);
 	}

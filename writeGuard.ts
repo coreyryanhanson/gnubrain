@@ -29,7 +29,12 @@ export function validateMintTitle(
 	return { ok: false, message: mintTitleMessage(problem) };
 }
 
-function mintTitleMessage(problem: MintTitleProblem): string {
+/** Agent-facing wording over the primitives' `MintTitleProblem` — one
+ * home, two call sites: the tool-surface pre-flight (validateMintTitle)
+ * and the flow-side `mint-title` verdict arm (the primitives run the
+ * same judgment internally, so this arm is defense-in-depth behind the
+ * pre-flight, worded identically by construction). */
+export function mintTitleMessage(problem: MintTitleProblem): string {
 	switch (problem.kind) {
 		case "empty":
 			return "title is empty after trim — supply a non-empty title";

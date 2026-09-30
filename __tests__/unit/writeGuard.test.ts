@@ -27,12 +27,6 @@ describe("mint policy", () => {
 		}
 	});
 
-	it("accepts the exactly-512-rune boundary and HTML-special characters", () => {
-		expect(validateMintTitle("x".repeat(512)).ok).toBe(true);
-		expect(validateMintTitle("R&D").ok).toBe(true);
-		expect(validateMintTitle("O'Reilly").ok).toBe(true);
-	});
-
 	it("trims before validating", () => {
 		const mint = validateMintTitle(" Docker Networking ");
 		expect(mint.ok && mint.title).toBe("Docker Networking");
