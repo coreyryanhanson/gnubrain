@@ -21,7 +21,7 @@ import {
 import type {
 	AppendAnchor,
 	CreateDocOutcome,
-	EditJudgedVerdict,
+	EditVerifyOutcome,
 	InsertLandedOutcome,
 	MutationFailure,
 	MoveAnchor,
@@ -328,7 +328,7 @@ export function moveLandedRefusal(
  * landed. `lastServed` is kernel content shown verbatim — the truncation
  * is a detail of this sentence, not of the primitive. */
 export function editVerifyFailureReason(
-	outcome: EditJudgedVerdict,
+	outcome: EditVerifyOutcome,
 	blockId: string,
 	doc: { title: string; rootId: string },
 ): string | undefined {
