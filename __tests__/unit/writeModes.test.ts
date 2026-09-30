@@ -486,14 +486,24 @@ describe("edit", () => {
 		expect(blockReads).toBe(3);
 	});
 
-	it("an identical resubmit applies on the tx ack — the unchanged index already equals the body", async () => {
-		const { execute } = setup({
-			config: {
-				blockRows: [{ id: "b-1", content: "same body" }],
-			},
-		});
-		const result = await execute({ ...editBase, markdown: "same body" });
-		expect(result.status).toBe("ok");
+	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", async () => {
+		// The primitives judge a byte-equal resubmit through the convergence
+		// window, never on the ack alone: stored content re-parses on
+		// resubmit, so stillness — not the ack — is the no-op signal.
+		// Collapsed table, same cross-package coupling as the silent-no-op
+		// case above: the first retry exhausts the window instantly.
+		const delays = VERIFY_RETRY_DELAYS_MS.splice(0);
+		try {
+			const { execute } = setup({
+				config: {
+					blockRows: [{ id: "b-1", content: "same body" }],
+				},
+			});
+			const result = await execute({ ...editBase, markdown: "same body" });
+			expect(result.status).toBe("ok");
+		} finally {
+			VERIFY_RETRY_DELAYS_MS.push(...delays);
+		}
 	});
 
 	it("the successful edit baselines its own block from the verdict's carried pair", async () => {

@@ -67,7 +67,15 @@ describe("guard-stop staging", () => {
 		const { execute } = setup({
 			config: {
 				...duplicateConfig,
-				armWalkError: (arm) => arm(new SiYuanApiError(404)),
+				// The kernel's real vanished-id refusal: HTTP 200, code -1.
+				armWalkError: (arm) =>
+					arm(
+						new SiYuanApiError(
+							200,
+							-1,
+							"block not found or its encrypted notebook is locked",
+						),
+					),
 			},
 		});
 		const r = await execute({ ...base, markdown: "the draft body" });
