@@ -304,9 +304,10 @@ re-falsifies the changed fact in the primitives.
 - The `kb_read` description claims (`tools.ts`, `READ_DESCRIPTION`) —
   agent-facing wording over the placement module's notation: the
   `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
-  write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives' shared
-  targetable-container set consumed by the heading-target judgment
-  (`walk.ts`) and the notation's glyph table (`outline.ts`)). Wording pinned
+  write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives'
+  targetable-container set, keyed on by the heading-target judgment
+  (`walk.ts`) and the notation's glyph table (`outline.ts`); exported for
+  consumers, though no gnubrain code imports it today). Wording pinned
   by the local unit suite (`tools.test.ts`).
 - The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
