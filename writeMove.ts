@@ -4,7 +4,7 @@
 // own-subtree ancestor — are verdict arms of that call, worded in
 // writeVerdicts); doc-level moves ride moveDocVerified (mutation,
 // live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
-// evidence). Tool-surface scoping stays here.
+// evidence). Doc-target resolution stays tool-side.
 
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import {

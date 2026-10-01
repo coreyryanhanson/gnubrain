@@ -26,7 +26,7 @@ import {
 	writeKernelStub,
 	type StubConfig,
 } from "./writeHarness.js";
-import { VERIFY_RETRY_DELAYS_MS } from "siyuan-kb-primitives/write";
+import { withVerifyWindow } from "siyuan-kb-primitives/write";
 import { ContentBaselines } from "../../baselines.js";
 import { freshContentRefusal } from "../../writeResult.js";
 
@@ -428,14 +428,13 @@ describe("edit", () => {
 		expect(result.outline).toBeDefined();
 	});
 
-	it("verified-edit: a silent kernel no-op (ack ok, index never converges) does not read as ok", async () => {
+	it("verified-edit: a silent kernel no-op (ack ok, index never converges) does not read as ok", () =>
 		// Collapse the convergence window: the index never serves the
 		// submitted body, so the first retry exhausts the table instantly.
-		// Deliberate cross-package coupling: this mutates the primitives'
-		// exported table in place (same module instance, not a copy) — a
-		// frozen or copied array in the primitives breaks this test.
-		const delays = VERIFY_RETRY_DELAYS_MS.splice(0);
-		try {
+		// The swap rides the primitives' `withVerifyWindow` seam — restore
+		// is structural, so no try/finally and no in-place mutation of a
+		// production table.
+		withVerifyWindow([0], async () => {
 			const harness = setup({
 				config: {
 					blockRows: [{ id: "b-1", content: "stale paragraph" }],
@@ -453,10 +452,7 @@ describe("edit", () => {
 			expect(result.message).toContain("never moved off the pre-write content");
 			expect(result.message).toContain("do NOT retry blindly");
 			expect(result.outline).toBeDefined();
-		} finally {
-			VERIFY_RETRY_DELAYS_MS.push(...delays);
-		}
-	});
+		}));
 
 	it("verified-edit tolerates the async index: a stale first read retries inside the window", async () => {
 		const harness = setup({
@@ -486,14 +482,14 @@ describe("edit", () => {
 		expect(blockReads).toBe(3);
 	});
 
-	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", async () => {
+	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", () =>
 		// The primitives judge a byte-equal resubmit through the convergence
 		// window, never on the ack alone: stored content re-parses on
 		// resubmit, so stillness — not the ack — is the no-op signal.
-		// Collapsed table, same cross-package coupling as the silent-no-op
-		// case above: the first retry exhausts the window instantly.
-		const delays = VERIFY_RETRY_DELAYS_MS.splice(0);
-		try {
+		// Collapsed table via the `withVerifyWindow` seam, same as the
+		// silent-no-op case above: the first retry exhausts the window
+		// instantly.
+		withVerifyWindow([0], async () => {
 			const { execute } = setup({
 				config: {
 					blockRows: [{ id: "b-1", content: "same body" }],
@@ -501,10 +497,7 @@ describe("edit", () => {
 			});
 			const result = await execute({ ...editBase, markdown: "same body" });
 			expect(result.status).toBe("ok");
-		} finally {
-			VERIFY_RETRY_DELAYS_MS.push(...delays);
-		}
-	});
+		}));
 
 	it("the successful edit baselines its own block from the verdict's carried pair", async () => {
 		const harness = setup({
