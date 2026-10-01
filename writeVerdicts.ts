@@ -255,7 +255,7 @@ export function blockInDocRefusal(
 
 /** Refusal wording for an insertLanded outcome, or undefined when the
  * insert landed. The predicate moved to the primitives' insertLanded
- * judgment; these two sentences are its shared wording — one home so the
+ * judgment; these sentences are its shared wording — one home so the
  * refusal cannot drift between the insert-bearing modes. */
 export function insertLandedRefusal(
 	outcome: InsertLandedOutcome,
@@ -265,6 +265,8 @@ export function insertLandedRefusal(
 			return "the kernel returned no block id";
 		case "absent-from-tree":
 			return `the kernel returned '${outcome.blockId}' but it is absent from the post-write tree`;
+		case "pre-write-id":
+			return `the kernel returned '${outcome.blockId}' but that block already existed before the write`;
 		case "landed":
 			return undefined;
 	}
