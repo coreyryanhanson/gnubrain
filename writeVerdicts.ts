@@ -215,8 +215,11 @@ export function moveAnchorEcho(anchor: MoveAnchor): string {
 /** The refusal half of blockInDoc's union — the two kinds that always
  * word. Split from blockInDocRefusal so consumers holding only the refusal
  * half (the edit verify's concurrent-move inner) get a total `string`, not
- * a type that permits an undefined to interpolate into a sentence. */
-function blockInDocRefusalKind(
+ * a type that permits an undefined to interpolate into a sentence. Also
+ * the wording home for the delete primitive's own scoping arms (foreign /
+ * doc-id refuse inside deleteBlockVerified now) — one sentence pair for
+ * the same membership class whichever side refuses. */
+export function blockInDocRefusalKind(
 	outcome: Extract<BlockInDocResult, { kind: "doc-id" | "foreign" }>,
 	blockId: string,
 	doc: { title: string; rootId: string },

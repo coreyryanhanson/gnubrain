@@ -1,16 +1,19 @@
 // The delete flow: block-level deleteBlock or doc-level removeDocByID.
-// The mutation and its evidence are one primitive call: deleteBlockVerified
-// (mutation + walk-set judgment — the landing is never trusted from the
-// HTTP success) and deleteDocVerified (pre-delete walk captured as the
-// receipt/invalidRefs evidence). Tool-surface scoping stays here; the
-// non-judged arms' envelope wording rides writeVerdicts' exhaustive
-// mappers (the shared mutationFailureEnvelope — the block-delete failure
-// half IS MutationFailure by type). The
+// The mutation, its scoping precondition and its evidence are one
+// primitive call: deleteBlockVerified (pre-mutation membership refusal —
+// foreign / doc-id refuse before any kernel call, an absent target falls
+// through to the kernel's per-generation answer — plus mutation and
+// walk-set judgment, the landing never trusted from the HTTP success) and
+// deleteDocVerified (pre-delete walk captured as the receipt/invalidRefs
+// evidence). The refusal arms word through writeVerdicts' shared
+// blockInDoc sentences (the same pair the edit flow's pre-guard uses); the
+// remaining non-judged arms ride the shared mutationFailureEnvelope (the
+// block-delete failure half IS MutationFailure by type). The
 // generation-coupled fact (3.8.3 success no-op vs 3.8.4
 // "tree not found") lives in the primitives' delete.ts and surfaces
 // verbatim through the kernel-refused arm.
 
-import { backlinkCheck, blockInDoc } from "siyuan-kb-primitives";
+import { backlinkCheck } from "siyuan-kb-primitives";
 import {
 	deleteBlockVerified,
 	deleteDocVerified,
@@ -24,7 +27,7 @@ import {
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite } from "./writeResult.js";
-import { blockInDocRefusal } from "./writeVerdicts.js";
+import { blockInDocRefusalKind } from "./writeVerdicts.js";
 
 export async function runDeleteMode(
 	input: WriteFlowInput,
@@ -71,20 +74,23 @@ export async function runDeleteMode(
 		});
 	}
 	const blockId = params.blockId as string;
-	const row = await blockInDoc(kernel, doc.rootId, blockId);
-	const refusal = blockInDocRefusal(row, blockId, doc);
-	if (refusal !== undefined) return refusedEnvelope(refusal);
-	// The verified block delete: the mutation and the walk-set judgment are
-	// one primitive call. 3.8.4 requires an external delete to hit an
-	// existing node — a missing ID (deleted concurrently, or a stale target)
-	// is a synchronous "tree not found" error where 3.8.3 answered a success
-	// no-op; the kernel-refused arm surfaces it verbatim, with the fresh
-	// outline attached so the agent re-targets. Transport classes carry the
-	// unverified-outcome verdict.
+	// The verified block delete, whole — the primitive owns the scoping
+	// precondition: foreign / doc-id refuse before any kernel call (worded
+	// by the same sentences the edit flow's pre-guard uses), and an absent
+	// target falls through the membership read so the kernel answers it
+	// per generation — 3.8.4 a synchronous "tree not found" error where
+	// 3.8.3 answered a success no-op; the kernel-refused arm surfaces it
+	// verbatim, with the fresh outline attached so the agent re-targets.
+	// Transport classes carry the unverified-outcome verdict.
 	const outcome = await deleteBlockVerified(kernel, input.probe, {
 		blockId,
 		rootId: doc.rootId,
 	});
+	if (outcome.kind === "foreign" || outcome.kind === "doc-id") {
+		// The producer's scoping refusal, worded by the shared sentence
+		// pair — the foreign arm carries the block's actual root.
+		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
+	}
 	if (outcome.kind !== "judged") {
 		// The exhaustive wording home (the createVerdictEnvelope pattern):
 		// a new arm in a primitives release fails typecheck until its
@@ -103,15 +109,13 @@ export async function runDeleteMode(
 	return finishWrite(name, { blockId }, async () => {
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);
 		const tail = await echoTail(input, doc, outcome.postWalk);
-		// The removed block's pre-delete row is in hand — the receipt is
-		// free. Gated on the walk-set evidence: a no-op kernel (3.8.3)
-		// deleted nothing, so there is no receipt to give.
+		// The deleted block's stored content rides the judged arm (the
+		// primitive's own membership read) — the receipt is free. Gated on
+		// the walk-set evidence: a no-op kernel (3.8.3) deleted nothing, so
+		// there is no receipt to give.
 		const receipt = outcome.targetGone
 			? deletedBlocksTail(input.sessionId, [
-					{
-						id: blockId,
-						content: row.kind === "in-doc" ? row.content : null,
-					},
+					{ id: blockId, content: outcome.content },
 				])
 			: undefined;
 		return {

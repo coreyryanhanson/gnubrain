@@ -1616,7 +1616,8 @@ describe("delete", () => {
 		// no refRows configured).
 		expect(result.message).toContain("0 doc(s) with orphaned refs");
 		expect(result.invalidRefs).toEqual({ count: 0, hpaths: [] });
-		// The receipt rides the pre-delete SQL row: id + content verbatim.
+		// The receipt rides the judged arm's content (the primitive's
+		// membership read): id + content verbatim.
 		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "doomed" }]);
 		expect(
 			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),

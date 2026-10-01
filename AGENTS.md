@@ -263,6 +263,13 @@ re-falsifies the changed fact in the primitives.
   `resolveNotebooks` (primitives `notebooks.ts`); this repo keeps the
   rejection wording and the warn-and-drop policy (`validation.ts`); the
   tool path is pinned locally (`encryptedNotebook.live`).
+- The delete-scoping fact — the kernel mutates by raw block id with no
+  doc scoping of its own, so `deleteBlockVerified` judges membership
+  itself (the shared `blockInDoc` read): `foreign` / `doc-id` refuse
+  before any kernel call while `absent` falls through to the
+  generation answer; this repo words the refusal arms through the same
+  sentence pair the edit flow's pre-guard uses
+  (`blockInDocRefusalKind`, `writeVerdicts.ts`).
 - The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
   found" — lives in `deleteBlockVerified` / `deleteDocVerified`
   (primitives `delete.ts`); this repo keeps the flow-side wording (kernel
