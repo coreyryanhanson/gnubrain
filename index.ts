@@ -265,16 +265,16 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			}
 			if (result.newReadsEnabled !== undefined) {
 				if (result.newReadsEnabled) {
-					readToolset.enable(pi);
+					readToolset.enable(pi, ctx.sessionManager);
 				} else {
-					readToolset.disable(pi); // cascades write off (requires)
+					readToolset.disable(pi, ctx.sessionManager); // cascades write off (requires)
 				}
 			}
 			if (result.newWritesEnabled !== undefined) {
 				if (result.newWritesEnabled) {
-					writeToolset.enable(pi); // cascades reads on (requires)
+					writeToolset.enable(pi, ctx.sessionManager); // cascades reads on (requires)
 				} else {
-					writeToolset.disable(pi);
+					writeToolset.disable(pi, ctx.sessionManager);
 				}
 			}
 			renderStatus(ctx);

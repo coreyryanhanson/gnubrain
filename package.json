@@ -38,7 +38,7 @@
 	},
 	"dependencies": {
 		"node-sql-parser": "5.4.0",
-		"pi-tool-masking": "1.3.0",
+		"pi-tool-masking": "2.1.0",
 		"siyuan-kb-primitives": "file:../siyuan-kb-primitives"
 	},
 	"devDependencies": {
