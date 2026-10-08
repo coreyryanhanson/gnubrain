@@ -43,6 +43,7 @@ export default defineConfig({
 		// Verbose by default: runs tee to logs per policy, so per-case lines
 		// make failures greppable without a re-run. CLI flags still win.
 		reporters: ["verbose"],
+		setupFiles: ["__tests__/scrub-defer-env.ts"],
 		sequence: {
 			sequencer: OrderedSequencer,
 		},
