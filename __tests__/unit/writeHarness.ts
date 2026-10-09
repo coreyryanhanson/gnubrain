@@ -12,6 +12,7 @@ import {
 	GUARD_NEAR_CAP,
 	GUARD_STMT_HEAD,
 	OWNERSHIP_STMT_HEAD,
+	PINNED_SIYUAN_VERSION,
 	REFERRING_HPATHS_STMT_HEAD,
 	REFS_BACKLINK_STMT_HEAD,
 	ROOT_ECHO_STMT_HEAD,
@@ -171,7 +172,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => {
 			calls.push({ method: "getVersion", args: undefined });
-			return "3.8.4";
+			return PINNED_SIYUAN_VERSION;
 		},
 		listNotebooks: async () => ({ notebooks: [] }),
 		async query(stmt) {

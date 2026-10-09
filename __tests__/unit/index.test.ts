@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { SiYuanAuthError, SiYuanRateLimitError } from "siyuan-kb-primitives";
+import {
+	SiYuanAuthError,
+	SiYuanRateLimitError,
+	PINNED_SIYUAN_VERSION,
+} from "siyuan-kb-primitives";
 import { TOOLSET_EVENTS, getRegisteredToolsets } from "pi-tool-masking";
 import register, { type GnubrainDeps } from "../../index.js";
 import {
@@ -43,7 +47,7 @@ function deps(options?: {
 		createClient: () =>
 			({
 				baseUrl: "http://127.0.0.1:6806",
-				getVersion: async () => options?.version ?? "3.8.4",
+				getVersion: async () => options?.version ?? PINNED_SIYUAN_VERSION,
 				listNotebooks: () => {
 					notebookCalls++;
 					if (options?.notebooksError) throw options.notebooksError;
@@ -321,7 +325,7 @@ describe("index wiring", () => {
 				const client = base("", "") as unknown as Record<string, unknown>;
 				client.getVersion = () => {
 					versionCalls++;
-					return Promise.resolve("3.8.4");
+					return Promise.resolve(PINNED_SIYUAN_VERSION);
 				};
 				client.query = () => {
 					if (locked) throw new SiYuanRateLimitError(429, 60);
@@ -541,7 +545,7 @@ describe("read + write toolset wiring", () => {
 
 	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {
 		const { pi, fire, runTool } = fakePi();
-		const d = deps({ version: "3.8.4" });
+		const d = deps({ version: PINNED_SIYUAN_VERSION });
 		register(pi, { ...d, pinnedVersion: "9.9.9" });
 		const { ctx, statuses } = fakeCtx({
 			hasUI: true,
@@ -559,7 +563,7 @@ describe("read + write toolset wiring", () => {
 			)
 		).details;
 		expect(refused.status).toBe("refused");
-		expect(refused.message).toContain("3.8.4");
+		expect(refused.message).toContain(PINNED_SIYUAN_VERSION);
 		expect(refused.message).toContain("9.9.9");
 
 		// A drift session never blocks the kbs discovery short-circuit

@@ -2,6 +2,7 @@
 // recipes + projects configured and valid, scope = [recipes]. Overrides
 // replace, they do not merge; names configured but absent from validKBs
 // simulate stale/encrypted notebooks.
+import { PINNED_SIYUAN_VERSION } from "siyuan-kb-primitives";
 import type { SessionValidation } from "../../validation.js";
 
 export function validation(overrides?: {
@@ -29,7 +30,10 @@ export function validation(overrides?: {
 		},
 		shapeErrors: overrides?.shapeErrors ?? [],
 		warnings: overrides?.warnings ?? [],
-		probe: overrides?.probe ?? { verdict: "ok", kernelVersion: "3.8.4" },
+		probe: overrides?.probe ?? {
+			verdict: "ok",
+			kernelVersion: PINNED_SIYUAN_VERSION,
+		},
 		...(overrides?.pinnedVersion !== undefined && {
 			pinnedVersion: overrides.pinnedVersion,
 		}),

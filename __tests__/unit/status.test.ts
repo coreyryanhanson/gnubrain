@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PINNED_SIYUAN_VERSION } from "siyuan-kb-primitives";
 import { renderKbStatus, type KbStatusInput } from "../../status.js";
 
 // Passthrough theme — the pure render is what's under test; a real theme
@@ -7,7 +8,7 @@ const theme = { fg: (_color: string, text: string) => text };
 
 function input(overrides?: Partial<KbStatusInput>): KbStatusInput {
 	return {
-		probe: { verdict: "ok", kernelVersion: "3.8.4" },
+		probe: { verdict: "ok", kernelVersion: PINNED_SIYUAN_VERSION },
 		shapeErrors: [],
 		breakerTripped: false,
 		scope: ["recipes", "projects"],
@@ -43,14 +44,16 @@ describe("renderKbStatus", () => {
 		).toBe("● kb: recipes, projects");
 		expect(render({ breakerTripped: true })).toBe("● kb: breaker");
 		expect(
-			render({ probe: { verdict: "drift", kernelVersion: "3.8.4" } }),
+			render({
+				probe: { verdict: "drift", kernelVersion: PINNED_SIYUAN_VERSION },
+			}),
 		).toBe("● kb: version");
 		// Shape failure beats the breaker and version drift.
 		expect(
 			render({
 				shapeErrors: ["bad"],
 				breakerTripped: true,
-				probe: { verdict: "drift", kernelVersion: "3.8.4" },
+				probe: { verdict: "drift", kernelVersion: PINNED_SIYUAN_VERSION },
 			}),
 		).toBe("● kb: config");
 	});

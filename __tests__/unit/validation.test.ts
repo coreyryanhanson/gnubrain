@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	SiYuanAuthError,
 	SiYuanNetworkError,
+	PINNED_SIYUAN_VERSION,
 	type KernelProbeClient,
 	type NotebookList,
 } from "siyuan-kb-primitives";
@@ -45,7 +46,7 @@ function stubKernel(options?: {
 			async getVersion() {
 				calls.version++;
 				if (options?.probeError) throw options.probeError;
-				return options?.version ?? "3.8.4";
+				return options?.version ?? PINNED_SIYUAN_VERSION;
 			},
 			async listNotebooks() {
 				calls.notebooks++;
@@ -116,8 +117,8 @@ describe("startup validation order", () => {
 		expect(result.probe).toEqual({ verdict: "unreachable" });
 	});
 
-	it("strict full-version match — 3.8.4-dev or 3.8 drifts", async () => {
-		for (const version of ["3.8.4-dev", "3.8", "3.8.5"]) {
+	it("strict full-version match — a dev suffix or a shorter version drifts", async () => {
+		for (const version of [`${PINNED_SIYUAN_VERSION}-dev`, "3.8", "3.8.5"]) {
 			const { kernel } = stubKernel({ version });
 			const result = await runSessionValidation({
 				loaded: await loaded(globalSettings()),
@@ -302,6 +303,9 @@ describe("validation pipeline result sanity", () => {
 		});
 		expect(result.settings?.apiToken).toBe("token");
 		expect(result.validKBs.get("dev")).toBe("nb-1");
-		expect(result.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
+		expect(result.probe).toEqual({
+			verdict: "ok",
+			kernelVersion: PINNED_SIYUAN_VERSION,
+		});
 	});
 });

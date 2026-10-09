@@ -5,6 +5,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
+	PINNED_SIYUAN_VERSION,
 	type NotebookList,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
@@ -19,7 +20,9 @@ import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;
 
-function kernelStub(getVersion: () => Promise<string> = async () => "3.8.4") {
+function kernelStub(
+	getVersion: () => Promise<string> = async () => PINNED_SIYUAN_VERSION,
+) {
 	const calls: string[] = [];
 	return {
 		calls,
@@ -51,7 +54,7 @@ class ProbeShapeKernel {
 		return this.request("/api/system/version");
 	}
 	async request(_path: string): Promise<string> {
-		return "3.8.4";
+		return PINNED_SIYUAN_VERSION;
 	}
 	async listNotebooks(): Promise<NotebookList> {
 		return { notebooks: [] };
@@ -225,7 +228,7 @@ describe("runKbCall version-drift warning", () => {
 		// envelope naming both versions and the write refusal.
 		expect(envelope.status).toBe("ok");
 		expect(envelope.drift).toContain("3.8.5");
-		expect(envelope.drift).toContain("3.8.4");
+		expect(envelope.drift).toContain(PINNED_SIYUAN_VERSION);
 		expect(envelope.drift).toContain("writes are refused");
 	});
 
@@ -521,7 +524,7 @@ describe("write gate", () => {
 		if (envelope === undefined || envelope.ok)
 			throw new Error("expected refusal");
 		expect(envelope.envelope.message).toContain("3.9.0");
-		expect(envelope.envelope.message).toContain("3.8.4");
+		expect(envelope.envelope.message).toContain(PINNED_SIYUAN_VERSION);
 		expect(envelope.envelope.message).toContain("PINNED_SIYUAN_VERSION");
 		expect(calls).toEqual([]); // drift verdict is cached — no extra probe
 	});
@@ -538,8 +541,14 @@ describe("write gate", () => {
 		});
 		expect(healed.ok).toBe(true);
 		if (!healed.ok) throw new Error("expected stamp");
-		expect(healed.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
-		expect(v.probe).toEqual({ verdict: "ok", kernelVersion: "3.8.4" });
+		expect(healed.probe).toEqual({
+			verdict: "ok",
+			kernelVersion: PINNED_SIYUAN_VERSION,
+		});
+		expect(v.probe).toEqual({
+			verdict: "ok",
+			kernelVersion: PINNED_SIYUAN_VERSION,
+		});
 		// Second attempt sees the cached ok verdict — no extra probe; the
 		// stamp is the cached verdict itself.
 		const cached = await gateWriteAttempt({

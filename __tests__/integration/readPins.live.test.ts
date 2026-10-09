@@ -6,7 +6,11 @@
 
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { guardExactStmt, SiYuanKernelClient } from "siyuan-kb-primitives";
+import {
+	guardExactStmt,
+	PINNED_SIYUAN_VERSION,
+	SiYuanKernelClient,
+} from "siyuan-kb-primitives";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { ContentBaselines } from "../../baselines.js";
 import { CircuitBreaker } from "../../breaker.js";
@@ -571,7 +575,10 @@ third body`,
 				kernel: client,
 				pinnedVersion: "9.9.9",
 			});
-			expect(drift.probe).toEqual({ verdict: "drift", kernelVersion: "3.8.4" });
+			expect(drift.probe).toEqual({
+				verdict: "drift",
+				kernelVersion: PINNED_SIYUAN_VERSION,
+			});
 
 			const w = writeSetup(drift);
 			for (const params of [
@@ -592,7 +599,7 @@ third body`,
 				const refused = await w.run(params);
 				expect(refused.status).toBe("refused");
 				const msg = String(refused.message);
-				expect(msg).toContain("3.8.4");
+				expect(msg).toContain(PINNED_SIYUAN_VERSION);
 				expect(msg).toContain("9.9.9");
 			}
 			expect(w.createCalls).toHaveLength(0);
@@ -605,7 +612,7 @@ third body`,
 			});
 			expect(q.status).toBe("ok");
 			const driftNote = String(q.drift);
-			expect(driftNote).toContain("3.8.4");
+			expect(driftNote).toContain(PINNED_SIYUAN_VERSION);
 			expect(driftNote).toContain("9.9.9");
 		},
 		LIVE_TIMEOUT,
