@@ -48,8 +48,8 @@ export async function runReplaceSectionMode(
 	// derives it too; the sequence re-derives the identical section
 	// internally from this same walk.
 	const tree = await walkBlockTree(kernel, doc.rootId);
-	const heading = headingInWalk(tree, doc, headingId);
-	if ("status" in heading) return heading;
+	const resolved = headingInWalk(tree, doc, headingId);
+	if ("status" in resolved) return resolved;
 	// One truncation sentence, shared by both refusal sites below — the
 	// projection arm and its fail-closed echo tripwire refuse the same tree.
 	const truncationRefusal = () =>
@@ -88,11 +88,15 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// The anchor echo is wording garnish for the failure arms — the same
 	// pure projection the sequence derives internally for the mutation
-	// (identical inputs, identical output). Unreachable truncation arm:
-	// sectionOf refused the same tree above. Fail-closed tripwire.
-	const echoAnchor = deriveAppendAnchor(tree, heading);
+	// (identical inputs, identical output). Unreachable arms: sectionOf
+	// refused the same tree above and the heading is in it. Fail-closed
+	// tripwire.
+	const echoAnchor = deriveAppendAnchor(tree, headingId);
 	if (echoAnchor.kind === "walk-truncated") {
 		return truncationRefusal();
+	}
+	if (echoAnchor.kind === "heading-absent") {
+		return refusedEnvelope(staleHeadingMessage(headingId, doc));
 	}
 	const echo = appendAnchorEcho(echoAnchor);
 	const outcome = await replaceSectionVerified(kernel, input.probe, {

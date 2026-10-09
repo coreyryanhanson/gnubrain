@@ -6,7 +6,7 @@
 // live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
 // evidence). Doc-target resolution stays tool-side.
 
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import { refusedEnvelope, errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	deriveMoveAnchor,
 	walkBlockTree,
@@ -19,6 +19,7 @@ import {
 	headingInWalk,
 	mutationFailure,
 	resolveDocTarget,
+	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -150,6 +151,15 @@ export async function runMoveMode(
 		// The projection refuses the truncated tree the verified move's
 		// pre-mutation gate would — refuse here, before any kernel call.
 		return movePlacementRefusal({ kind: "walk-truncated" }, doc);
+	}
+	if (anchor.kind === "heading-absent") {
+		// Unreachable — headingInWalk refused an absent id on the same
+		// destination walk above; fail-closed tripwire, never a silent
+		// doc-end move.
+		return refusedEnvelope(
+			staleHeadingMessage(params.toHeadingId as string, dest),
+			{ kb: name },
+		);
 	}
 	const echo = moveAnchorEcho(anchor);
 	const outcome = await moveBlockVerified(kernel, input.probe, {

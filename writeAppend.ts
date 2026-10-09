@@ -6,7 +6,6 @@ import {
 	deriveAppendAnchor,
 	walkBlockTree,
 	type AppendPlacement,
-	type WalkedBlock,
 } from "siyuan-kb-primitives";
 import { insertVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
@@ -14,6 +13,7 @@ import {
 	echoTail,
 	headingInWalk,
 	mutationFailure,
+	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeFlow.js";
@@ -30,15 +30,13 @@ export async function runAppendMode(
 	// derivation fetches) — the primitive derives the id set internally and
 	// refuses a truncated walk before any kernel call.
 	const tree = await walkBlockTree(kernel, doc.rootId);
-	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
-		const heading = headingInWalk(tree, doc, params.headingId);
-		if ("status" in heading) return heading;
-		resolvedHeading = heading;
+		const resolved = headingInWalk(tree, doc, params.headingId);
+		if ("status" in resolved) return resolved;
 	}
 	const derived = deriveAppendAnchor(
 		tree,
-		resolvedHeading,
+		params.headingId,
 		params.placement as AppendPlacement | undefined,
 	);
 	if (derived.kind === "walk-truncated") {
@@ -48,6 +46,16 @@ export async function runAppendMode(
 		return refusedEnvelope(
 			`the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead`,
 			{ kb: name },
+		);
+	}
+	if (derived.kind === "heading-absent") {
+		// Unreachable — headingInWalk refused an absent id on the same walk
+		// above; fail-closed tripwire, never a silent doc-end append.
+		return refusedEnvelope(
+			staleHeadingMessage(params.headingId as string, doc),
+			{
+				kb: name,
+			},
 		);
 	}
 	const anchor = derived;
