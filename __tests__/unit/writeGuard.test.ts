@@ -5,6 +5,7 @@
 // statement shapes) live in siyuan-kb-primitives, beside the builders.
 
 import { describe, expect, it } from "vitest";
+import { GUARD_EXACT_CAP } from "siyuan-kb-primitives";
 import { statementKind } from "siyuan-kb-primitives/testing";
 import { validateMintTitle } from "../../writeGuard.js";
 import { base, setup } from "./writeHarness.js";
@@ -60,7 +61,27 @@ describe("title guard", () => {
 		expect(String(exact?.args)).toContain("type = 'd'");
 		expect(String(exact?.args)).toContain("content = 'docker networking'");
 		expect(String(exact?.args)).not.toContain("LIKE");
-		expect(String(exact?.args)).not.toContain("LIMIT");
+		// Explicit LIMIT from the primitives — the kernel's silent statement
+		// cap never applies to the exact leg.
+		expect(String(exact?.args)).toContain(`LIMIT ${GUARD_EXACT_CAP + 1}`);
+	});
+
+	it("duplicate stop caps rendering and names the truncation at the exact cap", async () => {
+		const exactRows = Array.from({ length: GUARD_EXACT_CAP + 1 }, (_, i) => ({
+			id: `d${i}`,
+			root_id: `d${i}`,
+			content: "Docker Networking",
+			updated: "20260101120000",
+		}));
+		const { execute } = setup({ config: { exactRows } });
+		const r = await execute({ ...base });
+		expect(r.status).toBe("duplicate");
+		// Rendering is capped at GUARD_EXACT_CAP rows — a walk plus a markdown
+		// export per row — while the count reads "64+" and the truncated
+		// marker carries the cap.
+		expect(r.rows as unknown[]).toHaveLength(GUARD_EXACT_CAP);
+		expect(r.message).toContain(`${GUARD_EXACT_CAP}+ existing docs`);
+		expect(r.truncated).toContain(`capped at ${GUARD_EXACT_CAP}`);
 	});
 
 	it("matches HTML-special titles verbatim — the kernel stores them unescaped", async () => {

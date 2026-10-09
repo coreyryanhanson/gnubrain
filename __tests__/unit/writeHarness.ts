@@ -198,11 +198,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 			}
 			// Create-flow routes:
 			if (kind === "guard") {
-				// The exact leg is a verbatim `content =` equality and carries
-				// no LIMIT; the near scan always ends LIMIT (cap + 1). Keying
-				// on the terminating LIMIT is spoof-proof: the exact leg always
-				// ends in the title's closing quote, so no embeddable title
-				// text (" OR ", "LIMIT", even "LIMIT 21") can match it.
+				// The exact leg ends `LIMIT GUARD_EXACT_CAP + 1`; the near scan ends
+				// `LIMIT GUARD_NEAR_CAP + 1`. The two distinct terminating LIMITs are
+				// the routing discriminator: no embeddable title text can imitate
+				// either ending.
 				return stmt.endsWith(`LIMIT ${GUARD_NEAR_CAP + 1}`)
 					? (config.nearRows ?? [])
 					: (config.exactRows ?? []);

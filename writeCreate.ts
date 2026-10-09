@@ -3,6 +3,7 @@
 // → echo, with guard-stop draft staging.
 
 import {
+	GUARD_EXACT_CAP,
 	GUARD_NEAR_CAP,
 	SiYuanApiError,
 	docMarkdown,
@@ -34,11 +35,17 @@ async function duplicateStop(
 	input: CreateFlowInput,
 	title: string,
 	rows: GuardRow[],
+	truncated: boolean,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name } = input;
+	// Cap rendering like nearMatchStop — each row costs a walk plus a
+	// markdown export, so a truncated (cap+1) row set renders only the cap.
+	// The flag rides the primitives' TitleMatchResult; never re-derive it
+	// from row-count arithmetic here.
+	const shown = truncated ? rows.slice(0, GUARD_EXACT_CAP) : rows;
 	const detailed: Record<string, unknown>[] = [];
 	const walks: WalkedTree[] = [];
-	for (const row of rows) {
+	for (const row of shown) {
 		const docId = row.root_id;
 		// Guard-stop evidence is presentation-only: the write never fires on
 		// this path, so a candidate deleted between the guard query and these
@@ -84,14 +91,18 @@ async function duplicateStop(
 		});
 	}
 	const docIds = detailed.map((d) => d.docId).join(", ");
+	const count = truncated ? `${shown.length}+` : `${shown.length}`;
 	const envelope: Envelope = {
 		status: "duplicate",
 		message:
-			`${rows.length} existing doc${rows.length === 1 ? "" : "s"} titled '${title}' in KB '${name}': ${docIds} — ` +
+			`${count} existing doc${shown.length === 1 ? "" : "s"} titled '${title}' in KB '${name}': ${docIds} — ` +
 			`reconcile by docId (edit/append onto the wanted doc), or pass confirmNew: true to mint a conscious second doc`,
 		kb: name,
 		rows: detailed,
 	};
+	if (truncated) {
+		envelope.truncated = `capped at ${GUARD_EXACT_CAP} candidates — refine the title`;
+	}
 	// Single-row: block IDs with content so the agent can go straight to
 	// `edit` by blockId — reuses the outline walk already in hand.
 	if (rows.length === 1) {
@@ -112,6 +123,7 @@ async function nearMatchStop(
 	input: CreateFlowInput,
 	title: string,
 	rows: GuardRow[],
+	truncated: boolean,
 ): Promise<Envelope> {
 	const { kernel, name } = input;
 	const candidates: Record<string, unknown>[] = [];
@@ -143,7 +155,7 @@ async function nearMatchStop(
 		kb: name,
 		candidates,
 	};
-	if (rows.length > GUARD_NEAR_CAP) {
+	if (truncated) {
 		envelope.truncated = `capped at ${GUARD_NEAR_CAP} candidates — refine the title`;
 		candidates.length = GUARD_NEAR_CAP;
 	}
@@ -175,9 +187,9 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		const matches = await findTitleMatches(kernel, boxId, title);
 		switch (matches.kind) {
 			case "duplicate":
-				return duplicateStop(input, title, matches.rows);
+				return duplicateStop(input, title, matches.rows, matches.truncated);
 			case "near":
-				return nearMatchStop(input, title, matches.rows);
+				return nearMatchStop(input, title, matches.rows, matches.truncated);
 			case "clear":
 				break;
 			default:
