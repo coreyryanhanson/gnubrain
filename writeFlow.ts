@@ -19,6 +19,7 @@ import {
 	walkBlockTree,
 	type KernelProbeResult,
 	type WalkedBlock,
+	type WalkedTree,
 } from "siyuan-kb-primitives";
 import type {
 	MutationFailure,
@@ -166,7 +167,7 @@ export function mutationFailure(
 export async function echoTail(
 	input: WriteFlowBase,
 	doc: DocTarget,
-	walk?: WalkedBlock[] | undefined,
+	walk?: WalkedTree | undefined,
 	refreshBlockIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
 	const { kernel, sessionId, boxId, baselines } = input;
@@ -179,7 +180,7 @@ export async function echoTail(
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write",
-		fullWalk,
+		fullWalk.blocks,
 		baselines,
 	);
 	const root = await rootEcho(kernel, boxId, docId);
@@ -202,7 +203,7 @@ export async function echoTail(
 	// read mechanism, no representation drift.
 	const refreshIds = [
 		...new Set([
-			...headingRows(fullWalk).map((b) => b.id),
+			...headingRows(fullWalk.blocks).map((b) => b.id),
 			...(refreshBlockIds ?? []),
 		]),
 	];

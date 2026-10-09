@@ -264,7 +264,9 @@ export function insertLandedRefusal(
 		case "no-id":
 			return "the kernel returned no block id";
 		case "absent-from-tree":
-			return `the kernel returned '${outcome.blockId}' but it is absent from the post-write tree`;
+			return `the kernel returned '${outcome.blockId}' but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`;
+		case "absent-unconfirmed":
+			return `the kernel returned '${outcome.blockId}' but the post-write walk hit the document's depth bound, so its landing could not be confirmed — it may have landed past the bound; re-fetch the outline (kb_read) before any retry (a blind retry duplicates the write)`;
 		case "pre-write-id":
 			return `the kernel returned '${outcome.blockId}' but that block already existed before the write`;
 		case "landed":
@@ -275,20 +277,31 @@ export function insertLandedRefusal(
 }
 
 /** The verified block move's pre-mutation refusal family — the placement
- * arms judged on the caller-held pre-move walk, plus the not-in-source
- * scoping arm (the kernel mutates by raw block id with no doc scoping of
- * its own; the judgment rides moveBlockVerified). The primitives own the
+ * arms judged on the caller-held pre-move walk, the not-in-source scoping
+ * arm (the kernel mutates by raw block id with no doc scoping of its own;
+ * the judgment rides moveBlockVerified), and the walk-truncated refusal
+ * (incomplete pre-move evidence). The primitives own the
  * kernel facts — the no-op self-anchor class and the own-subtree ancestor
  * class the kernel mishandles — and refuse before the mutation, zero
  * kernel calls; every arm words here. */
 export function movePlacementRefusal(
 	outcome: Extract<
 		MoveBlockOutcome,
-		{ kind: "already-at-destination" | "own-subtree" | "not-in-source" }
+		{
+			kind:
+				| "already-at-destination"
+				| "own-subtree"
+				| "not-in-source"
+				| "walk-truncated";
+		}
 	>,
 	doc: { title: string; rootId: string },
 ): Envelope {
 	switch (outcome.kind) {
+		case "walk-truncated":
+			return refusedEnvelope(
+				`the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead`,
+			);
 		case "already-at-destination":
 			return refusedEnvelope(
 				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
@@ -308,20 +321,22 @@ export function movePlacementRefusal(
 
 /** Reason wording for a verifyMoveLanded outcome, or undefined when the
  * move landed. The judgment moved to the primitives' verifyMoveLanded;
- * these fragments are its wording — the enclosing sentence lives in the
- * move flow. */
+ * these fragments are its wording — each a full sentence, spliced into
+ * the move flow's `block '${blockId}' …` frame. */
 export function moveLandedRefusal(
 	outcome: MoveLandedOutcome,
 ): string | undefined {
 	switch (outcome.kind) {
 		case "absent-from-destination":
-			return "absent from the destination tree";
+			return "is absent from the destination tree — the transaction rolled back silently behind HTTP success";
+		case "walk-truncated":
+			return "could not be confirmed landed: the verification walk hit the document's depth bound — it may have landed past the bound; re-fetch the outline (kb_read) before any retry";
 		case "still-in-source":
-			return "still present in the source tree";
+			return "is still present in the source tree — the kernel copied rather than moved";
 		case "misplaced":
 			return outcome.append
-				? "present but not the doc's last top-level block"
-				: "present but not at its landing position after the anchor";
+				? "is present but not the doc's last top-level block — the transaction silently no-opped behind HTTP success"
+				: "is present but not at its landing position after the anchor — the transaction silently no-opped behind HTTP success";
 		case "landed":
 			return undefined;
 	}

@@ -28,7 +28,8 @@ export async function runAppendMode(
 	// The walk doubles as anchor data AND the pre-write set the verified
 	// insert's landed judgment diffs against (the same walk the anchor
 	// derivation fetches).
-	const walk = await walkBlockTree(kernel, doc.rootId);
+	const tree = await walkBlockTree(kernel, doc.rootId);
+	const walk = tree.blocks;
 	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
 		const heading = headingInWalk(walk, doc, params.headingId);
@@ -65,10 +66,11 @@ export async function runAppendMode(
 		if (outcome.verdict.kind !== "landed") {
 			const rollback = insertLandedRefusal(outcome.verdict);
 			const tail = await echoTail(input, doc, outcome.postWalk);
-			return errorEnvelope(
-				`verified-append failed: ${rollback} — the transaction rolled back silently behind HTTP success; nothing was inserted`,
-				{ kb: name, anchor: echo, ...tail },
-			);
+			return errorEnvelope(`verified-append failed: ${rollback}`, {
+				kb: name,
+				anchor: echo,
+				...tail,
+			});
 		}
 		const newBlockId = outcome.verdict.blockId;
 		const tail = await echoTail(input, doc, outcome.postWalk, [newBlockId]);

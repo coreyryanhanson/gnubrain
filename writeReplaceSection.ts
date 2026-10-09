@@ -49,7 +49,8 @@ export async function runReplaceSectionMode(
 	// session baselines cannot cross into the primitives, so the flow
 	// derives it too; the sequence re-derives the identical section
 	// internally from this same walk.
-	const walk = await walkBlockTree(kernel, doc.rootId);
+	const tree = await walkBlockTree(kernel, doc.rootId);
+	const walk = tree.blocks;
 	const heading = headingInWalk(walk, doc, headingId);
 	if ("status" in heading) return heading;
 	const deleteSet = sectionOf(walk, headingId);
@@ -81,7 +82,7 @@ export async function runReplaceSectionMode(
 	const echo = appendAnchorEcho(deriveAppendAnchor(walk, heading));
 	const outcome = await replaceSectionVerified(kernel, input.probe, {
 		rootId: doc.rootId,
-		walk,
+		walk: tree,
 		headingId,
 		body: input.body,
 	});
@@ -94,6 +95,15 @@ export async function runReplaceSectionMode(
 		outcome.kind === "verification-failed"
 	) {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
+	}
+	if (outcome.kind === "walk-truncated") {
+		// The sequence refuses a truncated pre-mutation walk before any
+		// kernel call — the enumeration, anchor, and pre-write id set would
+		// derive from incomplete evidence.
+		return refusedEnvelope(
+			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
+			{ kb: name, anchor: echo },
+		);
 	}
 	if (outcome.kind === "no-section") {
 		// Unreachable — the sequence re-derives the same section from the
@@ -117,7 +127,7 @@ export async function runReplaceSectionMode(
 				// — the old section is untouched.
 				const rollback = insertLandedRefusal(outcome.verdict);
 				return errorEnvelope(
-					`verified-insert failed: ${rollback} — the transaction rolled back silently behind HTTP success; the old section is untouched`,
+					`verified-insert failed: ${rollback} — the old section is untouched`,
 					{ kb: name, anchor: appendAnchorEcho(outcome.anchor) },
 				);
 			}
@@ -185,7 +195,7 @@ export async function runReplaceSectionMode(
 				const outline = serveOutlineFromWalk(
 					sessionId,
 					"kb_write",
-					certifiedWalk,
+					certifiedWalk.blocks,
 					baselines,
 				);
 				const root = await rootEcho(kernel, input.boxId, doc.rootId);
@@ -202,6 +212,18 @@ export async function runReplaceSectionMode(
 								},
 				});
 			}
+			case "sweep-walk-truncated":
+				// The deletes acked but the post-sweep walk hit the depth
+				// bound: the swept judgment's absence facts are unconfirmed.
+				// Applied-but-unverified — never ok, never a rollback.
+				return errorEnvelope(
+					`replace applied but unverified: the replacement (block '${outcome.insertedId}') is in place and every member delete acked, but the verification walk hit the document's depth bound — whether the old section is fully gone could not be confirmed. Do NOT re-run; re-fetch the outline (kb_read) and check the old section's blocks by id before any cleanup`,
+					{
+						kb: name,
+						anchor: appendAnchorEcho(outcome.anchor),
+						newBlockId: outcome.insertedId,
+					},
+				);
 			case "swept": {
 				// invalidRefs: post-write echo over the section's closure —
 				// what actually got orphaned, verified.

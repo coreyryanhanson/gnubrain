@@ -13,7 +13,7 @@ import {
 	moveDocVerified,
 } from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
-import { walkBlockTree, type WalkedBlock } from "siyuan-kb-primitives";
+import { walkBlockTree, type WalkedTree } from "siyuan-kb-primitives";
 import {
 	echoTail,
 	headingInWalk,
@@ -41,12 +41,12 @@ import {
 async function destOutlinePayload(
 	input: WriteFlowInput,
 	sessionId: string,
-	destWalk: WalkedBlock[],
+	destWalk: WalkedTree,
 ): Promise<Record<string, unknown>> {
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write-dest",
-		destWalk,
+		destWalk.blocks,
 		input.baselines,
 	);
 	return outline.fullOutlinePath === undefined
@@ -138,29 +138,33 @@ export async function runMoveMode(
 		: undefined;
 	const destWalk = sourceWalk ?? (await walkBlockTree(kernel, dest.rootId));
 	if (params.toHeadingId !== undefined) {
-		const heading = headingInWalk(destWalk, dest, params.toHeadingId);
+		const heading = headingInWalk(destWalk.blocks, dest, params.toHeadingId);
 		if ("status" in heading) return heading;
 	}
 	// Anchor: tool-derived, never agent-supplied. The placement refusals
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
 	// this pre-move walk; their wording lives in writeVerdicts.
-	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
+	const anchor = deriveMoveAnchor(destWalk.blocks, params.toHeadingId);
 	const echo = moveAnchorEcho(anchor);
 	const outcome = await moveBlockVerified(kernel, input.probe, {
 		blockId,
 		anchor,
-		sameDoc,
 		rootId: doc.rootId,
 		destRootId: dest.rootId,
-		// The walk in hand is the pre-move tree — the placement refusals
-		// judge position against it (same-doc it doubles as the source walk).
-		preDestWalk: destWalk,
+		// The walk in hand is the pre-move tree — same-doc it doubles as the
+		// source walk and feeds the placement refusals; cross-doc the flow
+		// holds no pre-walk (the docs are disjoint, the refusals cannot
+		// fire) and the primitive fetches the source walk itself.
+		...(sameDoc
+			? { sameDoc: true, preDestWalk: destWalk }
+			: { sameDoc: false }),
 	});
 	if (
 		outcome.kind === "already-at-destination" ||
 		outcome.kind === "own-subtree" ||
-		outcome.kind === "not-in-source"
+		outcome.kind === "not-in-source" ||
+		outcome.kind === "walk-truncated"
 	) {
 		return movePlacementRefusal(outcome, doc);
 	}
@@ -181,7 +185,7 @@ export async function runMoveMode(
 			// not launder a concurrent change past the precondition).
 			const srcTail = await echoTail(input, doc, outcome.postSourceWalk);
 			return errorEnvelope(
-				`verified-move failed: block '${blockId}' is ${moveLandedRefusal(outcome.verdict)} — the transaction rolled back silently behind HTTP success`,
+				`verified-move failed: block '${blockId}' ${moveLandedRefusal(outcome.verdict)}`,
 				{
 					kb: name,
 					anchor: echo,

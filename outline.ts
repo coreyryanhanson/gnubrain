@@ -58,10 +58,15 @@ export async function serveOutline(
 	rootId: string,
 	baselines: ContentBaselines,
 ): Promise<{ outline: string; fullOutlinePath?: string }> {
-	return serveOutlineFromWalk(
-		sessionId,
-		tool,
-		await walkBlockTree(kernel, rootId, { tolerateVanished: true }),
-		baselines,
-	);
+	const tree = await walkBlockTree(kernel, rootId, { tolerateVanished: true });
+	const served = serveOutlineFromWalk(sessionId, tool, tree.blocks, baselines);
+	// A walk truncated at the depth bound renders only its seen prefix —
+	// name it, or the agent reads a partial outline as the whole doc.
+	return tree.truncated
+		? {
+				...served,
+				outline: `${served.outline}
+… (outline truncated: the document nests past the walk depth bound — deeper content is not shown)`,
+			}
+		: served;
 }

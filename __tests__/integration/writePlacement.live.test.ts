@@ -159,7 +159,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 					"",
 				].join("\n"),
 			);
-			const walk = await walkBlockTree(client, docId);
+			const walk = (await walkBlockTree(client, docId)).blocks;
 			const nested = heading(walk, "Nested");
 			const appended = await execute({
 				kb: "live",
@@ -169,7 +169,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "appended body",
 			});
 			expect(appended.status).toBe("ok");
-			const after = await walkBlockTree(client, docId);
+			const after = (await walkBlockTree(client, docId)).blocks;
 			const containerId = sectionOf(after, nested.id)!.containerId;
 			expect(containerId).not.toBeNull();
 			// The appended block is the callout's last child; the container's
@@ -189,7 +189,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "replacement body",
 			});
 			expect(replaced.status).toBe("ok");
-			const afterReplace = await walkBlockTree(client, docId);
+			const afterReplace = (await walkBlockTree(client, docId)).blocks;
 			const nestedAfter = heading(afterReplace, "Nested");
 			const sweepSection = sectionOf(afterReplace, nestedAfter.id)!;
 			expect(sweepSection.members.map((m) => m.content)).toEqual([
@@ -223,7 +223,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 					"",
 				].join("\n"),
 			);
-			const walk = await walkBlockTree(client, docId);
+			const walk = (await walkBlockTree(client, docId)).blocks;
 			const h = heading(walk, "H");
 			const next = heading(walk, "Next");
 			const moved = await execute({
@@ -252,7 +252,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				"populated destination",
 				"# Dest\n\ndest one\n\ndest two\n",
 			);
-			const srcWalk = await walkBlockTree(client, srcId);
+			const srcWalk = (await walkBlockTree(client, srcId)).blocks;
 			const mover = srcWalk.find((b) => b.content === "src paragraph")!;
 			const moved = await execute({
 				kb: "live",
@@ -277,8 +277,8 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "",
 			});
 			await awaitIndexed(emptyId);
-			const blankWalk = await walkBlockTree(client, emptyId);
-			const srcWalk2 = await walkBlockTree(client, srcId);
+			const blankWalk = (await walkBlockTree(client, emptyId)).blocks;
+			const srcWalk2 = (await walkBlockTree(client, srcId)).blocks;
 			const mover2 = srcWalk2.find((b) => isHeadingBlock(b))!;
 			const moved2 = await execute({
 				kb: "live",
@@ -307,7 +307,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 					"\n",
 				),
 			);
-			const walk = await walkBlockTree(client, docId);
+			const walk = (await walkBlockTree(client, docId)).blocks;
 			const a = heading(walk, "A");
 			const first = await execute({
 				kb: "live",
@@ -318,7 +318,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			});
 			expect(first.status).toBe("ok");
 			expect(String(first.anchor)).toContain("nextID=");
-			const afterFirst = await walkBlockTree(client, docId);
+			const afterFirst = (await walkBlockTree(client, docId)).blocks;
 			const firstId = afterFirst.find((b) => b.content === "first body")!.id;
 			const bId = heading(afterFirst, "B").id;
 			// Unfolded: the new block's next entry is the boundary heading B.
@@ -334,7 +334,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "second body",
 			});
 			expect(second.status).toBe("ok");
-			const afterSecond = await walkBlockTree(client, docId);
+			const afterSecond = (await walkBlockTree(client, docId)).blocks;
 			const secondIdx = afterSecond.findIndex(
 				(b) => b.content === "second body",
 			);
@@ -359,7 +359,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 						"",
 					].join("\n"),
 				);
-				const w = await walkBlockTree(client, id);
+				const w = (await walkBlockTree(client, id)).blocks;
 				return { docId: id, empty: heading(w, "Empty target").id };
 			};
 			const unfolded = await mkEmptyCallout("move unfolded");
@@ -398,7 +398,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			const movedFillerId = (docId2: string): string =>
 				docId2 === unfolded.docId ? filler1Id : filler2Id;
 			for (const docId2 of [unfolded.docId, folded.docId]) {
-				const w = await walkBlockTree(client, docId2);
+				const w = (await walkBlockTree(client, docId2)).blocks;
 				const empty = w.find((b) => b.content === "Empty target")!;
 				const siblings = w.filter((b) => b.parentId === empty.parentId);
 				expect(siblings[1]!.id).toBe(movedFillerId(docId2));
@@ -411,7 +411,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 		"deleting the boundary heading between walk and insert surfaces the kernel error with the fresh outline",
 		async () => {
 			const docId = await mintDoc("stale anchor", "# A\n\np1\n\n# B\n\npB\n");
-			const walk = await walkBlockTree(client, docId);
+			const walk = (await walkBlockTree(client, docId)).blocks;
 			const a = heading(walk, "A");
 			const b = heading(walk, "B");
 			const execute = liveSetup(async () => {
@@ -441,7 +441,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			// kinds against hand-built walks; tabs/footnote fixtures cannot be
 			// minted from markdown).
 			const docId = await mintDoc("refusal walk", "# A\n\np1\n\n# B\n\npB\n");
-			const walk = await walkBlockTree(client, docId);
+			const walk = (await walkBlockTree(client, docId)).blocks;
 			const doc: DocTarget = {
 				rootId: docId,
 				title: "refusal walk",

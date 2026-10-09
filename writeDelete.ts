@@ -18,7 +18,7 @@ import {
 	deleteBlockVerified,
 	deleteDocVerified,
 } from "siyuan-kb-primitives/write";
-import { refusedEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	deletedBlocksTail,
 	echoTail,
@@ -60,7 +60,7 @@ export async function runDeleteMode(
 			// invalidRefs rides the pre-delete walk set — the doc is gone.
 			const invalidRefs = await backlinkCheck(
 				kernel,
-				outcome.preWalk.map((b) => b.id),
+				outcome.preWalk.blocks.map((b) => b.id),
 			);
 			// The same walk set is the receipt: every block the doc lost,
 			// itemized with its content — no outline or root row survives.
@@ -69,7 +69,7 @@ export async function runDeleteMode(
 				message: `deleted doc '${doc.title}' (${doc.rootId}) in KB ${name} — ${invalidRefs.count} doc(s) with orphaned refs`,
 				kb: name,
 				invalidRefs,
-				...deletedBlocksTail(input.sessionId, outcome.preWalk),
+				...deletedBlocksTail(input.sessionId, outcome.preWalk.blocks),
 			};
 		});
 	}
@@ -90,6 +90,19 @@ export async function runDeleteMode(
 		// The producer's scoping refusal, worded by the shared sentence
 		// pair — the foreign arm carries the block's actual root.
 		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
+	}
+	if (outcome.kind === "walk-truncated") {
+		// The delete acked but the post-delete walk hit the depth bound:
+		// the target's absence is unconfirmed. Applied-but-unverified —
+		// never renderable as ok, never as "unreachable".
+		return finishWrite(name, { blockId }, async () => {
+			const invalidRefs = await backlinkCheck(kernel, [blockId]);
+			const tail = await echoTail(input, doc, outcome.postWalk);
+			return errorEnvelope(
+				`delete applied but unverified: block '${blockId}' acked deleted, but the verification walk hit the document's depth bound — whether the target is gone could not be confirmed (it may sit past the bound). Do NOT re-run blind; re-fetch the outline (kb_read) and check the block by id first`,
+				{ kb: name, blockId, invalidRefs, ...tail },
+			);
+		});
 	}
 	if (outcome.kind !== "judged") {
 		// The exhaustive wording home (the createVerdictEnvelope pattern):

@@ -10,7 +10,7 @@ import {
 	firstChildContent,
 	walkBlockTree,
 	type GuardRow,
-	type WalkedBlock,
+	type WalkedTree,
 } from "siyuan-kb-primitives";
 import { createVerifiedDoc } from "siyuan-kb-primitives/write";
 import { type Envelope } from "./envelope.js";
@@ -37,7 +37,7 @@ async function duplicateStop(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name } = input;
 	const detailed: Record<string, unknown>[] = [];
-	const walks: WalkedBlock[][] = [];
+	const walks: WalkedTree[] = [];
 	for (const row of rows) {
 		const docId = row.root_id;
 		// Guard-stop evidence is presentation-only: the write never fires on
@@ -47,10 +47,10 @@ async function duplicateStop(
 		// stays reserved for write-verification walks. One walk per row also
 		// serves both the outline and (single-row) the block-ID payload —
 		// never a second traversal of the same doc.
-		const walk = await walkBlockTree(kernel, docId, {
+		const tree = await walkBlockTree(kernel, docId, {
 			tolerateVanished: true,
 		});
-		walks.push(walk);
+		walks.push(tree);
 		// The stop serves heading content — seed the baselines so a follow-up
 		// edit on a served heading verifies against what the agent saw here,
 		// not against content read at edit time (which launders a concurrent
@@ -58,7 +58,7 @@ async function duplicateStop(
 		const outline = serveOutlineFromWalk(
 			sessionId,
 			"kb_write",
-			walk,
+			tree.blocks,
 			input.baselines,
 		);
 		let markdown = "";
@@ -95,7 +95,7 @@ async function duplicateStop(
 	// Single-row: block IDs with content so the agent can go straight to
 	// `edit` by blockId — reuses the outline walk already in hand.
 	if (rows.length === 1) {
-		const blocks = walks[0]!.map((b) => ({
+		const blocks = walks[0]!.blocks.map((b) => ({
 			id: b.id,
 			type: b.type,
 			content: b.content,

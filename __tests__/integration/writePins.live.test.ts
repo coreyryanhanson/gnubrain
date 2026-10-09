@@ -136,7 +136,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 			[...String(outline).matchAll(/→ (\S+)/g)].map((m) => m[1]!);
 
 		const walkHeadingIds = async (docId: string): Promise<string[]> =>
-			(await walkBlockTree(client, docId))
+			(await walkBlockTree(client, docId)).blocks
 				.filter((b) => isHeadingBlock(b))
 				.map((b) => b.id);
 
@@ -224,7 +224,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				const seen = await read({ kb: "fixture-a", docId });
 				expect(seen.status).toBe("ok");
 				const headingId = heading(
-					await walkBlockTree(client, docId),
+					(await walkBlockTree(client, docId)).blocks,
 					"Fresh Pin",
 				).id;
 
@@ -253,7 +253,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				// The kernel content is untouched by the refused write — read from
 				// the live tree, not the index (the index may still be converging
 				// toward the kernel-side change; the tree is the authority).
-				const postTree = await walkBlockTree(client, docId);
+				const postTree = (await walkBlockTree(client, docId)).blocks;
 				const postHeading = postTree.find((b) => b.id === headingId);
 				expect(postHeading !== undefined).toBe(true);
 				expect(String(postHeading!.content)).toContain("changed");
@@ -332,7 +332,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 						"",
 					].join("\n"),
 				);
-				const walk = await walkBlockTree(client, docId);
+				const walk = (await walkBlockTree(client, docId)).blocks;
 				const rootSec = heading(walk, "Root Sec");
 				const deepSub = heading(walk, "Deep Sub");
 				const next = heading(walk, "Next");
@@ -368,7 +368,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.newBlockId).toBeDefined();
 				expect(result.outline).toBeDefined();
 
-				const after = await walkBlockTree(client, docId);
+				const after = (await walkBlockTree(client, docId)).blocks;
 				// Old body gone (paragraph, list, deeper heading's section).
 				for (const gone of ["lead para", "item 1", "sub body"]) {
 					expect(after.some((b) => b.content === gone)).toBe(false);
@@ -407,7 +407,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					"# Last Sec\n\nbody one\n\ntrailing para\n",
 				);
 				const headingId = heading(
-					await walkBlockTree(client, docId),
+					(await walkBlockTree(client, docId)).blocks,
 					"Last Sec",
 				).id;
 
@@ -428,7 +428,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					{ id: expect.any(String), content: "body one" },
 					{ id: expect.any(String), content: "trailing para" },
 				]);
-				const after = await walkBlockTree(client, docId);
+				const after = (await walkBlockTree(client, docId)).blocks;
 				expect(after.some((b) => b.content === "trailing para")).toBe(false);
 				expect(after.some((b) => b.content === "body one")).toBe(false);
 				expect(heading(after, "Last Sec").id).toBe(headingId);
@@ -449,7 +449,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					"/Ref Replace Pin",
 					"# RS\n\npara p1\n\n# Bound\n\nb body\n",
 				);
-				const walk = await walkBlockTree(client, docId);
+				const walk = (await walkBlockTree(client, docId)).blocks;
 				const p1 = await paraId(docId, "para p1");
 				const referrerPath = "/Ref Replace Referrer";
 				await mintDoc(
@@ -675,7 +675,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					"/Mx Dest",
 					"# Dest H\n\ndest body\n",
 				);
-				const srcWalk = await walkBlockTree(client, srcId);
+				const srcWalk = (await walkBlockTree(client, srcId)).blocks;
 				const mover = srcWalk.find((b) => b.content === "mover body")!;
 				const stayer = srcWalk.find((b) => b.content === "stayer body")!;
 
@@ -734,7 +734,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				const w = writeSetup();
 				// Multi-block: a paragraph followed by a list.
 				const preIds = new Set(
-					(await walkBlockTree(client, docId)).map((b) => b.id),
+					(await walkBlockTree(client, docId)).blocks.map((b) => b.id),
 				);
 				const multi = await w.run({
 					kb: "fixture-a",
@@ -745,7 +745,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(multi.status).toBe("ok");
 				expect(multi.newBlockId).toBeDefined();
 				const postIds = new Set(
-					(await walkBlockTree(client, docId)).map((b) => b.id),
+					(await walkBlockTree(client, docId)).blocks.map((b) => b.id),
 				);
 				const diff = [...postIds].filter((id) => !preIds.has(id));
 				expect(diff.length).toBeGreaterThanOrEqual(2);
@@ -756,7 +756,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 
 				// Single-block: a diff of exactly one ID.
 				const pre2 = new Set(
-					(await walkBlockTree(client, docId)).map((b) => b.id),
+					(await walkBlockTree(client, docId)).blocks.map((b) => b.id),
 				);
 				const single = await w.run({
 					kb: "fixture-a",
@@ -766,7 +766,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				});
 				expect(single.status).toBe("ok");
 				const post2 = new Set(
-					(await walkBlockTree(client, docId)).map((b) => b.id),
+					(await walkBlockTree(client, docId)).blocks.map((b) => b.id),
 				);
 				const diff2 = [...post2].filter((id) => !pre2.has(id));
 				expect(diff2).toHaveLength(1);
@@ -786,7 +786,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					"# Anchor Echo\n\ntrailing paragraph\n",
 				);
 				const headingId = heading(
-					await walkBlockTree(client, docId),
+					(await walkBlockTree(client, docId)).blocks,
 					"Anchor Echo",
 				).id;
 				const w = writeSetup();
@@ -814,7 +814,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					"/Anchor List Pin",
 					"# A\n\nlead\n\n- i1\n- i2\n\n# B\n\nb body\n",
 				);
-				const listWalk = await walkBlockTree(client, listDoc);
+				const listWalk = (await walkBlockTree(client, listDoc)).blocks;
 				const a = heading(listWalk, "A");
 				const b = heading(listWalk, "B");
 				const w = writeSetup();
@@ -827,7 +827,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				});
 				expect(first.status).toBe("ok");
 				expect(first.anchor).toBe(`nextID=${b.id} (next heading)`);
-				const after = await walkBlockTree(client, listDoc);
+				const after = (await walkBlockTree(client, listDoc)).blocks;
 				const landed = after.find(
 					(x) => x.content === "appended before boundary",
 				)!;
@@ -854,7 +854,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 						"",
 					].join("\n"),
 				);
-				const calloutWalk = await walkBlockTree(client, calloutDoc);
+				const calloutWalk = (await walkBlockTree(client, calloutDoc)).blocks;
 				const nested = heading(calloutWalk, "Nested");
 				const second = await w.run({
 					kb: "fixture-a",
@@ -866,7 +866,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(second.status).toBe("ok");
 				expect(String(second.anchor)).toContain("appendBlock(");
 				expect(String(second.anchor)).toContain("— end of section");
-				const after2 = await walkBlockTree(client, calloutDoc);
+				const after2 = (await walkBlockTree(client, calloutDoc)).blocks;
 				const nestedAfter = heading(after2, "Nested");
 				const containerId = sectionOf(after2, nestedAfter.id)!.containerId;
 				expect(containerId).not.toBeNull();

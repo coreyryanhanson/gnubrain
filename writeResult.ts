@@ -64,6 +64,12 @@ export async function freshContentRefusal(
 		switch (arm.kind) {
 			case "vanished":
 				continue;
+			case "walk-truncated":
+				// Absence from a walk truncated at the depth bound is
+				// unconfirmed — the target may sit past the bound. Not
+				// fresh, not vanished: skip (the baseline is retained, so a
+				// later edit re-judges like vanished does).
+				continue;
 			case "fresh":
 			case "unseen":
 				baselines.remember(arm.blockId, arm.currentContent);
@@ -84,7 +90,7 @@ export async function freshContentRefusal(
 	const fresh = serveOutlineFromWalk(
 		context.sessionId,
 		"kb_write",
-		walk,
+		walk.blocks,
 		baselines,
 	);
 	return refusedEnvelope(
