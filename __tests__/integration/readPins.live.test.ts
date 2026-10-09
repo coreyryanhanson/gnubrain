@@ -559,11 +559,15 @@ third body`,
 	// -------------------------------------------------------------------
 
 	it(
-		"a deliberately wrong per-test pin refuses every write naming both versions; reads proceed with the drift warning",
+		"a kernel reporting a wrong version refuses every write naming both versions; reads proceed with the drift warning",
 		async () => {
-			// Per-test config through the production seam (pinnedVersion rides
-			// runSessionValidation) — the module constant is untouched, so the
-			// setup's pin-equality assert still holds.
+			// The probe rides a prototype-chained view whose getVersion
+			// reports a drifted version (the write refusals below still make
+			// zero kernel calls; reads use the real client).
+			const lyingKernel = Object.assign(Object.create(client), {
+				baseUrl: client.baseUrl,
+				getVersion: async () => "9.9.9",
+			}) as SiYuanKernelClient;
 			const settingsText = JSON.stringify({ gnubrain: fixtures.settings });
 			const loaded = await loadGnubrainSettings(
 				async () => settingsText,
@@ -572,12 +576,11 @@ third body`,
 			);
 			const drift = await runSessionValidation({
 				loaded,
-				kernel: client,
-				pinnedVersion: "9.9.9",
+				kernel: lyingKernel,
 			});
 			expect(drift.probe).toEqual({
 				verdict: "drift",
-				kernelVersion: PINNED_SIYUAN_VERSION,
+				kernelVersion: "9.9.9",
 			});
 
 			const w = writeSetup(drift);

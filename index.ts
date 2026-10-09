@@ -57,8 +57,6 @@ export interface GnubrainDeps {
 	homeDir?: string;
 	/** Test seam for the kernel client. */
 	createClient?: (baseUrl: string, token: string) => WriteKernelClient;
-	/** Per-test version-pin override; absent → the module pin applies. */
-	pinnedVersion?: string;
 }
 
 function defaultReadFile(path: string): Promise<string> {
@@ -179,9 +177,6 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		if (breaker.inCooldown()) {
 			return rateLimitedValidation({
 				loaded,
-				...(deps.pinnedVersion !== undefined && {
-					pinnedVersion: deps.pinnedVersion,
-				}),
 			});
 		}
 		// Branch-scoped read: only the active branch's scope snapshot counts —
@@ -191,9 +186,6 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			loaded,
 			kernel,
 			persistedScope: persisted,
-			...(deps.pinnedVersion !== undefined && {
-				pinnedVersion: deps.pinnedVersion,
-			}),
 		});
 	}
 

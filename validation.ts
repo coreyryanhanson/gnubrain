@@ -4,7 +4,6 @@
 // later tool call is rejected with the problem named, never a crash.
 
 import {
-	PINNED_SIYUAN_VERSION,
 	SiYuanAuthError,
 	probeKernel,
 	resolveNotebooks,
@@ -45,9 +44,6 @@ export interface SessionValidation {
 	 * recovery resets the breaker only on this (a successful authenticated
 	 * call), not on a network-failed pass. */
 	lsNotebooksOk: boolean;
-	/** The effective version pin (per-test override or module constant) —
-	 * both gates resolve drift against this, never the module constant. */
-	pinnedVersion?: string;
 	/** Set when validation was skipped because the 429 cooldown was armed —
 	 * kb-name refusals must name the skip, not "stale or encrypted". */
 	skippedDueToRateLimit?: boolean;
@@ -121,7 +117,6 @@ export function degradedValidation(errors: string[]): SessionValidation {
 		settings: undefined,
 		shapeErrors: errors,
 		probe: { verdict: "never-probed" },
-		pinnedVersion: PINNED_SIYUAN_VERSION,
 		validKBs: new Map(),
 		scope: [],
 		defaultKBs: [],
@@ -139,7 +134,6 @@ export function degradedValidation(errors: string[]): SessionValidation {
  * file degrades exactly as it would without a lock. */
 export function rateLimitedValidation(input: {
 	loaded: LoadedSettings;
-	pinnedVersion?: string;
 }): SessionValidation {
 	const { global, project } = input.loaded;
 	const shapeErrors = [...(global.ok ? [] : global.errors), ...project.errors];
@@ -153,7 +147,6 @@ export function rateLimitedValidation(input: {
 		// probe ran — "unreachable" is the honest verdict: the kernel cannot
 		// serve this session right now, and a write attempt may re-probe it.
 		probe: { verdict: "unreachable" },
-		pinnedVersion: input.pinnedVersion ?? PINNED_SIYUAN_VERSION,
 		validKBs: new Map(),
 		scope: [],
 		defaultKBs: project.defaultKBs ?? settings.defaultKBs ?? [],
@@ -175,12 +168,9 @@ export async function runSessionValidation(input: {
 	/** A client exists iff the global settings parsed — undefined means they
 	 * didn't, which the shape gate below refuses before the kernel is touched. */
 	kernel: KernelProbeClient | undefined;
-	/** The version-refusal pin overrides this per-test. */
-	pinnedVersion?: string;
 	/** Latest persisted `kb-scope` snapshot, when the session carries one. */
 	persistedScope?: string[] | undefined;
 }): Promise<SessionValidation> {
-	const pinnedVersion = input.pinnedVersion ?? PINNED_SIYUAN_VERSION;
 	const warnings: string[] = [];
 	const { global, project } = input.loaded;
 
@@ -206,7 +196,7 @@ export async function runSessionValidation(input: {
 	// caller owns its own swallow policy — a failed probe is "unreachable".
 	let probe: ProbeVerdict;
 	try {
-		probe = await probeKernel(kernel, pinnedVersion);
+		probe = await probeKernel(kernel);
 	} catch {
 		probe = { verdict: "unreachable" };
 	}
@@ -241,7 +231,6 @@ export async function runSessionValidation(input: {
 			settings,
 			shapeErrors,
 			probe,
-			pinnedVersion,
 			validKBs: new Map(),
 			scope: [],
 			defaultKBs: configuredDefault,
@@ -263,7 +252,6 @@ export async function runSessionValidation(input: {
 		settings,
 		shapeErrors,
 		probe,
-		pinnedVersion,
 		validKBs,
 		scope,
 		defaultKBs: configuredDefault,

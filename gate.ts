@@ -222,26 +222,21 @@ function classifyKernelError(
 	return null;
 }
 
-/** The effective pin: rides the validation (runSessionValidation resolves
- * the per-test override); hand-built validations fall back to the constant. */
-function effectivePin(validation: SessionValidation): string {
-	return validation.pinnedVersion ?? PINNED_SIYUAN_VERSION;
-}
-
 /** The static (cached, kernel-free) half of the write-path version gate:
  * probe === "drift" refuses from session state alone, so it may run before
  * the grant dialog — a drifted session prompts never, for any KB, for as
- * long as the drift persists. One home for the pinned-version resolution:
- * the write entry calls this ahead of the dialog, and gateWriteAttempt
- * delegates to it first, so the two call sites cannot drift. The pin
- * itself resolves through effectivePin. */
+ * long as the drift persists. The write entry calls this ahead of the
+ * dialog, and gateWriteAttempt delegates to it first, so the two call
+ * sites cannot drift. The pin itself is the primitives' module constant —
+ * probeKernel judges against it, so the wording names the same pin the
+ * verdict was judged against. */
 export function staticDriftRefusal(
 	validation: SessionValidation,
 ): Envelope | null {
 	if (validation.probe.verdict !== "drift") return null;
 	return versionRefusalEnvelope(
 		validation.probe.kernelVersion,
-		effectivePin(validation),
+		PINNED_SIYUAN_VERSION,
 	);
 }
 
@@ -284,7 +279,7 @@ export async function gateWriteAttempt(input: {
 	// sees the thrown object (429 → cooldown, auth → breaker); the comparison
 	// lives in the pin-owning package, not re-encoded here.
 	try {
-		const fresh = await probeKernel(kernel, effectivePin(validation));
+		const fresh = await probeKernel(kernel);
 		validation.probe = fresh;
 		// Exhaustive over both verdict arms: a new KernelProbeResult kind
 		// added upstream must fail typecheck here — a fallthrough would
@@ -295,7 +290,7 @@ export async function gateWriteAttempt(input: {
 					ok: false,
 					envelope: versionRefusalEnvelope(
 						fresh.kernelVersion,
-						effectivePin(validation),
+						PINNED_SIYUAN_VERSION,
 					),
 				};
 			case "ok":
@@ -429,8 +424,8 @@ export async function runKbCall<K extends object>(
 	// includes a malformed result: the transport succeeded, so contact is real.
 	// Exception: a verification-phase auth/lock verdict (the primitives
 	// classify those instead of rethrowing — the mutation already acked, so
-	// the marker replaces the accounting the rethrow used to feed in this
-	// function's catch). The kernel's per-IP FailCount advanced behind this
+	// the marker accounts for the event here). The kernel's per-IP FailCount
+	// advanced behind this
 	// op's transport success, so the event is counted and reset-on-success
 	// is skipped — resetting would let the next write pass a gate the
 	// kernel is actively refusing.
@@ -456,7 +451,7 @@ export async function runKbCall<K extends object>(
 	if (result.status === "ok" && input.validation.probe.verdict === "drift") {
 		result.drift = driftWarning(
 			input.validation.probe.kernelVersion,
-			effectivePin(input.validation),
+			PINNED_SIYUAN_VERSION,
 		);
 	}
 	return result;

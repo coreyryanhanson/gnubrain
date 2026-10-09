@@ -105,7 +105,7 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
 
 `index.ts` is the entry (`register(pi, deps)`): session lifecycle, `/kb`
 command, status slot, and both toolsets. `deps` is the injectable test seam
-(`readFile`, `homeDir`, `createClient`, `pinnedVersion`) — unit and integration
+(`readFile`, `homeDir`, `createClient`) — unit and integration
 tests drive the extension through it instead of touching real files.
 
 - **Every kb tool call routes through `gate.ts`.** Reads use `runKbCall`;

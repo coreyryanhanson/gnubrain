@@ -543,17 +543,17 @@ describe("read + write toolset wiring", () => {
 		expect(write!.spec.persistKey).toBe("toolset-state:gnubrain.write");
 	});
 
-	it("a per-test pinnedVersion override refuses writes naming both versions; reads proceed", async () => {
+	it("a kernel-reported drift refuses writes naming both versions; reads proceed", async () => {
 		const { pi, fire, runTool } = fakePi();
-		const d = deps({ version: PINNED_SIYUAN_VERSION });
-		register(pi, { ...d, pinnedVersion: "9.9.9" });
+		// The probe stub reports a drifted version.
+		register(pi, deps({ version: "9.9.9" }));
 		const { ctx, statuses } = fakeCtx({
 			hasUI: true,
 			select: async () => "Yes",
 		});
 		await fire("session_start", ctx);
 		// The drift verdict drives the status cause tag; the write refusal
-		// names the overridden pin alongside the kernel-reported version.
+		// names both versions.
 		expect(statuses.at(-1)?.[1]).toBe("● kb: version");
 		const refused = (
 			await runTool(

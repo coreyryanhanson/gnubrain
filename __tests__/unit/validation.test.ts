@@ -130,16 +130,6 @@ describe("startup validation order", () => {
 			});
 		}
 	});
-
-	it("the pinned version is overridable per test (the version-refusal seam)", async () => {
-		const { kernel } = stubKernel({ version: "3.9.0" });
-		const result = await runSessionValidation({
-			loaded: await loaded(globalSettings()),
-			kernel,
-			pinnedVersion: "3.9.0",
-		});
-		expect(result.probe).toEqual({ verdict: "ok", kernelVersion: "3.9.0" });
-	});
 });
 
 describe("notebook validation (lsNotebooks)", () => {
