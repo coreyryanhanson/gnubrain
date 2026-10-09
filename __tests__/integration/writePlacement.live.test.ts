@@ -170,8 +170,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "appended body",
 			});
 			expect(appended.status).toBe("ok");
-			const after = (await walkBlockTree(client, docId)).blocks;
-			const containerId = sectionOf(after, nested.id)!.containerId;
+			const afterTree = await walkBlockTree(client, docId);
+			const after = afterTree.blocks;
+			const calloutSection = sectionOf(afterTree, nested.id);
+			expect(calloutSection.kind).toBe("section");
+			if (calloutSection.kind !== "section") return;
+			const containerId = calloutSection.section.containerId;
 			expect(containerId).not.toBeNull();
 			// The appended block is the callout's last child; the container's
 			// following siblings are untouched.
@@ -190,10 +194,13 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 				markdown: "replacement body",
 			});
 			expect(replaced.status).toBe("ok");
-			const afterReplace = (await walkBlockTree(client, docId)).blocks;
+			const replaceTree = await walkBlockTree(client, docId);
+			const afterReplace = replaceTree.blocks;
 			const nestedAfter = heading(afterReplace, "Nested");
-			const sweepSection = sectionOf(afterReplace, nestedAfter.id)!;
-			expect(sweepSection.members.map((m) => m.content)).toEqual([
+			const sweepSection = sectionOf(replaceTree, nestedAfter.id);
+			expect(sweepSection.kind).toBe("section");
+			if (sweepSection.kind !== "section") return;
+			expect(sweepSection.section.members.map((m) => m.content)).toEqual([
 				"replacement body",
 			]);
 			expect(afterReplace.some((b) => b.content === "after the callout")).toBe(
@@ -442,13 +449,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("live write placement", () => {
 			// kinds against hand-built walks; tabs/footnote fixtures cannot be
 			// minted from markdown).
 			const docId = await mintDoc("refusal walk", "# A\n\np1\n\n# B\n\npB\n");
-			const walk = (await walkBlockTree(client, docId)).blocks;
+			const refusalTree = await walkBlockTree(client, docId);
+			const walk = refusalTree.blocks;
 			const doc: DocTarget = {
 				rootId: docId,
 				title: "refusal walk",
 			};
 			for (const h of walk.filter((b) => isHeadingBlock(b))) {
-				expect(headingInWalk(walk, doc, h.id)).toBe(h);
+				expect(headingInWalk(refusalTree, doc, h.id)).toBe(h);
 			}
 		},
 		LIVE_TIMEOUT,

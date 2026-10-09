@@ -48,15 +48,27 @@ export async function runReplaceSectionMode(
 	// derives it too; the sequence re-derives the identical section
 	// internally from this same walk.
 	const tree = await walkBlockTree(kernel, doc.rootId);
-	const walk = tree.blocks;
-	const heading = headingInWalk(walk, doc, headingId);
+	const heading = headingInWalk(tree, doc, headingId);
 	if ("status" in heading) return heading;
-	const deleteSet = sectionOf(walk, headingId);
+	// One truncation sentence, shared by both refusal sites below — the
+	// projection arm and its fail-closed echo tripwire refuse the same tree.
+	const truncationRefusal = () =>
+		refusedEnvelope(
+			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
+			{ kb: name },
+		);
+	const deleteSet = sectionOf(tree, headingId);
+	if (deleteSet.kind === "walk-truncated") {
+		// The projection refuses the truncated tree the sequence's own gate
+		// would — refuse here, before any kernel call.
+		return truncationRefusal();
+	}
 	// Unreachable — headingInWalk and sectionOf re-find the heading with
-	// the same predicate on the same walk — kept as a fail-closed tripwire.
-	if (deleteSet === undefined) {
+	// the same predicate on the same tree — kept as a fail-closed tripwire.
+	if (deleteSet.kind === "heading-absent") {
 		return refusedEnvelope(staleHeadingMessage(headingId, doc));
 	}
+	const section = deleteSet.section;
 	// Fresh-content precondition: a concurrency guard, not a consent
 	// mechanism (the grant resolved at the kb_write entry). One wrapper step
 	// right before the kernel call — the judgment seeds missing baselines
@@ -67,7 +79,7 @@ export async function runReplaceSectionMode(
 	const stale = await freshContentRefusal(
 		kernel,
 		baselines,
-		deleteSet.closure.map((b) => ({
+		section.closure.map((b) => ({
 			blockId: b.id,
 			baselineHash: baselines.servedHash(b.id),
 		})),
@@ -76,8 +88,13 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// The anchor echo is wording garnish for the failure arms — the same
 	// pure projection the sequence derives internally for the mutation
-	// (identical inputs, identical output).
-	const echo = appendAnchorEcho(deriveAppendAnchor(walk, heading));
+	// (identical inputs, identical output). Unreachable truncation arm:
+	// sectionOf refused the same tree above. Fail-closed tripwire.
+	const echoAnchor = deriveAppendAnchor(tree, heading);
+	if (echoAnchor.kind === "walk-truncated") {
+		return truncationRefusal();
+	}
+	const echo = appendAnchorEcho(echoAnchor);
 	const outcome = await replaceSectionVerified(kernel, input.probe, {
 		rootId: doc.rootId,
 		walk: tree,

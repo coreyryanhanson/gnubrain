@@ -84,23 +84,35 @@ export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
 	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
 }
 
+/** The truncation refusal — the target read runs over a truncated walk,
+ * so an absent heading is unconfirmed (it may sit past the bound). The
+ * flows word their truncation refusals per document shape (append, move,
+ * replace-section); this is the target-judgment one. */
+export function walkTruncatedMessage(doc: DocTarget): string {
+	return `the walk of doc '${doc.title}' (${doc.rootId}) hit the document's depth bound, so the target judgment would read incomplete evidence — refused before any kernel call; restructure the document (or edit in place) instead`;
+}
+
 /** The heading-target refusal map — wording only. The judgment (membership
  * + write-parent targetability, the kernel's CheckContainerParent set) is
  * the primitives' `resolveHeadingTarget`; a section target inside `tabs` or
  * an unnamed container (wire type "", e.g. a footnote definition) would
  * place the write in a container the kernel rejects, so the untargetable
- * arm refuses with the same re-target guidance every flow shares. */
+ * arm refuses with the same re-target guidance every flow shares. Takes
+ * the whole WalkedTree: absence on a truncated walk is unconfirmed and
+ * refuses as `walk-truncated` instead of a confident stale refusal. */
 export function headingInWalk(
-	walk: WalkedBlock[],
+	tree: WalkedTree,
 	doc: DocTarget,
 	headingId: string,
 ): WalkedBlock | Envelope {
-	const outcome = resolveHeadingTarget(walk, headingId);
+	const outcome = resolveHeadingTarget(tree, headingId);
 	switch (outcome.kind) {
 		case "heading":
 			return outcome.heading;
 		case "stale":
 			return refusedEnvelope(staleHeadingMessage(headingId, doc));
+		case "walk-truncated":
+			return refusedEnvelope(walkTruncatedMessage(doc));
 		case "untargetable": {
 			const container =
 				outcome.containerType === ""

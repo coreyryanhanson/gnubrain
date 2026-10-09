@@ -30,18 +30,27 @@ export async function runAppendMode(
 	// derivation fetches) — the primitive derives the id set internally and
 	// refuses a truncated walk before any kernel call.
 	const tree = await walkBlockTree(kernel, doc.rootId);
-	const walk = tree.blocks;
 	let resolvedHeading: WalkedBlock | undefined;
 	if (params.headingId !== undefined) {
-		const heading = headingInWalk(walk, doc, params.headingId);
+		const heading = headingInWalk(tree, doc, params.headingId);
 		if ("status" in heading) return heading;
 		resolvedHeading = heading;
 	}
-	const anchor = deriveAppendAnchor(
-		walk,
+	const derived = deriveAppendAnchor(
+		tree,
 		resolvedHeading,
 		params.placement as AppendPlacement | undefined,
 	);
+	if (derived.kind === "walk-truncated") {
+		// The projection refuses the same tree the verified insert's
+		// pre-walk gate would — refuse here, before any kernel call. No
+		// anchor echo exists: the anchor could not be derived.
+		return refusedEnvelope(
+			`the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead`,
+			{ kb: name },
+		);
+	}
+	const anchor = derived;
 	const echo = appendAnchorEcho(anchor);
 	// The verified insert: the mutation and the landed judgment are one
 	// primitive call. Transport failures in the mutation phase are outcome-

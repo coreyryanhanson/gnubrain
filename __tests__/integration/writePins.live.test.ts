@@ -368,8 +368,8 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.newBlockId).toBeDefined();
 				expect(result.outline).toBeDefined();
 
-				const after = (await walkBlockTree(client, docId)).blocks;
-				// Old body gone (paragraph, list, deeper heading's section).
+				const afterTree = await walkBlockTree(client, docId);
+				const after = afterTree.blocks;
 				for (const gone of ["lead para", "item 1", "sub body"]) {
 					expect(after.some((b) => b.content === gone)).toBe(false);
 				}
@@ -379,9 +379,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(heading(after, "Next").id).toBe(next.id);
 				expect(after.some((b) => b.id === rootSec.id)).toBe(true);
 				// The new body sits directly under the heading.
-				expect(sectionOf(after, rootSec.id)!.members[0]!.content).toBe(
-					"replacement body",
-				);
+				const rootSection = sectionOf(afterTree, rootSec.id);
+				expect(
+					rootSection.kind === "section"
+						? rootSection.section.members[0]!.content
+						: "no section",
+				).toBe("replacement body");
 				// The heading's block ref still resolves — zero invalid refs (the
 				// invalid-ref report lags the replace's index rebuild; poll it out).
 				await pollUntil(
@@ -868,7 +871,12 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(String(second.anchor)).toContain("— end of section");
 				const after2 = (await walkBlockTree(client, calloutDoc)).blocks;
 				const nestedAfter = heading(after2, "Nested");
-				const containerId = sectionOf(after2, nestedAfter.id)!.containerId;
+				const nestedTree = await walkBlockTree(client, calloutDoc);
+				const nestedSection = sectionOf(nestedTree, nestedAfter.id);
+				const containerId =
+					nestedSection.kind === "section"
+						? nestedSection.section.containerId
+						: null;
 				expect(containerId).not.toBeNull();
 				expect(
 					after2.find((x) => x.content === "appended into callout")!.parentId,

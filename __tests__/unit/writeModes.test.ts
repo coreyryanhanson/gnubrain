@@ -725,7 +725,11 @@ describe("append", () => {
 			walkBlock("fn1", "", "", "fn"),
 			walkBlock("h2", "h", "h2", "In footnote", "fn1", ""),
 		];
-		const result = headingInWalk(walk, { title: "Doc", rootId: "d-doc" }, "h2");
+		const result = headingInWalk(
+			{ blocks: walk, truncated: false },
+			{ title: "Doc", rootId: "d-doc" },
+			"h2",
+		);
 		expect("message" in result && result.message).toContain(
 			"an unnamed container",
 		);

@@ -138,14 +138,19 @@ export async function runMoveMode(
 		: undefined;
 	const destWalk = sourceWalk ?? (await walkBlockTree(kernel, dest.rootId));
 	if (params.toHeadingId !== undefined) {
-		const heading = headingInWalk(destWalk.blocks, dest, params.toHeadingId);
+		const heading = headingInWalk(destWalk, dest, params.toHeadingId);
 		if ("status" in heading) return heading;
 	}
 	// Anchor: tool-derived, never agent-supplied. The placement refusals
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
 	// this pre-move walk; their wording lives in writeVerdicts.
-	const anchor = deriveMoveAnchor(destWalk.blocks, params.toHeadingId);
+	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
+	if (anchor.kind === "walk-truncated") {
+		// The projection refuses the truncated tree the verified move's
+		// pre-mutation gate would — refuse here, before any kernel call.
+		return movePlacementRefusal({ kind: "walk-truncated" }, doc);
+	}
 	const echo = moveAnchorEcho(anchor);
 	const outcome = await moveBlockVerified(kernel, input.probe, {
 		blockId,
