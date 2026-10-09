@@ -892,6 +892,7 @@ describe("replace-section", () => {
 		expect(result.invalidRefs).toEqual({
 			count: 1,
 			hpaths: ["/lab/notebook"],
+			truncated: false,
 		});
 		// Outline freshness: the result outline reflects the post-write
 		// tree — the swept blocks are gone from it.
@@ -1367,7 +1368,11 @@ describe("replace-section", () => {
 			},
 		});
 		const result = await harness.execute(replaceParams);
-		expect(result.invalidRefs).toEqual({ count: 1, hpaths: ["/Other doc"] });
+		expect(result.invalidRefs).toEqual({
+			count: 1,
+			hpaths: ["/Other doc"],
+			truncated: false,
+		});
 		// The receipt: the section's closure (members + descendants, the
 		// heading survives) with the walk content verbatim.
 		expect(result.deletedBlocks).toEqual([
@@ -1611,7 +1616,11 @@ describe("delete", () => {
 		// Wording pin: the orphaned-refs count is agent-visible (0 here —
 		// no refRows configured).
 		expect(result.message).toContain("0 doc(s) with orphaned refs");
-		expect(result.invalidRefs).toEqual({ count: 0, hpaths: [] });
+		expect(result.invalidRefs).toEqual({
+			count: 0,
+			hpaths: [],
+			truncated: false,
+		});
 		// The receipt rides the judged arm's content (the primitive's
 		// membership read): id + content verbatim.
 		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "doomed" }]);
@@ -1873,7 +1882,11 @@ describe("delete", () => {
 			"message",
 			"status",
 		]);
-		expect(result.invalidRefs).toEqual({ count: 1, hpaths: ["/Other doc"] });
+		expect(result.invalidRefs).toEqual({
+			count: 1,
+			hpaths: ["/Other doc"],
+			truncated: false,
+		});
 		// The receipt rides the pre-delete walk set — the doc is gone.
 		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "body" }]);
 	});
