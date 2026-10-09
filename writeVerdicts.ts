@@ -360,7 +360,10 @@ export function editVerifyFailureReason(
 			// blockInDoc's refusal half, total by construction.
 			return `the block no longer resolves in '${doc.title}': ${blockInDocRefusalKind(outcome.inner, blockId, doc)}`;
 		case "absent-from-index":
-			return "the block is absent from the blocks index after the update";
+			return (
+				"the block never appeared in the blocks index across the " +
+				"post-update verification window"
+			);
 		case "never-converged":
 			return (
 				"the blocks index never moved off the pre-write content within the " +
