@@ -5,7 +5,7 @@
 // statement shapes) live in siyuan-kb-primitives, beside the builders.
 
 import { describe, expect, it } from "vitest";
-import { GUARD_STMT_HEAD } from "siyuan-kb-primitives";
+import { statementKind } from "siyuan-kb-primitives/testing";
 import { validateMintTitle } from "../../writeGuard.js";
 import { base, setup } from "./writeHarness.js";
 
@@ -184,7 +184,7 @@ describe("title guard", () => {
 		// Only verified-create's read-back runs — no guard leg (exact or near)
 		// fires behind confirmNew.
 		const guardQueries = calls.filter(
-			(c) => c.method === "query" && String(c.args).startsWith(GUARD_STMT_HEAD),
+			(c) => c.method === "query" && statementKind(String(c.args)) === "guard",
 		);
 		expect(guardQueries).toHaveLength(0);
 	});

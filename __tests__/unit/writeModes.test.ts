@@ -7,15 +7,14 @@
 import { describe, expect, it } from "vitest";
 import { headingInWalk } from "../../writeFlow.js";
 import {
-	BLOCK_IN_DOC_STMT_HEAD,
 	SiYuanApiError,
 	SiYuanAuthError,
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 	SiYuanTimeoutError,
-	BLOCK_CONTENTS_STMT_HEAD,
 	contentHash,
 } from "siyuan-kb-primitives";
+import { statementKind } from "siyuan-kb-primitives/testing";
 import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import {
 	base,
@@ -461,7 +460,7 @@ describe("edit", () => {
 		const baseQuery = harness.client.query.bind(harness.client);
 		let blockReads = 0;
 		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
 				const rows = (await baseQuery(stmt)) as {
 					id: string;
@@ -516,7 +515,7 @@ describe("edit", () => {
 		let blockReads = 0;
 		const baseQuery = harness.client.query.bind(harness.client);
 		harness.client.query = async (stmt: string) => {
-			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
 				// Read 1 is the pre-write target read; read 2 the post-write
 				// verification read, serving a kernel-normalized stored form
@@ -532,7 +531,7 @@ describe("edit", () => {
 							},
 						];
 			}
-			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
+			if (statementKind(stmt) === "block-contents") {
 				// No baseline-content refresh rides the edit's success path —
 				// the landed verdict carries the stored pair it judged. A
 				// broad refresh here would launder a concurrent change into

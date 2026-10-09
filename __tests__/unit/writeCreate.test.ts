@@ -13,7 +13,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 } from "siyuan-kb-primitives";
-import { VERIFIED_ROOT_STMT_HEAD } from "siyuan-kb-primitives/write";
+import { statementKind } from "siyuan-kb-primitives/testing";
 import { CircuitBreaker } from "../../breaker.js";
 import { validation } from "./fixtures.js";
 import {
@@ -248,7 +248,7 @@ describe("verified-create", () => {
 		let verifiedReads = 0;
 		const baseQuery = client.query.bind(client);
 		client.query = async (stmt: string) => {
-			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
+			if (statementKind(stmt) === "verified-root") {
 				verifiedReads += 1;
 				return [];
 			}
@@ -269,7 +269,7 @@ describe("verified-create", () => {
 		client.query = async (stmt: string) => {
 			// The verified-create assert is the only read on the returned id;
 			// the guard legs are LIKE reads on the guard head.
-			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
+			if (statementKind(stmt) === "verified-root") {
 				verifiedReads += 1;
 				if (verifiedReads === 1) return [];
 			}

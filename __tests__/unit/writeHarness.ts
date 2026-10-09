@@ -7,24 +7,14 @@
 // writeModes suite.
 
 import {
-	BLOCK_CONTENTS_STMT_HEAD,
-	BLOCK_IN_DOC_STMT_HEAD,
 	GUARD_NEAR_CAP,
-	GUARD_STMT_HEAD,
-	OWNERSHIP_STMT_HEAD,
 	PINNED_SIYUAN_VERSION,
-	REFERRING_HPATHS_STMT_HEAD,
-	REFS_BACKLINK_STMT_HEAD,
-	ROOT_ECHO_STMT_HEAD,
 	SiYuanApiError,
 	type BlockTransaction,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
-import {
-	PARENT_LOOKUP_STMT_HEAD,
-	VERIFIED_ROOT_STMT_HEAD,
-	type WriteKernelClient,
-} from "siyuan-kb-primitives/write";
+import { statementKind } from "siyuan-kb-primitives/testing";
+import { type WriteKernelClient } from "siyuan-kb-primitives/write";
 import { CircuitBreaker } from "../../breaker.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import type { WriteParams } from "../../writeSchema.js";
@@ -178,20 +168,19 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async query(stmt) {
 			calls.push({ method: "query", args: stmt });
 			if (queryError) throw queryError;
-			// Route on the production SELECT heads — a SQL rewording updates
-			// the head constant in the same diff, never a silent re-route.
+			// Route on the classifier — a SQL rewording updates the head
+			// constant in the package's single home and the classification is
+			// unchanged; routing never keys on statement text.
+			const kind = statementKind(stmt);
 			// Mode-flow routes:
-			if (stmt.startsWith(REFS_BACKLINK_STMT_HEAD)) {
+			if (kind === "refs-backlink") {
 				return config.refRows ?? [];
 			}
-			if (stmt.startsWith(REFERRING_HPATHS_STMT_HEAD)) {
+			if (kind === "referring-hpaths") {
 				return config.hpathRows ?? [];
 			}
-			// The two heads are disjoint ("... WHERE id IN" vs
-			// "... WHERE id, ..."), so either route order is correct.
-			if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD))
-				return config.baselineRows ?? [];
-			if (stmt.startsWith(BLOCK_IN_DOC_STMT_HEAD)) {
+			if (kind === "block-contents") return config.baselineRows ?? [];
+			if (kind === "block-in-doc") {
 				// blockRows fixtures are rows of the default doc ("d-doc") —
 				// the stub fills root_id; a foreign-block test pins root_id
 				// explicitly (the spread lets the fixture win).
@@ -200,10 +189,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 					...r,
 				}));
 			}
-			if (
-				stmt.startsWith(OWNERSHIP_STMT_HEAD) ||
-				stmt.startsWith(ROOT_ECHO_STMT_HEAD)
-			) {
+			if (kind === "ownership" || kind === "root-echo") {
 				const docId = stmtDocId(stmt);
 				const root = docId === undefined ? undefined : docRoots[docId];
 				return root === undefined
@@ -211,7 +197,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 					: [{ root_id: docId, content: root.content, hpath: root.hpath }];
 			}
 			// Create-flow routes:
-			if (stmt.startsWith(GUARD_STMT_HEAD)) {
+			if (kind === "guard") {
 				// The exact leg is a verbatim `content =` equality and carries
 				// no LIMIT; the near scan always ends LIMIT (cap + 1). Keying
 				// on the terminating LIMIT is spoof-proof: the exact leg always
@@ -221,10 +207,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 					? (config.nearRows ?? [])
 					: (config.exactRows ?? []);
 			}
-			if (stmt.startsWith(PARENT_LOOKUP_STMT_HEAD)) {
+			if (kind === "parent-lookup") {
 				return config.parentRows ?? [];
 			}
-			if (stmt.startsWith(VERIFIED_ROOT_STMT_HEAD)) {
+			if (kind === "verified-root") {
 				return (
 					config.createdRows ?? [
 						{
@@ -418,7 +404,7 @@ export function storedContentStub(
 ): void {
 	const baseQuery = harness.client.query.bind(harness.client);
 	harness.client.query = async (stmt: string) => {
-		if (stmt.startsWith(BLOCK_CONTENTS_STMT_HEAD)) {
+		if (statementKind(stmt) === "block-contents") {
 			const ids = [...stmt.matchAll(/'([^']*)'/g)].map((m) => m[1]);
 			return ids.flatMap((id) =>
 				id !== undefined && stored[id] !== undefined
