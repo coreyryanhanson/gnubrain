@@ -8,8 +8,8 @@ import {
 	type AppendPlacement,
 	type WalkedBlock,
 } from "siyuan-kb-primitives";
-import { idSet, insertVerified } from "siyuan-kb-primitives/write";
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import { insertVerified } from "siyuan-kb-primitives/write";
+import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
 	echoTail,
 	headingInWalk,
@@ -25,9 +25,10 @@ export async function runAppendMode(
 	doc: DocTarget,
 ): Promise<Envelope> {
 	const { kernel, name, params } = input;
-	// The walk doubles as anchor data AND the pre-write set the verified
+	// The walk doubles as anchor data AND the pre-write walk the verified
 	// insert's landed judgment diffs against (the same walk the anchor
-	// derivation fetches).
+	// derivation fetches) — the primitive derives the id set internally and
+	// refuses a truncated walk before any kernel call.
 	const tree = await walkBlockTree(kernel, doc.rootId);
 	const walk = tree.blocks;
 	let resolvedHeading: WalkedBlock | undefined;
@@ -51,8 +52,17 @@ export async function runAppendMode(
 		anchor,
 		body: input.body,
 		rootId: doc.rootId,
-		preIds: idSet(walk),
+		preWalk: tree,
 	});
+	if (outcome.kind === "walk-truncated") {
+		// The primitive refuses a truncated pre-write walk before any kernel
+		// call — the anchor and the landed judgment's pre-write evidence
+		// would derive from an incomplete tree.
+		return refusedEnvelope(
+			`the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead`,
+			{ kb: name, anchor: echo },
+		);
+	}
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
