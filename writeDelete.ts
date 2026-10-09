@@ -91,7 +91,7 @@ export async function runDeleteMode(
 		// pair — the foreign arm carries the block's actual root.
 		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
 	}
-	if (outcome.kind === "walk-truncated") {
+	if (outcome.kind === "absence-unconfirmed") {
 		// The delete acked but the post-delete walk hit the depth bound:
 		// the target's absence is unconfirmed. Applied-but-unverified —
 		// never renderable as ok, never as "unreachable".

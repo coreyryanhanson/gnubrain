@@ -329,7 +329,7 @@ export function moveLandedRefusal(
 	switch (outcome.kind) {
 		case "absent-from-destination":
 			return "is absent from the destination tree — the transaction rolled back silently behind HTTP success";
-		case "walk-truncated":
+		case "landing-unconfirmed":
 			return "could not be confirmed landed: the verification walk hit the document's depth bound — it may have landed past the bound; re-fetch the outline (kb_read) before any retry";
 		case "still-in-source":
 			return "is still present in the source tree — the kernel copied rather than moved";
