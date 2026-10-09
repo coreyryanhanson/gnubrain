@@ -55,10 +55,11 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   (`siyuan-kb-primitives/write`) is the only path to the write verdicts —
   the guarded-create core, the verified edit, the verified insert (append
   and replace-section's insert leg), the verified block/doc moves, and the
-  verified deletes and delete sweep (mutation + landing judgment as one
-  primitive call, returning a closed union with the evidence the verdict
-  was rendered from). Every write mode's mutation is issued there; the
-  flows keep only target resolution, preconditions, and envelope wording.
+  verified deletes, and replace-section's internal delete sweep
+  (mutation + landing judgment as one primitive call, returning a closed
+  union with the evidence the verdict was rendered from). Every write
+  mode's mutation is issued there; the flows keep only target resolution,
+  preconditions, and envelope wording.
   No source file in this repo
   names `siyuan-kernel-api` — take the client constructor, error classes,
   and kernel types from the read barrel (one requirer = one layer-1 copy in

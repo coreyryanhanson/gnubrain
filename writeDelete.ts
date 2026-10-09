@@ -1,7 +1,7 @@
 // The delete flow: block-level deleteBlock or doc-level removeDocByID.
 // The mutation, its scoping precondition and its evidence are one
 // primitive call: deleteBlockVerified (pre-mutation membership refusal —
-// foreign / doc-id refuse before any kernel call, an absent target falls
+// foreign / doc-id refuse before the mutation, an absent target falls
 // through to the kernel's per-generation answer — plus mutation and
 // walk-set judgment, the landing never trusted from the HTTP success) and
 // deleteDocVerified (pre-delete walk captured as the receipt/invalidRefs
@@ -75,7 +75,7 @@ export async function runDeleteMode(
 	}
 	const blockId = params.blockId as string;
 	// The verified block delete, whole — the primitive owns the scoping
-	// precondition: foreign / doc-id refuse before any kernel call (worded
+	// precondition: foreign / doc-id refuse before the mutation (worded
 	// by the same sentences the edit flow's pre-guard uses), and an absent
 	// target falls through the membership read so the kernel answers it
 	// per generation — 3.8.4 a synchronous "tree not found" error where

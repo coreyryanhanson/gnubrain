@@ -4,8 +4,8 @@
 // composition in siyuan-kb-primitives/write). The guard SQL itself
 // (pattern builders, leg statements, `findTitleMatches`) also lives
 // there, beside the pinned storage behavior it encodes (doc titles
-// verbatim, unescaped, in `blocks.content` — live-verified against the
-// pinned 3.8.4 kernel: `A & B`, `say "hi"`, `a < b > c` all store
+// verbatim, unescaped, in `blocks.content` — pinned live by the
+// primitives' writePins suite: `A & B`, `say "hi"`, `a < b > c` all store
 // unescaped; the HTML-escaped form lives only in the title IAL,
 // `blocks.ial`, which the guard does not query).
 
