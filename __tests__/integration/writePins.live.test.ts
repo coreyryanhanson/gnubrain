@@ -26,6 +26,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	isHeadingBlock,
+	sectionOf,
 	SiYuanKernelClient,
 	sqlString,
 	walkBlockTree,
@@ -33,7 +34,6 @@ import {
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
-import { sectionOf } from "siyuan-kb-primitives/write";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { registerWriteToolAndToolset } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";

@@ -9,11 +9,11 @@
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	deriveMoveAnchor,
-	moveBlockVerified,
-	moveDocVerified,
-} from "siyuan-kb-primitives/write";
+	walkBlockTree,
+	type WalkedTree,
+} from "siyuan-kb-primitives";
+import { moveBlockVerified, moveDocVerified } from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
-import { walkBlockTree, type WalkedTree } from "siyuan-kb-primitives";
 import {
 	echoTail,
 	headingInWalk,

@@ -16,12 +16,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	isHeadingBlock,
 	PINNED_SIYUAN_VERSION,
+	sectionOf,
 	SiYuanKernelClient,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
-import { sectionOf, type WriteKernelClient } from "siyuan-kb-primitives/write";
+import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import { headingInWalk, type DocTarget } from "../../writeFlow.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import { registerKbWrite } from "../unit/writeHarness.js";

@@ -7,14 +7,12 @@
 import {
 	SiYuanKernelError,
 	backlinkCheck,
+	deriveAppendAnchor,
 	rootEcho,
+	sectionOf,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
-import {
-	deriveAppendAnchor,
-	replaceSectionVerified,
-	sectionOf,
-} from "siyuan-kb-primitives/write";
+import { replaceSectionVerified } from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
 	markPartialReplace,

@@ -2,13 +2,13 @@
 // mutation and the insert-landed judgment are one primitive call
 // (insertVerified) — the post-write walk rides the verdict.
 
-import { walkBlockTree, type WalkedBlock } from "siyuan-kb-primitives";
 import {
 	deriveAppendAnchor,
-	idSet,
-	insertVerified,
+	walkBlockTree,
 	type AppendPlacement,
-} from "siyuan-kb-primitives/write";
+	type WalkedBlock,
+} from "siyuan-kb-primitives";
+import { idSet, insertVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	echoTail,

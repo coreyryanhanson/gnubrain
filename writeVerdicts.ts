@@ -16,15 +16,15 @@
 
 import {
 	PINNED_SIYUAN_VERSION,
+	type AppendAnchor,
 	type BlockInDocResult,
+	type MoveAnchor,
 } from "siyuan-kb-primitives";
 import type {
-	AppendAnchor,
 	CreateDocOutcome,
 	EditVerifyOutcome,
 	InsertLandedOutcome,
 	MutationFailure,
-	MoveAnchor,
 	MoveBlockOutcome,
 	MoveDocJudgment,
 	MoveLandedOutcome,
