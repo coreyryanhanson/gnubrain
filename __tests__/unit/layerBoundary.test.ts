@@ -1,7 +1,9 @@
 // The layering contract, pinned mechanically: gnubrain touches the
-// primitives only through their two entry points and never names the
+// primitives only through their entry points and never names the
 // layer-1 client package — a deep import or a second kernel-api copy
 // would break both the greppable invariant and error-class identity.
+// The testing entry is additionally scoped to test files: it is the
+// window-collapse seam, and production code has no reason to touch it.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -41,14 +43,21 @@ describe("layering — primitives entry points only", () => {
 		}
 	});
 
-	it("primitives imports use only the two entry points (no deep imports)", () => {
+	it("primitives imports use only the entry points (no deep imports)", () => {
 		const matched: string[] = [];
 		for (const name of SOURCES) {
+			const testOnly = name.startsWith("__tests__");
 			for (const spec of importSpecifiers(name)) {
 				if (spec.startsWith("siyuan-kb-primitives")) {
 					matched.push(`${name}: ${spec}`);
 					expect(
-						["siyuan-kb-primitives", "siyuan-kb-primitives/write"],
+						testOnly
+							? [
+									"siyuan-kb-primitives",
+									"siyuan-kb-primitives/write",
+									"siyuan-kb-primitives/testing",
+								]
+							: ["siyuan-kb-primitives", "siyuan-kb-primitives/write"],
 						`${name}: ${spec}`,
 					).toContain(spec);
 				}

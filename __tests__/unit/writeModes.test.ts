@@ -26,7 +26,7 @@ import {
 	writeKernelStub,
 	type StubConfig,
 } from "./writeHarness.js";
-import { withVerifyWindow } from "siyuan-kb-primitives/write";
+import { withVerifyWindow } from "siyuan-kb-primitives/testing";
 import { ContentBaselines } from "../../baselines.js";
 import { freshContentRefusal } from "../../writeResult.js";
 
