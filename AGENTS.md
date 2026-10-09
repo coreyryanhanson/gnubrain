@@ -298,7 +298,8 @@ re-falsifies the changed fact in the primitives.
   the resolve/echo/spill around the per-box fan-out.
 - The delete-cascade fact — the kernel's cascade removes a container
   member's descendants with it, so the sweep deletes only the enumerated
-  members — lives in `sweepSectionMembers` (primitives `sweep.ts`);
+  members — lives in `sweepSectionMembers` (primitives `sweep.ts`;
+  internal to the replace-section sequence, not on the write barrel);
   the replace-section sequence itself (`replaceSectionVerified`, the
   insert-before-sweep ordering and the enumeration timing) also lives in
   the primitives, and this repo keeps the sweep's partial-apply envelope
