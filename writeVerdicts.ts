@@ -22,11 +22,11 @@ import {
 } from "siyuan-kb-primitives";
 import type {
 	CreateDocOutcome,
-	EditVerifyOutcome,
+	EditLandedOutcome,
 	InsertLandedOutcome,
 	MutationFailure,
 	MoveBlockOutcome,
-	MoveDocJudgment,
+	MoveDocLandedOutcome,
 	MoveDocOutcome,
 	MoveLandedOutcome,
 	SweepRefusal,
@@ -349,7 +349,7 @@ export function moveLandedRefusal(
  * landed. `lastServed` is kernel content shown verbatim — the truncation
  * is a detail of this sentence, not of the primitive. */
 export function editVerifyFailureReason(
-	outcome: EditVerifyOutcome,
+	outcome: EditLandedOutcome,
 	blockId: string,
 	doc: { title: string; rootId: string },
 ): string | undefined {
@@ -532,7 +532,7 @@ export function sweepRefusal(
  * could be a rollback or a landing elsewhere; only the block-level
  * judgment's reason ladder can tell those apart). */
 export function moveDocJudgmentRefusal(
-	verdict: MoveDocJudgment,
+	verdict: MoveDocLandedOutcome,
 	ctx: { name: string; docId: string; title: string },
 ): Envelope | undefined {
 	switch (verdict.kind) {
