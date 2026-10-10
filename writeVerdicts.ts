@@ -27,6 +27,7 @@ import type {
 	MutationFailure,
 	MoveBlockOutcome,
 	MoveDocJudgment,
+	MoveDocOutcome,
 	MoveLandedOutcome,
 	SweepRefusal,
 } from "siyuan-kb-primitives/write";
@@ -545,4 +546,18 @@ export function moveDocJudgmentRefusal(
 	}
 	verdict satisfies never;
 	return undefined;
+}
+
+/** The verified doc move's pre-mutation scoping refusal — the blocks index
+ * names no row for the moved doc in the claimed KB (the same class the
+ * block move refuses as its own not-in-source arm; the doc judgment rides
+ * moveDocVerified). Unreachable through a fresh resolveDocTarget — it is
+ * the stale-target race, worded as such. */
+export function moveDocScopingRefusal(
+	outcome: Extract<MoveDocOutcome, { kind: "not-in-source" }>,
+	ctx: { name: string; docId: string },
+): Envelope {
+	return refusedEnvelope(
+		`doc '${outcome.docId}' is not a doc of KB '${ctx.name}' — the blocks index names no row for it — ${STALE_TARGET_GUIDANCE}`,
+	);
 }

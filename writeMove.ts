@@ -27,6 +27,7 @@ import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
 	moveDocJudgmentRefusal,
+	moveDocScopingRefusal,
 	moveLandedRefusal,
 	movePlacementRefusal,
 	mutationFailureEnvelope,
@@ -75,13 +76,13 @@ export async function runMoveMode(
 			destLabel = `'${dest.title}' (${dest.rootId})`;
 		}
 		// The verified doc-level move: the mutation and the live-tree hpath
-		// judgment are one primitive call. Identity and ancestor moves and
-		// the 7-level depth cap reject synchronously kernel-side and surface
-		// verbatim (the kernel-refused arm) — the flows carry no pre-mutation
-		// check of their own.
+		// judgment (over the kernel's stored title — ground truth, never the
+		// tool-side form) are one primitive call. Identity and ancestor moves
+		// and the 7-level depth cap reject synchronously kernel-side and
+		// surface verbatim (the kernel-refused arm) — the flows carry no
+		// pre-mutation check of their own.
 		const outcome = await moveDocVerified(kernel, input.probe, {
 			docId: doc.rootId,
-			title: doc.title,
 			boxId,
 			destRootId: destId === boxId ? undefined : destId,
 		});
@@ -90,6 +91,11 @@ export async function runMoveMode(
 		// pattern). The doc-level record carries no echo tail on any failure
 		// leg (the pinned shape — the doc move runs with no doc target), so
 		// the tail is empty.
+		// The pre-mutation scoping refusal (the blocks index names no row for
+		// the moved doc) words beside the MutationFailure ladder.
+		if (outcome.kind === "not-in-source") {
+			return moveDocScopingRefusal(outcome, { name, docId: doc.rootId });
+		}
 		if (outcome.kind !== "judged") {
 			return mutationFailureEnvelope(outcome, {
 				kb: name,
