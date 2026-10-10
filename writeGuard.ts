@@ -40,6 +40,8 @@ export function mintTitleMessage(problem: MintTitleProblem): string {
 			return "title is empty after trim — supply a non-empty title";
 		case "slash":
 			return `title '${problem.title}' contains '/' — the tool builds the doc path itself; rephrase the title without '/'`;
+		case "dot-segment":
+			return `title '${problem.title}' is a bare dot segment — the kernel cleans it out of the doc path and substitutes its own fallback title; rephrase the title`;
 		case "too-long":
 			return `title exceeds ${MINT_TITLE_MAX_RUNES} runes — the kernel silently truncates longer titles; shorten it`;
 		case "control-chars":
