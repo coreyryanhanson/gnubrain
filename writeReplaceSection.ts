@@ -137,16 +137,16 @@ export async function runReplaceSectionMode(
 	// state merged.
 	return finishWrite(name, { anchor: echo }, async () => {
 		switch (outcome.kind) {
-			case "insert-rolled-back": {
-				// No echo tail here, unlike append's rollback refusal: the tail
+			case "insert-unlanded": {
+				// No echo tail here, unlike append's unlanded refusal: the tail
 				// refreshes baselines from a post-write read, and a concurrent
 				// change landing between the stale re-check and this walk would
 				// be laundered into the baseline (the pinned timeline contract).
 				// The refusal wording already carries the evidence that matters
 				// — the old section is untouched.
-				const rollback = insertLandedRefusal(outcome.verdict);
+				const unlanded = insertLandedRefusal(outcome.verdict);
 				return errorEnvelope(
-					`verified-insert failed: ${rollback} — the old section is untouched`,
+					`verified-insert failed: ${unlanded} — the old section is untouched`,
 					{ kb: name, anchor: appendAnchorEcho(outcome.anchor) },
 				);
 			}
@@ -197,7 +197,7 @@ export async function runReplaceSectionMode(
 				// echoTail: its SQL refresh is a post-walk read that could
 				// launder a concurrent change into the baseline on a failure
 				// path, and would add a fourth SQL-form seed site (contrast
-				// insert-rolled-back above; the success path is safe because
+				// insert-unlanded above; the success path is safe because
 				// the write landed). The root echo is addressing info, never a
 				// baseline.
 				const certifiedWalk =
