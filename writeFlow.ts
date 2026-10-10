@@ -101,7 +101,7 @@ export function walkTruncatedMessage(doc: DocTarget): string {
  * place the write in a container the kernel rejects, so the untargetable
  * arm refuses with the same re-target guidance every flow shares. Takes
  * the whole WalkedTree: absence on an incomplete walk is unconfirmed and
- * refuses as `walk-truncated` instead of a confident stale refusal. */
+ * refuses as `walk-truncated` instead of a confident heading-absent refusal. */
 export function headingInWalk(
 	tree: WalkedTree,
 	doc: DocTarget,
@@ -111,7 +111,7 @@ export function headingInWalk(
 	switch (outcome.kind) {
 		case "heading":
 			return outcome.heading;
-		case "stale":
+		case "heading-absent":
 			return refusedEnvelope(staleHeadingMessage(headingId, doc));
 		case "walk-truncated":
 			return refusedEnvelope(walkTruncatedMessage(doc));
