@@ -90,7 +90,14 @@ export async function runEditMode(
 		// change landing in the echo window would be laundered into the
 		// baseline). Remembered after the echo so the index form wins over
 		// the walk seeding, exactly as the refresh did.
-		baselines.remember(blockId, outcome.verdict.stored.content);
+		// An `unobserved` baseline (no pre-write pair — create → edit
+		// immediately) means the stored pair may still be the pre-edit row
+		// arriving through the index lag, so it never seeds a baseline: the
+		// block stays baseline-less and the next fresh-check reads it as
+		// `unseen` instead of trusting a possibly-stale value.
+		if (outcome.verdict.baseline === "observed") {
+			baselines.remember(blockId, outcome.verdict.stored.content);
+		}
 		return {
 			status: "ok",
 			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,

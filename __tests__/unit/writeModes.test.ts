@@ -549,6 +549,40 @@ describe("edit", () => {
 			contentHash("correctd body"),
 		);
 	});
+
+	it("an unobserved-baseline landed verdict never seeds a baseline", async () => {
+		// No pre-write pair (create → edit immediately: the index could not
+		// see the block pre-write) — any served row lands the edit, but the
+		// stored pair may still be the pre-edit row arriving through the
+		// index lag, so it must not be laundered into a baseline.
+		const harness = setup({ config: { blockRows: [] } });
+		const baseQuery = harness.client.query.bind(harness.client);
+		let blockReads = 0;
+		harness.client.query = async (stmt: string) => {
+			if (statementKind(stmt) === "block-in-doc") {
+				blockReads += 1;
+				// Read 1 is the pre-write target read and is absent; from
+				// read 2 on the index serves a row — byte-identical to what
+				// a late-arriving pre-edit row would look like.
+				return blockReads === 1
+					? []
+					: [
+							{
+								id: "b-1",
+								root_id: "d-doc",
+								type: "p",
+								content: "stale paragraph",
+							},
+						];
+			}
+			return baseQuery(stmt);
+		};
+		const result = await harness.execute(editBase);
+		expect(result.status).toBe("ok");
+		// The block stays baseline-less: the next fresh-check reads it as
+		// `unseen` instead of trusting the possibly-stale row.
+		expect(harness.baselines.servedHash("b-1")).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------

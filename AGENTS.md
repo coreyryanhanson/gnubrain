@@ -83,7 +83,10 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   fact the tool layer's session policy depends on (walks, ids, hpaths) as
   verdict detail — gnubrain never re-fetches state a verdict already
   observed, so baselines and echoes are seeded from the exact snapshot the
-  judgment certified.
+  judgment certified. The edit's landed arm names its evidence's provenance
+  (`baseline`): an `unobserved` verdict (no pre-write pair — the index could
+  not see the block pre-write) seeds no baseline, so the block reads as
+  `unseen` on the next fresh-check instead of trusting a possibly-stale row.
 - **Soft scope, tool-surface-only guards.** The API token is a workspace-admin
   credential; the threat model is model accident, not a hostile agent. All
   guards (parser certification, scoping, write grant) are tool-surface-only.
