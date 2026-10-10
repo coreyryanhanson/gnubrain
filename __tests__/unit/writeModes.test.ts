@@ -466,10 +466,11 @@ describe("edit", () => {
 					id: string;
 					content: string;
 				}[];
-				// Read 1 is the pre-write target read; read 2 the first
-				// post-write verification read — the index has not converged
-				// yet and still serves the pre-write form; read 3 has it.
-				if (blockReads === 2) {
+				// Reads 1–2 are the pre-write target reads (the flow's own, then
+				// the primitive's); read 3 the first post-write verification
+				// read — the index has not converged yet and still serves the
+				// pre-write form; read 4 has it.
+				if (blockReads === 3) {
 					return [{ ...rows[0]!, content: "stale paragraph" }];
 				}
 				return rows;
@@ -478,7 +479,7 @@ describe("edit", () => {
 		};
 		const result = await harness.execute(editBase);
 		expect(result.status).toBe("ok");
-		expect(blockReads).toBe(3);
+		expect(blockReads).toBe(4);
 	});
 
 	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", () =>
@@ -517,10 +518,11 @@ describe("edit", () => {
 		harness.client.query = async (stmt: string) => {
 			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
-				// Read 1 is the pre-write target read; read 2 the post-write
-				// verification read, serving a kernel-normalized stored form
-				// distinct from the submitted markdown.
-				return blockReads === 1
+				// Reads 1–2 are the pre-write reads (the flow's own, then the
+				// primitive's); reads 3+ are post-write verification reads,
+				// serving a kernel-normalized stored form distinct from the
+				// submitted markdown.
+				return blockReads <= 2
 					? baseQuery(stmt)
 					: [
 							{
@@ -561,10 +563,11 @@ describe("edit", () => {
 		harness.client.query = async (stmt: string) => {
 			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
-				// Read 1 is the pre-write target read and is absent; from
-				// read 2 on the index serves a row — byte-identical to what
-				// a late-arriving pre-edit row would look like.
-				return blockReads === 1
+				// Reads 1–2 are the pre-write reads (the flow's own, then the
+				// primitive's) and both are absent; from read 3 on the index
+				// serves a row — byte-identical to what a late-arriving pre-edit
+				// row would look like.
+				return blockReads <= 2
 					? []
 					: [
 							{

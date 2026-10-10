@@ -13,7 +13,11 @@ import {
 	type WriteFlowInput,
 } from "./writeFlow.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
-import { editVerifyFailureReason, blockInDocRefusal } from "./writeVerdicts.js";
+import {
+	editVerifyFailureReason,
+	blockInDocRefusal,
+	blockInDocRefusalKind,
+} from "./writeVerdicts.js";
 
 export async function runEditMode(
 	input: WriteFlowInput,
@@ -24,11 +28,6 @@ export async function runEditMode(
 	const row = await blockInDoc(kernel, doc.rootId, blockId);
 	const refusal = blockInDocRefusal(row, blockId, doc);
 	if (refusal !== undefined) return refusedEnvelope(refusal);
-	// The pre-write stored pair the landed check must see move off. A block
-	// the index cannot see has no pair — preWrite is omitted and the
-	// primitive counts any post-write row as movement (the kernel's own
-	// not-found error governs an update of a truly absent id, never this
-	// path).
 	if (row.kind === "in-doc") {
 		// Fresh-content precondition: a concurrency guard, not a consent
 		// mechanism (the grant resolved at the kb_write entry). Served content
@@ -47,7 +46,10 @@ export async function runEditMode(
 		);
 		if (stale !== null) return stale;
 	}
-	// An absent target is never refused here — updateBlock's synchronous
+	// The pre-write stored pair the landed check needs is read inside the
+	// primitive now (the representation contract — blocks-index row form,
+	// never walk-rendered content — is its concern, not ours). An absent
+	// target is never refused here — updateBlock's synchronous
 	// not-found error surfaces verbatim through the kernel-refused arm.
 	// The verified edit: the mutation and the landed judgment are one
 	// primitive call. Transport failures in the mutation phase are outcome-
@@ -57,13 +59,17 @@ export async function runEditMode(
 	const outcome = await editVerified(kernel, input.probe, {
 		blockId,
 		body: input.body,
-		preWrite:
-			row.kind === "in-doc"
-				? { content: row.content, type: row.type }
-				: undefined,
 		rootId: doc.rootId,
 	});
 	if (outcome.kind !== "judged") {
+		if (outcome.kind === "foreign" || outcome.kind === "doc-id") {
+			// Defense-in-depth: the flow's own target read already refuses
+			// this membership class above; the primitive's pre-write read is
+			// the second copy of the same judgment. Same wording home as the
+			// delete primitive's scoping arms — one sentence pair whichever
+			// side refuses.
+			return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
+		}
 		return mutationFailure(outcome, input, doc, { blockId });
 	}
 	// Post-mutation reads: a network drop here must never read as
