@@ -1,11 +1,11 @@
 import { tmpdir } from "node:os";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AST, type Binary, Parser } from "node-sql-parser";
 import { createFakePi as fakePi } from "../helpers/fakePi.js";
-import { type KernelReadClient } from "siyuan-kb-primitives";
+import { contentHash, type KernelReadClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
@@ -869,9 +869,7 @@ describe("read tools seed served-content baselines", () => {
 		// The walk's heading (id h1, content "Heading") was served → hashed.
 		expect(baselines.servedHash("h1")).toBeDefined();
 		// Same representation the re-check hashes: blocks.content.
-		expect(baselines.servedHash("h1")).toBe(
-			createHash("sha256").update("Heading").digest("hex").slice(0, 16),
-		);
+		expect(baselines.servedHash("h1")).toBe(contentHash("Heading"));
 	});
 
 	it("kb_query records baselines for rows that selected id + content", async () => {
