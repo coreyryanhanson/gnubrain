@@ -231,7 +231,7 @@ export async function runReplaceSectionMode(
 								},
 				});
 			}
-			case "sweep-walk-truncated":
+			case "sweep-truncated":
 				// The deletes acked but the post-sweep walk hit the depth
 				// bound: the swept judgment's absence facts are unconfirmed.
 				// Applied-but-unverified — never ok, never a rollback.

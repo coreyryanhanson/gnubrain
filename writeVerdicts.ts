@@ -265,7 +265,7 @@ export function insertLandedRefusal(
 			return "the kernel returned no block id";
 		case "absent-from-tree":
 			return `the kernel returned '${outcome.blockId}' but it is absent from the post-write tree — the transaction rolled back silently behind HTTP success; nothing was inserted`;
-		case "absent-unconfirmed":
+		case "landing-unconfirmed":
 			return `the kernel returned '${outcome.blockId}' but the post-write walk hit the document's depth bound, so its landing could not be confirmed — it may have landed past the bound; re-fetch the outline (kb_read) before any retry (a blind retry duplicates the write)`;
 		case "pre-write-id":
 			return `the kernel returned '${outcome.blockId}' but that block already existed before the write`;
