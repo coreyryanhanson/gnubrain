@@ -6,8 +6,8 @@
 
 import {
 	SiYuanKernelError,
+	appendAnchorOf,
 	backlinkCheck,
-	deriveAppendAnchor,
 	rootEcho,
 	sectionOf,
 	walkBlockTree,
@@ -50,18 +50,14 @@ export async function runReplaceSectionMode(
 	const tree = await walkBlockTree(kernel, doc.rootId);
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
-	// One truncation sentence, shared by both refusal sites below — the
-	// projection arm and its fail-closed echo tripwire refuse the same tree.
-	const truncationRefusal = () =>
-		refusedEnvelope(
-			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
-			{ kb: name },
-		);
 	const deleteSet = sectionOf(tree, headingId);
 	if (deleteSet.kind === "walk-truncated") {
 		// The projection refuses the truncated tree the sequence's own gate
 		// would — refuse here, before any kernel call.
-		return truncationRefusal();
+		return refusedEnvelope(
+			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
+			{ kb: name },
+		);
 	}
 	// Unreachable — headingInWalk and sectionOf re-find the heading with
 	// the same predicate on the same tree — kept as a fail-closed tripwire.
@@ -86,19 +82,10 @@ export async function runReplaceSectionMode(
 		{ sessionId, docId: doc.rootId },
 	);
 	if (stale !== null) return stale;
-	// The anchor echo is wording garnish for the failure arms — the same
-	// pure projection the sequence derives internally for the mutation
-	// (identical inputs, identical output). Unreachable arms: sectionOf
-	// refused the same tree above and the heading is in it. Fail-closed
-	// tripwire.
-	const echoAnchor = deriveAppendAnchor(tree, headingId);
-	if (echoAnchor.kind === "walk-truncated") {
-		return truncationRefusal();
-	}
-	if (echoAnchor.kind === "heading-absent") {
-		return refusedEnvelope(staleHeadingMessage(headingId, doc));
-	}
-	const echo = appendAnchorEcho(echoAnchor);
+	// The anchor echo is wording garnish for the failure arms — projected
+	// from the section this flow already enumerated, the same projection
+	// the sequence derives internally for the mutation.
+	const echo = appendAnchorEcho(appendAnchorOf(section));
 	const outcome = await replaceSectionVerified(kernel, input.probe, {
 		rootId: doc.rootId,
 		walk: tree,
