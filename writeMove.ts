@@ -47,7 +47,7 @@ async function destOutlinePayload(
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write-dest",
-		destWalk.blocks,
+		destWalk,
 		input.baselines,
 	);
 	return outline.fullOutlinePath === undefined

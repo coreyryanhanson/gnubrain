@@ -90,7 +90,7 @@ export async function freshContentRefusal(
 	const fresh = serveOutlineFromWalk(
 		context.sessionId,
 		"kb_write",
-		walk.blocks,
+		walk,
 		baselines,
 	);
 	return refusedEnvelope(

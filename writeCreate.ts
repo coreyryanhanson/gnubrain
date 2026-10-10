@@ -65,7 +65,7 @@ async function duplicateStop(
 		const outline = serveOutlineFromWalk(
 			sessionId,
 			"kb_write",
-			tree.blocks,
+			tree,
 			input.baselines,
 		);
 		let markdown = "";

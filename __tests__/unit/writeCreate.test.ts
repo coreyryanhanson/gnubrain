@@ -83,7 +83,12 @@ describe("guard-stop staging", () => {
 		const rows = r.rows as Record<string, unknown>[];
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.docId).toBe("d1");
-		expect(rows[0]!.outline).toBe("");
+		// The vanished branch is named in the outline, not silently dropped:
+		// the walk's incompleteness fact rides the render call, so the
+		// served marker says the empty outline may be missing branches.
+		expect(rows[0]!.outline).toBe(
+			"\n… (outline incomplete: a container vanished or its notebook locked while reading — some branches may be missing)",
+		);
 	});
 
 	it("candidate deleted between the walk and the spill read: exportMarkdown degrades to an empty excerpt, the outline survives", async () => {

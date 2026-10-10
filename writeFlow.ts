@@ -84,10 +84,12 @@ export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
 	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
 }
 
-/** The truncation refusal — the target read runs over a truncated walk,
+/** The truncation refusal — the target read runs over an incomplete walk,
  * so an absent heading is unconfirmed (it may sit past the bound). The
  * flows word their truncation refusals per document shape (append, move,
- * replace-section); this is the target-judgment one. */
+ * replace-section); this is the target-judgment one. The flows' walks are
+ * strict, so the only reachable incompleteness cause here is the depth
+ * bound — the agent-facing string names it. */
 export function walkTruncatedMessage(doc: DocTarget): string {
 	return `the walk of doc '${doc.title}' (${doc.rootId}) hit the document's depth bound, so the target judgment would read incomplete evidence — refused before any kernel call; restructure the document (or edit in place) instead`;
 }
@@ -98,7 +100,7 @@ export function walkTruncatedMessage(doc: DocTarget): string {
  * an unnamed container (wire type "", e.g. a footnote definition) would
  * place the write in a container the kernel rejects, so the untargetable
  * arm refuses with the same re-target guidance every flow shares. Takes
- * the whole WalkedTree: absence on a truncated walk is unconfirmed and
+ * the whole WalkedTree: absence on an incomplete walk is unconfirmed and
  * refuses as `walk-truncated` instead of a confident stale refusal. */
 export function headingInWalk(
 	tree: WalkedTree,
@@ -192,7 +194,7 @@ export async function echoTail(
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write",
-		fullWalk.blocks,
+		fullWalk,
 		baselines,
 	);
 	const root = await rootEcho(kernel, boxId, docId);

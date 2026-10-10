@@ -12,7 +12,7 @@ import {
 	renderExtendedOutlineLines,
 	walkBlockTree,
 	type KernelReadClient,
-	type WalkedBlock,
+	type WalkedTree,
 } from "siyuan-kb-primitives";
 
 /**
@@ -21,17 +21,22 @@ import {
  * traversal). Owns everything effectful: seeding (the served heading rows
  * become fresh-content baselines — outline lines carry content, and the
  * walk's content IS blocks.content, the kernel builds both via
- * nodeStaticContent), the OUTLINE_HEADINGS cut, and the spill tail.
+ * nodeStaticContent), the OUTLINE_HEADINGS cut, and the spill tail. Takes
+ * the whole WalkedTree, never a bare block list: the walk's incompleteness
+ * fact rides the call, so no caller can serve a partial doc's prefix as
+ * the whole outline — the marker below is appended here, once, for every
+ * serve site.
  */
 export function serveOutlineFromWalk(
 	sessionId: string,
 	tool: string,
-	walk: WalkedBlock[],
+	tree: WalkedTree,
 	baselines: ContentBaselines,
 ): { outline: string; fullOutlinePath?: string } {
-	const headings = headingRows(walk);
+	const headings = headingRows(tree.blocks);
 	rememberServedRows(baselines, headings);
-	const lines = renderExtendedOutlineLines(walk);
+	const { lines, incomplete } = renderExtendedOutlineLines(tree);
+	let served: { outline: string; fullOutlinePath?: string };
 	if (lines.length > OUTLINE_HEADINGS) {
 		const path = spillFile(
 			sessionId,
@@ -39,14 +44,24 @@ export function serveOutlineFromWalk(
 			jsonl(headings),
 			"jsonl",
 		);
-		return {
+		served = {
 			outline:
 				lines.slice(0, OUTLINE_HEADINGS).join("\n") +
 				`\n… ${lines.length - OUTLINE_HEADINGS} more — full outline in ${path}`,
 			fullOutlinePath: path,
 		};
+	} else {
+		served = { outline: lines.join("\n") };
 	}
-	return { outline: lines.join("\n") };
+	if (!incomplete) return served;
+	// An incomplete walk renders only its seen prefix — name it, or the
+	// agent reads a partial outline as the whole doc. The wording names the
+	// cause: the deterministic depth bound, or a branch that ended early
+	// (vanished container / locked notebook) on a read-path walk.
+	const marker = tree.truncated
+		? "… (outline truncated: the document nests past the walk depth bound — deeper content is not shown)"
+		: "… (outline incomplete: a container vanished or its notebook locked while reading — some branches may be missing)";
+	return { ...served, outline: `${served.outline}\n${marker}` };
 }
 
 /** Outline ride-along: render from a fresh unfiltered walk of the doc
@@ -59,14 +74,7 @@ export async function serveOutline(
 	baselines: ContentBaselines,
 ): Promise<{ outline: string; fullOutlinePath?: string }> {
 	const tree = await walkBlockTree(kernel, rootId, { tolerateVanished: true });
-	const served = serveOutlineFromWalk(sessionId, tool, tree.blocks, baselines);
-	// A walk truncated at the depth bound renders only its seen prefix —
-	// name it, or the agent reads a partial outline as the whole doc.
-	return tree.truncated
-		? {
-				...served,
-				outline: `${served.outline}
-… (outline truncated: the document nests past the walk depth bound — deeper content is not shown)`,
-			}
-		: served;
+	// The serve wrapper owns the incompleteness marker — depth bound or
+	// tolerated vanish — so a partial outline is never read as the whole doc.
+	return serveOutlineFromWalk(sessionId, tool, tree, baselines);
 }

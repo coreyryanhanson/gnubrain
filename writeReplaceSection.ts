@@ -214,7 +214,7 @@ export async function runReplaceSectionMode(
 				const outline = serveOutlineFromWalk(
 					sessionId,
 					"kb_write",
-					certifiedWalk.blocks,
+					certifiedWalk,
 					baselines,
 				);
 				const root = await rootEcho(kernel, input.boxId, doc.rootId);
