@@ -13,7 +13,7 @@ import {
 	type GuardRow,
 	type WalkedTree,
 } from "siyuan-kb-primitives";
-import { createVerifiedDoc } from "siyuan-kb-primitives/write";
+import { createDocVerified } from "siyuan-kb-primitives/write";
 import { type Envelope } from "./envelope.js";
 import { spillFile, withRowPayload } from "./spill.js";
 import { rememberServedRows } from "./baselines.js";
@@ -205,7 +205,7 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 	// mint, and the verified-create asserts — lives in the primitive; its
 	// required probe carries the gate's verdict and the drift refusal is
 	// the primitive's own arm.
-	const outcome = await createVerifiedDoc(kernel, input.probe, {
+	const outcome = await createDocVerified(kernel, input.probe, {
 		boxId,
 		title,
 		body: input.body,

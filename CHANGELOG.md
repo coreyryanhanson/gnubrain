@@ -84,7 +84,7 @@
 
 - **Kernel coupling lives in `siyuan-kb-primitives`.** Block-tree walks,
   title-guard reads, placement, the fresh-content judgment, and every write
-  verdict — `createVerifiedDoc`, `editVerified`, `insertVerified`,
+  verdict — `createDocVerified`, `editVerified`, `insertVerified`,
   `moveBlockVerified` / `moveDocVerified`, `deleteBlockVerified` /
   `deleteDocVerified`, `checkFreshContent` — ride
   that package, whose SiYuan version pin this package consumes — writes fail

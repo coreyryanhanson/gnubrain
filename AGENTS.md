@@ -147,7 +147,7 @@ tests drive the extension through it instead of touching real files.
   delete / move; create is `writeCreate.ts`) are tool-schema orchestration
   laced with session state: baselines seeding, spill receipts, move outlines,
   envelope wording. The kernel-coupled cores they compose —
-  `findTitleMatches`, `createVerifiedDoc`, `editVerified`, `insertVerified`,
+  `findTitleMatches`, `createDocVerified`, `editVerified`, `insertVerified`,
   `replaceSectionVerified` (the replace-section sequence: enumeration,
   anchor, insert-before-sweep ordering — the tool layer never sequences
   kernel mutations), `blockInDoc`, `rootEcho`, `ownership`, the
