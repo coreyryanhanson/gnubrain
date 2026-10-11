@@ -47,7 +47,8 @@ export function serveOutlineFromWalk(
 		served = {
 			outline:
 				lines.slice(0, OUTLINE_HEADINGS).join("\n") +
-				`\n… ${lines.length - OUTLINE_HEADINGS} more — full outline in ${path}`,
+				`
+… ${lines.length - OUTLINE_HEADINGS} more — full heading rows (JSONL) in ${path}`,
 			fullOutlinePath: path,
 		};
 	} else {

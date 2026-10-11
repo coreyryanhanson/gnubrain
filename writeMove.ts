@@ -94,10 +94,7 @@ export async function runMoveMode(
 		// The pre-mutation scoping refusal (the blocks index names no row for
 		// the moved doc) words beside the MutationFailure ladder.
 		if (outcome.kind === "not-in-source") {
-			return moveDocScopingRefusalEnvelope(outcome, {
-				name,
-				docId: doc.rootId,
-			});
+			return moveDocScopingRefusalEnvelope(outcome, { name });
 		}
 		if (outcome.kind !== "judged") {
 			return mutationFailureEnvelope(outcome, {

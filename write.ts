@@ -77,11 +77,11 @@ const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create —
 Doctrine: mint by title (kernel-normalized); discover by query/search; consume by ID. Targets (docId/blockId/headingId) are agent-supplied echoed values from kb_query/kb_search/kb_read/write results — never invented; anchors are always tool-derived — never agent-supplied. Replace-first: prefer edit/replace-section over append — append is for genuinely new facts. The body travels via markdown (inline) XOR markdownFile (path to a prepared markdown file; read once at call start) on create/edit/replace-section/append; delete/move carry neither. The title guard stops exact/near matches on create and returns the existing docs (docId, outline, spilled markdown) — reconcile by docId, or mint a conscious duplicate with confirmNew: true (you learn this exit from the rejection; do not pass it preemptively). Writes are approved once per KB per interaction via a dialog that names the KB only (no op detail): Yes grants for the interaction, 'Always this session' for the session, any other answer denies that KB until the interaction ends — do not retry within the interaction. allowUnattendedWrites: true skips the dialog in any session; headless sessions deny writes unless it is set. The discovery name 'kbs' is read-only; writes always target a real KB by name.`;
 
 /** Ordered kernel-free steps of the kb_write entry (mode-target shape →
- * body resolve → KB resolution → static drift refusal → grant dialog),
- * then the probe gate → flow dispatch. Standalone so the ordering pins —
- * file read before the probe gate, drift refusal before the grant, grant
- * before the probe gate, mint before the grant — are a unit under test,
- * not an inline closure. */
+ * body resolve → KB resolution → mint-title validation → static drift
+ * refusal → grant dialog), then the probe gate → flow dispatch.
+ * Standalone so the ordering pins — file read before the probe gate,
+ * drift refusal before the grant, grant before the probe gate, mint
+ * before the grant — are a unit under test, not an inline closure. */
 async function prepareWrite(
 	p: WriteParams,
 	hooks: WriteToolHooks,

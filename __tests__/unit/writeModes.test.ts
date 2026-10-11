@@ -15,7 +15,11 @@ import {
 	contentHash,
 } from "siyuan-kb-primitives";
 import { statementKind } from "siyuan-kb-primitives/testing";
-import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
+import {
+	modeShapeProblem,
+	writeSchema,
+	type WriteParams,
+} from "../../writeSchema.js";
 import {
 	base,
 	registerKbWrite,
@@ -38,6 +42,34 @@ describe("kb_write schema", () => {
 		expect(props).toContain("kb");
 		expect(props).toContain("mode");
 		expect(props).not.toContain("confirmNew");
+	});
+
+	it("declares every schema key as accepted by at least one mode", () => {
+		// Invariant: a key declared in the tool schema but absent from every
+		// mode's allowed set would be rejected by modeShapeProblem for every
+		// mode — the surface fails silently until someone exercises it by
+		// hand. The mode list itself derives from the authority's own
+		// unsupported-mode message, so neither side of the test can go stale
+		// independently.
+		const unsupported = modeShapeProblem({
+			kb: "k",
+			mode: "bogus",
+		} as unknown as WriteParams);
+		const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
+		expect(modes.length).toBeGreaterThan(0);
+		const base = new Set(["kb", "mode", "markdown", "markdownFile"]);
+		for (const key of Object.keys(writeSchema.properties)) {
+			if (base.has(key)) continue;
+			const accepted = modes.some((mode) => {
+				const problem = modeShapeProblem({
+					kb: "k",
+					mode,
+					[key]: key === "doc" ? true : "x",
+				} as unknown as WriteParams);
+				return problem === undefined || !problem.includes("does not take");
+			});
+			expect(accepted, `key '${key}' rejected by every mode`).toBe(true);
+		}
 	});
 
 	it("rejects kb: 'kbs' via the existing unknown-KB rejection — zero kernel calls", async () => {

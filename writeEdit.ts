@@ -108,6 +108,7 @@ export async function runEditMode(
 			status: "ok",
 			message: `edited block ${blockId} in '${doc.title}' (KB ${name})`,
 			kb: name,
+			blockId,
 			...tail,
 		};
 	});

@@ -566,7 +566,7 @@ export function moveDocJudgmentRefusalEnvelope(
  * the stale-target race, worded as such. */
 export function moveDocScopingRefusalEnvelope(
 	outcome: Extract<MoveDocOutcome, { kind: "not-in-source" }>,
-	ctx: { name: string; docId: string },
+	ctx: { name: string },
 ): Envelope {
 	return refusedEnvelope(
 		`doc '${outcome.docId}' is not a doc of KB '${ctx.name}' — the blocks index names no row for it — ${STALE_TARGET_GUIDANCE}`,
