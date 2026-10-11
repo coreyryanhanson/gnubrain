@@ -436,7 +436,7 @@ const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
 /** Register the three read tools and declare the read toolset: the
  * toolset exists so the surface is maskable from day one — default behavior
- * unchanged, no toggle subcommand (nothing asks to hide reads yet). */
+ * unchanged; /kb tools read|write|off sets the toolsets at runtime. */
 export function registerReadToolsAndToolset(
 	pi: ExtensionAPI,
 	hooks: ReadToolHooks,

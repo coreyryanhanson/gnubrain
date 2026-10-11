@@ -36,7 +36,7 @@ import { WRITE_TOOLSET_ID, registerWriteToolAndToolset } from "./write.js";
 // validation, scope resolution, breaker/cooldown gate, status slot, the
 // /kb command (scope toggles + recovery), the read tools (kb_query /
 // kb_search / kb_read) and read toolset, kb_write (per-KB write grant gate
-// + create flow), and the write toolset (requires the read toolset —
+// + six write modes), and the write toolset (requires the read toolset —
 // live-toggle cascade), the /kb tools write verb, the fresh-content
 // baselines, and the write-mode dispatch (over the
 // writeSchema/writeFlow/writeEdit/... files).

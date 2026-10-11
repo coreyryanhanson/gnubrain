@@ -63,7 +63,10 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   No source file in this repo
   names `siyuan-kernel-api` — take the client constructor, error classes,
   and kernel types from the read barrel (one requirer = one layer-1 copy in
-  every install, which keeps `instanceof` identity alive).
+  every install, which keeps `instanceof` identity alive). A test-only
+  third entry (`siyuan-kb-primitives/testing`) is allowed under
+  `__tests__/` only — statement-shape helpers for the suites, pinned by
+  `layerBoundary.test.ts`.
 
 ## Design invariants
 
@@ -218,7 +221,7 @@ here is falsified in the primitives repo's unit + live suites (an upgrade
 pass re-runs them wholesale); this repo's suites exercise them transitively
 and never sole-falsify a pinned fact, so entries name a test only where
 this repo pins something of its own — tool-surface wording, or a live case
-riding the tool path. The two `sqlScope.ts` entries are the standing
+riding the tool path. The three `sqlScope.ts` entries are the standing
 exception named in the rule below: their guard is tool-surface by design,
 so this repo falsifies them itself. The tool-side code at each spot is wording and
 precondition, not the fact itself; an upgrade pass re-reads this list and
@@ -345,8 +348,13 @@ re-falsifies the changed fact in the primitives.
   only in `blocks.ial`, which the guard does not query); falsified by the
   primitives' title round-trip live case.
 - The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
-  permits CTEs, so layer 1 is the only line of defense against a WITH
+  permits CTEs, so rung 1 is the only line of defense against a WITH
   shadowing an allowlisted table (pinned locally by `tools.test.ts`).
+- The negative-`LIMIT` fact (`sqlScope.ts` `limitOf`, `tools.ts`
+  `buildQueryEnvelope`) — a negative LIMIT is sqlite's "no limit": it is
+  passed through unclamped and never truncate-flagged (an absent LIMIT, by
+  contrast, gets `RESULT_LIMIT` injected and can flag); the tool-side
+  guard is pinned locally (`tools.test.ts`).
 - The aggregate-row claim (`sqlScope.ts`) — SQL projection semantics, not
   kernel behavior: rows whose projection omits `box` (per-type aggregates
   like `SELECT type, COUNT(*)`) carry no `box` field, and `postFilterRows`

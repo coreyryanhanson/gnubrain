@@ -3,7 +3,7 @@
 // mode dispatch. The create flow lives in writeCreate.ts; shape/schema in
 // writeSchema.ts; the per-KB grant gate in writeConfirm.ts; mint policy in
 // writeGuard.ts; the guard SQL and anchors (placement) live in the
-// primitives; shared baselines in writeResult.ts, echo tails in
+// primitives; shared baselines in baselines.ts, echo tails in
 // writeFlow.ts.
 
 import type {

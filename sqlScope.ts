@@ -23,7 +23,7 @@ function containsNestedSelect(value: unknown): boolean {
 
 type CertResult = { ok: true; ast: Select } | { ok: false; reason: string };
 
-/** layer 1 — parser-based certification, never a token scan. Worst case
+/** rung 1 — parser-based certification, never a token scan. Worst case
  * at every rung is a rejection with the reason named, never a guess. */
 export function certifySelect(stmt: string): CertResult {
 	let ast: unknown;
@@ -48,7 +48,7 @@ export function certifySelect(stmt: string): CertResult {
 	if (node.type !== "select") {
 		return { ok: false, reason: `only SELECT is allowed (got ${node.type})` };
 	}
-	// The kernel's readonly layer permits WITH — layer 1 is the only line of
+	// The kernel's readonly layer permits WITH — rung 1 is the only line of
 	// defense against a CTE shadowing an allowlisted table.
 	if (node.with !== undefined && node.with !== null) {
 		return { ok: false, reason: "CTEs (WITH) are not allowed" };
@@ -136,7 +136,7 @@ interface RebuiltStatement {
 }
 
 /**
- * layer 1 rebuild: splice `(existing) AND box IN (...)` into the top-level
+ * rung 2 rebuild: splice `(existing) AND box IN (...)` into the top-level
  * WHERE (fresh WHERE when none — never a bare concatenation, which would turn
  * `a OR b` into `a OR (b AND box IN ...)`), inject LIMIT iff the AST shows
  * none, serialize, and re-parse for verification.
@@ -173,7 +173,7 @@ export function rebuildWithScope(
 const norm = (x: unknown): string => JSON.stringify(x);
 
 /**
- * layer 1 verification: the executed statement is the re-parsed one, and
+ * rung 2 verification: the executed statement is the re-parsed one, and
  * the re-parse must still be a single certified SELECT whose WHERE is the
  * original expression ANDed with the injected predicate.
  */
@@ -242,9 +242,9 @@ function checkBoxIn(
 	return undefined;
 }
 
-/** layer 3 — post-filter backstop. Rows that carry a `box` field are
+/** rung 3 — post-filter backstop. Rows that carry a `box` field are
  * dropped unless `box` is in the resolved set; aggregate rows (no `box`)
- * are exempt — layer 1 guarantees the injected predicate on the executed
+ * are exempt — rung 2 guarantees the injected predicate on the executed
  * statement. */
 export function postFilterRows(
 	rows: Record<string, unknown>[],

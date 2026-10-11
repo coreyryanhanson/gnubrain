@@ -59,7 +59,7 @@ function fakePiWithTools() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 1 — parser certification
+// Rung 1 — parser certification
 // ---------------------------------------------------------------------------
 
 describe("parser certification", () => {
@@ -157,7 +157,7 @@ describe("parser certification", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer 1 — AST rebuild + re-parse verification
+// Rung 2 — AST rebuild + re-parse verification
 // ---------------------------------------------------------------------------
 
 describe("injected-predicate rebuild + re-parse", () => {
@@ -274,7 +274,7 @@ describe("injected-predicate rebuild + re-parse", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Layer 3 — post-filter backstop
+// Rung 3 — post-filter backstop
 // ---------------------------------------------------------------------------
 
 describe("post-filter backstop", () => {
