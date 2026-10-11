@@ -13,7 +13,7 @@ import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
 	appendWalkTruncatedMessage,
 	headingInWalk,
-	placementRefusal,
+	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
@@ -34,15 +34,23 @@ export async function runAppendMode(
 		const resolved = headingInWalk(tree, doc, params.headingId);
 		if ("status" in resolved) return resolved;
 	}
-	const derived = deriveAppendAnchor(
+	const anchor = deriveAppendAnchor(
 		tree,
 		params.headingId,
 		params.placement as AppendPlacement | undefined,
 	);
-	const anchor = placementRefusal(derived, params.headingId, doc, name, () =>
-		refusedEnvelope(appendWalkTruncatedMessage, { kb: name }),
-	);
-	if ("status" in anchor) return anchor;
+	// Inline narrowing: a new primitives arm fails typecheck here, not
+	// through a cast; heading-absent is a fail-closed tripwire —
+	// headingInWalk already refused an absent id on this same walk.
+	if (anchor.kind === "walk-truncated") {
+		return refusedEnvelope(appendWalkTruncatedMessage, { kb: name });
+	}
+	if (anchor.kind === "heading-absent") {
+		return refusedEnvelope(
+			staleHeadingMessage(params.headingId as string, doc),
+			{ kb: name },
+		);
+	}
 	const echo = appendAnchorEcho(anchor);
 	// The verified insert: the mutation and the landed judgment are one
 	// primitive call. Transport failures in the mutation phase are outcome-

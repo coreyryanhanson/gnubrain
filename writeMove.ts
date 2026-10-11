@@ -28,8 +28,8 @@ import { serveOutlineFromWalk } from "./outline.js";
 import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
 	headingInWalk,
-	placementRefusal,
 	resolveDocTarget,
+	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
@@ -237,15 +237,20 @@ export async function runMoveMode(
 	// Anchor: tool-derived, never agent-supplied. The placement refusals
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
-	// this pre-move walk; their frame lives above.
-	const anchor = placementRefusal(
-		deriveMoveAnchor(destWalk, params.toHeadingId),
-		params.toHeadingId,
-		dest,
-		name,
-		() => movePlacementRefusalEnvelope({ kind: "walk-truncated" }, doc),
-	);
-	if ("status" in anchor) return anchor;
+	// this pre-move walk; their frame lives above. Inline narrowing: a new
+	// primitives arm fails typecheck here, not through a cast;
+	// heading-absent is a fail-closed tripwire (headingInWalk refused on
+	// this walk).
+	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
+	if (anchor.kind === "walk-truncated") {
+		return movePlacementRefusalEnvelope(anchor, doc);
+	}
+	if (anchor.kind === "heading-absent") {
+		return refusedEnvelope(
+			staleHeadingMessage(params.toHeadingId as string, dest),
+			{ kb: name },
+		);
+	}
 	const echo = moveAnchorEcho(anchor);
 	const outcome = await moveBlockVerified(kernel, input.probe, {
 		blockId,

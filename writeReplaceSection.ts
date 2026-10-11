@@ -24,7 +24,6 @@ import {
 import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
 import {
 	headingInWalk,
-	placementRefusal,
 	replaceSectionWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
@@ -127,14 +126,16 @@ export async function runReplaceSectionMode(
 	const tree = await walkBlockTree(kernel, doc.rootId);
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
-	const deleteSet = placementRefusal(
-		sectionOf(tree, headingId),
-		headingId,
-		doc,
-		name,
-		() => refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name }),
-	);
-	if ("status" in deleteSet) return deleteSet;
+	const deleteSet = sectionOf(tree, headingId);
+	// Inline narrowing: a new primitives arm fails typecheck here, not
+	// through a cast; heading-absent is a fail-closed tripwire —
+	// headingInWalk already refused an absent id on this same walk.
+	if (deleteSet.kind === "walk-truncated") {
+		return refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name });
+	}
+	if (deleteSet.kind === "heading-absent") {
+		return refusedEnvelope(staleHeadingMessage(headingId, doc), { kb: name });
+	}
 	const section = deleteSet.section;
 	// Fresh-content precondition: a concurrency guard, not a consent
 	// mechanism (the grant resolved at the kb_write entry). One wrapper step

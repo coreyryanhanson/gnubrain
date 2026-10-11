@@ -335,7 +335,7 @@ re-falsifies the changed fact in the primitives.
   endpoint is a silent no-op in every mode (code 0, row untouched), so the
   endpoint is no longer a mutation vector and the tool still rejects DML
   by shape; the tool-side shape rejection is pinned locally
-  (`tools.test.ts`).
+  (`sqlScope.test.ts`).
 - The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
   cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
   the primitives; `breaker.ts` holds it as session state); the version
@@ -353,7 +353,7 @@ re-falsifies the changed fact in the primitives.
   primitives' title round-trip live case.
 - The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
   permits CTEs, so rung 1 is the only line of defense against a WITH
-  shadowing an allowlisted table (pinned locally by `tools.test.ts`).
+  shadowing an allowlisted table (pinned locally by `sqlScope.test.ts`).
 - The negative-`LIMIT` fact (`sqlScope.ts` `limitOf`, `tools.ts`
   `buildQueryEnvelope`) — a negative LIMIT is sqlite's "no limit": it is
   passed through unclamped and never truncate-flagged (an absent LIMIT, by

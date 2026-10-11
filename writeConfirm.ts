@@ -117,6 +117,7 @@ export async function grantGate(input: {
 			`no UI is available to grant the write (headless session) — writes are ` +
 				`denied by default. Set gnubrain.allowUnattendedWrites: true in the ` +
 				`global settings file to allow unattended writes.`,
+			{ reason: "write_denied" },
 		);
 	}
 	const run = state.lock.then(async (): Promise<Envelope | null> => {

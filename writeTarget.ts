@@ -20,7 +20,6 @@ import {
 	type KernelProbeResult,
 	type WalkedBlock,
 	type WalkedTree,
-	type WalkTruncated,
 } from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import type { ContentBaselines } from "./baselines.js";
@@ -133,32 +132,6 @@ export function headingInWalk(
 	}
 	outcome satisfies never;
 	return errorEnvelope("internal: unhandled heading-target arm");
-}
-
-/** The projection-refusal ladder shared by the append, move, and
- * replace-section flows: a placement projection over the same walk the
- * primitives' pre-mutation gate re-checks refuses an incomplete tree
- * before any kernel call, and its heading-absent arm is unreachable —
- * headingInWalk already refused an absent id on that same walk — kept as
- * a fail-closed tripwire, never a silent doc-end fallback. The truncation
- * refusal wording differs per operation shape; the caller supplies it. */
-export function placementRefusal<T extends { kind: string }>(
-	derived: T,
-	headingId: string | undefined,
-	doc: DocTarget,
-	kb: string,
-	truncated: () => Envelope,
-): Exclude<T, WalkTruncated | { kind: "heading-absent" }> | Envelope {
-	if (derived.kind === "walk-truncated") return truncated();
-	if (derived.kind === "heading-absent") {
-		return refusedEnvelope(staleHeadingMessage(headingId as string, doc), {
-			kb,
-		});
-	}
-	// Every placement projection union ends in exactly these two refusal
-	// arms, so what remains is the success type; the cast states that
-	// contract (generic narrowing cannot decompose T itself).
-	return derived as Exclude<T, WalkTruncated | { kind: "heading-absent" }>;
 }
 
 /** Fresh-content precondition, checked right before the kernel write: the
