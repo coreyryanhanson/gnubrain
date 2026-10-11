@@ -3,7 +3,7 @@
 // persistence, and the actual toolset enable/disable happen in index.ts
 // before/after this returns.
 
-import { kbNameProblem, renderScopeList } from "./gate.js";
+import { kbNameProblem, renderScopeList } from "./kbScope.js";
 import type { SessionValidation } from "./validation.js";
 
 interface KbCommandResult {

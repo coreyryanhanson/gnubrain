@@ -13,7 +13,6 @@ import type {
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
 
-export { READ_TOOLSET_ID, WRITE_TOOLSET_ID };
 import type { CircuitBreaker } from "./breaker.js";
 import {
 	errorEnvelope,
@@ -21,12 +20,8 @@ import {
 	textResult,
 	type Envelope,
 } from "./envelope.js";
-import {
-	gateWriteAttempt,
-	runGatedTool,
-	resolveBox,
-	staticDriftRefusal,
-} from "./gate.js";
+import { gateWriteAttempt, runGatedTool, staticDriftRefusal } from "./gate.js";
+import { resolveBox } from "./kbScope.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	grantGate,

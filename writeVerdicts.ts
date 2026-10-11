@@ -1,13 +1,12 @@
 // Typed-reason → agent-facing wording for the write-path verdict unions
 // siyuan-kb-primitives returns. The primitives speak in closed `{ kind,
 // …detail }` unions, never agent-facing sentences; this module is the
-// wording layer: the sentence each verdict arm renders. The rule:
-// verdict *fragments* word here; each flow composes its own mode's
-// envelope *frames* from them (frames need the flow's echo tail, doc,
-// and verdict keys); the pieces shared across flows — the pre-judgment
-// ladder (mutationFailureEnvelope) and the anchor echoes — are worded
-// here too, so a new arm in a primitives release fails typecheck here
-// once instead of diverging across every flow. The one shared map
+// wording layer: the sentence each verdict arm renders, the anchor
+// echoes, and the one frame shared across flows — the pre-judgment
+// ladder (mutationFailureEnvelope) — so a new arm in a primitives release
+// fails typecheck here once instead of diverging across every flow. Each
+// flow composes its own mode's envelope frames from these pieces (frames
+// need the flow's echo tail, doc, and verdict keys). The one shared map
 // worded elsewhere is headingInWalk (writeTarget): the heading-target
 // refusal arms sit beside the DocTarget resolution they return into.
 // mutationFailureEnvelope is the one non-pure piece: it is async and

@@ -4,7 +4,7 @@
 // shape `config`, tripped breaker `breaker`, version drift `version`;
 // then never-probed → grey; healthy → capability colors.
 
-import { renderScopeList } from "./gate.js";
+import { renderScopeList } from "./kbScope.js";
 import type { ProbeVerdict } from "./validation.js";
 
 interface KbStatusTheme {

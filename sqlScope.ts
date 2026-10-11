@@ -148,6 +148,10 @@ function boxInAst(boxes: string[]): Binary {
 interface RebuiltStatement {
 	stmt: string;
 	limit: number;
+	/** The top-level WHERE as it stood before the splice — the original
+	 * expression the verification compares the re-parse against. Captured
+	 * here because the splice below mutates `ast.where` in place. */
+	originalWhere: Binary | null;
 }
 
 /**
@@ -161,6 +165,10 @@ export function rebuildWithScope(
 	boxes: string[],
 ): RebuiltStatement {
 	const boxIn = boxInAst(boxes);
+	// node-sql-parser types WHERE as a broad union (Binary | Function); a
+	// certified single-table SELECT's top-level WHERE is a Binary — the same
+	// shape verifyRebuilt checks the re-parse against.
+	const originalWhere = (ast.where ?? null) as Binary | null;
 	if (ast.limit === undefined || ast.limit === null) {
 		ast.limit = {
 			seperator: "",
@@ -182,7 +190,11 @@ export function rebuildWithScope(
 	const stmt = parser.sqlify(ast, SQL_DIALECT);
 	// After the injection above the AST always carries a limit; the fallback
 	// only fires if the parser stopped producing the documented node shape.
-	return { stmt, limit: limitOf(ast.limit) ?? RESULT_LIMIT };
+	return {
+		stmt,
+		limit: limitOf(ast.limit) ?? RESULT_LIMIT,
+		originalWhere,
+	};
 }
 
 const norm = (x: unknown): string => JSON.stringify(x);

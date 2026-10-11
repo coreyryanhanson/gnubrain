@@ -10,8 +10,7 @@ import {
 	createFakeCtx as fakeCtx,
 	createFakePi as fakePi,
 } from "../helpers/fakePi.js";
-import { READ_TOOLSET_ID } from "../../tools.js";
-import { WRITE_TOOLSET_ID } from "../../write.js";
+import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "../../toolsetIds.js";
 import { GRANT_SESSION, GRANT_YES } from "../../writeConfirm.js";
 
 const GLOBAL_SETTINGS = JSON.stringify({

@@ -5,7 +5,6 @@
 // rejected at the schema. Kernel primitives live in siyuan-kb-primitives;
 // the SQL certification layer in sqlScope.ts.
 
-import type { Binary } from "node-sql-parser";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { Type } from "typebox";
@@ -20,13 +19,13 @@ import {
 	refusedEnvelope,
 	textResult,
 } from "./envelope.js";
+import { runGatedTool } from "./gate.js";
 import {
 	EMPTY_SCOPE_MESSAGE,
 	NOT_READY_VALIDATION,
 	RATE_LIMIT_SKIP_MESSAGE,
-	runGatedTool,
 	resolveBox,
-} from "./gate.js";
+} from "./kbScope.js";
 import {
 	docMarkdown,
 	ownership,
@@ -113,15 +112,12 @@ function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 					if (!certified.ok) {
 						return refusedEnvelope(certified.reason);
 					}
-					// Capture the original WHERE before the rebuild splices it —
-					// verification compares the re-parse against it.
-					const originalWhere = certified.ast.where;
 					const rebuilt = rebuildWithScope(certified.ast, boxes);
 					const reparsed = reparse(rebuilt.stmt);
 					const problem = verifyRebuilt(
 						reparsed,
 						boxes,
-						originalWhere as Binary | null,
+						rebuilt.originalWhere,
 						rebuilt.limit,
 					);
 					if (problem !== undefined) {
@@ -446,7 +442,6 @@ export async function runRead(
 // Toolset (tool-masking record)
 // ---------------------------------------------------------------------------
 
-export { READ_TOOLSET_ID };
 const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
 /** Register the three read tools and declare the read toolset: the

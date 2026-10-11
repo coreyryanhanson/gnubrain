@@ -22,7 +22,8 @@ import {
 	runSessionValidation,
 	type SessionValidation,
 } from "./validation.js";
-import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
+import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
+import { registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import {
 	clearInteractionGrants,
@@ -30,7 +31,7 @@ import {
 	createWriteGrantState,
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
-import { WRITE_TOOLSET_ID, registerWriteToolAndToolset } from "./write.js";
+import { registerWriteToolAndToolset } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -38,8 +39,7 @@ import { WRITE_TOOLSET_ID, registerWriteToolAndToolset } from "./write.js";
 // kb_search / kb_read) and read toolset, kb_write (per-KB write grant gate
 // + six write modes), and the write toolset (requires the read toolset —
 // live-toggle cascade), the /kb tools write verb, the fresh-content
-// baselines, and the write-mode dispatch (over the
-// writeSchema/writeTarget/writeEdit/... files).
+// baselines, and the write-mode dispatch.
 // All of it hangs off the same register(pi, deps) seam.
 
 const STATUS_KEY = "kb";

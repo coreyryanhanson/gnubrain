@@ -4,12 +4,12 @@ import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import { contentHash, type KernelReadClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
-import { EMPTY_SCOPE_MESSAGE, RATE_LIMIT_SKIP_MESSAGE } from "../../gate.js";
+import { EMPTY_SCOPE_MESSAGE, RATE_LIMIT_SKIP_MESSAGE } from "../../kbScope.js";
+import { READ_TOOLSET_ID } from "../../toolsetIds.js";
 import { PREVIEW_CHARS, RESULT_LIMIT } from "../../spill.js";
 import {
 	registerReadToolsAndToolset,
 	registerSearchTool,
-	READ_TOOLSET_ID,
 	runRead,
 	runSearchFanOut,
 } from "../../tools.js";

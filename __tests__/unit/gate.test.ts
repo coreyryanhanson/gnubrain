@@ -10,12 +10,8 @@ import {
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { errorEnvelope } from "../../envelope.js";
-import {
-	gateWriteAttempt,
-	guardCall,
-	resolveKbParam,
-	runKbCall,
-} from "../../gate.js";
+import { gateWriteAttempt, guardCall, runKbCall } from "../../gate.js";
+import { resolveKbParam } from "../../kbScope.js";
 import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;

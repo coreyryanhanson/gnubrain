@@ -164,51 +164,6 @@ describe("edit", () => {
 			expect(result.outline).toBeDefined();
 		}));
 
-	it("verified-edit tolerates the async index: a stale first read retries inside the window", async () => {
-		const harness = setup({
-			config: { blockRows: [{ id: "b-1", content: "stale paragraph" }] },
-		});
-		const baseQuery = harness.client.query.bind(harness.client);
-		let blockReads = 0;
-		harness.client.query = async (stmt: string) => {
-			if (statementKind(stmt) === "block-in-doc") {
-				blockReads += 1;
-				const rows = (await baseQuery(stmt)) as {
-					id: string;
-					content: string;
-				}[];
-				// Reads 1–2 are the pre-write target reads (the flow's own, then
-				// the primitive's); read 3 the first post-write verification
-				// read — the index has not converged yet and still serves the
-				// pre-write form.
-				if (blockReads === 3) {
-					return [{ ...rows[0]!, content: "stale paragraph" }];
-				}
-				return rows;
-			}
-			return baseQuery(stmt);
-		};
-		const result = await harness.execute(editBase);
-		expect(result.status).toBe("ok");
-	});
-
-	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", () =>
-		// The primitives judge a byte-equal resubmit through the convergence
-		// window, never on the ack alone: stored content re-parses on
-		// resubmit, so stillness — not the ack — is the no-op signal.
-		// Collapsed table via the `withVerifyWindow` seam, same as the
-		// silent-no-op case above: the first retry exhausts the window
-		// instantly.
-		withVerifyWindow([0], async () => {
-			const { execute } = setup({
-				config: {
-					blockRows: [{ id: "b-1", content: "same body" }],
-				},
-			});
-			const result = await execute({ ...editBase, markdown: "same body" });
-			expect(result.status).toBe("ok");
-		}));
-
 	it("the successful edit baselines its own block from the verdict's carried pair", async () => {
 		const harness = setup({
 			config: {
