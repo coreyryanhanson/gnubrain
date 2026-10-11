@@ -3,7 +3,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { TOOLSET_EVENTS, type Toolset } from "pi-tool-masking";
+import { TOOLSET_EVENTS, toggleBatch, type Toolset } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
@@ -22,7 +22,7 @@ import {
 	runSessionValidation,
 	type SessionValidation,
 } from "./validation.js";
-import { registerReadToolsAndToolset } from "./tools.js";
+import { READ_TOOLSET_ID, registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import {
 	clearInteractionGrants,
@@ -30,7 +30,7 @@ import {
 	createWriteGrantState,
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
-import { registerWriteToolAndToolset } from "./write.js";
+import { WRITE_TOOLSET_ID, registerWriteToolAndToolset } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -255,22 +255,54 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
 				validation.scope = result.newScope;
 			}
+			const toggleOps: { id: string; desired: boolean }[] = [];
 			if (result.newReadsEnabled !== undefined) {
-				if (result.newReadsEnabled) {
-					readToolset.enable(pi, ctx.sessionManager);
-				} else {
-					readToolset.disable(pi, ctx.sessionManager); // cascades write off (requires)
-				}
+				toggleOps.push({
+					id: READ_TOOLSET_ID,
+					desired: result.newReadsEnabled,
+				});
 			}
 			if (result.newWritesEnabled !== undefined) {
-				if (result.newWritesEnabled) {
-					writeToolset.enable(pi, ctx.sessionManager); // cascades reads on (requires)
-				} else {
-					writeToolset.disable(pi, ctx.sessionManager);
+				toggleOps.push({
+					id: WRITE_TOOLSET_ID,
+					desired: result.newWritesEnabled,
+				});
+			}
+			let message = result.message;
+			let severity = result.severity;
+			if (toggleOps.length > 0) {
+				// One batch is one intent, over the library's sole toggle
+				// actuation path. The toggle is the authority, not the
+				// pre-toggle prediction: allowlist governance throws before
+				// anything writes, and a deferring child no-ops — so the
+				// wording is checked against the live set after the batch.
+				try {
+					toggleBatch(pi, ctx.sessionManager, toggleOps);
+					const readsOn = readToolset.isEnabled(pi);
+					const writesOn = writeToolset.isEnabled(pi);
+					const landed = toggleOps.every(
+						(op) =>
+							(op.id === READ_TOOLSET_ID ? readsOn : writesOn) === op.desired,
+					);
+					if (!landed) {
+						message = `kb tools unchanged — read toolset ${readsOn ? "on" : "off"}, write toolset ${writesOn ? "on" : "off"}`;
+						severity = "warning";
+					}
+				} catch (err) {
+					// By name, never instanceof: the thrown handle may belong to
+					// a different physical copy of the library.
+					if (
+						(err as { name?: string } | null)?.name !== "AllowlistModeError"
+					) {
+						throw err;
+					}
+					message =
+						"kb tools toggle unavailable — this session runs under allowlist governance (toolsets are managed externally)";
+					severity = "error";
 				}
 			}
 			renderStatus(ctx);
-			ui.notify(result.message, result.severity);
+			ui.notify(message, severity);
 		},
 	});
 

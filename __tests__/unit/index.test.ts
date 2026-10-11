@@ -626,6 +626,59 @@ describe("read + write toolset wiring", () => {
 		]);
 	});
 
+	it("/kb tools under allowlist governance renders the refusal and toggles nothing", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		register(pi, deps());
+		await fire("session_start", fakeCtx().ctx);
+		// The governance mode lives on the branch; a hand-built mode entry is
+		// the same shape pi-tool-masking's own appendEntry produces.
+		const { ctx, notifications } = fakeCtx({
+			branch: [
+				{
+					type: "custom",
+					customType: "toolset-resolution-mode",
+					data: {
+						mode: "allowlist",
+						allowlist: ["other.extension.tools"],
+					},
+				},
+			],
+		});
+		await runCommand("tools read", ctx);
+		expect(notifications.at(-1)?.[0]).toContain("allowlist governance");
+		expect(notifications.at(-1)?.[1]).toBe("error");
+		// Atomic refusal: the live set is untouched.
+		expect([...pi.getActiveTools()].sort()).toEqual([
+			"kb_query",
+			"kb_read",
+			"kb_search",
+			"kb_write",
+		]);
+	});
+
+	it("/kb tools in a deferring child no-ops and reports honestly", async () => {
+		const { pi, fire, runCommand } = fakePi();
+		register(pi, deps());
+		const { ctx, notifications } = fakeCtx();
+		await fire("session_start", ctx);
+		// The library's defer signal is a per-process env pid tag; a value
+		// other than this process's pid reads as a deferring child.
+		process.env.PI_TOOLMASKING_DEFER = String(process.pid + 1);
+		try {
+			await runCommand("tools read", ctx);
+		} finally {
+			delete process.env.PI_TOOLMASKING_DEFER;
+		}
+		expect(notifications.at(-1)?.[0]).toContain("kb tools unchanged");
+		expect(notifications.at(-1)?.[1]).toBe("warning");
+		expect([...pi.getActiveTools()].sort()).toEqual([
+			"kb_query",
+			"kb_read",
+			"kb_search",
+			"kb_write",
+		]);
+	});
+
 	it("TOOLSET_EVENTS repaint the status slot without a ctx-bearing trigger", async () => {
 		const { pi, fire, emitEvent } = fakePi();
 		register(pi, deps());
