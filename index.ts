@@ -46,15 +46,14 @@ const STATUS_KEY = "kb";
 
 /** Runtime deps the write tool adds to the register seam. */
 export interface GnubrainDeps {
-	/** Injectable file read — unit tests mock it; the integration suite injects
-	 * fixture settings in memory through the same seam. Key mocks off
+	/** Injectable file read — unit tests mock it; harness code feeds fixture
+	 * settings to loadGnubrainSettings through the same shape. Key mocks off
 	 * globalSettingsPath/projectSettingsPath, and mind the two file shapes: the
 	 * global file must carry the full `gnubrain` object (baseUrl/apiToken/kbs);
 	 * a project file may omit `gnubrain` entirely or hold only
 	 * `{gnubrain: {defaultKBs}}` — connection keys there fail shape validation
 	 * and degrade the whole session. */
 	readFile?: (path: string) => Promise<string>;
-	homeDir?: string;
 	/** Test seam for the kernel client. */
 	createClient?: (baseUrl: string, token: string) => WriteKernelClient;
 }
@@ -155,7 +154,7 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	): Promise<SessionValidation> {
 		const loaded = await loadGnubrainSettings(
 			readFile,
-			globalSettingsPath(deps.homeDir),
+			globalSettingsPath(),
 			projectSettingsPath(ctx.cwd),
 		);
 		// An armed 429 cooldown means the kernel refuses us per-IP and any call
