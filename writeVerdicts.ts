@@ -213,6 +213,21 @@ export async function mutationFailureEnvelope(
 	return errorEnvelope("internal: unhandled mutation failure");
 }
 
+/** The flows' pre-write depth-bound refusals — each worded once and shared
+ * by the flow's two truncation arms (the anchor/section projection refusal
+ * and the primitives' walk-truncated verdict): the sentences differ per
+ * operation shape, not per arm. The target judgment's own truncation arm
+ * words in writeTarget (walkTruncatedMessage, beside headingInWalk's other
+ * arms). */
+export const appendWalkTruncatedMessage =
+	"the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead";
+
+export const moveWalkTruncatedMessage =
+	"the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead";
+
+export const replaceSectionWalkTruncatedMessage =
+	"the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead";
+
 /** Anchor echo wording — the agent-facing rendering of the placement
  * primitives' evidence-only unions (kind + ids + the move `at`). Byte
  * pinning lives in writeModes.test.ts; the unions' shape contract lives in

@@ -11,14 +11,17 @@ import { insertVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
-	appendWalkTruncatedMessage,
+	anchorRefusal,
 	headingInWalk,
-	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
-import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
+import {
+	appendAnchorEcho,
+	appendWalkTruncatedMessage,
+	insertLandedRefusal,
+} from "./writeVerdicts.js";
 
 export async function runAppendMode(
 	input: WriteFlowInput,
@@ -39,16 +42,15 @@ export async function runAppendMode(
 		params.headingId,
 		params.placement as AppendPlacement | undefined,
 	);
-	// Inline narrowing: a new primitives arm fails typecheck here, not
-	// through a cast; heading-absent is a fail-closed tripwire —
-	// headingInWalk already refused an absent id on this same walk.
-	if (anchor.kind === "walk-truncated") {
-		return refusedEnvelope(appendWalkTruncatedMessage, { kb: name });
-	}
-	if (anchor.kind === "heading-absent") {
-		return refusedEnvelope(
-			staleHeadingMessage(params.headingId as string, doc),
-			{ kb: name },
+	// Inline narrowing + the fail-closed tripwire (headingInWalk refused an
+	// absent id on this same walk) word in anchorRefusal (writeTarget).
+	if (anchor.kind === "walk-truncated" || anchor.kind === "heading-absent") {
+		return anchorRefusal(
+			anchor.kind,
+			doc,
+			params.headingId as string,
+			name,
+			appendWalkTruncatedMessage,
 		);
 	}
 	const echo = appendAnchorEcho(anchor);

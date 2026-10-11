@@ -80,24 +80,34 @@ export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
 }
 
 /** The truncation refusal — the target read runs over an incomplete walk,
- * so an absent heading is unconfirmed (it may sit past the bound). The
- * flows word their truncation refusals per document shape (append, move,
- * replace-section); this is the target-judgment one. The flows' walks are
- * strict, so the only reachable incompleteness cause here is the depth
- * bound — the agent-facing string names it. */
+ * so an absent heading is unconfirmed (it may sit past the bound). This is
+ * the target judgment's own arm; the flows' depth-bound refusals (per
+ * operation shape) word in writeVerdicts. The walks are strict, so the
+ * only reachable incompleteness cause here is the depth bound — the
+ * agent-facing string names it. */
 export function walkTruncatedMessage(doc: DocTarget): string {
 	return `the walk of doc '${doc.title}' (${doc.rootId}) hit the document's depth bound, so the target judgment would read incomplete evidence — refused before any kernel call; restructure the document (or edit in place) instead`;
 }
 
-/** The flows' own depth-bound refusals, each worded once and shared by the
- * flow's two truncation arms (projection refusal and the primitives'
- * walk-truncated verdict) — the sentences differ per operation shape, not
- * per arm. */
-export const appendWalkTruncatedMessage =
-	"the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead";
-
-export const replaceSectionWalkTruncatedMessage =
-	"the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead";
+/** The shared anchor-narrowing refusal — the two fail-closed arms every
+ * flow's anchor/section projection shares, worded once: walk-truncated
+ * takes the flow's depth-bound sentence (writeVerdicts), heading-absent
+ * the stale-heading refusal — headingInWalk already refused an absent id
+ * on this same walk, so absence here is a caller/derivation mismatch, not
+ * a fresh fact about the doc. Passing the narrowed kind keeps the inline
+ * narrowing discipline: a new primitives arm fails typecheck at the call
+ * site's landed path, not through a cast. */
+export function anchorRefusal(
+	kind: "walk-truncated" | "heading-absent",
+	doc: DocTarget,
+	headingId: string,
+	kb: string,
+	truncatedMessage: string,
+): Envelope {
+	return kind === "walk-truncated"
+		? refusedEnvelope(truncatedMessage, { kb })
+		: refusedEnvelope(staleHeadingMessage(headingId, doc), { kb });
+}
 
 /** The heading-target refusal map — wording only. The judgment (membership
  * + write-parent targetability, the kernel's CheckContainerParent set) is

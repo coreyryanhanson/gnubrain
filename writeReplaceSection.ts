@@ -23,15 +23,19 @@ import {
 } from "./envelope.js";
 import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
 import {
+	anchorRefusal,
 	headingInWalk,
-	replaceSectionWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
 	freshContentRefusal,
 	type WriteFlowInput,
 } from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
-import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
+import {
+	appendAnchorEcho,
+	insertLandedRefusal,
+	replaceSectionWalkTruncatedMessage,
+} from "./writeVerdicts.js";
 
 /** The delete-sweep refusal frame — the sweep outcome arms the flow does
  * not handle itself: `swept` (the success path continues), `interrupted`
@@ -127,14 +131,19 @@ export async function runReplaceSectionMode(
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
 	const deleteSet = sectionOf(tree, headingId);
-	// Inline narrowing: a new primitives arm fails typecheck here, not
-	// through a cast; heading-absent is a fail-closed tripwire —
-	// headingInWalk already refused an absent id on this same walk.
-	if (deleteSet.kind === "walk-truncated") {
-		return refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name });
-	}
-	if (deleteSet.kind === "heading-absent") {
-		return refusedEnvelope(staleHeadingMessage(headingId, doc), { kb: name });
+	// Inline narrowing + the fail-closed tripwire (headingInWalk refused an
+	// absent id on this same walk) word in anchorRefusal (writeTarget).
+	if (
+		deleteSet.kind === "walk-truncated" ||
+		deleteSet.kind === "heading-absent"
+	) {
+		return anchorRefusal(
+			deleteSet.kind,
+			doc,
+			headingId,
+			name,
+			replaceSectionWalkTruncatedMessage,
+		);
 	}
 	const section = deleteSet.section;
 	// Fresh-content precondition: a concurrency guard, not a consent

@@ -37,6 +37,7 @@ import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
 	moveLandedRefusal,
+	moveWalkTruncatedMessage,
 	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
 
@@ -63,9 +64,7 @@ function movePlacementRefusalEnvelope(
 ): Envelope {
 	switch (outcome.kind) {
 		case "walk-truncated":
-			return refusedEnvelope(
-				`the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead`,
-			);
+			return refusedEnvelope(moveWalkTruncatedMessage);
 		case "already-at-destination":
 			return refusedEnvelope(
 				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
@@ -238,9 +237,8 @@ export async function runMoveMode(
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
 	// this pre-move walk; their frame lives above. Inline narrowing: a new
-	// primitives arm fails typecheck here, not through a cast;
-	// heading-absent is a fail-closed tripwire (headingInWalk refused on
-	// this walk).
+	// primitives arm fails typecheck here; heading-absent is a fail-closed
+	// tripwire (headingInWalk refused on this walk).
 	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
 	if (anchor.kind === "walk-truncated") {
 		return movePlacementRefusalEnvelope(anchor, doc);
