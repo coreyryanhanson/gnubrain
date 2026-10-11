@@ -666,6 +666,56 @@ describe("append", () => {
 		expect(insertArgs?.nextID).toBe("h1b");
 	});
 
+	it("the echo tail baselines served headings from the walk it serves, never a later SQL read", async () => {
+		// The outline the result serves and the baselines it seeds are one
+		// snapshot: a post-walk read could only repeat the same strings or
+		// launder a concurrent change / stale index row past the
+		// fresh-content precondition. The write's own block is the one
+		// SQL-read (its stored form is unknowable at submit time).
+		const harness = setup({
+			config: {
+				childrenFor: BOUNDED_DOC,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...BOUNDED_DOC["d-doc"].slice(0, 4),
+						walkBlock("b-new", "p", "", "new fact"),
+						...BOUNDED_DOC["d-doc"].slice(4),
+					];
+				},
+			},
+		});
+		storedContentStub(harness, {
+			"b-new": "stored new fact",
+			// A divergent row the index holds for the served heading — it
+			// must never be asked for, let alone remembered.
+			h1: "index-lag Goals",
+		});
+		const requestedIds: string[][] = [];
+		const baseQuery = harness.client.query.bind(harness.client);
+		harness.client.query = async (stmt: string) => {
+			if (statementKind(stmt) === "block-contents") {
+				requestedIds.push(
+					[...stmt.matchAll(/'([^']*)'/g)].flatMap((m) =>
+						m[1] === undefined ? [] : [m[1]],
+					),
+				);
+			}
+			return baseQuery(stmt);
+		};
+		const result = await harness.execute(appendParams("h1"));
+		expect(result.status).toBe("ok");
+		// Only the write's own block is SQL-read; the served headings are
+		// never re-read after the walk.
+		expect(requestedIds).toEqual([["b-new"]]);
+		// The served heading's baseline is the walk form it was shown, not
+		// the index-lag row.
+		expect(harness.baselines.servedHash("h1")).toBe(contentHash("Goals"));
+		// The write's own block baselines from stored form.
+		expect(harness.baselines.servedHash("b-new")).toBe(
+			contentHash("stored new fact"),
+		);
+	});
+
 	it("placement section-start inserts before the first subsection, after the leading run", async () => {
 		// BOUNDED_DOC's h1 section: p1, h2, p2 — section-start lands between
 		// p1 and h2, where the default lands before h1b past the whole run.

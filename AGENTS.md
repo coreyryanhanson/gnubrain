@@ -229,12 +229,13 @@ re-falsifies the changed fact in the primitives.
   and SQL-form baselines hash identically) remains a cross-boundary
   property: the judgment and both reads live in the primitives, the read
   tools' serve seeds ride the walk, and the SQL-form seed sites are
-  exactly three — `runEditMode`'s pre-write seed from `blockInDoc`
-  (`writeEdit.ts`), `kb_query`'s served rows (`tools.ts`, via
-  `rememberServedRows`), and the success-path `echoTail` refresh in
-  `writeFlow.ts` (the sites the `rememberServedRows` entry below names).
-  Fail-closed on any split (a diverging seed reads as `stale`, named,
-  never silently matched — the retry proceeds).
+  exactly two — `runEditMode`'s pre-write seed from `blockInDoc`
+  (`writeEdit.ts`) and `kb_query`'s served rows (`tools.ts`, via
+  `rememberServedRows`; the sites the `rememberServedRows` entry below
+  names). The write echo tail seeds its served baselines from the walk
+  it serves — never overwritten by a later read — and SQL-reads only the
+  write's own block IDs. Fail-closed on any split (a diverging seed reads
+  as `stale`, named, never silently matched — the retry proceeds).
 - The child-order fact — `getChildBlocks` returns a parent's children in
   document order, so the first element is the doc's first block — lives in
   `firstChildContent` (primitives `byId.ts`); the near-match
@@ -244,12 +245,12 @@ re-falsifies the changed fact in the primitives.
 - `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
   getChildBlocks ≡ `blocks.content` equivalence; the code depends on
   nothing (the same for the `serveOutlineFromWalk` doc comment in
-  `outline.ts`). The executable-dependence sites are the three SQL-form
+  `outline.ts`). The executable-dependence sites are the two SQL-form
   seeds the fresh-content entry above names: `runEditMode`'s pre-write
-  seed (`writeEdit.ts`), `kb_query`'s served rows (`tools.ts`), and the
-  `echoTail` baseline-refresh comment in `writeFlow.ts` — all seed
-  SQL-form content into the baseline map the judgment hashes walk-form
-  against.
+  seed (`writeEdit.ts`) and `kb_query`'s served rows (`tools.ts`) — both
+  seed SQL-form content into the baseline map the judgment hashes
+  walk-form against; the echo tail (`writeFlow.ts`) seeds its served rows
+  from the walk it serves and SQL-reads only the write's own block IDs.
 - The type-`'d'` root-row fact behind doc targeting (`writeFlow.ts`
   `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
   refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as

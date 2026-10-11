@@ -13,7 +13,6 @@ import {
 } from "./envelope.js";
 import {
 	blockContents,
-	headingRows,
 	resolveHeadingTarget,
 	rootEcho,
 	walkBlockTree,
@@ -167,17 +166,17 @@ export function mutationFailure(
 	});
 }
 
-/** Fresh outline + root echo + content-baseline refresh — the success-path
- * tail every doc-targeting result shares; call sites pass only an optional
- * pre-fetched verification walk and the write's own block IDs (only on the
- * success paths — a write that did not land refreshes nothing, or it would
- * launder a concurrent change). One full unfiltered walk; a pre-fetched
- * walk (the verification evidence the flow already holds) is reused
- * instead of re-traversing. The refresh block IDs are the blocks the write
- * itself produced (a newBlockId, a movedBlockId) — baselined from stored
- * form so a follow-up edit compares like-for-like. The edit's target is
- * not among them: its landed verdict carries the stored pair, and the
- * flow baselines from that instead of a refresh read. */
+/** Fresh outline + root echo + baseline seeding — the shared tail every
+ * doc-targeting result calls; call sites pass an optional pre-fetched
+ * verification walk and, on the success paths only, the write's own block
+ * IDs (a failed write passes none — nothing of a write that did not land
+ * is remembered). One full unfiltered walk; a pre-fetched walk (the
+ * verification evidence the flow already holds) is reused instead of
+ * re-traversing. The block IDs are the blocks the write itself produced
+ * (a newBlockId, a movedBlockId) — baselined from stored form so a
+ * follow-up edit compares like-for-like. The edit's target is not among
+ * them: its landed verdict carries the stored pair, and the flow
+ * baselines from that instead of a read. */
 export async function echoTail(
 	input: WriteFlowBase,
 	doc: DocTarget,
@@ -187,10 +186,11 @@ export async function echoTail(
 	const { kernel, sessionId, boxId, baselines } = input;
 	const docId = doc.rootId;
 	const fullWalk = walk ?? (await walkBlockTree(kernel, docId));
-	// The serve seeds all walk headings at echo time — the SQL refresh
-	// below overwrites those rows from the index read in the same call when
-	// the index returns them; a missing row keeps the walk-form hash, which
-	// is the same string on the pinned kernel.
+	// The serve seeds every walk heading's baseline, and nothing later
+	// overwrites it: the baseline is exactly the snapshot the result
+	// serves. A post-walk read would either repeat the same strings (the
+	// walk ≡ SQL equivalence) or launder a concurrent change or a stale
+	// index row into the baseline past the fresh-content precondition.
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write",
@@ -204,25 +204,14 @@ export async function echoTail(
 		envelope.title = root.title;
 		envelope.hpath = root.hpath;
 	}
-	// Refresh baselines only for blocks whose content the result actually
-	// carried: the outline's heading rows, plus the write's own block IDs.
-	// Anything else keeps its read-served baseline — a broad refresh would
-	// launder a concurrent change to an unserved block past the
-	// fresh-content precondition (an intervening write would make the next
-	// edit on it hash-match the laundered content). The SQL read (not walk
-	// rows) keeps the map's single-source invariant explicit: the walk's
-	// content IS blocks.content (the kernel builds both via
-	// nodeStaticContent), but a walk taken mid-write races the index
-	// differently than the judgment's SQL seed read — same source, same
-	// read mechanism, no representation drift.
-	const refreshIds = [
-		...new Set([
-			...headingRows(fullWalk.blocks).map((b) => b.id),
-			...(refreshBlockIds ?? []),
-		]),
-	];
-	if (refreshIds.length > 0) {
-		for (const row of await blockContents(kernel, refreshIds)) {
+	// The only SQL-form baseline seed here is the write's own blocks:
+	// submitted markdown is re-parsed by the kernel, so the stored form is
+	// knowable only by reading it back. Served rows keep their walk-seeded
+	// baseline — a broad refresh would launder a concurrent change past
+	// the fresh-content precondition (an intervening write would make the
+	// next edit on it hash-match laundered content).
+	if (refreshBlockIds?.length) {
+		for (const row of await blockContents(kernel, [...refreshBlockIds])) {
 			baselines.remember(row.id, row.content);
 		}
 	}

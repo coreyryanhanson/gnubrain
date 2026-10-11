@@ -202,8 +202,9 @@ export async function runMoveMode(
 			? {}
 			: await destOutlinePayload(input, sessionId, outcome.postDestWalk);
 		if (outcome.verdict.kind !== "landed") {
-			// The move did not land — refresh nothing (the failure tail must
-			// not launder a concurrent change past the precondition).
+			// The move did not land — no refreshBlockIds: its block gets no
+			// baseline from a write that did not land (the tail seeds served
+			// rows from the walk it serves).
 			const srcTail = await echoTail(input, doc, outcome.postSourceWalk);
 			return errorEnvelope(
 				`verified-move failed: block '${blockId}' ${moveLandedRefusal(outcome.verdict)}`,

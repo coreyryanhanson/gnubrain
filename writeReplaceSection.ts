@@ -8,7 +8,6 @@ import {
 	SiYuanKernelError,
 	appendAnchorOf,
 	backlinkCheck,
-	rootEcho,
 	sectionOf,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
@@ -19,7 +18,6 @@ import {
 	refusedEnvelope,
 	type Envelope,
 } from "./envelope.js";
-import { serveOutlineFromWalk } from "./outline.js";
 import {
 	echoTail,
 	deletedBlocksTail,
@@ -125,12 +123,11 @@ export async function runReplaceSectionMode(
 	return finishWrite(name, { anchor: echo }, async () => {
 		switch (outcome.kind) {
 			case "insert-unlanded": {
-				// No echo tail here, unlike append's unlanded refusal: the tail
-				// refreshes baselines from a post-write read, and a concurrent
-				// change landing between the stale re-check and this walk would
-				// be laundered into the baseline (the pinned timeline contract).
-				// The refusal wording already carries the evidence that matters
-				// — the old section is untouched.
+				// No echo tail here, unlike append's unlanded refusal: the
+				// refusal wording already carries the evidence that matters —
+				// the old section is untouched — and the extra walk + root
+				// echo would spend two kernel calls on a failure path without
+				// changing the guidance.
 				const unlanded = insertLandedRefusal(outcome.verdict);
 				return errorEnvelope(
 					`verified-insert failed: ${unlanded} — the old section is untouched`,
@@ -174,19 +171,11 @@ export async function runReplaceSectionMode(
 				throw outcome.error;
 			case "sweep-refused": {
 				// Any refusal arm carrying a certified post-sweep walk serves
-				// it as the inline outline — the recovery evidence the
-				// wording used to send the agent to re-fetch — and seeds the
-				// baselines from that walk (the snapshot the judgment was
-				// rendered from). Derived from the arm's own payload, not its
-				// kind, so a future arm carrying a walk serves the outline too;
-				// `partial` declares none and stops before its verification
-				// walk — no certified snapshot to serve. Deliberately not
-				// echoTail: its SQL refresh is a post-walk read that could
-				// launder a concurrent change into the baseline on a failure
-				// path, and would add a fourth SQL-form seed site (contrast
-				// insert-unlanded above; the success path is safe because
-				// the write landed). The root echo is addressing info, never a
-				// baseline.
+				// it as the inline outline — the recovery evidence — and seeds
+				// the baselines from that walk (the snapshot the judgment was
+				// rendered from); echoTail with no refresh IDs does exactly
+				// that. `partial` declares none and stops before its
+				// verification walk — no certified snapshot to serve.
 				const certifiedWalk =
 					"postWalk" in outcome.outcome ? outcome.outcome.postWalk : undefined;
 				const refusalCtx = {
@@ -198,24 +187,9 @@ export async function runReplaceSectionMode(
 				if (certifiedWalk === undefined) {
 					return sweepRefusal(outcome.outcome, refusalCtx);
 				}
-				const outline = serveOutlineFromWalk(
-					sessionId,
-					"kb_write",
-					certifiedWalk,
-					baselines,
-				);
-				const root = await rootEcho(kernel, input.boxId, doc.rootId);
 				return sweepRefusal(outcome.outcome, {
 					...refusalCtx,
-					tail:
-						root === undefined
-							? outline
-							: {
-									...outline,
-									docId: root.docId,
-									title: root.title,
-									hpath: root.hpath,
-								},
+					tail: await echoTail(input, doc, certifiedWalk),
 				});
 			}
 			case "sweep-truncated":

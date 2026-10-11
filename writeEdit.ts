@@ -80,8 +80,9 @@ export async function runEditMode(
 	return finishWrite(name, { blockId }, async () => {
 		if (outcome.verdict.kind !== "landed") {
 			const failure = editVerifyFailureReason(outcome.verdict, blockId, doc);
-			// The failure tail must not launder a concurrent change past the
-			// precondition — no refreshBlockIds on this path.
+			// No refreshBlockIds on a failure path — the edit did not land,
+			// so its block gets no baseline; the tail seeds served rows from
+			// the walk it serves (echoTail).
 			const tail = await echoTail(input, doc);
 			return errorEnvelope(
 				`verified-edit failed: ${failure} — the update's outcome is ` +
@@ -92,10 +93,10 @@ export async function runEditMode(
 		}
 		const tail = await echoTail(input, doc);
 		// The landed verdict carries the stored pair it judged — baseline the
-		// write's own block from it instead of the SQL refresh (a concurrent
-		// change landing in the echo window would be laundered into the
-		// baseline). Remembered after the echo so the index form wins over
-		// the walk seeding, exactly as the refresh did.
+		// write's own block from it instead of a post-write read (a
+		// concurrent change landing in the echo window would be laundered
+		// into the baseline). Remembered after the echo so the stored form
+		// wins over the walk-seeded serve.
 		// An `unobserved` baseline (no pre-write pair — create → edit
 		// immediately) means the stored pair may still be the pre-edit row
 		// arriving through the index lag, so it never seeds a baseline: the
