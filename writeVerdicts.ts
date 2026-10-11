@@ -85,6 +85,20 @@ export function verificationReadsFailedMessage(detail: string): string {
 	);
 }
 
+/** The non-kernel twin of verificationReadsFailedMessage: the builder's
+ * post-mutation result assembly failed on something no kernel read
+ * explains (a spilled-outline fs failure, a flow bug). The mutation
+ * already acked, so the same never-retry-blindly contract applies — the
+ * detail carries the underlying error verbatim. */
+export function postWriteAssemblyFailedMessage(detail: string): string {
+	return (
+		`the write call returned success but assembling its result failed: ` +
+		`${detail} — the write's outcome is unverified; do NOT retry blindly, ` +
+		`re-fetch the outline (kb_read) and confirm the write landed before ` +
+		`repeating it`
+	);
+}
+
 /** The auth/lock twin of verificationReadsFailedMessage: the verification
  * read itself failed on an auth event (a 401/403 or the kernel's per-IP
  * 429 lock). The primitives classify these instead of rethrowing because

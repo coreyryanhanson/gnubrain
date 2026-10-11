@@ -9,7 +9,9 @@
 import { type ContentBaselines } from "./baselines.js";
 import {
 	SiYuanApiError,
+	SiYuanAuthError,
 	SiYuanNetworkError,
+	SiYuanRateLimitError,
 	SiYuanTimeoutError,
 	checkFreshContent,
 	type FreshOutcome,
@@ -22,7 +24,10 @@ import {
 } from "./envelope.js";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
-import { verificationReadsFailedMessage } from "./writeVerdicts.js";
+import {
+	postWriteAssemblyFailedMessage,
+	verificationReadsFailedMessage,
+} from "./writeVerdicts.js";
 
 /**
  * Fresh-content precondition, checked right before the kernel write: the
@@ -113,13 +118,18 @@ export async function freshContentRefusal(
 // ---------------------------------------------------------------------------
 
 /** Post-mutation wrapper for the verification + echo reads every write
- * runs AFTER the kernel mutation has been issued. A network drop there
- * must not surface as runKbCall's "SiYuan unreachable" envelope: the
- * mutation may already be applied, and that message invites the blind
- * retry that would duplicate or re-apply the write. Network/timeout
- * errors become a distinct `verificationFailed` error envelope; auth and
- * rate-limit errors still propagate so runKbCall keeps classifying them
- * (breaker counting, 429 cooldown). */
+ * runs AFTER the kernel mutation has been issued. A failure there must
+ * not surface as runKbCall's "SiYuan unreachable" or bare-error envelope:
+ * the mutation may already be applied, and either message invites the
+ * blind retry that would duplicate or re-apply the write. Network/timeout
+ * and kernel-rejection errors become a distinct `verificationFailed`
+ * error envelope; so does any non-kernel builder failure — the builder is
+ * post-mutation by contract, so a spilled-outline fs failure or a flow
+ * bug leaves the outcome just as unverified. Auth and rate-limit errors
+ * rethrow so runKbCall keeps classifying them (breaker counting, 429
+ * cooldown, the partial-apply state merged into the classified envelope
+ * by withPartialState) — the sweep's mid-sequence 429 rides exactly this
+ * rethrow. */
 export async function finishWrite(
 	kb: string,
 	extra: Record<string, unknown>,
@@ -128,32 +138,43 @@ export async function finishWrite(
 	try {
 		return await build();
 	} catch (err) {
-		if (
-			!(err instanceof SiYuanNetworkError) &&
-			!(err instanceof SiYuanTimeoutError) &&
-			// A kernel rejection mid-verification (unknown/locked id) leaves
-			// the write's outcome unverified too — same envelope. Sibling of
-			// auth/rate-limit, so breaker counting and 429 cooldown are not
-			// affected.
-			!(err instanceof SiYuanApiError)
-		) {
+		// Siblings of SiYuanApiError, never subclasses — the same class list
+		// contract the primitives' classifiers pin.
+		if (err instanceof SiYuanAuthError || err instanceof SiYuanRateLimitError) {
 			throw err;
 		}
 		const partial = takePartialReplace(err);
-		// A mid-sequence failure (replace-section's delete sweep) attaches its
-		// partial-apply state to the error before it lands here — the envelope
-		// must carry it, or the re-run-invites-duplication hazard the sweep's
-		// own catch guards against re-enters one error class over.
-		return errorEnvelope(
-			partial === undefined
-				? verificationReadsFailedMessage(
-						err instanceof Error ? err.message : String(err),
-					)
-				: `the write is partially applied — a mid-write step failed: ` +
-						`${err instanceof Error ? err.message : String(err)} — the earlier ` +
-						`steps have landed; do NOT re-run, re-fetch the outline (kb_read) ` +
-						`and reconcile from the payload (deletedBlockIds/remainingBlockIds)`,
-			{ ...extra, ...partial, kb, verificationFailed: true },
-		);
+		const detail = err instanceof Error ? err.message : String(err);
+		// A kernel rejection mid-verification (unknown/locked id) leaves the
+		// write's outcome unverified too — same envelope. No breaker effect:
+		// breaker counting and 429 cooldown ride the rethrown auth/rate-limit
+		// arm above; these three classes never classified there anyway.
+		const kernelClass =
+			err instanceof SiYuanNetworkError ||
+			err instanceof SiYuanTimeoutError ||
+			err instanceof SiYuanApiError;
+		let message: string;
+		if (partial !== undefined) {
+			message =
+				`the write is partially applied — a mid-write step failed: ` +
+				`${detail} — the earlier steps have landed; do NOT re-run, ` +
+				`re-fetch the outline (kb_read) and reconcile from the payload ` +
+				`(deletedBlockIds/remainingBlockIds)`;
+		} else if (kernelClass) {
+			message = verificationReadsFailedMessage(detail);
+		} else {
+			message = postWriteAssemblyFailedMessage(detail);
+		}
+		// A mid-sequence failure (replace-section's delete sweep) attaches
+		// its partial-apply state to the error before it lands here — the
+		// envelope must carry it, or the re-run-invites-duplication hazard
+		// the sweep's own catch guards against re-enters one error class
+		// over.
+		return errorEnvelope(message, {
+			...extra,
+			...partial,
+			kb,
+			verificationFailed: true,
+		});
 	}
 }
