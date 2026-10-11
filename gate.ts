@@ -27,6 +27,7 @@ import {
 	takePartialReplace,
 	versionRefusalEnvelope,
 	driftWarning,
+	PARTIAL_APPLY_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
 import type { SessionValidation } from "./validation.js";
@@ -324,8 +325,7 @@ function withPartialState(envelope: Envelope, err: unknown): Envelope {
 		...envelope,
 		message:
 			`${envelope.message} NOTE: a kb_write was partially applied before this ` +
-			`error — do not re-run it; reconcile from the payload ` +
-			`(deletedBlockIds/remainingBlockIds) once kb calls resume`,
+			`error — ${PARTIAL_APPLY_GUIDANCE} once kb calls resume`,
 		...partial,
 	};
 }

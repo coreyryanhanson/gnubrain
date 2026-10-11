@@ -18,16 +18,15 @@ import {
 	refusedEnvelope,
 	type Envelope,
 } from "./envelope.js";
+import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
 import {
-	echoTail,
-	deletedBlocksTail,
 	headingInWalk,
-	mutationFailure,
+	placementRefusal,
 	replaceSectionWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
-} from "./writeFlow.js";
+} from "./writeTarget.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	appendAnchorEcho,
@@ -49,17 +48,14 @@ export async function runReplaceSectionMode(
 	const tree = await walkBlockTree(kernel, doc.rootId);
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
-	const deleteSet = sectionOf(tree, headingId);
-	if (deleteSet.kind === "walk-truncated") {
-		// The projection refuses the truncated tree the sequence's own gate
-		// would — refuse here, before any kernel call.
-		return refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name });
-	}
-	// Unreachable — headingInWalk and sectionOf re-find the heading with
-	// the same predicate on the same tree — kept as a fail-closed tripwire.
-	if (deleteSet.kind === "heading-absent") {
-		return refusedEnvelope(staleHeadingMessage(headingId, doc));
-	}
+	const deleteSet = placementRefusal(
+		sectionOf(tree, headingId),
+		headingId,
+		doc,
+		name,
+		() => refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name }),
+	);
+	if ("status" in deleteSet) return deleteSet;
 	const section = deleteSet.section;
 	// Fresh-content precondition: a concurrency guard, not a consent
 	// mechanism (the grant resolved at the kb_write entry). One wrapper step

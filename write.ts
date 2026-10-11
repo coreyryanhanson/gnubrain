@@ -4,7 +4,7 @@
 // writeSchema.ts; the per-KB grant gate in writeConfirm.ts; mint policy in
 // writeGuard.ts; the guard SQL and anchors (placement) live in the
 // primitives; shared baselines in baselines.ts, echo tails in
-// writeFlow.ts.
+// writeEcho.ts.
 
 import type {
 	ExtensionAPI,
@@ -37,7 +37,7 @@ import { runAppendMode } from "./writeAppend.js";
 import { runReplaceSectionMode } from "./writeReplaceSection.js";
 import { runDeleteMode } from "./writeDelete.js";
 import { runMoveMode } from "./writeMove.js";
-import { resolveDocTarget, type WriteFlowBase } from "./writeFlow.js";
+import { resolveDocTarget, type WriteFlowBase } from "./writeTarget.js";
 import {
 	CONTENT_BEARING_MODES,
 	modeShapeProblem,

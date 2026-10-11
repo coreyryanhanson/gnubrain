@@ -5,7 +5,7 @@
 // definition on a fake-pi harness with a SQL-routed kernel stub.
 
 import { describe, expect, it } from "vitest";
-import { headingInWalk } from "../../writeFlow.js";
+import { headingInWalk } from "../../writeTarget.js";
 import {
 	SiYuanApiError,
 	SiYuanAuthError,

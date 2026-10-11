@@ -57,6 +57,14 @@ export function takePartialReplace(
 		.partialReplaceState;
 }
 
+/** The mid-write partial-apply guidance — one wording home for both render
+ * sites (the gate's classified-envelope merge and finishWrite's
+ * verification catch), so the same half-applied write cannot render two
+ * different do-not-re-run sentences. The payloads
+ * (deletedBlockIds/remainingBlockIds) ride the envelope beside it. */
+export const PARTIAL_APPLY_GUIDANCE =
+	"do NOT re-run the write; re-fetch the outline (kb_read) and reconcile from the payload (deletedBlockIds/remainingBlockIds)";
+
 /** The envelope marker carrying a verification-phase auth/lock event (401
  * or the kernel's per-IP 429) out of a write flow. The primitives classify
  * verification-phase auth errors into `verification-failed` instead of

@@ -6,7 +6,7 @@
 // live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
 // evidence). Doc-target resolution stays tool-side.
 
-import { refusedEnvelope, errorEnvelope, type Envelope } from "./envelope.js";
+import { errorEnvelope, type Envelope } from "./envelope.js";
 import {
 	deriveMoveAnchor,
 	walkBlockTree,
@@ -14,15 +14,14 @@ import {
 } from "siyuan-kb-primitives";
 import { moveBlockVerified, moveDocVerified } from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
+import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
-	echoTail,
 	headingInWalk,
-	mutationFailure,
+	placementRefusal,
 	resolveDocTarget,
-	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
-} from "./writeFlow.js";
+} from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
@@ -152,21 +151,14 @@ export async function runMoveMode(
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
 	// this pre-move walk; their wording lives in writeVerdicts.
-	const anchor = deriveMoveAnchor(destWalk, params.toHeadingId);
-	if (anchor.kind === "walk-truncated") {
-		// The projection refuses the truncated tree the verified move's
-		// pre-mutation gate would — refuse here, before any kernel call.
-		return movePlacementRefusalEnvelope({ kind: "walk-truncated" }, doc);
-	}
-	if (anchor.kind === "heading-absent") {
-		// Unreachable — headingInWalk refused an absent id on the same
-		// destination walk above; fail-closed tripwire, never a silent
-		// doc-end move.
-		return refusedEnvelope(
-			staleHeadingMessage(params.toHeadingId as string, dest),
-			{ kb: name },
-		);
-	}
+	const anchor = placementRefusal(
+		deriveMoveAnchor(destWalk, params.toHeadingId),
+		params.toHeadingId,
+		dest,
+		name,
+		() => movePlacementRefusalEnvelope({ kind: "walk-truncated" }, doc),
+	);
+	if ("status" in anchor) return anchor;
 	const echo = moveAnchorEcho(anchor);
 	const outcome = await moveBlockVerified(kernel, input.probe, {
 		blockId,

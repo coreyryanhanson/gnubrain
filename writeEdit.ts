@@ -6,12 +6,8 @@
 import { blockInDoc } from "siyuan-kb-primitives";
 import { editVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
-import {
-	echoTail,
-	mutationFailure,
-	type DocTarget,
-	type WriteFlowInput,
-} from "./writeFlow.js";
+import { echoTail, mutationFailure } from "./writeEcho.js";
+import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	editVerifyFailureReason,

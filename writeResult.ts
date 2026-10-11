@@ -4,7 +4,7 @@
 // The freshness judgment itself — both reads and the comparison — lives in
 // the primitives' read barrel (checkFreshContent); only the session
 // doctrine and the refusal wording stay here. The success-path echo tail
-// lives in writeFlow.ts beside the errorTail/echoTail family.
+// lives in writeEcho.ts beside the errorTail/echoTail family.
 
 import { type ContentBaselines } from "./baselines.js";
 import {
@@ -20,6 +20,7 @@ import {
 	errorEnvelope,
 	refusedEnvelope,
 	takePartialReplace,
+	PARTIAL_APPLY_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
@@ -157,9 +158,7 @@ export async function finishWrite(
 		if (partial !== undefined) {
 			message =
 				`the write is partially applied — a mid-write step failed: ` +
-				`${detail} — the earlier steps have landed; do NOT re-run, ` +
-				`re-fetch the outline (kb_read) and reconcile from the payload ` +
-				`(deletedBlockIds/remainingBlockIds)`;
+				`${detail} — the earlier steps have landed; ${PARTIAL_APPLY_GUIDANCE}`;
 		} else if (kernelClass) {
 			message = verificationReadsFailedMessage(detail);
 		} else {

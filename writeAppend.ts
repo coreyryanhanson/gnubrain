@@ -9,15 +9,14 @@ import {
 } from "siyuan-kb-primitives";
 import { insertVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
+import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
-	echoTail,
-	headingInWalk,
-	mutationFailure,
 	appendWalkTruncatedMessage,
-	staleHeadingMessage,
+	headingInWalk,
+	placementRefusal,
 	type DocTarget,
 	type WriteFlowInput,
-} from "./writeFlow.js";
+} from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
 import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
 
@@ -40,23 +39,10 @@ export async function runAppendMode(
 		params.headingId,
 		params.placement as AppendPlacement | undefined,
 	);
-	if (derived.kind === "walk-truncated") {
-		// The projection refuses the same tree the verified insert's
-		// pre-walk gate would — refuse here, before any kernel call. No
-		// anchor echo exists: the anchor could not be derived.
-		return refusedEnvelope(appendWalkTruncatedMessage, { kb: name });
-	}
-	if (derived.kind === "heading-absent") {
-		// Unreachable — headingInWalk refused an absent id on the same walk
-		// above; fail-closed tripwire, never a silent doc-end append.
-		return refusedEnvelope(
-			staleHeadingMessage(params.headingId as string, doc),
-			{
-				kb: name,
-			},
-		);
-	}
-	const anchor = derived;
+	const anchor = placementRefusal(derived, params.headingId, doc, name, () =>
+		refusedEnvelope(appendWalkTruncatedMessage, { kb: name }),
+	);
+	if ("status" in anchor) return anchor;
 	const echo = appendAnchorEcho(anchor);
 	// The verified insert: the mutation and the landed judgment are one
 	// primitive call. Transport failures in the mutation phase are outcome-

@@ -18,7 +18,7 @@ import { type Envelope } from "./envelope.js";
 import { spillFile, withRowPayload } from "./spill.js";
 import { rememberServedRows } from "./baselines.js";
 import { serveOutline, serveOutlineFromWalk } from "./outline.js";
-import type { WriteFlowBase } from "./writeFlow.js";
+import type { WriteFlowBase } from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
 import { createVerdictEnvelope } from "./writeVerdicts.js";
 

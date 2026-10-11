@@ -39,7 +39,7 @@ import { WRITE_TOOLSET_ID, registerWriteToolAndToolset } from "./write.js";
 // + six write modes), and the write toolset (requires the read toolset —
 // live-toggle cascade), the /kb tools write verb, the fresh-content
 // baselines, and the write-mode dispatch (over the
-// writeSchema/writeFlow/writeEdit/... files).
+// writeSchema/writeTarget/writeEdit/... files).
 // All of it hangs off the same register(pi, deps) seam.
 
 const STATUS_KEY = "kb";

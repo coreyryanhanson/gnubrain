@@ -23,7 +23,7 @@ import {
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
-import { headingInWalk, type DocTarget } from "../../writeFlow.js";
+import { headingInWalk, type DocTarget } from "../../writeTarget.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
 import { registerKbWrite } from "../unit/writeHarness.js";
 import { type SessionValidation } from "../../validation.js";

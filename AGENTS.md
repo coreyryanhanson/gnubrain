@@ -254,9 +254,9 @@ re-falsifies the changed fact in the primitives.
   seeds the fresh-content entry above names: `runEditMode`'s pre-write
   seed (`writeEdit.ts`) and `kb_query`'s served rows (`tools.ts`) — both
   seed SQL-form content into the baseline map the judgment hashes
-  walk-form against; the echo tail (`writeFlow.ts`) seeds its served rows
+  walk-form against; the echo tail (`writeEcho.ts`) seeds its served rows
   from the walk it serves and SQL-reads only the write's own block IDs.
-- The type-`'d'` root-row fact behind doc targeting (`writeFlow.ts`
+- The type-`'d'` root-row fact behind doc targeting (`writeTarget.ts`
   `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
   refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
   absent, never normalized to its containing doc. The same type-`'d'` row
