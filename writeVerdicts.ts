@@ -47,10 +47,11 @@ import {
  * defense-in-depth behind the gate order — but worded once, so it can
  * never diverge from the gate's own refusal. The pin resolves from the
  * module constant, deliberately: this arm only renders if the gate order
- * is ever violated, and in production the effective pin IS the constant
- * (the session override is a test seam) — the gate stays the one home for
- * the resolution. Module-private: this module's own verdict ladders render
- * the canonical refusal rather than the generic unverified error. */
+ * is ever violated, and the primitives let no caller choose a pin, so in
+ * production the effective pin IS the constant — the gate stays the one
+ * home for the resolution. Module-private: this module's own verdict
+ * ladders render the canonical refusal rather than the generic unverified
+ * error. */
 function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
