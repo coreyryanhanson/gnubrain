@@ -10,6 +10,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
 import { Type } from "typebox";
 import { rememberServedRows, type ContentBaselines } from "./baselines.js";
+import { READ_TOOLSET_ID } from "./toolsetIds.js";
 import { CircuitBreaker } from "./breaker.js";
 import {
 	configRefusalEnvelope,
@@ -445,7 +446,7 @@ export async function runRead(
 // Toolset (tool-masking record)
 // ---------------------------------------------------------------------------
 
-export const READ_TOOLSET_ID = "gnubrain.read";
+export { READ_TOOLSET_ID };
 const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
 /** Register the three read tools and declare the read toolset: the

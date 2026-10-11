@@ -1,15 +1,18 @@
 // Typed-reason → agent-facing wording for the write-path verdict unions
 // siyuan-kb-primitives returns. The primitives speak in closed `{ kind,
 // …detail }` unions, never agent-facing sentences; this module is the
-// wording layer: every exhaustive switch over a verdict union and the
-// sentence each arm renders. The rule: verdict *fragments* word here;
-// each flow composes its own mode's envelope *frames* from them (frames
-// need the flow's echo tail, doc, and verdict keys); the one frame shared
-// across flows — the pre-judgment ladder, mutationFailureEnvelope — is
-// worded here too, so a new arm in a primitives release fails typecheck
-// here once instead of diverging across every flow. That frame is the one
-// non-pure piece: it is async and awaits the flow-supplied echo tail
-// (writeEcho.mutationFailure), which performs the post-write reads. The
+// wording layer: the sentence each verdict arm renders. The rule:
+// verdict *fragments* word here; each flow composes its own mode's
+// envelope *frames* from them (frames need the flow's echo tail, doc,
+// and verdict keys); the pieces shared across flows — the pre-judgment
+// ladder (mutationFailureEnvelope) and the anchor echoes — are worded
+// here too, so a new arm in a primitives release fails typecheck here
+// once instead of diverging across every flow. The one shared map
+// worded elsewhere is headingInWalk (writeTarget): the heading-target
+// refusal arms sit beside the DocTarget resolution they return into.
+// mutationFailureEnvelope is the one non-pure piece: it is async and
+// awaits the flow-supplied echo tail (writeEcho.mutationFailure), which
+// performs the post-write reads. The
 // trailing never-check is the catch, not the hazard: a map that forgets
 // an arm changes the rendered message and fails the suites.
 //

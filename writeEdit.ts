@@ -30,10 +30,11 @@ export async function runEditMode(
 	if (refusal !== undefined) return refusedEnvelope(refusal);
 	if (row.kind === "in-doc") {
 		// Fresh-content precondition: a concurrency guard, not a consent
-		// mechanism (the grant resolved at the kb_write entry). Served content
-		// where the session has seen this block, else the block's current
-		// content — seed + check are one wrapper step right before the
-		// kernel call.
+		// mechanism (the grant resolved at the kb_write entry). Read reuse,
+		// not a seeding step: the blockInDoc row is already in hand, so
+		// supplying its hash spares the judgment's own seed read — the
+		// primitive reaches the same arms either way (diverged row → stale,
+		// matching or absent row → the walk content is adopted).
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}

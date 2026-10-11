@@ -11,7 +11,9 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { defineToolset, type Toolset } from "pi-tool-masking";
-import { READ_TOOLSET_ID } from "./tools.js";
+import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
+
+export { READ_TOOLSET_ID, WRITE_TOOLSET_ID };
 import type { CircuitBreaker } from "./breaker.js";
 import {
 	errorEnvelope,
@@ -69,7 +71,6 @@ export interface WriteToolHooks {
 // Write toolset (tool-masking record)
 // ---------------------------------------------------------------------------
 
-export const WRITE_TOOLSET_ID = "gnubrain.write";
 const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
 
 const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create — mint a new doc by title (topic), optionally nested under an echoed parentId; edit — updateBlock on a blockId target (the outline carries heading IDs only; non-heading block IDs come from kb_query rows); replace-section — swap a section's body in one call (the heading ID survives); append — insert new content under a heading (omitted headingId → doc end; the anchor is always tool-derived); delete — a block, or a whole doc with doc: true; move — block-level (toDocId + optional toHeadingId) or doc-level (doc: true; omitted toDocId → notebook root).
