@@ -87,9 +87,9 @@ export async function runDeleteMode(
 		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
 	}
 	if (outcome.kind !== "judged") {
-		// The exhaustive wording home (the createVerdictEnvelope pattern):
-		// a new arm in a primitives release fails typecheck until its
-		// envelope is written in writeVerdicts. The block-delete failure half
+		// The shared pre-judgment ladder, worded once in writeVerdicts: a
+		// new arm in a primitives release fails typecheck there until its
+		// wording exists. The block-delete failure half
 		// IS MutationFailure by type, so it rides the shared ladder with its
 		// blockId as the flow's verdict key. The lazy tail supplier keeps the
 		// per-arm garnish rule — only the arms that attach the echo reads

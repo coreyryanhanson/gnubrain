@@ -1,18 +1,24 @@
 // Typed-reason → agent-facing wording for the write-path verdict unions
 // siyuan-kb-primitives returns. The primitives speak in closed `{ kind,
-// …detail }` unions, never agent-facing sentences; this module owns every
-// word. Each union gets an exhaustive switch on `kind` — no default case;
-// the trailing never-check makes a new kind in a primitives release fail
-// typecheck until its wording is written here (the byte-identity contract:
-// a map that forgets an arm changes the rendered message and fails the
-// suites, which is the catch, not the hazard).
+// …detail }` unions, never agent-facing sentences; this module is the
+// wording layer: every exhaustive switch over a verdict union and the
+// sentence each arm renders — pure functions of the union, no flow state,
+// no kernel reads. The rule: verdict *fragments* word here; each flow
+// composes its own mode's envelope *frames* from them (frames need the
+// flow's echo tail, doc, and verdict keys); the one frame shared across
+// flows — the pre-judgment ladder, mutationFailureEnvelope — is worded
+// here too, so a new arm in a primitives release fails typecheck here
+// once instead of diverging across every flow. The trailing never-check
+// is the catch, not the hazard: a map that forgets an arm changes the
+// rendered message and fails the suites.
 //
 // Tool-side policy refusals (grant, breaker, 429 cooldown) never cross the
 // boundary and keep their existing homes; the mint-title judgment runs on
 // both sides — the tool-surface pre-flight and the primitives' own
-// `mint-title` arm, worded once by mintTitleMessage. The fresh-content
-// judgment lives in the primitives (`checkFreshContent`) — only its
-// refusal envelope stays tool-side (freshContentRefusal, writeResult).
+// `mint-title` arm, worded once by mintTitleMessage (writeGuard). The
+// fresh-content judgment lives in the primitives (`checkFreshContent`) —
+// only its refusal envelope stays tool-side (freshContentRefusal,
+// writeResult).
 
 import {
 	PINNED_SIYUAN_VERSION,
@@ -21,20 +27,13 @@ import {
 	type MoveAnchor,
 } from "siyuan-kb-primitives";
 import type {
-	CreateDocOutcome,
 	EditLandedOutcome,
 	InsertLandedOutcome,
 	MutationFailure,
-	MoveBlockOutcome,
-	MoveDocLandedOutcome,
-	MoveDocOutcome,
 	MoveBlockLandedOutcome,
-	SweepRefusal,
 } from "siyuan-kb-primitives/write";
-import { mintTitleMessage } from "./writeGuard.js";
 import {
 	errorEnvelope,
-	refusedEnvelope,
 	versionRefusalEnvelope,
 	STALE_TARGET_GUIDANCE,
 	type AuthLockEvent,
@@ -49,20 +48,20 @@ import {
  * module constant, deliberately: this arm only renders if the gate order
  * is ever violated, and the primitives let no caller choose a pin, so in
  * production the effective pin IS the constant — the gate stays the one
- * home for the resolution. Module-private: this module's own verdict
- * ladders render the canonical refusal rather than the generic unverified
- * error. */
-function driftRefusal(observed: string): Envelope {
+ * home for the resolution. Rendered by the shared ladder and the create
+ * mode's frame (writeCreate). */
+export function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
 
 /** The transport-unverified sentence — tool-surface wording for the one
  * hazard the verified flows share: the mutation's kernel call failed at
  * the transport layer, so the write may already be applied and a blind
- * retry duplicates it. Rendered only by mutationFailureEnvelope; its
- * sibling verificationReadsFailedMessage is the twin the finishWrite
- * catch reuses from the flow side of the primitives boundary. */
-function transportUnverifiedMessage(detail: string): string {
+ * retry duplicates it. Rendered by mutationFailureEnvelope and the create
+ * mode's frame (writeCreate); its sibling verificationReadsFailedMessage
+ * is the twin the finishWrite catch reuses from the flow side of the
+ * primitives boundary. */
+export function transportUnverifiedMessage(detail: string): string {
 	return (
 		`the write's outcome is unverified: the kernel call failed at the ` +
 		`transport layer (${detail}) — ` +
@@ -75,8 +74,8 @@ function transportUnverifiedMessage(detail: string): string {
 /** The verification-failed sentence — the twin of the transport-unverified
  * contract for the other unverified leg: the call returned success but the
  * post-write verification reads failed, so the outcome is unknown. Written
- * once here and reused by writeResult's finishWrite catch, which reaches
- * the same hazard from the flow side of the primitives boundary. */
+ * once here and reused by writeResult's finishWrite catch (the flow side
+ * of the primitives boundary) and the create mode's frame (writeCreate). */
 export function verificationReadsFailedMessage(detail: string): string {
 	return (
 		`the write call returned success but the post-write verification reads failed: ` +
@@ -107,8 +106,9 @@ export function postWriteAssemblyFailedMessage(detail: string): string {
  * may-already-be-applied fact the raw rethrow erased, and add the lock
  * fact: every authed call re-arms the lock, so the wait comes first. The
  * marker type/guard live in envelope.ts beside `partialReplaceState`, the
- * other gate-read result marker. */
-function verificationAuthEventMessage(
+ * other gate-read result marker. Rendered by the shared ladder and the
+ * create mode's frame (writeCreate). */
+export function verificationAuthEventMessage(
 	cause: AuthLockEvent,
 	detail: string,
 ): string {
@@ -292,49 +292,6 @@ export function insertLandedRefusal(
 	return undefined;
 }
 
-/** The verified block move's pre-mutation refusal family — the placement
- * arms judged on the caller-held pre-move walk, the not-in-source scoping
- * arm (the kernel mutates by raw block id with no doc scoping of its own;
- * the judgment rides moveBlockVerified), and the walk-truncated refusal
- * (incomplete pre-move evidence). The primitives own the
- * kernel facts — the no-op self-anchor class and the own-subtree ancestor
- * class the kernel mishandles — and refuse before the mutation, zero
- * kernel calls; every arm words here. */
-export function movePlacementRefusalEnvelope(
-	outcome: Extract<
-		MoveBlockOutcome,
-		{
-			kind:
-				| "already-at-destination"
-				| "own-subtree"
-				| "not-in-source"
-				| "walk-truncated";
-		}
-	>,
-	doc: { title: string; rootId: string },
-): Envelope {
-	switch (outcome.kind) {
-		case "walk-truncated":
-			return refusedEnvelope(
-				`the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead`,
-			);
-		case "already-at-destination":
-			return refusedEnvelope(
-				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
-			);
-		case "own-subtree":
-			return refusedEnvelope(
-				`cannot move block '${outcome.blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
-			);
-		case "not-in-source":
-			return refusedEnvelope(
-				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`,
-			);
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled move placement arm");
-}
-
 /** Reason wording for a verifyMoveLanded outcome, or undefined when the
  * move landed. The judgment lives in the primitives' verifyMoveLanded;
  * these fragments are its wording — each a full sentence, spliced into
@@ -390,186 +347,4 @@ export function editVerifyFailureReason(
 	}
 	outcome satisfies never;
 	return undefined;
-}
-
-/** Envelope mapping for a guarded-create outcome other than `created` —
- * the create mint runs with no doc target, so the
- * transport/kernel-refused legs carry no echo tail (the errorTail rule for
- * a missing doc). */
-export function createVerdictEnvelope(
-	outcome: Exclude<CreateDocOutcome, { kind: "created" }>,
-	ctx: { name: string },
-): Envelope {
-	switch (outcome.kind) {
-		case "parent-missing":
-			return errorEnvelope(
-				`parentId '${outcome.parentId}' does not resolve to a doc in KB '${ctx.name}' (stale or foreign target)`,
-			);
-		case "unconfirmable":
-			return errorEnvelope(
-				`verified-create failed: the kernel returned doc id '${outcome.returnedId}' but no type='d' row exists for it in KB '${ctx.name}' — the mint is unconfirmable; do not retry blindly`,
-			);
-		case "ghost-intermediate":
-			return errorEnvelope(
-				`verified-create failed: parent '${outcome.parentId}' was deleted or renamed between the hpath read-back and the create — the kernel minted a ghost intermediate; drop the ghost subtree and retry`,
-			);
-		case "hpath-mismatch":
-			return errorEnvelope(
-				`verified-create failed: stored hpath '${outcome.stored}' does not match ground truth '${outcome.expected}' — unexpected kernel title normalization`,
-			);
-		case "transport-unverified":
-			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
-				kb: ctx.name,
-				verificationFailed: true,
-			});
-		case "kernel-refused":
-			return errorEnvelope(outcome.message, { kb: ctx.name });
-		case "verification-failed":
-			if (
-				outcome.cause.kind === "auth" ||
-				outcome.cause.kind === "rate-limit"
-			) {
-				return errorEnvelope(
-					verificationAuthEventMessage(outcome.cause, outcome.detail),
-					{
-						docId: outcome.returnedId,
-						kb: ctx.name,
-						verificationFailed: true,
-						authEvent: outcome.cause,
-					},
-				);
-			}
-			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
-				docId: outcome.returnedId,
-				kb: ctx.name,
-				verificationFailed: true,
-			});
-		case "mint-title":
-			// The primitives run the mint-title judgment internally; the
-			// tool-surface pre-flight (validateMintTitle) normally refuses
-			// first, so this arm is defense-in-depth behind it — same words,
-			// one home.
-			return errorEnvelope(mintTitleMessage(outcome.problem));
-		case "drift":
-			return driftRefusal(outcome.observed);
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled create verdict");
-}
-
-/** Envelope mapping for a verified delete-sweep outcome other than the
- * three the flow handles itself — `swept` (the success path continues),
- * `interrupted` (the error instance must ride to the catch sites with its
- * partial state attached, so it cannot render here) and `walk-failed`
- * (likewise rethrown — the sweep is complete but unjudged, rendered by
- * the finish-write classifier, never here). The parameter is the
- * primitives' own `SweepRefusal` (owned by sweep.ts, discriminant-only
- * exclusion in the module that owns the union), so an arm-shape change
- * upstream re-derives this set here instead of a restated `Exclude`
- * silently re-admitting a terminal arm. The mapping follows the
- * createVerdictEnvelope pattern. `members-survived` is the fail-loud arm:
- * a sweep whose deletes all acked but left members in the tree renders
- * this refusal with the survivors itemized, never an ok receipt. */
-export function sweepRefusalEnvelope(
-	outcome: SweepRefusal,
-	ctx: {
-		kb: string;
-		anchor: string;
-		newBlockId: string;
-		memberIds: string[];
-		/** The echo tail over the verdict's certified post-sweep walk, served
-		 * on the two terminal arms — the recovery evidence inline, so the
-		 * agent never re-fetches state the verdict already holds. `partial`
-		 * carries no walk (the sweep stopped before the verification walk),
-		 * so its tail stays undefined. */
-		tail?: Record<string, unknown> | undefined;
-	},
-): Envelope {
-	switch (outcome.kind) {
-		case "partial": {
-			const deleted = outcome.deletedBlockIds.length;
-			return errorEnvelope(
-				`replace partially applied: the new section is in place (block '${ctx.newBlockId}') but the delete of '${outcome.failedId}' failed (${outcome.message})` +
-					(deleted > 0
-						? `, and ${deleted} earlier block(s) were deleted`
-						: "") +
-					` — do NOT re-run; delete the remaining old-section block(s) to finish: ${outcome.remainingBlockIds.join(", ")}`,
-				{
-					kb: ctx.kb,
-					anchor: ctx.anchor,
-					newBlockId: ctx.newBlockId,
-					partialReplace: true,
-					deletedBlockIds: outcome.deletedBlockIds,
-					remainingBlockIds: outcome.remainingBlockIds,
-				},
-			);
-		}
-		case "cascade-consumed":
-			return errorEnvelope(
-				`verified-replace failed: the new section block '${ctx.newBlockId}' is absent from the post-write tree — the delete sweep's cascade consumed the replacement; do not retry`,
-				{
-					kb: ctx.kb,
-					anchor: ctx.anchor,
-					newBlockId: ctx.newBlockId,
-					partialReplace: true,
-					deletedBlockIds: ctx.memberIds,
-					remainingBlockIds: [],
-					...ctx.tail,
-				},
-			);
-		case "members-survived":
-			return errorEnvelope(
-				`verified-sweep failed: the delete of '${outcome.survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id`,
-				{
-					kb: ctx.kb,
-					anchor: ctx.anchor,
-					newBlockId: ctx.newBlockId,
-					partialReplace: true,
-					deletedBlockIds: ctx.memberIds.filter(
-						(id) => !outcome.survivedIds.includes(id),
-					),
-					remainingBlockIds: outcome.survivedIds,
-					...ctx.tail,
-				},
-			);
-	}
-	outcome satisfies never;
-	return errorEnvelope("internal: unhandled sweep verdict");
-}
-
-/** The `judged` leg of the doc-move flow — the not-landed sentence, or
- * undefined when the move landed (the success path takes over). The tree's
- * hpath is the judgment's only evidence, so the sentence reports what the
- * tree shows and claims no mechanism (an observed hpath off the destination
- * could be a rollback or a landing elsewhere; only the block-level
- * judgment's reason ladder can tell those apart). */
-export function moveDocJudgmentRefusalEnvelope(
-	verdict: MoveDocLandedOutcome,
-	ctx: { name: string; docId: string; title: string },
-): Envelope | undefined {
-	switch (verdict.kind) {
-		case "landed":
-			return undefined;
-		case "not-landed":
-			return errorEnvelope(
-				`verified-move failed: doc '${ctx.title}' did not land at the destination — the tree reports hpath '${verdict.hpath}'`,
-				{ kb: ctx.name, docId: ctx.docId },
-			);
-	}
-	verdict satisfies never;
-	return undefined;
-}
-
-/** The verified doc move's pre-mutation scoping refusal — the blocks index
- * names no row for the moved doc in the claimed KB (the same class the
- * block move refuses as its own not-in-source arm; the doc judgment rides
- * moveDocVerified). Unreachable through a fresh resolveDocTarget — it is
- * the stale-target race, worded as such. */
-export function moveDocScopingRefusalEnvelope(
-	outcome: Extract<MoveDocOutcome, { kind: "not-in-source" }>,
-	ctx: { name: string },
-): Envelope {
-	return refusedEnvelope(
-		`doc '${outcome.docId}' is not a doc of KB '${ctx.name}' — the blocks index names no row for it — ${STALE_TARGET_GUIDANCE}`,
-	);
 }

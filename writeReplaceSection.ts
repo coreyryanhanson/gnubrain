@@ -11,7 +11,10 @@ import {
 	sectionOf,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
-import { replaceSectionVerified } from "siyuan-kb-primitives/write";
+import {
+	replaceSectionVerified,
+	type SweepRefusal,
+} from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
 	markPartialReplace,
@@ -28,11 +31,86 @@ import {
 	type WriteFlowInput,
 } from "./writeTarget.js";
 import { finishWrite, freshContentRefusal } from "./writeResult.js";
-import {
-	appendAnchorEcho,
-	insertLandedRefusal,
-	sweepRefusalEnvelope,
-} from "./writeVerdicts.js";
+import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
+
+/** The delete-sweep refusal frame — the sweep outcome arms the flow does
+ * not handle itself: `swept` (the success path continues), `interrupted`
+ * (the error instance must ride to the catch sites with its partial state
+ * attached, so it cannot render here) and `walk-failed` (likewise rethrown
+ * — the sweep is complete but unjudged, rendered by the finish-write
+ * classifier, never here). The parameter is the primitives' own
+ * `SweepRefusal` (owned by sweep.ts, discriminant-only exclusion in the
+ * module that owns the union), so an arm-shape change upstream re-derives
+ * this set here instead of a restated `Exclude` silently re-admitting a
+ * terminal arm. `members-survived` is the fail-loud arm: a sweep whose
+ * deletes all acked but left members in the tree renders this refusal
+ * with the survivors itemized, never an ok receipt. */
+function sweepRefusalEnvelope(
+	outcome: SweepRefusal,
+	ctx: {
+		kb: string;
+		anchor: string;
+		newBlockId: string;
+		memberIds: string[];
+		/** The echo tail over the verdict's certified post-sweep walk, served
+		 * on the two terminal arms — the recovery evidence inline, so the
+		 * agent never re-fetches state the verdict already holds. `partial`
+		 * carries no walk (the sweep stopped before the verification walk),
+		 * so its tail stays undefined. */
+		tail?: Record<string, unknown> | undefined;
+	},
+): Envelope {
+	switch (outcome.kind) {
+		case "partial": {
+			const deleted = outcome.deletedBlockIds.length;
+			return errorEnvelope(
+				`replace partially applied: the new section is in place (block '${ctx.newBlockId}') but the delete of '${outcome.failedId}' failed (${outcome.message})` +
+					(deleted > 0
+						? `, and ${deleted} earlier block(s) were deleted`
+						: "") +
+					` — do NOT re-run; delete the remaining old-section block(s) to finish: ${outcome.remainingBlockIds.join(", ")}`,
+				{
+					kb: ctx.kb,
+					anchor: ctx.anchor,
+					newBlockId: ctx.newBlockId,
+					partialReplace: true,
+					deletedBlockIds: outcome.deletedBlockIds,
+					remainingBlockIds: outcome.remainingBlockIds,
+				},
+			);
+		}
+		case "cascade-consumed":
+			return errorEnvelope(
+				`verified-replace failed: the new section block '${ctx.newBlockId}' is absent from the post-write tree — the delete sweep's cascade consumed the replacement; do not retry`,
+				{
+					kb: ctx.kb,
+					anchor: ctx.anchor,
+					newBlockId: ctx.newBlockId,
+					partialReplace: true,
+					deletedBlockIds: ctx.memberIds,
+					remainingBlockIds: [],
+					...ctx.tail,
+				},
+			);
+		case "members-survived":
+			return errorEnvelope(
+				`verified-sweep failed: the delete of '${outcome.survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id`,
+				{
+					kb: ctx.kb,
+					anchor: ctx.anchor,
+					newBlockId: ctx.newBlockId,
+					partialReplace: true,
+					deletedBlockIds: ctx.memberIds.filter(
+						(id) => !outcome.survivedIds.includes(id),
+					),
+					remainingBlockIds: outcome.survivedIds,
+					...ctx.tail,
+				},
+			);
+	}
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled sweep verdict");
+}
 
 export async function runReplaceSectionMode(
 	input: WriteFlowInput,

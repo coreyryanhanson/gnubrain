@@ -13,14 +13,23 @@ import {
 	type GuardRow,
 	type WalkedTree,
 } from "siyuan-kb-primitives";
-import { createDocVerified } from "siyuan-kb-primitives/write";
-import { type Envelope } from "./envelope.js";
+import {
+	createDocVerified,
+	type CreateDocOutcome,
+} from "siyuan-kb-primitives/write";
+import { errorEnvelope, type Envelope } from "./envelope.js";
 import { spillFile, withRowPayload } from "./spill.js";
 import { rememberServedRows } from "./baselines.js";
 import { serveOutline, serveOutlineFromWalk } from "./outline.js";
 import type { WriteFlowBase } from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
-import { createVerdictEnvelope } from "./writeVerdicts.js";
+import { mintTitleMessage } from "./writeGuard.js";
+import {
+	driftRefusal,
+	transportUnverifiedMessage,
+	verificationAuthEventMessage,
+	verificationReadsFailedMessage,
+} from "./writeVerdicts.js";
 
 export interface CreateFlowInput extends WriteFlowBase {
 	/** Minted (normalized) title — the kb_write entry validated it. */
@@ -175,6 +184,73 @@ function stagedEnvelope(envelope: Envelope, input: CreateFlowInput): Envelope {
 	envelope.stagedPath = stagedPath;
 	envelope.message += ` — body staged at ${stagedPath}; retry with markdownFile: '${stagedPath}'`;
 	return envelope;
+}
+
+/** The create mode's verdict frame: every guarded-create outcome other
+ * than `created` → envelope. The mode's agent surface lives with the
+ * mode; the words come from writeVerdicts' fragments (drift,
+ * transport/verification, mint-title). The create mint runs with no doc
+ * target, so the transport/kernel-refused legs carry no echo tail (the
+ * errorTail rule for a missing doc). */
+function createVerdictEnvelope(
+	outcome: Exclude<CreateDocOutcome, { kind: "created" }>,
+	ctx: { name: string },
+): Envelope {
+	switch (outcome.kind) {
+		case "parent-missing":
+			return errorEnvelope(
+				`parentId '${outcome.parentId}' does not resolve to a doc in KB '${ctx.name}' (stale or foreign target)`,
+			);
+		case "unconfirmable":
+			return errorEnvelope(
+				`verified-create failed: the kernel returned doc id '${outcome.returnedId}' but no type='d' row exists for it in KB '${ctx.name}' — the mint is unconfirmable; do not retry blindly`,
+			);
+		case "ghost-intermediate":
+			return errorEnvelope(
+				`verified-create failed: parent '${outcome.parentId}' was deleted or renamed between the hpath read-back and the create — the kernel minted a ghost intermediate; drop the ghost subtree and retry`,
+			);
+		case "hpath-mismatch":
+			return errorEnvelope(
+				`verified-create failed: stored hpath '${outcome.stored}' does not match ground truth '${outcome.expected}' — unexpected kernel title normalization`,
+			);
+		case "transport-unverified":
+			return errorEnvelope(transportUnverifiedMessage(outcome.detail), {
+				kb: ctx.name,
+				verificationFailed: true,
+			});
+		case "kernel-refused":
+			return errorEnvelope(outcome.message, { kb: ctx.name });
+		case "verification-failed":
+			if (
+				outcome.cause.kind === "auth" ||
+				outcome.cause.kind === "rate-limit"
+			) {
+				return errorEnvelope(
+					verificationAuthEventMessage(outcome.cause, outcome.detail),
+					{
+						docId: outcome.returnedId,
+						kb: ctx.name,
+						verificationFailed: true,
+						authEvent: outcome.cause,
+					},
+				);
+			}
+			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
+				docId: outcome.returnedId,
+				kb: ctx.name,
+				verificationFailed: true,
+			});
+		case "mint-title":
+			// The primitives run the mint-title judgment internally; the
+			// tool-surface pre-flight (validateMintTitle) normally refuses
+			// first, so this arm is defense-in-depth behind it — same words,
+			// one home.
+			return errorEnvelope(mintTitleMessage(outcome.problem));
+		case "drift":
+			return driftRefusal(outcome.observed);
+	}
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled create verdict");
 }
 
 /** The `create` flow: title guard (exact leg, then near-match scan) →

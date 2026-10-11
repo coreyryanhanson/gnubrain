@@ -1,18 +1,29 @@
 // The move flow: block-level moves ride the primitives' moveBlockVerified
 // (mutation, post-move walks, landed judgment — one call, one snapshot;
 // the pre-mutation refusals — foreign blockId, self-anchor no-op,
-// own-subtree ancestor — are verdict arms of that call, worded in
-// writeVerdicts); doc-level moves ride moveDocVerified (mutation,
-// live-tree hpath judgment — the moved doc's echo hpath IS the verdict's
-// evidence). Doc-target resolution stays tool-side.
+// own-subtree ancestor — are verdict arms of that call, framed here from
+// writeVerdicts' wording fragments); doc-level moves ride moveDocVerified
+// (mutation, live-tree hpath judgment — the moved doc's echo hpath IS the
+// verdict's evidence). Doc-target resolution stays tool-side.
 
-import { errorEnvelope, type Envelope } from "./envelope.js";
+import {
+	errorEnvelope,
+	refusedEnvelope,
+	STALE_TARGET_GUIDANCE,
+	type Envelope,
+} from "./envelope.js";
 import {
 	deriveMoveAnchor,
 	walkBlockTree,
 	type WalkedTree,
 } from "siyuan-kb-primitives";
-import { moveBlockVerified, moveDocVerified } from "siyuan-kb-primitives/write";
+import {
+	moveBlockVerified,
+	moveDocVerified,
+	type MoveBlockOutcome,
+	type MoveDocLandedOutcome,
+	type MoveDocOutcome,
+} from "siyuan-kb-primitives/write";
 import { serveOutlineFromWalk } from "./outline.js";
 import { echoTail, mutationFailure } from "./writeEcho.js";
 import {
@@ -25,12 +36,89 @@ import {
 import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
-	moveDocJudgmentRefusalEnvelope,
-	moveDocScopingRefusalEnvelope,
 	moveLandedRefusal,
-	movePlacementRefusalEnvelope,
 	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
+
+/** The verified block move's pre-mutation refusal frame — the placement
+ * arms judged on the caller-held pre-move walk, the not-in-source scoping
+ * arm (the kernel mutates by raw block id with no doc scoping of its own;
+ * the judgment rides moveBlockVerified), and the walk-truncated refusal
+ * (incomplete pre-move evidence). The primitives own the
+ * kernel facts — the no-op self-anchor class and the own-subtree ancestor
+ * class the kernel mishandles — and refuse before the mutation, zero
+ * kernel calls; every arm words here. */
+function movePlacementRefusalEnvelope(
+	outcome: Extract<
+		MoveBlockOutcome,
+		{
+			kind:
+				| "already-at-destination"
+				| "own-subtree"
+				| "not-in-source"
+				| "walk-truncated";
+		}
+	>,
+	doc: { title: string; rootId: string },
+): Envelope {
+	switch (outcome.kind) {
+		case "walk-truncated":
+			return refusedEnvelope(
+				`the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead`,
+			);
+		case "already-at-destination":
+			return refusedEnvelope(
+				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
+			);
+		case "own-subtree":
+			return refusedEnvelope(
+				`cannot move block '${outcome.blockId}' — its destination anchor sits inside the block's own subtree (the move would re-parent the block into itself); choose a destination outside the subtree`,
+			);
+		case "not-in-source":
+			return refusedEnvelope(
+				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`,
+			);
+	}
+	outcome satisfies never;
+	return errorEnvelope("internal: unhandled move placement arm");
+}
+
+/** The `judged` leg of the doc-move flow — the not-landed sentence, or
+ * undefined when the move landed (the success path takes over). The tree's
+ * hpath is the judgment's only evidence, so the sentence reports what the
+ * tree shows and claims no mechanism (an observed hpath off the destination
+ * could be a rollback or a landing elsewhere; only the block-level
+ * judgment's reason ladder can tell those apart). */
+function moveDocJudgmentRefusalEnvelope(
+	verdict: MoveDocLandedOutcome,
+	ctx: { name: string; docId: string; title: string },
+): Envelope | undefined {
+	switch (verdict.kind) {
+		case "landed":
+			return undefined;
+		case "not-landed":
+			return errorEnvelope(
+				`verified-move failed: doc '${ctx.title}' did not land at the destination — the tree reports hpath '${verdict.hpath}'`,
+				{ kb: ctx.name, docId: ctx.docId },
+			);
+	}
+	verdict satisfies never;
+	return undefined;
+}
+
+/** The verified doc move's pre-mutation scoping refusal — the blocks index
+ * names no row for the moved doc in the claimed KB (the same class the
+ * block move refuses as its own not-in-source arm; the doc judgment rides
+ * moveDocVerified). Unreachable through a fresh resolveDocTarget — it is
+ * the stale-target race, worded as such. */
+function moveDocScopingRefusalEnvelope(
+	outcome: Extract<MoveDocOutcome, { kind: "not-in-source" }>,
+	ctx: { name: string },
+): Envelope {
+	return refusedEnvelope(
+		`doc '${outcome.docId}' is not a doc of KB '${ctx.name}' — the blocks index names no row for it — ${STALE_TARGET_GUIDANCE}`,
+	);
+}
 
 /** Cross-doc block move's `destOutline`: the destination outline served
  * from the verified move's post-move walk (the judgment's own evidence —
@@ -85,9 +173,9 @@ export async function runMoveMode(
 			boxId,
 			destRootId: destId === boxId ? undefined : destId,
 		});
-		// The outcome→envelope map lives in writeVerdicts (the exhaustive
-		// wording home for every primitives union, the createVerdictEnvelope
-		// pattern). The doc-level record carries no echo tail on any failure
+		// The doc-level verdict frames (scoping, shared ladder, not-landed
+		// judgment) live with the flow — the words come from writeVerdicts.
+		// The doc-level record carries no echo tail on any failure
 		// leg (the pinned shape — the doc move runs with no doc target), so
 		// the tail is empty.
 		// The pre-mutation scoping refusal (the blocks index names no row for
@@ -150,7 +238,7 @@ export async function runMoveMode(
 	// Anchor: tool-derived, never agent-supplied. The placement refusals
 	// (self-anchor no-op, own-subtree ancestor — kernel behaviors the
 	// primitives own) ride the verified move as closed arms, judged against
-	// this pre-move walk; their wording lives in writeVerdicts.
+	// this pre-move walk; their frame lives above.
 	const anchor = placementRefusal(
 		deriveMoveAnchor(destWalk, params.toHeadingId),
 		params.toHeadingId,
