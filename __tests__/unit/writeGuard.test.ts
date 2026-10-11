@@ -35,7 +35,7 @@ describe("mint policy", () => {
 });
 
 describe("title guard", () => {
-	it("runs the exact leg as a verbatim equality against the single notebook", async () => {
+	it("runs the guard legs scoped to the resolved notebook", async () => {
 		const { execute, calls } = setup({
 			config: {
 				exactRows: [
@@ -48,22 +48,14 @@ describe("title guard", () => {
 				],
 			},
 		});
-		// Verbatim submission: the exact leg is a `content =` equality
-		// (BINARY collation — case-sensitive), so only the verbatim title
-		// stops as a duplicate; an ASCII case variant falls to the near leg
-		// (LIKE folds case there) and classifies `near`.
 		const r = await execute({ ...base, topic: "docker networking" });
 		expect(r.status).toBe("duplicate");
-		const exact = calls.find(
-			(c) => c.method === "query" && String(c.args).includes("content ="),
-		);
+		// The tool-side half of the guard: the KB resolution scopes the
+		// statement to the registered notebook. The statement shapes (the
+		// exact-leg equality, LIKE folding, the LIMIT) are falsified
+		// down-repo in the primitives, beside the builders.
+		const exact = calls.find((c) => c.method === "query");
 		expect(String(exact?.args)).toContain("box = 'nb-r'");
-		expect(String(exact?.args)).toContain("type = 'd'");
-		expect(String(exact?.args)).toContain("content = 'docker networking'");
-		expect(String(exact?.args)).not.toContain("LIKE");
-		// Explicit LIMIT from the primitives — the kernel's silent statement
-		// cap never applies to the exact leg.
-		expect(String(exact?.args)).toContain(`LIMIT ${GUARD_EXACT_CAP + 1}`);
 	});
 
 	it("duplicate stop caps rendering and names the truncation at the exact cap", async () => {
@@ -82,15 +74,6 @@ describe("title guard", () => {
 		expect(r.rows as unknown[]).toHaveLength(GUARD_EXACT_CAP);
 		expect(r.message).toContain(`${GUARD_EXACT_CAP}+ existing docs`);
 		expect(r.truncated).toContain(`capped at ${GUARD_EXACT_CAP}`);
-	});
-
-	it("matches HTML-special titles verbatim — the kernel stores them unescaped", async () => {
-		const { execute, calls } = setup();
-		await execute({ ...base, topic: "R&D" });
-		const exact = calls.find(
-			(c) => c.method === "query" && String(c.args).includes("content ="),
-		);
-		expect(String(exact?.args)).toContain("content = 'R&D'");
 	});
 
 	it("separator-only titles mint instead of failing on malformed SQL", async () => {

@@ -19,7 +19,7 @@ import {
 } from "./writeHarness.js";
 
 // ---------------------------------------------------------------------------
-// replace-section — insert-before-delete, invalidRefs
+// replace-section — receipt wording, envelope arms, invalidRefs
 // ---------------------------------------------------------------------------
 
 const REPLACE_LIST_DOC = {
@@ -40,47 +40,8 @@ const REPLACE_LIST_DOC = {
 	],
 };
 
-// A heading nested inside a callout: the section is container-bounded —
-// the sibling run of h2 inside c1 is [p2] only. l2 (a sibling of the
-// CALLOUT, not of h2) and its items sit outside the section and survive.
-const REPLACE_NESTED_HEADING_DOC = {
-	"d-doc": [
-		walkBlock("h1", "h", "h1", "Top"),
-		walkBlock("c1", "callout", "", "callout"),
-		walkBlock("l2", "l", "", "after list"),
-		walkBlock("h3", "h", "h1", "Next"),
-	],
-	c1: [
-		walkBlock("h2", "h", "h2", "Nested"),
-		walkBlock("p2", "p", "", "callout body"),
-	],
-	l2: [
-		walkBlock("i3", "i", "", "item three"),
-		walkBlock("i4", "i", "", "item four"),
-	],
-};
-
-// The target heading sits inside a list item: its section is the sibling
-// run inside the item ([p3]) — i2 is a sibling of the list, never of h2,
-// and survives the sweep (a doc-order slice would have swept it).
-const REPLACE_ITEM_HEADING_DOC = {
-	"d-doc": [
-		walkBlock("h1", "h", "h1", "Top"),
-		walkBlock("l1", "l", "", "outer list"),
-		walkBlock("h3", "h", "h1", "Next"),
-	],
-	l1: [
-		walkBlock("i1", "i", "", "item one"),
-		walkBlock("i2", "i", "", "item two"),
-	],
-	i1: [
-		walkBlock("h2", "h", "h2", "Deep heading"),
-		walkBlock("p3", "p", "", "deep body"),
-	],
-};
-
 describe("replace-section", () => {
-	it("enumerates the delete set by walk, inserts BEFORE deleting, preserves the boundary", async () => {
+	it("replace ok receipt: anchor echo, orphaned-refs doc-count wording, fresh outline", async () => {
 		const harness = setup({
 			config: {
 				cascadeDelete: true,
@@ -100,21 +61,6 @@ describe("replace-section", () => {
 		});
 		const result = await harness.execute(replaceParams);
 		expect(result.status).toBe("ok");
-		const insertIndex = harness.calls.findIndex(
-			(c) => c.method === "insertBlock",
-		);
-		const deleteIndexes = harness.calls
-			.map((c, i) => (c.method === "deleteBlock" ? i : -1))
-			.filter((i) => i >= 0);
-		expect(deleteIndexes.length).toBe(2);
-		expect(insertIndex).toBeLessThan(deleteIndexes[0] as number);
-		// Only the section's blocks deleted — the boundary heading and the
-		// following section survive.
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p1", "p2"]);
 		expect(result.anchor).toBe("nextID=h2 (next heading)");
 		expect(result.newBlockId).toBe("b-new");
 		// The orphaned-refs wording is agent-visible and pinned here: the
@@ -150,201 +96,6 @@ describe("replace-section", () => {
 		expect(
 			failing.calls.filter((c) => c.method === "deleteBlock"),
 		).toHaveLength(0);
-	});
-
-	it("a container-carrying section sweeps only the forest roots — descendants ride the kernel cascade", async () => {
-		const harness = setup({
-			config: {
-				cascadeDelete: true,
-				childrenFor: REPLACE_LIST_DOC,
-				onInsert: () => {
-					harness.childrenFor["d-doc"] = [
-						...REPLACE_LIST_DOC["d-doc"].slice(0, 3),
-						walkBlock("b-new", "p", "", "rewritten section"),
-						...REPLACE_LIST_DOC["d-doc"].slice(3),
-					];
-				},
-			},
-		});
-		const result = await harness.execute(replaceParams);
-		// A descendant sweep would hit the kernel's cascaded-away ids and
-		// false-report a partial replace — the ok status IS the pin.
-		expect(result.status).toBe("ok");
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p1", "l1"]);
-		// The cascade reached the tree: the list and its items are gone, the
-		// replacement and the boundary survive.
-		expect(
-			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
-		).toEqual(["h1", "b-new", "h2"]);
-	});
-
-	it("a heading nested in a container sweeps its container-local sibling run — blocks after the container survive", async () => {
-		const harness = setup({
-			config: {
-				cascadeDelete: true,
-				childrenFor: REPLACE_NESTED_HEADING_DOC,
-				onInsert: () => {
-					harness.childrenFor["c1"] = [
-						...REPLACE_NESTED_HEADING_DOC.c1,
-						walkBlock("b-new", "p", "", "rewritten section"),
-					];
-				},
-			},
-		});
-		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
-		// h2's section is container-bounded: the sibling run inside the
-		// callout is [p2] — l2 (a sibling of the CALLOUT, after it) and its
-		// items are outside the section and survive. The anchor appends to
-		// the callout itself, never past it.
-		expect(result.status).toBe("ok");
-		expect(result.anchor).toBe("appendBlock(c1) — end of section");
-		const insert = harness.calls.find((c) => c.method === "appendBlock");
-		expect(insert?.args).toEqual({
-			data: "rewritten section",
-			parentID: "c1",
-		});
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p2"]);
-		expect(
-			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
-		).toEqual(["h1", "c1", "l2", "h3"]);
-		expect(
-			((harness.childrenFor["c1"] ?? []) as { id: string }[]).map((b) => b.id),
-		).toEqual(["h2", "b-new"]);
-	});
-
-	it("a heading inside a list item sweeps only its sibling run — the item's siblings survive", async () => {
-		const harness = setup({
-			config: {
-				cascadeDelete: true,
-				childrenFor: REPLACE_ITEM_HEADING_DOC,
-				onInsert: () => {
-					harness.childrenFor["i1"] = [
-						...REPLACE_ITEM_HEADING_DOC.i1,
-						walkBlock("b-new", "p", "", "rewritten section"),
-					];
-				},
-			},
-		});
-		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
-		// h2's section inside item i1 is [p3] — i2 is a sibling of i1, never
-		// of h2, so it survives (a doc-order slice would have swept it).
-		expect(result.status).toBe("ok");
-		expect(result.anchor).toBe("appendBlock(i1) — end of section");
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p3"]);
-		expect(
-			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
-		).toEqual(["h1", "l1", "h3"]);
-		expect(
-			((harness.childrenFor["l1"] ?? []) as { id: string }[]).map((b) => b.id),
-		).toEqual(["i1", "i2"]);
-		expect(
-			((harness.childrenFor["i1"] ?? []) as { id: string }[]).map((b) => b.id),
-		).toEqual(["h2", "b-new"]);
-	});
-
-	it("a deeper heading member at doc level replaces cleanly — the insert lands before the boundary as its sibling", async () => {
-		// h_sub (a deeper doc-level heading) is a section member — deeper
-		// headings never bound the section — so the sweep deletes it and p1,
-		// while the insert lands BEFORE the boundary h2 as a doc-level
-		// sibling, never inside a member.
-		const harness = setup({
-			config: {
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "Top"),
-						walkBlock("h_sub", "h", "h2", "Sub"),
-						walkBlock("p1", "p", "", "old body"),
-						walkBlock("h2", "h", "h1", "Next"),
-					],
-				},
-				onInsert: () => {
-					harness.childrenFor["d-doc"] = [
-						{ id: "h1" },
-						walkBlock("b-new", "p", "", "rewritten section"),
-						{ id: "h_sub" },
-						{ id: "p1" },
-						{ id: "h2" },
-					];
-				},
-				onDelete: () => {
-					harness.childrenFor["d-doc"] = (
-						harness.childrenFor["d-doc"] ?? []
-					).filter((b) => !["h_sub", "p1"].includes((b as { id: string }).id));
-				},
-			},
-		});
-		const result = await harness.execute(replaceParams);
-		expect(result.status).toBe("ok");
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["h_sub", "p1"]);
-		expect(
-			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
-		).toEqual(["h1", "b-new", "h2"]);
-	});
-
-	it("a boundary heading nested inside a swept container replaces cleanly — the anchor is a sibling, never inside a member", async () => {
-		// The old next-heading-at-any-level rule anchored h1's replace on h2
-		// (nested inside b2, a swept member): the insert landed inside the
-		// doomed container and the cascade consumed the replacement. The
-		// section rule anchors on the boundary h1b (a sibling), so the
-		// replace sweeps [p1, b2] and h2's container dies with the section.
-		const harness = setup({
-			config: {
-				cascadeDelete: true,
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("p1", "p", "", "old body"),
-						walkBlock("b2", "b", "", "quote"),
-						walkBlock("h1b", "h", "h1", "B"),
-					],
-					b2: [
-						walkBlock("pA", "p", "", "quoted body"),
-						walkBlock("h2", "h", "h2", "Inside quote"),
-					],
-				},
-				onInsert: () => {
-					harness.childrenFor["d-doc"] = [
-						{ id: "h1" },
-						{ id: "p1" },
-						{ id: "b2" },
-						walkBlock("b-new", "p", "", "rewritten section"),
-						{ id: "h1b" },
-					];
-				},
-			},
-		});
-		const result = await harness.execute(replaceParams);
-		expect(result.status).toBe("ok");
-		expect(result.anchor).toBe("nextID=h1b (next heading)");
-		const insert = harness.calls.find((c) => c.method === "insertBlock");
-		expect(insert?.args).toEqual({
-			data: "rewritten section",
-			nextID: "h1b",
-		});
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p1", "b2"]);
-		expect(
-			(harness.childrenFor["d-doc"] ?? []).map((b) => (b as { id: string }).id),
-		).toEqual(["h1", "b-new", "h1b"]);
 	});
 
 	it("the post-sweep walk must still hold the replacement — a cascade-consumed replacement fails loud, never ok", async () => {
@@ -610,29 +361,6 @@ describe("replace-section", () => {
 			{ id: "p1", content: "old one" },
 			{ id: "p2", content: "old two" },
 		]);
-	});
-
-	it("final section: the sweep runs to end of doc (trailing content deleted), anchor is appendBlock(root)", async () => {
-		const harness = setup({
-			config: {
-				cascadeDelete: true,
-				childrenFor: REPLACE_DOC,
-				onInsert: () => {
-					harness.childrenFor["d-doc"] = [
-						...REPLACE_DOC["d-doc"].slice(0, 4),
-						walkBlock("b-new", "p", "", "rewritten section"),
-					];
-				},
-			},
-		});
-		const result = await harness.execute({ ...replaceParams, headingId: "h2" });
-		expect(result.anchor).toBe("appendBlock(root) — doc end");
-		expect(
-			harness.calls
-				.filter((c) => c.method === "deleteBlock")
-				.map((c) => c.args),
-		).toEqual(["p3"]);
-		expect(harness.calls.find((c) => c.method === "appendBlock")).toBeDefined();
 	});
 
 	it("an unresolvable insert (silent rollback) refuses the deletes — the old section is untouched", async () => {

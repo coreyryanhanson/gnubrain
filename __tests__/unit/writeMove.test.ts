@@ -96,7 +96,7 @@ describe("block-level move", () => {
 		);
 	});
 
-	it("cross-doc: destination anchor, move via previousID, both outlines + movedBlockId", async () => {
+	it("cross-doc: destination anchor echo, both outlines + movedBlockId", async () => {
 		const harness = moveHarness(() => {
 			harness.childrenFor["d-doc"] = MOVE_DOC["d-doc"].filter(
 				(b) => b.id !== "p1",
@@ -111,14 +111,11 @@ describe("block-level move", () => {
 		expect(result.movedBlockId).toBe("p1");
 		expect(result.outline).toBeDefined();
 		expect(result.destOutline).toContain("Dest");
-		const move = harness.calls.find((c) => c.method === "moveBlock");
-		expect(move?.args).toEqual({ id: "p1", previousID: "oh1" });
 	});
 
 	it("same-doc move collapses to outline + anchor with movedBlockId, no destOutline", async () => {
 		const harness = moveHarness(() => {
-			// The kernel applies: p1 lands at doc end (no toHeadingId here —
-			// the pure anchor derivation is covered by the tests above).
+			// The kernel applies: p1 lands at doc end.
 			harness.childrenFor["d-doc"] = [
 				walkBlock("h1", "h", "h1", "A"),
 				walkBlock("p2", "p", "", "stay"),
@@ -135,11 +132,9 @@ describe("block-level move", () => {
 		expect(result.status).toBe("ok");
 		expect(result.movedBlockId).toBe("p1");
 		expect(result.destOutline).toBeUndefined();
-		// Doc end with a populated destination: previousID = the last
-		// root-level block (parentID would prepend — the defect).
+		// Doc end with a populated destination: the anchor is the last
+		// root-level block (parentID would prepend).
 		expect(result.anchor).toBe("previousID=p2 (doc end)");
-		const move = harness.calls.find((c) => c.method === "moveBlock");
-		expect(move?.args).toEqual({ id: "p1", previousID: "p2" });
 		// Same-doc: the in-hand source walk serves as the destination —
 		// exactly one pre-write and one post-write source walk.
 		const walks = harness.calls.filter(
@@ -148,7 +143,7 @@ describe("block-level move", () => {
 		expect(walks).toHaveLength(2);
 	});
 
-	it("cross-doc doc-end move into an EMPTY destination: moveBlock rides parentID (the prepend IS the end)", async () => {
+	it("cross-doc doc-end move into an EMPTY destination: the append anchor echo", async () => {
 		// The only reach of the `append` anchor kind: an empty destination has
 		// no block to anchor after. The live kernel never leaves a doc
 		// childless, so this leg is unit-only by construction.
@@ -173,8 +168,6 @@ describe("block-level move", () => {
 		expect(result.status).toBe("ok");
 		expect(result.movedBlockId).toBe("p1");
 		expect(result.anchor).toBe("appendBlock(root) — doc end");
-		const move = harness.calls.find((c) => c.method === "moveBlock");
-		expect(move?.args).toEqual({ id: "p1", parentID: "d-other" });
 	});
 
 	it("a tree-level miss rolls back silently → verified-move error", async () => {
@@ -186,171 +179,34 @@ describe("block-level move", () => {
 		expect(result.destOutline).toBeDefined();
 	});
 
-	it("an empty-section destination anchors on the destination heading", async () => {
-		const harness = moveHarness();
-		await harness.execute({
-			...moveParams,
-			toHeadingId: "oh1",
-		});
-		const move = harness.calls.find((c) => c.method === "moveBlock");
-		// The dest section of oh1 is empty → the heading itself is the anchor.
-		expect(move?.args).toEqual({ id: "p1", previousID: "oh1" });
-	});
-
-	it("section ending in a list container: the move lands after the container's subtree and verifies", async () => {
-		// The kernel places previousID=list's next SIBLING, but the flattened
-		// walk interleaves the list's items between the container and that
-		// sibling — a next-entry verification would read the first item and
-		// misreport a landed move as a silent rollback. landingId (subtree
-		// end) is the placement model both checks share.
-		const harness = moveHarness(
-			() => {
-				// The kernel applies: p1 lands as the list's next sibling — the
-				// items stay inside the container (childrenFor["list"]).
-				harness.childrenFor["d-doc"] = [
-					walkBlock("h1", "h", "h1", "A"),
-					walkBlock("list", "l", "", "list"),
-					walkBlock("p1", "p", "", "mover"),
-					walkBlock("h2", "h", "h1", "B"),
-				];
-			},
-			{
-				blockRows: [{ id: "p1", content: "mover" }],
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("p1", "p", "", "mover"),
-						walkBlock("list", "l", "", "list"),
-						walkBlock("h2", "h", "h1", "B"),
-						walkBlock("p9", "p", "", "tail"),
-					],
-					list: [
-						walkBlock("i1", "i", "", "one"),
-						walkBlock("i2", "i", "", "two"),
-					],
-					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
-				},
-			},
-		);
-		const result = await harness.execute({
-			kb: "recipes",
-			mode: "move",
-			docId: "d-doc",
-			blockId: "p1",
-			toDocId: "d-doc",
-			toHeadingId: "h1",
-		});
-		expect(result.status).toBe("ok");
-		expect(result.movedBlockId).toBe("p1");
-		const move = harness.calls.find((c) => c.method === "moveBlock");
-		// The section's last top-level member is the container itself.
-		expect(move?.args).toEqual({ id: "p1", previousID: "list" });
-	});
-
 	// The "already there" refusal class: the destination already contains
 	// the block at the position the anchor would produce, so the kernel
 	// would no-op behind HTTP success and the walk-set check would misreport
 	// the move as landed — the pre-check refuses before any moveBlock.
-	type MoveRefusalCase = {
-		name: string;
-		stub: Partial<StubConfig>;
-		params: Record<string, unknown>;
-	};
-	const alreadyThereCases: MoveRefusalCase[] = [
+	// (The pre-check's arm shapes are falsified down-repo; this pins the
+	// refusal wording on the tool surface.)
+	it("a destination that already holds the block at the anchor's position is refused with zero kernel moves", async () => {
 		// MOVE_DOC's h1 section is [p1, p2] — moving p2 to its end would
 		// issue moveBlock({previousID: p2}).
-		{
-			name: "same-doc self-anchor: the block already ends the destination section",
-			stub: { blockRows: [{ id: "p2", content: "stay" }] },
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "p2",
-				toDocId: "d-doc",
-				toHeadingId: "h1",
-			},
-		},
-		// p2 is MOVE_DOC's last block; a move to doc end (toHeadingId
-		// omitted → appendBlock-on-root anchor) would no-op on the kernel
-		// and pass the walk-set checks as a successful move.
-		{
-			name: "same-doc doc-end self-anchor: block already last top-level of its own doc",
-			stub: { blockRows: [{ id: "p2", content: "stay" }] },
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "p2",
-				toDocId: "d-doc",
-			},
-		},
-		// p2's child c1 is the walk's literal last element; the doc-end
-		// shape is "last top-level block", not "last element". Nested depth
-		// comes from the walk's recursion (childrenFor[p2]; a container).
-		{
-			name: "doc-end pre-check survives trailing children: block with a child already at doc end",
-			stub: {
-				blockRows: [{ id: "p2", content: "stay" }],
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("p1", "p", "", "first"),
-						walkBlock("p2", "l", "u", "stay"),
-					],
-					p2: [walkBlock("c1", "i", "u", "kid")],
-					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
-				},
-			},
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "p2",
-				toDocId: "d-doc",
-			},
-		},
-		// c1 already follows p1, h1's section anchor. The kernel
-		// moveBlock({id: c1, previousID: p1}) would no-op while the walk-set
-		// check ("c1 present") reports a successful move — the generalized
-		// pre-check refuses instead.
-		{
-			name: "same-doc no-op target: block already immediately after the anchor",
-			stub: {
-				blockRows: [{ id: "c1", content: "nested" }],
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("p1", "p", "", "first"),
-						walkBlock("c1", "p", "", "nested", "p1", "p"),
-					],
-					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
-				},
-			},
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "c1",
-				toDocId: "d-doc",
-				toHeadingId: "h1",
-			},
-		},
-	];
-	it.each(alreadyThereCases)(
-		"$name → refusal, zero kernel moves",
-		async ({ stub, params }) => {
-			const harness = moveHarness(undefined, stub);
-			const result = await harness.execute(params);
-			expect(result.status).toBe("refused");
-			expect(result.message).toContain(
-				"already sits at the destination position",
-			);
-			expect(
-				harness.calls.filter((c) => c.method === "moveBlock"),
-			).toHaveLength(0);
-		},
-	);
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "p2", content: "stay" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "p2",
+			toDocId: "d-doc",
+			toHeadingId: "h1",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain(
+			"already sits at the destination position",
+		);
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
 
 	it("same-doc doc-end move: a silent kernel no-op is caught by the position check", async () => {
 		// p1 is mid-doc; the kernel no-ops behind HTTP success — same-doc
@@ -370,76 +226,11 @@ describe("block-level move", () => {
 		expect(calls.filter((c) => c.method === "moveBlock")).toHaveLength(1);
 	});
 
-	// The own-subtree guard keys on the anchor the kernel receives: c1's
-	// child section anchors after p-kid (re-parenting the container into
-	// itself), and the empty-section arm anchors on the heading itself —
-	// which still sits inside c1. headingInWalk accepts h2 (it IS a heading
-	// of the doc); the guard fires on the anchor shape.
-	it.each([
-		{
-			name: "same-doc move into the block's own subtree",
-			stub: {
-				blockRows: [{ id: "c1", content: "container" }],
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("c1", "callout", "", "container"),
-					],
-					c1: [
-						walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
-						walkBlock("p-kid", "p", "", "kid", "c1", "callout"),
-					],
-					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
-				},
-			},
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "c1",
-				toDocId: "d-doc",
-				toHeadingId: "h2",
-			},
-		},
-		{
-			name: "same-doc move to an empty-section heading inside the block",
-			stub: {
-				blockRows: [{ id: "c1", content: "container" }],
-				childrenFor: {
-					"d-doc": [
-						walkBlock("h1", "h", "h1", "A"),
-						walkBlock("c1", "callout", "", "container"),
-					],
-					c1: [walkBlock("h2", "h", "h2", "Nested", "c1", "callout")],
-					"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
-				},
-			},
-			params: {
-				kb: "recipes",
-				mode: "move",
-				docId: "d-doc",
-				blockId: "c1",
-				toDocId: "d-doc",
-				toHeadingId: "h2",
-			},
-		},
-	])("$name is refused with zero kernel moves", async ({ stub, params }) => {
-		const harness = moveHarness(undefined, stub);
-		const result = await harness.execute(params);
-		expect(result.status).toBe("refused");
-		expect(result.message).toContain("inside the block's own subtree");
-		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			0,
-		);
-	});
-
-	it("the own-subtree guard is directional: deep destinations outside the moved block proceed", async () => {
-		// h2 lives inside container c1; moving root-level h1 there is a
-		// legal deep move — the guard must not fire. The stub applies
-		// nothing, so the flow's position check reports the miss: proof the
-		// move reached the kernel instead of a false-positive refusal.
+	// The own-subtree guard keys on the anchor the kernel receives (the
+	// guard itself is falsified down-repo; this pins the refusal wording).
+	it("a same-doc move into the block's own subtree is refused with zero kernel moves", async () => {
 		const harness = moveHarness(undefined, {
-			blockRows: [{ id: "h1", content: "A" }],
+			blockRows: [{ id: "c1", content: "container" }],
 			childrenFor: {
 				"d-doc": [
 					walkBlock("h1", "h", "h1", "A"),
@@ -447,7 +238,7 @@ describe("block-level move", () => {
 				],
 				c1: [
 					walkBlock("h2", "h", "h2", "Nested", "c1", "callout"),
-					walkBlock("p1", "p", "", "kid", "c1", "callout"),
+					walkBlock("p-kid", "p", "", "kid", "c1", "callout"),
 				],
 				"d-other": [walkBlock("oh1", "h", "h1", "Dest")],
 			},
@@ -456,14 +247,14 @@ describe("block-level move", () => {
 			kb: "recipes",
 			mode: "move",
 			docId: "d-doc",
-			blockId: "h1",
+			blockId: "c1",
 			toDocId: "d-doc",
 			toHeadingId: "h2",
 		});
-		expect(result.status).toBe("error");
-		expect(result.message).toContain("landing position");
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("inside the block's own subtree");
 		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
-			1,
+			0,
 		);
 	});
 

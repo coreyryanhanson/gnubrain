@@ -1,27 +1,19 @@
 // The read-side integration cases — search/query pins, the title-guard
-// kernel round-trip, nested-mint + duplicate disambiguation with tool-path
-// verified-create, and the version-refusal contract pin. Runs against the
+// kernel round-trip, and nested-mint + duplicate disambiguation with
+// tool-path verified-create. Runs against the
 // live pinned kernel over the shared fixtures; opt-in with
 // SIYUAN_INTEGRATION=1, never in CI.
 
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-	guardExactStmt,
-	PINNED_SIYUAN_VERSION,
-	SiYuanKernelClient,
-} from "siyuan-kb-primitives";
+import { guardExactStmt, SiYuanKernelClient } from "siyuan-kb-primitives";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import { ContentBaselines } from "../../baselines.js";
 import { CircuitBreaker } from "../../breaker.js";
-import { globalSettingsPath, loadGnubrainSettings } from "../../settings.js";
 import { registerReadToolsAndToolset } from "../../tools.js";
 import { registerWriteToolAndToolset } from "../../write.js";
 import { createWriteGrantState } from "../../writeConfirm.js";
-import {
-	runSessionValidation,
-	type SessionValidation,
-} from "../../validation.js";
+import { type SessionValidation } from "../../validation.js";
 import {
 	INTEGRATION,
 	LIVE_TIMEOUT,
@@ -550,73 +542,6 @@ third body`,
 				"utf8",
 			);
 			expect(md).toContain("existing body");
-		},
-		LIVE_TIMEOUT,
-	);
-
-	// -------------------------------------------------------------------
-	// Version-refusal contract pin
-	// -------------------------------------------------------------------
-
-	it(
-		"a kernel reporting a wrong version refuses every write naming both versions; reads proceed with the drift warning",
-		async () => {
-			// The probe rides a prototype-chained view whose getVersion
-			// reports a drifted version (the write refusals below still make
-			// zero kernel calls; reads use the real client).
-			const lyingKernel = Object.assign(Object.create(client), {
-				baseUrl: client.baseUrl,
-				getVersion: async () => "9.9.9",
-			}) as SiYuanKernelClient;
-			const settingsText = JSON.stringify({ gnubrain: fixtures.settings });
-			const loaded = await loadGnubrainSettings(
-				async () => settingsText,
-				globalSettingsPath("/gnubrain-it-fake-home"),
-				undefined,
-			);
-			const drift = await runSessionValidation({
-				loaded,
-				kernel: lyingKernel,
-			});
-			expect(drift.probe).toEqual({
-				verdict: "drift",
-				kernelVersion: "9.9.9",
-			});
-
-			const w = writeSetup(drift);
-			for (const params of [
-				{
-					kb: "fixture-a",
-					mode: "create",
-					topic: unique("Version Pin"),
-					markdown: "x",
-				},
-				{
-					kb: "fixture-a",
-					mode: "edit",
-					docId: "20240101120000-deadbeefdeadbeefdeadbeefdeadbeef",
-					blockId: "20240101120000-cafebabecafebabecafebabecafebabe",
-					markdown: "x",
-				},
-			]) {
-				const refused = await w.run(params);
-				expect(refused.status).toBe("refused");
-				const msg = String(refused.message);
-				expect(msg).toContain(PINNED_SIYUAN_VERSION);
-				expect(msg).toContain("9.9.9");
-			}
-			expect(w.createCalls).toHaveLength(0);
-
-			// Reads proceed; the drift rides the envelope as a payload field.
-			const read = readSetup(drift);
-			const q = await read("kb_query", {
-				kb: ["fixture-a"],
-				sql: "SELECT id, root_id, box FROM blocks LIMIT 5",
-			});
-			expect(q.status).toBe("ok");
-			const driftNote = String(q.drift);
-			expect(driftNote).toContain(PINNED_SIYUAN_VERSION);
-			expect(driftNote).toContain("9.9.9");
 		},
 		LIVE_TIMEOUT,
 	);

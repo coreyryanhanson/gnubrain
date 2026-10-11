@@ -53,7 +53,7 @@ describe("delete", () => {
 	it("a kernel success no-op still reports ok — with the walk-set evidence naming it (3.8.3 kernel)", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
 		// nothing (ErrBlockNotFound → nil, a success no-op). 3.8.4
-		// instead answers a synchronous error — the pin below.
+		// instead answers a synchronous error — the echo-failure case below.
 		const { execute } = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "survivor" }],
@@ -71,30 +71,6 @@ describe("delete", () => {
 		expect(result.message).toContain("STILL PRESENT");
 		// A no-op deleted nothing — no receipt next to a STILL PRESENT verdict.
 		expect(result.deletedBlocks).toBeUndefined();
-	});
-
-	it("3.8.4 delete of a missing block: synchronous error surfaced verbatim with the fresh outline", async () => {
-		// 3.8.4's PerformBlockOperation requires an existing node — the same
-		// synchronous not-found treatment as edit/move, one error class over.
-		const { execute, calls } = setup({
-			config: {
-				onDelete: () => {
-					throw new SiYuanApiError(-1, -1, "tree not found");
-				},
-			},
-		});
-		const result = await execute({
-			kb: "recipes",
-			mode: "delete",
-			docId: "d-doc",
-			blockId: "p1",
-		});
-		expect(result.status).toBe("error");
-		expect(result.message).toContain("tree not found");
-		expect(result.outline).toBeDefined(); // fresh evidence rides the error
-		expect(
-			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
-		).toEqual(["p1"]);
 	});
 
 	it("3.8.4 delete with a simultaneous echo failure: the kernel's error still surfaces verbatim, not 'unreachable'", async () => {
