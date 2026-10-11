@@ -188,8 +188,8 @@ tests drive the extension through it instead of touching real files.
   the required-baselines wrappers: seeding, the inline cut, the spill tail).
   The notation itself (`renderExtendedOutlineLines`, the primitives read
   barrel's canonical extended-outline renderer — its `containerPrefix`
-  helper lives in the primitives' `outline.ts`, exported there but not
-  re-exported through the barrel) means the served lines can never diverge
+  helper is module-private in the primitives' `outline.ts`) means the
+  served lines can never diverge
   from the section rule; the tool descriptions document the notation the
   agent sees.
 - Every tool result is an envelope `{status: ok | near_matches | duplicate |

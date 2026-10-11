@@ -11,8 +11,9 @@
 // unresolvable ids/anchors instead of rolling back behind an HTTP success.
 // The adjacent honest route (a concurrently deleted boundary anchor → the
 // kernel's synchronous error with the fresh outline attached) is live-pinned
-// in writePlacement.live.test.ts; the rollback/tree-level-miss arms are
-// unit-pinned in the primitives' write.test.ts. The move landing facts
+// in writePlacement.live.test.ts; the rollback arm is unit-pinned in the
+// primitives' insert.test.ts, the tree-level-miss arm in move.test.ts. The
+// move landing facts
 // (block-level judgment, placement-through-move, depth cap) are live-pinned
 // in the primitives' move.live; this file keeps the move envelope pins.
 // The delete-generation fact (3.8.3 success no-op vs 3.8.4 "tree not found")
