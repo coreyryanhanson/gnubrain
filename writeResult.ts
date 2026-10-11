@@ -1,9 +1,6 @@
 // Write-result machinery: finishWrite, the post-mutation verification
 // contract (a network drop in the verification reads must read as
-// unverified, never as unreachable). The success-path echo tail lives in
-// writeEcho.ts beside the errorTail/echoTail family; the pre-mutation
-// fresh-content precondition lives in writeTarget.ts beside the other
-// pre-mutation judgments.
+// unverified, never as unreachable).
 
 import {
 	SiYuanApiError,

@@ -65,7 +65,7 @@ if (INTEGRATION && BASE_URL === "") {
 	);
 }
 
-// --- live-case helpers (shared by the 5b case files) ---
+// --- live-case helpers (shared by the integration case files) ---
 
 /** Poll a condition with a deadline — the bounded-wait shape every
  * async-index case uses (blocks index, full-text index). */

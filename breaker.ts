@@ -46,12 +46,7 @@ export class CircuitBreaker {
 	/** Arms the local cooldown. Takes the genuine `SiYuanRateLimitError` from the
 	 * client so the extension can never misclassify a synthetic 429 shape. */
 	recordRateLimit(err: SiYuanRateLimitError, now: number = Date.now()): void {
-		this.lastRetryAfterSeconds = err.retryAfterSeconds;
-		this.state = authLockDodge(
-			this.state,
-			{ kind: "rate-limit", servedRetryAfterSeconds: err.retryAfterSeconds },
-			now,
-		);
+		this.recordRateLimitFromVerdict(err.retryAfterSeconds, now);
 	}
 
 	/** Verdict-sourced 429 — same accounting as `recordRateLimit` for a

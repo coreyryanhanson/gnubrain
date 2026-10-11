@@ -117,18 +117,20 @@ describe("startup validation order", () => {
 		expect(result.probe).toEqual({ verdict: "unreachable" });
 	});
 
-	it("strict full-version match — a dev suffix or a shorter version drifts", async () => {
-		for (const version of [`${PINNED_SIYUAN_VERSION}-dev`, "3.8", "3.8.5"]) {
-			const { kernel } = stubKernel({ version });
-			const result = await runSessionValidation({
-				loaded: await loaded(globalSettings()),
-				kernel,
-			});
-			expect(result.probe).toEqual({
-				verdict: "drift",
-				kernelVersion: version,
-			});
-		}
+	it("strict full-version match — a dev suffix drifts", async () => {
+		// The comparison itself is probeKernel's (primitives version.ts);
+		// what this case pins is the pipeline surfacing the returned
+		// verdict — one drifting version is enough for that.
+		const version = `${PINNED_SIYUAN_VERSION}-dev`;
+		const { kernel } = stubKernel({ version });
+		const result = await runSessionValidation({
+			loaded: await loaded(globalSettings()),
+			kernel,
+		});
+		expect(result.probe).toEqual({
+			verdict: "drift",
+			kernelVersion: version,
+		});
 	});
 });
 

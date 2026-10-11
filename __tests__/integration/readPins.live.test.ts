@@ -246,33 +246,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 	);
 
 	it(
-		"clean titles store verbatim with the expected hpath (trim, Unicode) and 513 runes is refused with the bound named",
+		"a 513-rune title is refused with the bound named",
 		async () => {
 			const w = writeSetup();
-			const trimmed = await w.run({
-				kb: "fixture-a",
-				mode: "create",
-				topic: "  padded title  ",
-				markdown: "body",
-			});
-			expect(trimmed.status).toBe("ok");
-			expect(trimmed.title).toBe("padded title");
-			expect(trimmed.hpath).toBe("/padded title");
 
-			const unicode = await w.run({
-				kb: "fixture-a",
-				mode: "create",
-				topic: "中文 标题 🎉",
-				markdown: "body",
-			});
-			expect(unicode.status).toBe("ok");
-			expect(unicode.title).toBe("中文 标题 🎉");
-			expect(unicode.hpath).toBe("/中文 标题 🎉");
-
-			// The 512-boundary mint — the kernel-fact half of the bound — is
-			// pinned in the primitives' title round-trip live suite; what stays
-			// here is the tool side: one rune over the bound is refused with the
-			// bound named.
+			// The clean-title mint facts (verbatim storage, exact hpath) are
+			// pinned in the primitives' title round-trip live suite; what
+			// stays here is the tool side: one rune over the bound is
+			// refused with the bound named.
 			const over = await w.run({
 				kb: "fixture-a",
 				mode: "create",

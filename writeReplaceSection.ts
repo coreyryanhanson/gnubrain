@@ -153,9 +153,11 @@ export async function runReplaceSectionMode(
 		{ sessionId, docId: doc.rootId },
 	);
 	if (stale !== null) return stale;
-	// The anchor echo is wording garnish for the failure arms — projected
-	// from the section this flow already enumerated, the same projection
-	// the sequence derives internally for the mutation.
+	// The anchor echo — projected from the section this flow already
+	// enumerated, the same projection the sequence derives internally for
+	// the mutation (the no-section tripwire below pins that re-derivation).
+	// Reused for both the pre-mutation failure arms and the verdict arms —
+	// one source, never a second projection.
 	const echo = appendAnchorEcho(appendAnchorOf(section));
 	const outcome = await replaceSectionVerified(kernel, input.probe, {
 		rootId: doc.rootId,
@@ -204,7 +206,7 @@ export async function runReplaceSectionMode(
 				const unlanded = insertLandedRefusal(outcome.verdict);
 				return errorEnvelope(
 					`verified-insert failed: ${unlanded} — the old section is untouched`,
-					{ kb: name, anchor: appendAnchorEcho(outcome.anchor) },
+					{ kb: name, anchor: echo },
 				);
 			}
 			case "sweep-interrupted":
@@ -253,7 +255,7 @@ export async function runReplaceSectionMode(
 					"postWalk" in outcome.outcome ? outcome.outcome.postWalk : undefined;
 				const refusalCtx = {
 					kb: name,
-					anchor: appendAnchorEcho(outcome.anchor),
+					anchor: echo,
 					newBlockId: outcome.insertedId,
 					memberIds: outcome.memberIds,
 				};
@@ -273,7 +275,7 @@ export async function runReplaceSectionMode(
 					`replace applied but unverified: the replacement (block '${outcome.insertedId}') is in place and every member delete acked, but the verification walk hit the document's depth bound — whether the old section is fully gone could not be confirmed. Do NOT re-run; re-fetch the outline (kb_read) and check the old section's blocks by id before any cleanup`,
 					{
 						kb: name,
-						anchor: appendAnchorEcho(outcome.anchor),
+						anchor: echo,
 						newBlockId: outcome.insertedId,
 					},
 				);
@@ -298,7 +300,7 @@ export async function runReplaceSectionMode(
 					// does not carry.
 					message: `replaced the section under heading '${outcome.headingContent}' in '${doc.title}' (KB ${name}) — delete set ${outcome.closure.length} block(s), ${invalidRefs.count} doc(s) with orphaned refs`,
 					kb: name,
-					anchor: appendAnchorEcho(outcome.anchor),
+					anchor: echo,
 					newBlockId: outcome.insertedId,
 					invalidRefs,
 					...deletedBlocksTail(sessionId, outcome.closure),

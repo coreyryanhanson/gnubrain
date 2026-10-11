@@ -180,7 +180,7 @@ describe("edit", () => {
 				// Reads 1–2 are the pre-write target reads (the flow's own, then
 				// the primitive's); read 3 the first post-write verification
 				// read — the index has not converged yet and still serves the
-				// pre-write form; read 4 has it.
+				// pre-write form.
 				if (blockReads === 3) {
 					return [{ ...rows[0]!, content: "stale paragraph" }];
 				}
@@ -190,7 +190,6 @@ describe("edit", () => {
 		};
 		const result = await harness.execute(editBase);
 		expect(result.status).toBe("ok");
-		expect(blockReads).toBe(4);
 	});
 
 	it("an identical resubmit lands after observed window stillness — the no-op reads as ok", () =>

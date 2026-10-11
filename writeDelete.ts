@@ -1,17 +1,10 @@
 // The delete flow: block-level deleteBlock or doc-level removeDocByID.
 // The mutation, its scoping precondition and its evidence are one
-// primitive call: deleteBlockVerified (pre-mutation membership refusal —
-// foreign / doc-id refuse before the mutation, an absent target falls
-// through to the kernel's per-generation answer — plus mutation and
-// walk-set judgment, the landing never trusted from the HTTP success) and
-// deleteDocVerified (pre-delete walk captured as the receipt/invalidRefs
-// evidence). The refusal arms word through writeVerdicts' shared
-// blockInDoc sentences (the same pair the edit flow's pre-guard uses); the
-// remaining non-judged arms ride the shared mutationFailureEnvelope (the
-// block-delete failure half IS MutationFailure by type). The
-// generation-coupled fact (3.8.3 success no-op vs 3.8.4
-// "tree not found") lives in the primitives' delete.ts and surfaces
-// verbatim through the kernel-refused arm.
+// primitive call (deleteBlockVerified / deleteDocVerified — see the
+// primitives' delete.ts for the scoping and generation-coupled facts).
+// The refusal arms word through writeVerdicts' shared blockInDoc
+// sentences (the same pair the edit flow's pre-guard uses); the
+// remaining non-judged arms ride the shared mutationFailureEnvelope.
 
 import { backlinkCheck } from "siyuan-kb-primitives";
 import {
@@ -30,29 +23,17 @@ export async function runDeleteMode(
 ): Promise<Envelope> {
 	const { kernel, name, params } = input;
 	if (params.doc === true) {
-		// The verified doc delete: the pre-delete walk (the doc's full block
-		// set — the receipt and invalidRefs evidence, captured before the doc
-		// and its block set vanish) and the mutation are one primitive call.
-		// No landing judgment: no pinned evidence read proves a doc's
-		// deletion (see deleteDocVerified's doc comment). The pre-mutation
-		// walk failure propagates raw — nothing is in flight, so runKbCall's
-		// classification is correct.
 		const outcome = await deleteDocVerified(kernel, input.probe, {
 			docId: doc.rootId,
 		});
 		if (outcome.kind !== "mutated") {
-			// Rides the shared ladder (the exhaustive wording home — a new
-			// arm in a primitives release fails typecheck there, not per
-			// flow). The union has no verification-failed arm: the
-			// primitive's evidence walk runs before the mutation (raw
-			// throws), and the post-mutation reads live in this flow's
-			// finishWrite leg.
+			// The union has no verification-failed arm: the primitive's
+			// evidence walk runs before the mutation (raw throws), and the
+			// post-mutation reads live in this flow's finishWrite leg.
 			return mutationFailure(outcome, input, doc, { docId: doc.rootId });
 		}
-		// Post-mutation reads (see finishWrite's contract — the doc may
-		// already be gone).
 		return finishWrite(name, {}, async () => {
-			// invalidRefs rides the pre-delete walk set — the doc is gone.
+			// The doc's pre-delete walk set is the invalidRefs evidence.
 			const invalidRefs = await backlinkCheck(
 				kernel,
 				outcome.preWalk.blocks.map((b) => b.id),
@@ -69,40 +50,19 @@ export async function runDeleteMode(
 		});
 	}
 	const blockId = params.blockId as string;
-	// The verified block delete, whole — the primitive owns the scoping
-	// precondition: foreign / doc-id refuse before the mutation (worded
-	// by the same sentences the edit flow's pre-guard uses), and an absent
-	// target falls through the membership read so the kernel answers it
-	// per generation — 3.8.4 a synchronous "tree not found" error where
-	// 3.8.3 answered a success no-op; the kernel-refused arm surfaces it
-	// verbatim, with the fresh outline attached so the agent re-targets.
-	// Transport classes carry the unverified-outcome verdict.
 	const outcome = await deleteBlockVerified(kernel, input.probe, {
 		blockId,
 		rootId: doc.rootId,
 	});
 	if (outcome.kind === "foreign" || outcome.kind === "doc-id") {
-		// The producer's scoping refusal, worded by the shared sentence
-		// pair — the foreign arm carries the block's actual root.
 		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
 	}
 	if (outcome.kind !== "judged") {
-		// The shared pre-judgment ladder, worded once in writeVerdicts: a
-		// new arm in a primitives release fails typecheck there until its
-		// wording exists. The block-delete failure half
-		// IS MutationFailure by type, so it rides the shared ladder with its
-		// blockId as the flow's verdict key. The lazy tail supplier keeps the
-		// per-arm garnish rule — only the arms that attach the echo reads
-		// fire them.
+		// The shared pre-judgment ladder, worded once in writeVerdicts.
+		// The lazy tail supplier keeps the per-arm garnish rule — only the
+		// arms that attach the echo reads fire them.
 		return mutationFailure(outcome, input, doc, { blockId });
 	}
-	// Post-mutation reads (see finishWrite's contract — the delete may
-	// already be applied). The judged arm carries its evidence: the
-	// post-delete walk the judgment ran on — the tail and receipt below
-	// consume this exact snapshot, never re-fetching between "verified"
-	// and "served". The unconfirmed-absence verdict stays
-	// applied-but-unverified: the delete acked, only the absence is
-	// unconfirmed (never ok, never "unreachable").
 	const verdict = outcome.verdict;
 	return finishWrite(name, { blockId }, async () => {
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);

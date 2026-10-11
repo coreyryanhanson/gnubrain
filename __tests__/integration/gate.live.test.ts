@@ -50,7 +50,7 @@ export default function (pi) {
 }
 `;
 
-describe.skipIf(!INTEGRATION || TOKEN === "")("sprint 6 gate (live)", () => {
+describe.skipIf(!INTEGRATION || TOKEN === "")("gate (live)", () => {
 	let fixtures: IntegrationFixtures;
 	beforeAll(async () => {
 		fixtures = await setupFixtures();
