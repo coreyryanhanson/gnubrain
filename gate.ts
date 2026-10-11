@@ -40,6 +40,11 @@ type KbArity = "array" | "single";
 export const EMPTY_SCOPE_MESSAGE =
 	"no KBs in scope — activate one with /kb <name> on, or set gnubrain.defaultKBs";
 
+/** Rate-limit-skip wording — shared by the named-KB refusal (kbNameProblem)
+ * and the `kbs` discovery form, which has no name to re-validate. */
+export const RATE_LIMIT_SKIP_MESSAGE =
+	"session validation was skipped while the kernel was rate-limited — run /kb to re-validate";
+
 /** Readiness wording — shared by all four tool registrations so the
  * discovery-facing strings cannot drift between read and write tools. */
 export const NOT_READY_VALIDATION =
@@ -78,7 +83,7 @@ export function kbNameProblem(
 	// by design — the KB is neither stale nor encrypted, so naming the skip is
 	// the only honest refusal. /kb re-validates once the cooldown expires.
 	if (validation.skippedDueToRateLimit === true) {
-		return `session validation was skipped while the kernel was rate-limited — run /kb to re-validate '${name}'`;
+		return `${RATE_LIMIT_SKIP_MESSAGE} '${name}'`;
 	}
 	if (validation.validKBs.has(name)) return undefined;
 	if (!validation.settings?.kbs.some((entry) => entry.name === name)) {

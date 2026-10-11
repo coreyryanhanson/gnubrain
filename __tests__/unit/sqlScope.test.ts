@@ -107,6 +107,23 @@ describe("parser certification", () => {
 		);
 		expect(result.ok).toBe(true);
 	});
+
+	it("rejects a projection aliasing a column to 'box' (the post-filter would drop every row)", () => {
+		// Both alias spellings parse to `as: "box"`.
+		for (const sql of [
+			"SELECT content AS box FROM blocks",
+			"SELECT content box FROM blocks",
+			"SELECT COUNT(*) AS box FROM blocks",
+		]) {
+			const result = certifySelect(sql);
+			expect(result.ok).toBe(false);
+			expect(!result.ok && result.reason).toContain("alias a column to 'box'");
+		}
+	});
+
+	it("allows the plain box column — the real scope column carries no alias", () => {
+		expect(certifySelect("SELECT box, id FROM blocks").ok).toBe(true);
+	});
 });
 
 // ---------------------------------------------------------------------------

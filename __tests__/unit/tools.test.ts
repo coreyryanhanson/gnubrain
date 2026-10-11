@@ -4,7 +4,7 @@ import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import { contentHash, type KernelReadClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
-import { EMPTY_SCOPE_MESSAGE } from "../../gate.js";
+import { EMPTY_SCOPE_MESSAGE, RATE_LIMIT_SKIP_MESSAGE } from "../../gate.js";
 import { PREVIEW_CHARS, RESULT_LIMIT } from "../../spill.js";
 import {
 	registerReadToolsAndToolset,
@@ -678,6 +678,28 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 		expect(envelope.kb).toBe("kbs");
 		expect(envelope.message).toBe(EMPTY_SCOPE_MESSAGE);
 		expect(envelope.names).toEqual([]);
+	});
+
+	it("a rate-limit-skipped validation names the skip, not an empty scope", async () => {
+		// The scope is also empty in this state, but "no KBs in scope" would
+		// misstate it — the set is unknown, not empty.
+		const v = validation();
+		v.skippedDueToRateLimit = true;
+		const { tool: read, kernelCalls } = registeredReadTool({ validation: v });
+		const envelope = parse(
+			await read.execute!(
+				"id",
+				{ kb: "kbs" },
+				undefined,
+				undefined,
+				ctx2("sess"),
+			),
+		);
+		expect(envelope.status).toBe("ok");
+		expect(envelope.kb).toBe("kbs");
+		expect(envelope.message).toBe(RATE_LIMIT_SKIP_MESSAGE);
+		expect(envelope.names).toEqual([]);
+		expect(kernelCalls).toHaveLength(0);
 	});
 
 	it("a shape-degraded session still refuses discovery (the short-circuit sits after the shape check)", async () => {

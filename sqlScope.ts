@@ -98,6 +98,21 @@ export function certifySelect(stmt: string): CertResult {
 			reason: `FROM '${table}' is not allowed — only blocks and refs`,
 		};
 	}
+	// An output alias named `box` collides with the scope predicate at the
+	// post-filter: every row would carry a `box` field whose value is not a
+	// box id, so the whole result would drop to "0 rows". The alias covers
+	// both `AS box` and the bare `expr box` form; a plain `SELECT box` column
+	// (the real scope column) has no alias and stays allowed.
+	if (Array.isArray(node.columns)) {
+		for (const col of node.columns) {
+			if (col.as === "box") {
+				return {
+					ok: false,
+					reason: "projection may not alias a column to 'box'",
+				};
+			}
+		}
+	}
 	// The root is itself a select, so the scan starts at its property values.
 	if (Object.values(node).some(containsNestedSelect)) {
 		return { ok: false, reason: "subqueries are not allowed" };
