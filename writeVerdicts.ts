@@ -28,7 +28,7 @@ import type {
 	MoveBlockOutcome,
 	MoveDocLandedOutcome,
 	MoveDocOutcome,
-	MoveLandedOutcome,
+	MoveBlockLandedOutcome,
 	SweepRefusal,
 } from "siyuan-kb-primitives/write";
 import { mintTitleMessage } from "./writeGuard.js";
@@ -325,7 +325,7 @@ export function movePlacementRefusal(
  * these fragments are its wording — each a full sentence, spliced into
  * the move flow's `block '${blockId}' …` frame. */
 export function moveLandedRefusal(
-	outcome: MoveLandedOutcome,
+	outcome: MoveBlockLandedOutcome,
 ): string | undefined {
 	switch (outcome.kind) {
 		case "absent-from-destination":

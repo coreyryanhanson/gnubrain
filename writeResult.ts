@@ -12,7 +12,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanTimeoutError,
 	checkFreshContent,
-	type FreshArm,
+	type FreshOutcome,
 } from "siyuan-kb-primitives";
 import {
 	errorEnvelope,
@@ -59,7 +59,7 @@ export async function freshContentRefusal(
 		docId: context.docId,
 		targets,
 	});
-	const staleArms: Extract<FreshArm, { kind: "stale" }>[] = [];
+	const staleArms: Extract<FreshOutcome, { kind: "stale" }>[] = [];
 	for (const arm of arms) {
 		switch (arm.kind) {
 			case "vanished":
