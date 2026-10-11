@@ -67,11 +67,10 @@ export async function runEditMode(
 		}
 		return mutationFailure(outcome, input, doc, { blockId });
 	}
-	// Post-mutation reads: a network drop here must never read as
-	// "unreachable" — the edit is already applied (finishWrite doc). The
-	// landed predicate and its kernel-behavior interpretation live in the
-	// primitives' verifyEditLanded (the pin-owning repo); failure wording
-	// rides the shared map (writeVerdicts.editVerifyFailureReason).
+	// Post-mutation reads (see finishWrite's contract — the edit is already
+	// applied). The landed predicate lives in the primitives'
+	// verifyEditLanded; failure wording rides
+	// writeVerdicts.editVerifyFailureReason.
 	return finishWrite(name, { blockId }, async () => {
 		if (outcome.verdict.kind !== "landed") {
 			const failure = editVerifyFailureReason(outcome.verdict, blockId, doc);

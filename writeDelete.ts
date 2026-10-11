@@ -49,8 +49,8 @@ export async function runDeleteMode(
 			// finishWrite leg.
 			return mutationFailure(outcome, input, doc, { docId: doc.rootId });
 		}
-		// Post-mutation reads: a network drop here must never read as
-		// "unreachable" — the doc may already be gone (finishWrite doc).
+		// Post-mutation reads (see finishWrite's contract — the doc may
+		// already be gone).
 		return finishWrite(name, {}, async () => {
 			// invalidRefs rides the pre-delete walk set — the doc is gone.
 			const invalidRefs = await backlinkCheck(
@@ -96,13 +96,13 @@ export async function runDeleteMode(
 		// fire them.
 		return mutationFailure(outcome, input, doc, { blockId });
 	}
-	// Post-mutation reads: a network drop here must never read as
-	// "unreachable" — the delete may already be applied (finishWrite doc).
-	// The judged arm carries its evidence: the post-delete walk the judgment
-	// ran on — the tail and receipt below consume this exact snapshot, never
-	// re-fetching between "verified" and "served". The unconfirmed-absence
-	// verdict stays applied-but-unverified: the delete acked, only the
-	// absence is unconfirmed (never ok, never "unreachable").
+	// Post-mutation reads (see finishWrite's contract — the delete may
+	// already be applied). The judged arm carries its evidence: the
+	// post-delete walk the judgment ran on — the tail and receipt below
+	// consume this exact snapshot, never re-fetching between "verified"
+	// and "served". The unconfirmed-absence verdict stays
+	// applied-but-unverified: the delete acked, only the absence is
+	// unconfirmed (never ok, never "unreachable").
 	const verdict = outcome.verdict;
 	return finishWrite(name, { blockId }, async () => {
 		const invalidRefs = await backlinkCheck(kernel, [blockId]);

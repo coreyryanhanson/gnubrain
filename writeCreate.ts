@@ -295,9 +295,8 @@ export async function runCreateFlow(input: CreateFlowInput): Promise<Envelope> {
 		return createVerdictEnvelope(outcome, { name });
 	}
 
-	// Post-mint echo: a network drop here must never read as "unreachable" —
-	// the mint is already verified by the primitive's asserts (finishWrite
-	// doc).
+	// Post-mint echo (see finishWrite's contract — the mint may already be
+	// applied).
 	return finishWrite(input.name, { docId: outcome.docId }, async () => {
 		const outline = await serveOutline(
 			kernel,

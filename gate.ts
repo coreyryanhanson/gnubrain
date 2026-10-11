@@ -46,8 +46,10 @@ export const NOT_READY_VALIDATION =
 	"kb tools are not ready — session validation has not run";
 const NOT_READY_KERNEL = "kb tools are not ready — settings did not load";
 
-function activeList(validation: SessionValidation): string {
-	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
+/** One rendering of the active-name list for agent- and user-facing
+ * messages; a wording change lands here once. */
+export function renderScopeList(names: readonly string[]): string {
+	return names.length > 0 ? names.join(", ") : "(none)";
 }
 
 /** The gate guarantees every resolved name sits in the valid set; this keeps
@@ -80,10 +82,10 @@ export function kbNameProblem(
 	}
 	if (validation.validKBs.has(name)) return undefined;
 	if (!validation.settings?.kbs.some((entry) => entry.name === name)) {
-		return `unknown KB '${name}'. Active: ${activeList(validation)}`;
+		return `unknown KB '${name}'. Active: ${renderScopeList(validation.scope)}`;
 	}
 	// Configured but dropped from the valid set (stale/encrypted).
-	return `KB '${name}' is not available (stale or encrypted notebook — see the session warnings). Active: ${activeList(validation)}`;
+	return `KB '${name}' is not available (stale or encrypted notebook — see the session warnings). Active: ${renderScopeList(validation.scope)}`;
 }
 
 /** `kb` param contract — messages are the model's discovery mechanism. */

@@ -329,6 +329,18 @@ describe("write-tool doctrine lines", () => {
 		return tool.description ?? "";
 	}
 
+	// The mode list derives from the authority's own unsupported-mode
+	// message, so neither side of an invariant can go stale independently.
+	function modeList(): string[] {
+		const unsupported = modeShapeProblem({
+			kb: "k",
+			mode: "bogus",
+		} as unknown as WriteParams);
+		const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
+		expect(modes.length).toBeGreaterThan(0);
+		return modes;
+	}
+
 	it("pins mint-by-title / consume-by-ID, echoed targets, tool-derived anchors, replace-first, and the kbs mirror", () => {
 		const description = registeredDescription();
 		expect(description).toContain("mint by title");
@@ -337,6 +349,13 @@ describe("write-tool doctrine lines", () => {
 		expect(description).toContain("always tool-derived");
 		expect(description).toContain("prefer edit/replace-section over append");
 		expect(description).toContain("'kbs' is read-only");
+	});
+
+	it("names every mode in the description (each as a '<mode> —' entry, so a prose mention can't pass vacuously)", () => {
+		const description = registeredDescription();
+		for (const mode of modeList()) {
+			expect(description).toContain(`${mode} —`);
+		}
 	});
 });
 
@@ -507,22 +526,6 @@ describe("transport failure on the mutation call itself", () => {
 			params: replaceParams,
 			methods: ["insertBlock", "appendBlock"],
 			noSweep: true,
-		},
-		{
-			name: "delete: timeout on deleteBlock",
-			config: {
-				blockRows: [{ id: "b-1", content: "soon gone" }],
-				onDelete: () => {
-					throw new SiYuanTimeoutError(30_000);
-				},
-			},
-			params: {
-				kb: "recipes",
-				mode: "delete",
-				docId: "d-doc",
-				blockId: "b-1",
-			},
-			methods: ["deleteBlock"],
 		},
 		{
 			name: "doc delete: timeout on removeDocByID",

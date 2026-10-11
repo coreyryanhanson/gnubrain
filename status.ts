@@ -4,6 +4,7 @@
 // shape `config`, tripped breaker `breaker`, version drift `version`;
 // then never-probed → grey; healthy → capability colors.
 
+import { renderScopeList } from "./gate.js";
 import type { ProbeVerdict } from "./validation.js";
 
 interface KbStatusTheme {
@@ -56,7 +57,7 @@ export function renderKbStatus(
 	})();
 
 	if (verdict === "unreachable") {
-		return `${fg("error", GLYPH_FILLED)} kb: ${input.scope.join(", ") || "(none)"}`;
+		return `${fg("error", GLYPH_FILLED)} kb: ${renderScopeList(input.scope)}`;
 	}
 
 	// Degraded-config causes: yellow, first match wins in severity order.
@@ -69,7 +70,7 @@ export function renderKbStatus(
 	}
 
 	if (verdict === "never-probed") {
-		return `${fg("muted", GLYPH_FILLED)} kb: ${input.scope.join(", ") || "(none)"}`;
+		return `${fg("muted", GLYPH_FILLED)} kb: ${renderScopeList(input.scope)}`;
 	}
 
 	// Healthy: the capability ladder — writes on → success/green; else reads on
@@ -77,5 +78,5 @@ export function renderKbStatus(
 	const glyph =
 		input.writesEnabled || input.readsEnabled ? GLYPH_FILLED : GLYPH_HOLLOW;
 	const color = input.writesEnabled ? "success" : "accent";
-	return `${fg(color, glyph)} kb: ${input.scope.join(", ") || "(none)"}`;
+	return `${fg(color, glyph)} kb: ${renderScopeList(input.scope)}`;
 }

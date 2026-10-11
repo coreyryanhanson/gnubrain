@@ -3,7 +3,7 @@
 // persistence, and the actual toolset enable/disable happen in index.ts
 // before/after this returns.
 
-import { kbNameProblem } from "./gate.js";
+import { kbNameProblem, renderScopeList } from "./gate.js";
 import type { SessionValidation } from "./validation.js";
 
 interface KbCommandResult {
@@ -155,12 +155,12 @@ function applyScope(
 	if (sameSet(target, validation.scope)) {
 		return {
 			...NO_CHANGE,
-			message: `scope unchanged: ${scopeList(validation)}`,
+			message: `scope unchanged: ${renderScopeList(validation.scope)}`,
 			severity: "info",
 		};
 	}
 	return {
-		message: `scope: ${target.length > 0 ? target.join(", ") : "(none)"}`,
+		message: `scope: ${renderScopeList(target)}`,
 		severity: "info",
 		newScope: target,
 		newReadsEnabled: undefined,
@@ -172,7 +172,7 @@ function scopeSummary(
 	validation: SessionValidation,
 	toolsetLines: string[],
 ): string {
-	const lines = [`scope: ${scopeList(validation)}`];
+	const lines = [`scope: ${renderScopeList(validation.scope)}`];
 	// Degradation reasons (shape errors, incl. a revalidate that degraded):
 	// bare /kb is the diagnostic surface — never print the degraded scope
 	// without naming why.
@@ -188,10 +188,6 @@ function scopeSummary(
 	}
 	lines.push(...toolsetLines);
 	return lines.join("\n");
-}
-
-function scopeList(validation: SessionValidation): string {
-	return validation.scope.length > 0 ? validation.scope.join(", ") : "(none)";
 }
 
 function sameSet(a: string[], b: string[]): boolean {

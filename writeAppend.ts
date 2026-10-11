@@ -67,12 +67,9 @@ export async function runAppendMode(
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
-	// Post-mutation reads: a network drop here must never read as
-	// "unreachable" — the insert is already applied (finishWrite doc). The
-	// landed judgment lives in the primitives' insertVerified (the
-	// pin-owning repo); the refusal wording rides the shared map
-	// (writeVerdicts). The verdict's postWalk IS the post-write tree — the
-	// echo reuses it, never re-traverses.
+	// Post-mutation reads (see finishWrite's contract — the insert may
+	// already be applied). The verdict's postWalk IS the post-write tree —
+	// the echo reuses it, never re-traverses.
 	return finishWrite(name, { anchor: echo }, async () => {
 		if (outcome.verdict.kind !== "landed") {
 			const rollback = insertLandedRefusal(outcome.verdict);

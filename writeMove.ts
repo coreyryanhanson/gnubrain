@@ -272,8 +272,8 @@ export async function runMoveMode(
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
-	// Post-mutation reads: a network drop here must never read as
-	// "unreachable" — the move may already be applied (finishWrite doc).
+	// Post-mutation reads (see finishWrite's contract — the move may
+	// already be applied).
 	return finishWrite(name, { anchor: echo }, async () => {
 		// The verified move's outcome carries its evidence: the post-move
 		// walks are the judgment's snapshot — the tails below consume them
