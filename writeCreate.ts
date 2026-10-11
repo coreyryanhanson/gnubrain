@@ -27,8 +27,7 @@ import { mintTitleMessage } from "./writeGuard.js";
 import {
 	driftRefusal,
 	transportUnverifiedMessage,
-	verificationAuthEventMessage,
-	verificationReadsFailedMessage,
+	verificationFailedEnvelope,
 } from "./writeVerdicts.js";
 
 export interface CreateFlowInput extends WriteFlowBase {
@@ -221,24 +220,9 @@ function createVerdictEnvelope(
 		case "kernel-refused":
 			return errorEnvelope(outcome.message, { kb: ctx.name });
 		case "verification-failed":
-			if (
-				outcome.cause.kind === "auth" ||
-				outcome.cause.kind === "rate-limit"
-			) {
-				return errorEnvelope(
-					verificationAuthEventMessage(outcome.cause, outcome.detail),
-					{
-						docId: outcome.returnedId,
-						kb: ctx.name,
-						verificationFailed: true,
-						authEvent: outcome.cause,
-					},
-				);
-			}
-			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
+			return verificationFailedEnvelope(outcome.cause, outcome.detail, {
 				docId: outcome.returnedId,
 				kb: ctx.name,
-				verificationFailed: true,
 			});
 		case "mint-title":
 			// The primitives run the mint-title judgment internally; the

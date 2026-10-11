@@ -31,6 +31,7 @@ import type {
 	InsertLandedOutcome,
 	MutationFailure,
 	MoveBlockLandedOutcome,
+	VerificationCause,
 } from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
@@ -124,6 +125,30 @@ export function verificationAuthEventMessage(
 	);
 }
 
+/** The verification-failed envelope frame — one home for the arm the
+ * shared ladder and the create mode's frame (writeCreate) both render:
+ * the mutation's transport succeeded, so the write may already be applied;
+ * the auth/rate-limit legs additionally carry the authEvent payload the
+ * session's breaker accounting consumes. `extra` carries the caller's
+ * verdict keys and kb. */
+export function verificationFailedEnvelope(
+	cause: VerificationCause,
+	detail: string,
+	extra: Record<string, unknown>,
+): Envelope {
+	if (cause.kind === "auth" || cause.kind === "rate-limit") {
+		return errorEnvelope(verificationAuthEventMessage(cause, detail), {
+			...extra,
+			verificationFailed: true,
+			authEvent: cause,
+		});
+	}
+	return errorEnvelope(verificationReadsFailedMessage(detail), {
+		...extra,
+		verificationFailed: true,
+	});
+}
+
 /** The flow's own verdict key — the placement anchor echo, the block
  * delete's blockId, or the doc move's docId — spread verbatim into the
  * envelope, never re-worded. */
@@ -179,24 +204,9 @@ export async function mutationFailureEnvelope(
 				...(await opts.tail()),
 			});
 		case "verification-failed":
-			if (
-				outcome.cause.kind === "auth" ||
-				outcome.cause.kind === "rate-limit"
-			) {
-				return errorEnvelope(
-					verificationAuthEventMessage(outcome.cause, outcome.detail),
-					{
-						kb: opts.kb,
-						...opts.extra,
-						verificationFailed: true,
-						authEvent: outcome.cause,
-					},
-				);
-			}
-			return errorEnvelope(verificationReadsFailedMessage(outcome.detail), {
+			return verificationFailedEnvelope(outcome.cause, outcome.detail, {
 				kb: opts.kb,
 				...opts.extra,
-				verificationFailed: true,
 			});
 	}
 	outcome satisfies never;

@@ -29,6 +29,18 @@ import {
 import { ContentBaselines } from "../../baselines.js";
 import { freshContentRefusal } from "../../writeTarget.js";
 
+// The mode list derives from the authority's own unsupported-mode
+// message, so neither side of an invariant can go stale independently.
+function modeList(): string[] {
+	const unsupported = modeShapeProblem({
+		kb: "k",
+		mode: "bogus",
+	} as unknown as WriteParams);
+	const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
+	expect(modes.length).toBeGreaterThan(0);
+	return modes;
+}
+
 describe("kb_write schema", () => {
 	it("does not declare confirmNew (learned only from rejections)", () => {
 		const { tool } = setup();
@@ -44,15 +56,8 @@ describe("kb_write schema", () => {
 		// Invariant: a key declared in the tool schema but absent from every
 		// mode's allowed set would be rejected by modeShapeProblem for every
 		// mode — the surface fails silently until someone exercises it by
-		// hand. The mode list itself derives from the authority's own
-		// unsupported-mode message, so neither side of the test can go stale
-		// independently.
-		const unsupported = modeShapeProblem({
-			kb: "k",
-			mode: "bogus",
-		} as unknown as WriteParams);
-		const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
-		expect(modes.length).toBeGreaterThan(0);
+		// hand.
+		const modes = modeList();
 		const base = new Set(["kb", "mode", "markdown", "markdownFile"]);
 		for (const key of Object.keys(writeSchema.properties)) {
 			if (base.has(key)) continue;
@@ -327,18 +332,6 @@ describe("write-tool doctrine lines", () => {
 			getKernel: () => undefined,
 		} as never);
 		return tool.description ?? "";
-	}
-
-	// The mode list derives from the authority's own unsupported-mode
-	// message, so neither side of an invariant can go stale independently.
-	function modeList(): string[] {
-		const unsupported = modeShapeProblem({
-			kb: "k",
-			mode: "bogus",
-		} as unknown as WriteParams);
-		const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
-		expect(modes.length).toBeGreaterThan(0);
-		return modes;
 	}
 
 	it("pins mint-by-title / consume-by-ID, echoed targets, tool-derived anchors, replace-first, and the kbs mirror", () => {
