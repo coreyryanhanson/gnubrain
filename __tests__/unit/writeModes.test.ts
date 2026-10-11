@@ -2227,9 +2227,9 @@ describe("block-level move", () => {
 	it("section ending in a list container: the move lands after the container's subtree and verifies", async () => {
 		// The kernel places previousID=list's next SIBLING, but the flattened
 		// walk interleaves the list's items between the container and that
-		// sibling — next-entry verification read the first item and reported
-		// a silent rollback for a move that landed. landingId (subtree end)
-		// is the placement model both checks share.
+		// sibling — a next-entry verification would read the first item and
+		// misreport a landed move as a silent rollback. landingId (subtree
+		// end) is the placement model both checks share.
 		const harness = moveHarness(
 			() => {
 				// The kernel applies: p1 lands as the list's next sibling — the

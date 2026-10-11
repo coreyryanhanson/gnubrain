@@ -240,8 +240,8 @@ export async function runSearchFanOut(
 		dropped += box.dropped;
 		if (box.hidden > 0) truncatedKBs++;
 		truncatedRows += box.hidden;
-		// Echo contract: id, root_id (renamed from rootID), hpath (renamed
-		// from hPath), box → resolved KB name, updated — never raw.
+		// Echo contract: id, root_id, hpath, box → resolved KB name,
+		// updated — never raw.
 		for (const block of box.rows) {
 			merged.push({
 				id: block.id,

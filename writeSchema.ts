@@ -6,8 +6,8 @@ import { Type, type Static } from "typebox";
 
 /** Mode-specific target params (schema table) — anything else the agent
  * sends is rejected before any kernel call. `confirmNew` is never declared
- * in the tool schema but accepted at runtime on create only (decision
- * record) — other modes reject it like any invented param. */
+ * in the tool schema but accepted at runtime on create only — other
+ * modes reject it like any invented param. */
 const MODE_PARAMS: Record<string, string[]> = {
 	create: ["topic", "parentId"],
 	edit: ["docId", "blockId"],

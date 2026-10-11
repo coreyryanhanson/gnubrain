@@ -270,7 +270,7 @@ export function blockInDocRefusal(
 }
 
 /** Refusal wording for an insertLanded outcome, or undefined when the
- * insert landed. The predicate moved to the primitives' insertLanded
+ * insert landed. The predicate lives in the primitives' insertLanded
  * judgment; these sentences are its shared wording — one home so the
  * refusal cannot drift between the insert-bearing modes. */
 export function insertLandedRefusal(
@@ -336,7 +336,7 @@ export function movePlacementRefusalEnvelope(
 }
 
 /** Reason wording for a verifyMoveLanded outcome, or undefined when the
- * move landed. The judgment moved to the primitives' verifyMoveLanded;
+ * move landed. The judgment lives in the primitives' verifyMoveLanded;
  * these fragments are its wording — each a full sentence, spliced into
  * the move flow's `block '${blockId}' …` frame. */
 export function moveLandedRefusal(

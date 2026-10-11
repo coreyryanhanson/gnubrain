@@ -139,7 +139,7 @@ export async function runReplaceSectionMode(
 				// old section may be swept, so the partial state rides the
 				// error for the catch sites to merge into whatever envelope the
 				// classifier produces. Non-kernel error classes rethrow
-				// unmarked, as before.
+				// unmarked.
 				if (outcome.error instanceof SiYuanKernelError) {
 					markPartialReplace(outcome.error, {
 						partialReplace: true,

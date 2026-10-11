@@ -1,8 +1,8 @@
 // result budgets — inline-cap + spill-file. Oversized results are written
 // to disk in full, never truncated away; the inline result carries a
-// newline-boundary preview plus a pointer. No cleanup machinery (decision
-// record): spill files are hash-named in a per-session temp dir, wiped by the
-// OS on reboot, and identical payloads dedupe by hash.
+// newline-boundary preview plus a pointer. No cleanup machinery: spill
+// files are hash-named in a per-session temp dir, wiped by the OS on
+// reboot, and identical payloads dedupe by hash.
 
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";

@@ -35,8 +35,8 @@ export function certifySelect(stmt: string): CertResult {
 			reason: `statement does not parse: ${err instanceof Error ? err.message : String(err)}`,
 		};
 	}
-	// Spike finding: multi-statement input does not throw — astify returns an
-	// array, so the cert rejects on Array.isArray.
+	// astify does not reject multi-statement input — it returns an array,
+	// so the cert rejects on Array.isArray.
 	if (Array.isArray(ast)) {
 		return {
 			ok: false,
@@ -59,7 +59,7 @@ export function certifySelect(stmt: string): CertResult {
 		return { ok: false, reason: "UNION / compound queries are not allowed" };
 	}
 	if (node.having !== undefined && node.having !== null) {
-		return { ok: false, reason: "HAVING is not allowed (v1 policy)" };
+		return { ok: false, reason: "HAVING is not allowed" };
 	}
 	const from = node.from;
 	if (!Array.isArray(from) || from.length === 0) {

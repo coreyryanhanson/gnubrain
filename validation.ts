@@ -84,8 +84,8 @@ export function latestPersistedScope(
 }
 
 /** Scope filter shared by startup validation and /tree re-resolution:
- * warn-and-drop unknown names (no global-default fallback — stale-notebook
- * precedent), warn-and-drop stale/encrypted names, keep valid siblings. */
+ * warn-and-drop unknown names (no global-default fallback), warn-and-drop
+ * stale/encrypted names, keep valid siblings. */
 export function resolveValidatedScope(
 	requested: readonly string[],
 	settings: GnubrainSettings,
@@ -96,7 +96,7 @@ export function resolveValidatedScope(
 	for (const name of requested) {
 		if (!settings.kbs.some((kb) => kb.name === name)) {
 			// Project-file unknown names: warn and drop, keep valid siblings;
-			// never fall back to the global default (stale-notebook precedent).
+			// never fall back to the global default.
 			warnings.push(`KB '${name}' is not configured — dropped from scope`);
 		} else if (!validKBs.has(name)) {
 			warnings.push(

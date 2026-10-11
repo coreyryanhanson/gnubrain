@@ -60,9 +60,9 @@ export function takePartialReplace(
 /** The envelope marker carrying a verification-phase auth/lock event (401
  * or the kernel's per-IP 429) out of a write flow. The primitives classify
  * verification-phase auth errors into `verification-failed` instead of
- * rethrowing — the mutation already acked — so the breaker accounting the
- * rethrow used to receive in runKbCall's catch instead rides the verdict
- * envelope under this key. Same role as `partialReplaceState` above:
+ * rethrowing — the mutation already acked — so the breaker accounting
+ * that runKbCall's catch otherwise performs rides the verdict envelope
+ * under this key. Same role as `partialReplaceState` above:
  * structured state attached to a result, read by the gate, never worded
  * here. */
 export type AuthLockEvent = Extract<

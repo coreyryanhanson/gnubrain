@@ -140,7 +140,7 @@ describe("parser certification", () => {
 		expect(!result.ok && result.reason).toContain("JOINs");
 	});
 
-	it("rejects HAVING (v1 policy)", () => {
+	it("rejects HAVING", () => {
 		const result = certifySelect(
 			"SELECT box, COUNT(*) FROM blocks GROUP BY box HAVING COUNT(*) > 1",
 		);

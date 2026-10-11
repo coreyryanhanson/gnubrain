@@ -75,8 +75,8 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// Kernel client built from the freshest settings on every validation pass.
 	let kernelClient: WriteKernelClient | undefined;
 	// Session-scoped fresh-content baselines: the read tools feed it where
-	// content is served, the write precondition checks against it (decision
-	// record — empty after resume/fork, the no-baseline fallback applies).
+	// content is served, the write precondition checks against it (empty
+	// after resume/fork, the no-baseline fallback applies).
 	const baselines = ContentBaselines.create();
 
 	// Read tools + toolset: the hooks read the live closure state,

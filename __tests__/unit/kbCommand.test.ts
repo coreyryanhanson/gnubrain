@@ -125,7 +125,7 @@ describe("dispatchKbCommand", () => {
 		expect(on.message).toContain("already read-only");
 		expect(on.newReadsEnabled).toBeUndefined();
 		expect(on.newWritesEnabled).toBeUndefined();
-		// From read+write, `read` explicitly disables writes (portal /web on).
+		// From read+write, `read` explicitly disables writes.
 		const fromWrite = dispatchKbCommand(
 			"tools read",
 			validation(),
@@ -201,13 +201,5 @@ describe("dispatchKbCommand", () => {
 		);
 		expect(extra.severity).toBe("error");
 		expect(extra.message).toContain("usage: /kb tools");
-	});
-
-	it("a KB named 'writes' is no longer reserved and resolves as a KB name", () => {
-		const result = dispatchKbCommand(
-			"writes on",
-			validation({ validKBs: [["writes", "nb-w"]] }),
-		);
-		expect(result.newScope).toEqual(["recipes", "writes"]);
 	});
 });

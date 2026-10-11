@@ -89,12 +89,11 @@ export function dispatchKbCommand(
 	return applyScope(target, validation);
 }
 
-// /kb tools — state-setter verbs per the portal /web precedent: each verb
-// targets an absolute end state, so re-issuing one is a reported no-op and
-// there is exactly one command per state. `write` targets read+write (the
-// requires-cascade pulls reads on with it); `read` targets read-only
-// (an explicit write disable — the portal /web on precedent); `off` masks
-// both.
+// /kb tools — state-setter verbs: each verb targets an absolute end
+// state, so re-issuing one is a reported no-op and there is exactly one
+// command per state. `write` targets read+write (the requires-cascade
+// pulls reads on with it); `read` targets read-only (an explicit write
+// disable); `off` masks both.
 function dispatchTools(
 	verbs: string[],
 	readsEnabled: boolean,
