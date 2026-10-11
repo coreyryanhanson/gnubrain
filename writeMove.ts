@@ -26,10 +26,10 @@ import {
 import { finishWrite } from "./writeResult.js";
 import {
 	moveAnchorEcho,
-	moveDocJudgmentRefusal,
-	moveDocScopingRefusal,
+	moveDocJudgmentRefusalEnvelope,
+	moveDocScopingRefusalEnvelope,
 	moveLandedRefusal,
-	movePlacementRefusal,
+	movePlacementRefusalEnvelope,
 	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
 
@@ -94,7 +94,10 @@ export async function runMoveMode(
 		// The pre-mutation scoping refusal (the blocks index names no row for
 		// the moved doc) words beside the MutationFailure ladder.
 		if (outcome.kind === "not-in-source") {
-			return moveDocScopingRefusal(outcome, { name, docId: doc.rootId });
+			return moveDocScopingRefusalEnvelope(outcome, {
+				name,
+				docId: doc.rootId,
+			});
 		}
 		if (outcome.kind !== "judged") {
 			return mutationFailureEnvelope(outcome, {
@@ -103,7 +106,7 @@ export async function runMoveMode(
 				tail: async () => ({}),
 			});
 		}
-		const failed = moveDocJudgmentRefusal(outcome.verdict, {
+		const failed = moveDocJudgmentRefusalEnvelope(outcome.verdict, {
 			name,
 			docId: doc.rootId,
 			title: doc.title,
@@ -156,7 +159,7 @@ export async function runMoveMode(
 	if (anchor.kind === "walk-truncated") {
 		// The projection refuses the truncated tree the verified move's
 		// pre-mutation gate would — refuse here, before any kernel call.
-		return movePlacementRefusal({ kind: "walk-truncated" }, doc);
+		return movePlacementRefusalEnvelope({ kind: "walk-truncated" }, doc);
 	}
 	if (anchor.kind === "heading-absent") {
 		// Unreachable — headingInWalk refused an absent id on the same
@@ -187,7 +190,7 @@ export async function runMoveMode(
 		outcome.kind === "not-in-source" ||
 		outcome.kind === "walk-truncated"
 	) {
-		return movePlacementRefusal(outcome, doc);
+		return movePlacementRefusalEnvelope(outcome, doc);
 	}
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });

@@ -32,7 +32,7 @@ import { finishWrite, freshContentRefusal } from "./writeResult.js";
 import {
 	appendAnchorEcho,
 	insertLandedRefusal,
-	sweepRefusal,
+	sweepRefusalEnvelope,
 } from "./writeVerdicts.js";
 
 export async function runReplaceSectionMode(
@@ -183,9 +183,9 @@ export async function runReplaceSectionMode(
 					memberIds: outcome.memberIds,
 				};
 				if (certifiedWalk === undefined) {
-					return sweepRefusal(outcome.outcome, refusalCtx);
+					return sweepRefusalEnvelope(outcome.outcome, refusalCtx);
 				}
-				return sweepRefusal(outcome.outcome, {
+				return sweepRefusalEnvelope(outcome.outcome, {
 					...refusalCtx,
 					tail: await echoTail(input, doc, certifiedWalk),
 				});

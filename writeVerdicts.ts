@@ -49,9 +49,9 @@ import {
  * module constant, deliberately: this arm only renders if the gate order
  * is ever violated, and in production the effective pin IS the constant
  * (the session override is a test seam) — the gate stays the one home for
- * the resolution. Exported for the flows' defence-in-depth arms that must
- * render the canonical refusal rather than the generic unverified error. */
-export function driftRefusal(observed: string): Envelope {
+ * the resolution. Module-private: this module's own verdict ladders render
+ * the canonical refusal rather than the generic unverified error. */
+function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
 
@@ -285,7 +285,7 @@ export function insertLandedRefusal(
  * kernel facts — the no-op self-anchor class and the own-subtree ancestor
  * class the kernel mishandles — and refuse before the mutation, zero
  * kernel calls; every arm words here. */
-export function movePlacementRefusal(
+export function movePlacementRefusalEnvelope(
 	outcome: Extract<
 		MoveBlockOutcome,
 		{
@@ -458,7 +458,7 @@ export function createVerdictEnvelope(
  * no pre-extraction sentence — the old flow trusted the deletes' results
  * and rendered a lying ok receipt; the judgment never rendered this arm
  * before, so its wording is new, not a rewrite. */
-export function sweepRefusal(
+export function sweepRefusalEnvelope(
 	outcome: SweepRefusal,
 	ctx: {
 		kb: string;
@@ -531,7 +531,7 @@ export function sweepRefusal(
  * tree shows and claims no mechanism (an observed hpath off the destination
  * could be a rollback or a landing elsewhere; only the block-level
  * judgment's reason ladder can tell those apart). */
-export function moveDocJudgmentRefusal(
+export function moveDocJudgmentRefusalEnvelope(
 	verdict: MoveDocLandedOutcome,
 	ctx: { name: string; docId: string; title: string },
 ): Envelope | undefined {
@@ -553,7 +553,7 @@ export function moveDocJudgmentRefusal(
  * block move refuses as its own not-in-source arm; the doc judgment rides
  * moveDocVerified). Unreachable through a fresh resolveDocTarget — it is
  * the stale-target race, worded as such. */
-export function moveDocScopingRefusal(
+export function moveDocScopingRefusalEnvelope(
 	outcome: Extract<MoveDocOutcome, { kind: "not-in-source" }>,
 	ctx: { name: string; docId: string },
 ): Envelope {
