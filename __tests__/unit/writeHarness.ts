@@ -3,8 +3,9 @@
 // parent lookup, verified-create read) AND the mode flow (ownership, echo,
 // block-in-doc, refs, baselines), a fake-pi setup() bound to the registered
 // kb_write tool, and the base create params. Consumed by
-// writeConfirm/writeGuard/writeCreate tests and the full
-// writeModes suite.
+// writeConfirm/writeGuard/writeCreate tests and the per-mode suites
+// (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) plus the
+// shared writeModes suite.
 
 import {
 	GUARD_NEAR_CAP,
@@ -481,4 +482,59 @@ export const base = {
 	mode: "create",
 	topic: "Docker Networking",
 	markdown: "some body",
+};
+
+export const editBase = {
+	kb: "recipes",
+	mode: "edit",
+	docId: "d-doc",
+	blockId: "b-1",
+	markdown: "corrected body",
+};
+
+export const SECTION_DOC = {
+	// Heading sections are seeded as the kernel returns them (a heading's
+	// getChildBlocks answer is its section: following siblings up to the next
+	// heading of same-or-higher level). The walk never recurses into `h` — it
+	// reaches these blocks through the `d-doc` loop — so these entries are here
+	// to fail the suite if heading recursion is ever reintroduced.
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Goals"),
+		walkBlock("p1", "p", "", "body one"),
+		walkBlock("h2", "h", "h2", "Details"),
+		walkBlock("p2", "p", "", "body two"),
+	],
+	h1: [
+		walkBlock("p1", "p", "", "body one"),
+		walkBlock("h2", "h", "h2", "Details"),
+		walkBlock("p2", "p", "", "body two"),
+	],
+	h2: [walkBlock("p2", "p", "", "body two")],
+};
+
+export const REPLACE_DOC = {
+	// The boundary heading is same-level (h1): the section is [p1, p2] — the
+	// same-or-shallower pin (deeper headings would belong to the section).
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Goals"),
+		walkBlock("p1", "p", "", "old one"),
+		walkBlock("p2", "p", "", "old two"),
+		walkBlock("h2", "h", "h1", "Details"),
+		walkBlock("p3", "p", "", "tail"),
+	],
+	// Kernel-shaped heading sections (see SECTION_DOC): the delete set must
+	// stay the enumerated section, never the heading's answer re-emitted.
+	h1: [
+		walkBlock("p1", "p", "", "old one"),
+		walkBlock("p2", "p", "", "old two"),
+	],
+	h2: [walkBlock("p3", "p", "", "tail")],
+};
+
+export const replaceParams = {
+	kb: "recipes",
+	mode: "replace-section",
+	docId: "d-doc",
+	headingId: "h1",
+	markdown: "rewritten section",
 };
