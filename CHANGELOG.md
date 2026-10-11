@@ -2,14 +2,6 @@
 
 ## [Unreleased]
 
-### Changed
-
-- Doc-level `kb_write` moves surface the kernel's own synchronous rejection of
-  identity moves (moving a doc into itself) verbatim through the kernel-refused
-  arm — the flow-side pre-check is gone; the kernel owns the whole
-  ancestor-move class (identity member included, live-pinned
-  primitives-side).
-
 ### Added
 
 - **SiYuan-backed knowledge-base tools for pi.** GNUbrain registers four tools
@@ -29,10 +21,12 @@
     behind the per-KB write grant and all verified: every mutation's landing is
     judged against the post-write block tree, so a silently rolled-back insert,
     a no-op delete, or a lost move reads as a refusal, never as ok; minted and
-    moved blocks are asserted against that tree; edits carry a fresh-content
-    precondition (`stale_content` refusal instead of a silent clobber); and
-    delete-bearing writes echo `invalidRefs` plus a receipt of the removed
-    blocks (ids + content; overflow spills to a file pointer).
+    moved blocks are asserted against that tree; doc moves surface the kernel's
+    own synchronous rejection of ancestor moves (identity included) verbatim;
+    edits carry a fresh-content precondition (`stale_content` refusal instead
+    of a silent clobber); and delete-bearing writes echo `invalidRefs` plus a
+    receipt of the removed blocks (ids + content; overflow spills to a file
+    pointer).
 
 - **`/kb` command** for session-scoped control:
 

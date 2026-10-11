@@ -38,7 +38,7 @@ export type ValidationResult =
 // reserved KB names — `all` is the set-wide toggle form, `tools` is the
 // toolset dispatcher (/kb tools [read|write|off]), and `kbs` is the kb_read
 // discovery name (kb: "kbs" lists the active set). A KB can never take any
-// of these names. (`writes` was un-reserved when its verb moved under `tools`.)
+// of these names.
 const RESERVED_KB_NAMES = new Set(["all", "tools", "kbs"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

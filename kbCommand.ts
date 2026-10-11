@@ -120,7 +120,7 @@ function dispatchTools(
 			? { reads: true, writes: true }
 			: verb === "read"
 				? { reads: true, writes: false }
-				: { reads: false, writes: false }; // ponytail: 3-way ternary, splits worse than it reads
+				: { reads: false, writes: false };
 	if (readsEnabled === target.reads && writesEnabled === target.writes) {
 		return {
 			...NO_CHANGE,

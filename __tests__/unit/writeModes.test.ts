@@ -1236,9 +1236,9 @@ describe("replace-section", () => {
 	it("a success-reported delete that left the block in the tree fails loud (members-survived), never ok", async () => {
 		// The default stub's deleteBlock resolves without touching the live
 		// tree — the 3.8.3 success-no-op generation. The judgment reads the
-		// post-sweep walk, so the lying ok receipt the old flow would have
-		// rendered is now the members-survived refusal with the survivors
-		// itemized.
+		// post-sweep walk, so a success-reported delete that left the block
+		// in the tree renders the members-survived refusal with the survivors
+		// itemized, never an ok receipt.
 		const harness = setup({
 			config: {
 				childrenFor: REPLACE_DOC,

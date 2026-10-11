@@ -64,10 +64,9 @@ export async function runReplaceSectionMode(
 	// Fresh-content precondition: a concurrency guard, not a consent
 	// mechanism (the grant resolved at the kb_write entry). One wrapper step
 	// right before the kernel call — the judgment seeds missing baselines
-	// from the SQL index and checks against the live tree in one pass (the
-	// dialog's display → approval window no longer exists, so a change
-	// landing since the walk is caught as stale_content, not laundered into
-	// the baseline).
+	// from the SQL index and checks against the live tree in one pass (a
+	// change landing since the walk is caught as stale_content, not
+	// laundered into the baseline).
 	const stale = await freshContentRefusal(
 		kernel,
 		baselines,

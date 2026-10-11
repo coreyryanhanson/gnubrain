@@ -71,7 +71,7 @@ describe("parser certification", () => {
 		);
 	});
 
-	it("rejects multi-statement input (astify returns an array — spike pin)", () => {
+	it("rejects multi-statement input (astify returns an array)", () => {
 		const result = certifySelect("SELECT 1; SELECT 2");
 		expect(result.ok).toBe(false);
 		expect(!result.ok && result.reason).toContain("multiple statements");
@@ -124,7 +124,7 @@ describe("parser certification", () => {
 		expect(!column.ok && column.reason).toContain("subqueries");
 	});
 
-	it("rejects UNION (parses as type 'select' with the second arm in _next/set_op — spike pin)", () => {
+	it("rejects UNION (parses as type 'select' with the second arm in _next/set_op)", () => {
 		const result = certifySelect(
 			"SELECT id FROM blocks UNION SELECT id FROM refs",
 		);

@@ -33,8 +33,7 @@ export async function runEditMode(
 		// mechanism (the grant resolved at the kb_write entry). Served content
 		// where the session has seen this block, else the block's current
 		// content — seed + check are one wrapper step right before the
-		// kernel call (the dialog's display → approval window no longer
-		// exists).
+		// kernel call.
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}

@@ -11,8 +11,8 @@
 // boundary and keep their existing homes; the mint-title judgment runs on
 // both sides — the tool-surface pre-flight and the primitives' own
 // `mint-title` arm, worded once by mintTitleMessage. The fresh-content
-// judgment itself moved down (the primitives' checkFreshContent) — only
-// its refusal envelope stays tool-side (freshContentRefusal, writeResult).
+// judgment lives in the primitives (`checkFreshContent`) — only its
+// refusal envelope stays tool-side (freshContentRefusal, writeResult).
 
 import {
 	PINNED_SIYUAN_VERSION,
@@ -378,8 +378,7 @@ export function editVerifyFailureReason(
 }
 
 /** Envelope mapping for a guarded-create outcome other than `created` —
- * byte-identical to the flow-refusal sentences the create flow issued
- * before the extraction. The create mint runs with no doc target, so the
+ * the create mint runs with no doc target, so the
  * transport/kernel-refused legs carry no echo tail (the errorTail rule for
  * a missing doc). */
 export function createVerdictEnvelope(
@@ -452,12 +451,10 @@ export function createVerdictEnvelope(
  * primitives' own `SweepRefusal` (owned by sweep.ts, discriminant-only
  * exclusion in the module that owns the union), so an arm-shape change
  * upstream re-derives this set here instead of a restated `Exclude`
- * silently re-admitting a terminal arm. Byte-identical to
- * the sentences the flow issued before the extraction (the
- * createVerdictEnvelope pattern). `members-survived` is the one arm with
- * no pre-extraction sentence — the old flow trusted the deletes' results
- * and rendered a lying ok receipt; the judgment never rendered this arm
- * before, so its wording is new, not a rewrite. */
+ * silently re-admitting a terminal arm. The mapping follows the
+ * createVerdictEnvelope pattern. `members-survived` is the fail-loud arm:
+ * a sweep whose deletes all acked but left members in the tree renders
+ * this refusal with the survivors itemized, never an ok receipt. */
 export function sweepRefusalEnvelope(
 	outcome: SweepRefusal,
 	ctx: {
