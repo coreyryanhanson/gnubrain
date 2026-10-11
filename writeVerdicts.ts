@@ -18,7 +18,7 @@
 // `mint-title` arm, worded once by mintTitleMessage (writeGuard). The
 // fresh-content judgment lives in the primitives (`checkFreshContent`) —
 // only its refusal envelope stays tool-side (freshContentRefusal,
-// writeResult).
+// writeTarget).
 
 import {
 	PINNED_SIYUAN_VERSION,
@@ -124,6 +124,14 @@ export function verificationAuthEventMessage(
 	);
 }
 
+/** The flow's own verdict key — the placement anchor echo, the block
+ * delete's blockId, or the doc move's docId — spread verbatim into the
+ * envelope, never re-worded. */
+export type VerdictKey =
+	| { anchor: string }
+	| { blockId: string }
+	| { docId: string };
+
 /** The shared failure ladder for the verified mutation flows — the four
  * pre-judgment arms every mutation outcome union carries (edit, append,
  * block move, replace-section, and the block-delete half of
@@ -148,10 +156,9 @@ export async function mutationFailureEnvelope(
 	outcome: MutationFailure,
 	opts: {
 		kb: string;
-		/** The flow's own verdict key — the placement anchor echo, the
-		 * block delete's blockId, or the doc move's docId — spread verbatim,
-		 * never re-worded here. */
-		extra?: { anchor: string } | { blockId: string } | { docId: string };
+		/** The flow's own verdict key — spread verbatim, never re-worded
+		 * here. */
+		extra?: VerdictKey;
 		tail: () => Promise<Record<string, unknown>>;
 	},
 ): Promise<Envelope> {

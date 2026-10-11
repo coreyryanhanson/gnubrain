@@ -28,9 +28,10 @@ import {
 	replaceSectionWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
+	freshContentRefusal,
 	type WriteFlowInput,
 } from "./writeTarget.js";
-import { finishWrite, freshContentRefusal } from "./writeResult.js";
+import { finishWrite } from "./writeResult.js";
 import { appendAnchorEcho, insertLandedRefusal } from "./writeVerdicts.js";
 
 /** The delete-sweep refusal frame — the sweep outcome arms the flow does

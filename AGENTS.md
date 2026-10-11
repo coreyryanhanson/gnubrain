@@ -165,7 +165,7 @@ temp HOME for the headless child).
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,
-  `writeResult.ts`);
+  `writeTarget.ts`);
   `writeVerdicts.ts` is the wording layer over those unions: pure,
   exhaustive switches (no default) mapping every kind to the sentence it
   renders, no flow state and no kernel reads, so a new kind in a

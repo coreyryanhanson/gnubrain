@@ -129,11 +129,10 @@ function moveDocScopingRefusalEnvelope(
  * the stale_content precondition). */
 async function destOutlinePayload(
 	input: WriteFlowInput,
-	sessionId: string,
 	destWalk: WalkedTree,
 ): Promise<Record<string, unknown>> {
 	const outline = serveOutlineFromWalk(
-		sessionId,
+		input.sessionId,
 		"kb_write-dest",
 		destWalk,
 		input.baselines,
@@ -150,7 +149,7 @@ export async function runMoveMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
 ): Promise<Envelope> {
-	const { kernel, sessionId, name, boxId, params } = input;
+	const { kernel, name, boxId, params } = input;
 	if (params.doc === true) {
 		// Doc-level move: moveDocsByID — destination doc or the notebook
 		// id (un-nest). Intra-KB by construction (single-kb write contract).
@@ -280,7 +279,7 @@ export async function runMoveMode(
 		// verbatim instead of re-fetching between "verified" and "served".
 		const destPayload = sameDoc
 			? {}
-			: await destOutlinePayload(input, sessionId, outcome.postDestWalk);
+			: await destOutlinePayload(input, outcome.postDestWalk);
 		if (outcome.verdict.kind !== "landed") {
 			// The move did not land — no refreshBlockIds: its block gets no
 			// baseline from a write that did not land (the tail seeds served

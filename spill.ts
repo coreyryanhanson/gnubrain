@@ -96,32 +96,13 @@ export function withRowPayload(
 	key: "rows" | "blockIds",
 	kept: Record<string, unknown>[],
 ): Envelope {
-	const payload = rowPayload(sessionId, tool, kept);
-	if (payload.rows !== undefined) {
-		envelope[key] = payload.rows;
-	} else {
-		envelope.preview = payload.preview;
-		envelope.fullResultPath = payload.fullResultPath;
-	}
-	return envelope;
-}
-
-/**
- * Row payload: within the inline budget the rows ride the envelope;
- * overflow spills the full JSONL and the envelope keeps a newline-boundary
- * preview plus the pointer.
- */
-function rowPayload(
-	sessionId: string,
-	tool: string,
-	kept: Record<string, unknown>[],
-): {
-	rows?: Record<string, unknown>[];
-	preview?: string;
-	fullResultPath?: string;
-} {
 	const text = jsonl(kept);
 	const { inline, spillPath } = inlineOrSpill(sessionId, tool, text, "jsonl");
-	if (spillPath === undefined) return { rows: kept };
-	return { preview: inline, fullResultPath: spillPath };
+	if (spillPath === undefined) {
+		envelope[key] = kept;
+	} else {
+		envelope.preview = inline;
+		envelope.fullResultPath = spillPath;
+	}
+	return envelope;
 }

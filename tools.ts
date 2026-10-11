@@ -76,6 +76,8 @@ Tables:
 
 Discovery pattern: include hpath in discovery SELECTs — SELECT id, root_id, box, hpath, updated FROM blocks WHERE ... — every row then carries the docId (root_id) that kb_read and the write tools consume, its per-row KB attribution (box), and its recency (updated).
 
+Spill keys: under the inline budget the result rows ride the envelope as \`rows\`; above it the envelope carries \`preview\` (newline-boundary cut) plus \`fullResultPath\` (the full JSONL).
+
 Rules: exactly one top-level SELECT; FROM blocks or refs only; single-table FROM (no JOINs, subqueries, CTEs, UNION, or HAVING). LIMIT is injected as 64 when absent; an agent-supplied LIMIT passes through uncapped. Aggregate queries (COUNT/GROUP BY) are allowed — their rows carry no box and are exempt from re-scoping.`;
 
 function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
@@ -270,7 +272,7 @@ export async function runSearchFanOut(
 // kb_read — the barrel's docMarkdown export read (+ the outline ride-along)
 // ---------------------------------------------------------------------------
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Spill keys: the inline \`outline\` gains \`fullOutlinePath\` (full heading rows, JSONL) and the inline \`content\` gains \`fullResultPath\` (the full markdown) whenever the payload exceeds the inline budget. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
 
 /**
  * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns

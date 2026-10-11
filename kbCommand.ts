@@ -34,10 +34,12 @@ export function dispatchKbCommand(
 	validation: SessionValidation,
 	/** Bare `/kb` appends one toolset-state line per registered toolset
 	 * (tool-masking record — a masked toolset is printed, never silent). */
-	toolsetLines: string[] = [],
-	/** Live toolset state — the /kb tools verbs are state setters over it. */
-	readsEnabled = true,
-	writesEnabled = false,
+	toolsetLines: string[],
+	/** Live toolset state — the /kb tools verbs are state setters over it.
+	 * Required: the registered default is both-on, and a defaulted arg here
+	 * would let a test simulate a state production never has. */
+	readsEnabled: boolean,
+	writesEnabled: boolean,
 ): KbCommandResult {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) {

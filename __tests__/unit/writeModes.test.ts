@@ -27,7 +27,7 @@ import {
 	writeKernelStub,
 } from "./writeHarness.js";
 import { ContentBaselines } from "../../baselines.js";
-import { freshContentRefusal } from "../../writeResult.js";
+import { freshContentRefusal } from "../../writeTarget.js";
 
 describe("kb_write schema", () => {
 	it("does not declare confirmNew (learned only from rejections)", () => {

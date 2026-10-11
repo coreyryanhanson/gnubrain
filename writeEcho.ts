@@ -10,7 +10,7 @@ import {
 	type WalkedTree,
 } from "siyuan-kb-primitives";
 import type { MutationFailure } from "siyuan-kb-primitives/write";
-import { mutationFailureEnvelope } from "./writeVerdicts.js";
+import { mutationFailureEnvelope, type VerdictKey } from "./writeVerdicts.js";
 import { inlineOrSpill, jsonl } from "./spill.js";
 import { serveOutlineFromWalk } from "./outline.js";
 import type { DocTarget, WriteFlowBase } from "./writeTarget.js";
@@ -43,7 +43,7 @@ export function mutationFailure(
 	outcome: MutationFailure,
 	input: WriteFlowBase,
 	doc: DocTarget,
-	extra: { anchor: string } | { blockId: string } | { docId: string },
+	extra: VerdictKey,
 ): Promise<Envelope> {
 	return mutationFailureEnvelope(outcome, {
 		kb: input.name,

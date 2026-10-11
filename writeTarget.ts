@@ -1,8 +1,9 @@
 // Write-target resolution and the shared target reads: the flow input
 // shape, doc-target ownership resolution, the heading-target judgment's
-// wording map, and the truncation refusals — what the per-mode flow files
-// (writeCreate/writeEdit/writeAppend/writeReplaceSection/writeDelete/
-// writeMove) build on before any mutation.
+// wording map, the truncation refusals, and the fresh-content pre-mutation
+// precondition — what the per-mode flow files (writeCreate/writeEdit/
+// writeAppend/writeReplaceSection/writeDelete/writeMove) build on before
+// any mutation.
 
 import {
 	errorEnvelope,
@@ -14,6 +15,8 @@ import {
 import {
 	resolveHeadingTarget,
 	rootEcho,
+	checkFreshContent,
+	type FreshOutcome,
 	type KernelProbeResult,
 	type WalkedBlock,
 	type WalkedTree,
@@ -21,6 +24,7 @@ import {
 } from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import type { ContentBaselines } from "./baselines.js";
+import { serveOutlineFromWalk } from "./outline.js";
 import type { WriteParams } from "./writeSchema.js";
 
 /** Flow input shared by every mode, create included — one declaration so
@@ -155,4 +159,86 @@ export function placementRefusal<T extends { kind: string }>(
 	// arms, so what remains is the success type; the cast states that
 	// contract (generic narrowing cannot decompose T itself).
 	return derived as Exclude<T, WalkTruncated | { kind: "heading-absent" }>;
+}
+
+/** Fresh-content precondition, checked right before the kernel write: the
+ * current content must still hash to the baseline the session last served.
+ * One wrapper over the primitives' checkFreshContent judgment (both reads
+ * and the comparison live down-repo; the walk ≡ SQL equivalence the pair
+ * depends on is falsified there), applying the session doctrine over ALL
+ * arms — there is no early stop, so a multi-stale refusal names every
+ * stale target and the agent decides once:
+ * - `fresh` → remember (a no-op: the hash already matches; preserves the
+ *   seed side effect for the residual paths)
+ * - `unseen` → adopt the live form (the no-baseline fallback, visible:
+ *   nothing stored existed to launder)
+ * - `stale` → re-baseline from the judged content AND name the target —
+ *   the anti-laundering invariant: no stored baseline moves without its
+ *   content being visible in the same envelope, so the retry proceeds
+ *   against informed consent instead of refuse-looping
+ * - `vanished` → skip (delete no-op class; the baseline is retained, so a
+ *   return via undo re-judges as `fresh` if unchanged, `stale` if not)
+ * Any stale arm → the `stale_content` refusal carrying every stale target
+ * (`staleTargets`, beside the retained scalar first-arm fields) and the
+ * outline served from the judged walk; otherwise `null` and the walk is
+ * dropped. Read errors propagate raw — the flows' transport classification
+ * applies (breaker counting, 429 cooldown). */
+export async function freshContentRefusal(
+	kernel: WriteKernelClient,
+	baselines: ContentBaselines,
+	targets: { blockId: string; baselineHash: string | undefined }[],
+	context: { sessionId: string; docId: string },
+): Promise<Envelope | null> {
+	if (targets.length === 0) return null;
+	const { walk, arms } = await checkFreshContent(kernel, {
+		docId: context.docId,
+		targets,
+	});
+	const staleArms: Extract<FreshOutcome, { kind: "stale" }>[] = [];
+	for (const arm of arms) {
+		switch (arm.kind) {
+			case "vanished":
+				continue;
+			case "absence-unconfirmed":
+				// Absence from an incomplete walk is unconfirmed — the target
+				// may sit past the depth bound or behind a swallowed branch.
+				// Not fresh, not vanished: skip (the baseline is retained, so a
+				// later edit re-judges like vanished does).
+				continue;
+			case "fresh":
+			case "unseen":
+				baselines.remember(arm.blockId, arm.currentContent);
+				continue;
+			case "stale":
+				baselines.remember(arm.blockId, arm.currentContent);
+				staleArms.push(arm);
+				continue;
+		}
+		arm satisfies never;
+	}
+	const first = staleArms[0];
+	if (first === undefined) return null;
+	// The refusal's outline renders from the judged snapshot — its heading
+	// content is seeded like every other serve site, or a follow-up edit on
+	// a served heading takes the no-baseline fallback and launders a
+	// concurrent change past the precondition. The walk is already in hand.
+	const fresh = serveOutlineFromWalk(
+		context.sessionId,
+		"kb_write",
+		walk,
+		baselines,
+	);
+	return refusedEnvelope(
+		`the content of block '${first.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
+		{
+			reason: "stale_content",
+			blockId: first.blockId,
+			currentContent: first.currentContent,
+			staleTargets: staleArms.map((arm) => ({
+				blockId: arm.blockId,
+				currentContent: arm.currentContent,
+			})),
+			...fresh,
+		},
+	);
 }
