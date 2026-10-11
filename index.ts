@@ -171,7 +171,9 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 						loaded.global.settings.apiToken,
 					)
 				: undefined;
-		if (kernel !== undefined) kernelClient = kernel;
+		// Assign unconditionally — including the undefined a shape-failed
+		// revalidate produces — so the closure never holds a stale client.
+		kernelClient = kernel;
 		// Only the probes are skipped — the client above is already built.
 		if (breaker.inCooldown()) {
 			return rateLimitedValidation({

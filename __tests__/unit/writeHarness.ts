@@ -21,6 +21,7 @@ import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
 import type { WriteParams } from "../../writeSchema.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
+import { expect } from "vitest";
 import {
 	createWriteGrantState,
 	GRANT_YES,
@@ -538,3 +539,17 @@ export const replaceParams = {
 	headingId: "h1",
 	markdown: "rewritten section",
 };
+
+/** Shared assertions for the outcome-unverified contract: a transport-class
+ * failure on the mutation call itself (the kernel's response never arrived)
+ * must read as verificationFailed — never runKbCall's "SiYuan unreachable",
+ * whose retry invitation would duplicate an applied write. The transport
+ * classification itself (timeout vs fetch reject) is falsified down-repo in
+ * the primitives' failure suite; one wording case per site here. */
+export function expectUnverified(r: Record<string, unknown>): void {
+	expect(r.status).toBe("error");
+	expect(r.verificationFailed).toBe(true);
+	expect(r.message).toContain("outcome is unverified");
+	expect(r.message).toContain("do NOT retry blindly");
+	expect(r.message).not.toContain("SiYuan unreachable");
+}

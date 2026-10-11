@@ -30,7 +30,7 @@ import {
 	verificationFailedEnvelope,
 } from "./writeVerdicts.js";
 
-export interface CreateFlowInput extends WriteFlowBase {
+interface CreateFlowInput extends WriteFlowBase {
 	/** Minted (normalized) title — the kb_write entry validated it. */
 	title: string;
 	parentId?: string | undefined;

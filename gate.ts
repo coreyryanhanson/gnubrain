@@ -119,25 +119,14 @@ export function resolveKbParam(
 			// "nothing is in scope", never "search everything".
 			return { ok: false, message: EMPTY_SCOPE_MESSAGE };
 		}
-	} else {
-		// A one-element array still means "exactly one name" — unwrap it;
-		// any other array is a shape error.
-		if (Array.isArray(kb)) {
-			if (kb.length === 1 && typeof kb[0] === "string") {
-				kb = kb[0];
-			} else {
-				return {
-					ok: false,
-					message: "'kb' must be exactly one KB name for this call",
-				};
-			}
-		}
-		if (typeof kb !== "string") {
-			return {
-				ok: false,
-				message: "'kb' must be exactly one KB name for this call",
-			};
-		}
+	} else if (typeof kb !== "string") {
+		// Single-arity tools declare `kb: Type.String()`; pi validates tool
+		// arguments before dispatch, so an array or non-string never reaches
+		// here — this guard is the local backstop, not the contract.
+		return {
+			ok: false,
+			message: "'kb' must be exactly one KB name for this call",
+		};
 	}
 	const requested: string[] =
 		arity === "array" ? (kb as string[]) : [kb as string];

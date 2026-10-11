@@ -2,7 +2,7 @@
 // walk → fresh-content precondition → one verified sequence call (the
 // primitives own the insert-before-sweep ordering and the enumeration
 // timing) → envelope wording. A mid-sequence failure must cost visible
-// duplication, never loss — that invariant lives with the sequence now.
+// duplication, never loss — that invariant lives with the sequence.
 
 import {
 	SiYuanKernelError,

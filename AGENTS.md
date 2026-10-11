@@ -166,9 +166,9 @@ temp HOME for the headless child).
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,
   `writeTarget.ts`);
-  `writeVerdicts.ts` is the wording layer over those unions: pure,
-  exhaustive switches (no default) mapping every kind to the sentence it
-  renders, no flow state and no kernel reads, so a new kind in a
+  `writeVerdicts.ts` is the wording layer over those unions: exhaustive
+  switches (no default) mapping every kind to the sentence it renders,
+  so a new kind in a
   primitives release fails typecheck until its wording is written there
   (the anchor echoes ride the same rule — `appendAnchorEcho` /
   `moveAnchorEcho`). Each flow composes its own mode's envelope *frames*
@@ -176,7 +176,8 @@ temp HOME for the headless child).
   keys); the one frame shared across flows — the pre-judgment failure
   ladder of the verified mutation flows (`mutationFailureEnvelope`) — is
   worded in `writeVerdicts.ts` too, so a new failure arm fails typecheck
-  once, not per flow.
+  once, not per flow (that frame is the one async piece: it awaits the
+  flow-supplied echo tail, `writeEcho.mutationFailure`).
   Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
   policy in `writeGuard.ts` (`validateMintTitle` — wording only; the
   mint-title kernel facts live in the primitives' `mintTitleProblem`).

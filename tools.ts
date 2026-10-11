@@ -50,7 +50,7 @@ import {
 import { serveOutline } from "./outline.js";
 import type { SessionValidation } from "./validation.js";
 
-export interface ReadToolHooks {
+interface ReadToolHooks {
 	/** Live session validation — set by session_start / /kb recovery. */
 	getValidation(): SessionValidation | undefined;
 	/** Kernel client built from the freshest settings (revalidate). */
@@ -283,7 +283,7 @@ const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→
  * identical in every form (populated, empty, or rate-limit-skipped scope) so
  * a consumer branching on it never sees a shape it didn't expect.
  */
-export function kbsDiscoveryEnvelope(validation: SessionValidation): Envelope {
+function kbsDiscoveryEnvelope(validation: SessionValidation): Envelope {
 	// A validation skipped under an armed 429 cooldown also has an empty
 	// scope, but "no KBs in scope" would misstate it — the set is unknown,
 	// not empty — so the skip names itself (the gate's sentence, nameless).

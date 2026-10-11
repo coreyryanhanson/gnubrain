@@ -110,7 +110,7 @@ describe("kb param contract", () => {
 	});
 
 	it("rejects a valid KB outside the active scope, naming the activation paths", () => {
-		const result = resolveKbParam(["projects"], "single", v);
+		const result = resolveKbParam("projects", "single", v);
 		expect(result.ok).toBe(false);
 		expect(!result.ok && result.message).toBe(
 			"'projects' exists but is not in the active scope — activate it with /kb, or change gnubrain.defaultKBs in settings",
@@ -119,7 +119,7 @@ describe("kb param contract", () => {
 
 	it("rejects a configured-but-invalid KB (stale/encrypted)", () => {
 		const v2 = validation({ validKBs: [["recipes", "nb-r"]] });
-		const result = resolveKbParam(["projects"], "single", v2);
+		const result = resolveKbParam("projects", "single", v2);
 		expect(result.ok).toBe(false);
 		expect(!result.ok && result.message).toContain("stale or encrypted");
 	});
@@ -136,10 +136,20 @@ describe("kb param contract", () => {
 		});
 	});
 
-	it("enforces the single-name arity on write-shaped calls", () => {
-		expect(resolveKbParam(["a", "b"], "single", v).ok).toBe(false);
-		expect(resolveKbParam(["a"], "single", v).ok).toBe(false);
-		expect(resolveKbParam(42, "single", v).ok).toBe(false);
+	it("rejects a non-string 'kb' on single-name calls (the schema is the contract; this guard is the backstop)", () => {
+		const message = "'kb' must be exactly one KB name for this call";
+		expect(resolveKbParam(["a", "b"], "single", v)).toEqual({
+			ok: false,
+			message,
+		});
+		expect(resolveKbParam(["a"], "single", v)).toEqual({
+			ok: false,
+			message,
+		});
+		expect(resolveKbParam(42, "single", v)).toEqual({
+			ok: false,
+			message,
+		});
 	});
 });
 

@@ -46,7 +46,7 @@ export async function runEditMode(
 		if (stale !== null) return stale;
 	}
 	// The pre-write stored pair the landed check needs is read inside the
-	// primitive now (the representation contract — blocks-index row form,
+	// primitive (the representation contract — blocks-index row form,
 	// never walk-rendered content — is its concern, not ours). An absent
 	// target is never refused here — updateBlock's synchronous
 	// not-found error surfaces verbatim through the kernel-refused arm.

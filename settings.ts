@@ -17,7 +17,7 @@ export function projectSettingsPath(cwd: string): string {
 	return join(cwd, ".pi", "settings.json");
 }
 
-export interface KbEntry {
+interface KbEntry {
 	name: string;
 	notebook: string;
 }
@@ -86,7 +86,7 @@ function checkDefaultKBs(
 
 // A project settings.json needs no `gnubrain` key at all (other extensions
 // share the file); when present, only `defaultKBs` may live under it.
-export interface ProjectValidation {
+interface ProjectValidation {
 	/** Non-empty = shape failure → the session degrades. */
 	errors: string[];
 	defaultKBs: string[] | undefined;

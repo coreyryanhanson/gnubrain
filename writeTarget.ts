@@ -85,7 +85,7 @@ export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
  * operation shape) word in writeVerdicts. The walks are strict, so the
  * only reachable incompleteness cause here is the depth bound — the
  * agent-facing string names it. */
-export function walkTruncatedMessage(doc: DocTarget): string {
+function walkTruncatedMessage(doc: DocTarget): string {
 	return `the walk of doc '${doc.title}' (${doc.rootId}) hit the document's depth bound, so the target judgment would read incomplete evidence — refused before any kernel call; restructure the document (or edit in place) instead`;
 }
 

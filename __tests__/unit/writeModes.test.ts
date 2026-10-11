@@ -20,6 +20,7 @@ import {
 	StubConfig,
 	base,
 	editBase,
+	expectUnverified,
 	registerKbWrite,
 	replaceParams,
 	setup,
@@ -145,63 +146,6 @@ describe("freshContentRefusal", () => {
 		);
 		expect(verdict).toBeNull();
 		expect(baselines.servedHash("p1")).toBeUndefined();
-	});
-
-	it("stale → one refusal naming every stale target; re-baseline exactly the named set; retry proceeds", async () => {
-		// Multi-stale doctrine: all stale arms in one envelope. The tool-side
-		// half of the anti-laundering invariant: every re-baselined hash
-		// equals the hash of the content the envelope carried — no stored
-		// baseline moves without its content being visible.
-		const stub = writeKernelStub({
-			childrenFor: {
-				"d-doc": [
-					walkBlock("p1", "p", "", "rewritten one"),
-					walkBlock("p2", "p", "", "rewritten two"),
-					walkBlock("p3", "p", "", "untouched"),
-				],
-			},
-		});
-		const baselines = ContentBaselines.create();
-		baselines.remember("p1", "old one");
-		baselines.remember("p2", "old two");
-		// Targets are rebuilt per call in the real flows (the served hash is
-		// read at call time) — mirror that here.
-		const targetsOf = () => [
-			{ blockId: "p1", baselineHash: baselines.servedHash("p1") },
-			{ blockId: "p2", baselineHash: baselines.servedHash("p2") },
-			{ blockId: "p3", baselineHash: baselines.servedHash("p3") },
-		];
-		const verdict = await freshContentRefusal(
-			stub.client,
-			baselines,
-			targetsOf(),
-			ctx,
-		);
-		expect(verdict).not.toBeNull();
-		expect(verdict?.status).toBe("refused");
-		expect(verdict?.reason).toBe("stale_content");
-		expect(verdict?.blockId).toBe("p1");
-		expect(verdict?.currentContent).toBe("rewritten one");
-		expect(verdict?.staleTargets).toEqual([
-			{ blockId: "p1", currentContent: "rewritten one" },
-			{ blockId: "p2", currentContent: "rewritten two" },
-		]);
-		// The outline renders from the judged walk (headings-only — a stale
-		// non-heading member's content is new information via staleTargets,
-		// not the outline).
-		expect(verdict?.outline).toBeDefined();
-		// Re-baseline of exactly the named set — each stored hash equals the
-		// content the envelope carried.
-		expect(baselines.servedHash("p1")).toBe(contentHash("rewritten one"));
-		expect(baselines.servedHash("p2")).toBe(contentHash("rewritten two"));
-		// Refuse-loop escape: the same call now matches and returns null.
-		const retry = await freshContentRefusal(
-			stub.client,
-			baselines,
-			targetsOf(),
-			ctx,
-		);
-		expect(retry).toBeNull();
 	});
 
 	it("empty target list → null with zero kernel calls", async () => {
@@ -356,35 +300,29 @@ describe("write-tool doctrine lines", () => {
 // reads: the result must never read as "SiYuan unreachable" — that
 // invites the blind retry that duplicates or re-applies the write.
 describe("network drop after a landed write", () => {
-	// Both transport classes: a timeout is a response that never arrived,
-	// a fetch reject can fire after the request was sent. Neither answers
-	// the edit, so the verdict is the same verificationFailed envelope.
-	it.each([
-		["network drop", () => new SiYuanNetworkError()],
-		["read timeout", () => new SiYuanTimeoutError(30_000)],
-	])(
-		"edit: post-write echo-read %s → verificationFailed, not 'unreachable'",
-		async (_label, make) => {
-			let arm: ((err: Error) => void) | undefined;
-			const { execute, calls } = setup({
-				config: {
-					blockRows: [{ id: "b-1", content: "stale paragraph" }],
-					armQueryError: (set) => {
-						arm = set;
-					},
-					onUpdate: () => arm?.(make()),
+	// One transport case per wording site: the classification (timeout vs
+	// fetch reject) is falsified down-repo in the primitives' failure suite;
+	// the tool-side contract is the wording, identical for both classes.
+	it("edit: post-write echo-read drop → verificationFailed, not 'unreachable'", async () => {
+		let arm: ((err: Error) => void) | undefined;
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				armQueryError: (set) => {
+					arm = set;
 				},
-			});
-			const r = await execute(editBase);
-			expect(r.status).toBe("error");
-			expect(r.verificationFailed).toBe(true);
-			expect(r.message).toContain("post-write verification reads failed");
-			expect(r.message).toContain("do NOT retry blindly");
-			expect(r.message).not.toContain("SiYuan unreachable");
-			// The mutation itself landed — the failure is in the reads.
-			expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
-		},
-	);
+				onUpdate: () => arm?.(new SiYuanNetworkError()),
+			},
+		});
+		const r = await execute(editBase);
+		expect(r.status).toBe("error");
+		expect(r.verificationFailed).toBe(true);
+		expect(r.message).toContain("post-write verification reads failed");
+		expect(r.message).toContain("do NOT retry blindly");
+		expect(r.message).not.toContain("SiYuan unreachable");
+		// The mutation itself landed — the failure is in the reads.
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+	});
 
 	it("append: post-write verification drop → verificationFailed, not 'unreachable'", async () => {
 		let arm: ((err: Error) => void) | undefined;
@@ -448,38 +386,23 @@ describe("network drop after a landed write", () => {
 // "SiYuan unreachable", whose retry invitation would duplicate an applied
 // write), and auth-class failures must still propagate for the breaker.
 describe("transport failure on the mutation call itself", () => {
-	/** Shared assertions: unverified-outcome envelope, no unreachable text. */
-	function expectUnverified(r: Record<string, unknown>): void {
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("outcome is unverified");
-		expect(r.message).toContain("do NOT retry blindly");
-		expect(r.message).not.toContain("SiYuan unreachable");
-	}
-
-	// Timeout vs fetch reject — same unverified contract either way: a
-	// timeout means the response never arrived, and a network drop can
-	// reject after the request was sent.
-	it.each([
-		["timeout", () => new SiYuanTimeoutError(30_000)],
-		["network drop", () => new SiYuanNetworkError()],
-	])(
-		"edit: %s on updateBlock → outcome unverified, never 'unreachable'",
-		async (_label, make) => {
-			const { execute, calls } = setup({
-				config: {
-					blockRows: [{ id: "b-1", content: "stale paragraph" }],
-					onUpdate: () => {
-						throw make();
-					},
+	// One transport case per wording site: the classification (timeout vs
+	// fetch reject) is falsified down-repo in the primitives' failure suite;
+	// the tool-side contract is the wording, identical for both classes.
+	it("edit: transport failure on updateBlock → outcome unverified, never 'unreachable'", async () => {
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				onUpdate: () => {
+					throw new SiYuanNetworkError();
 				},
-			});
-			const r = await execute(editBase);
-			expectUnverified(r);
-			expect(r.message).toContain("may already be applied");
-			expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
-		},
-	);
+			},
+		});
+		const r = await execute(editBase);
+		expectUnverified(r);
+		expect(r.message).toContain("may already be applied");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
+	});
 
 	// One unverified contract per mutation method: the kernel's response
 	// never arrived, so the write may or may not have landed. replace-

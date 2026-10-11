@@ -19,6 +19,7 @@ import { validation } from "./fixtures.js";
 import {
 	type StubConfig,
 	base,
+	expectUnverified,
 	setup,
 	storedContentStub,
 } from "./writeHarness.js";
@@ -419,7 +420,9 @@ describe("network drop after a landed create", () => {
 
 // A transport failure ON the create call itself: the kernel's response
 // never arrived, so the mint may or may not exist — the outcome-unverified
-// verdict, never the retry-inviting "unreachable".
+// verdict, never the retry-inviting "unreachable". One transport case per
+// wording site: the classification (timeout vs fetch reject) is falsified
+// down-repo in the primitives' failure suite.
 describe("transport failure on the create call itself", () => {
 	it("timeout on createDocWithMarkdown → outcome unverified, no docId", async () => {
 		const { execute, calls } = setup({
@@ -430,28 +433,9 @@ describe("transport failure on the create call itself", () => {
 			},
 		});
 		const r = await execute({ ...base, topic: "Docker Networking" });
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("outcome is unverified");
-		expect(r.message).toContain("do NOT retry blindly");
-		expect(r.message).not.toContain("SiYuan unreachable");
+		expectUnverified(r);
 		expect(r.docId).toBeUndefined();
 		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
-	});
-
-	it("network drop on createDocWithMarkdown classifies the same way", async () => {
-		const { execute } = setup({
-			config: {
-				onCreate: () => {
-					throw new SiYuanNetworkError();
-				},
-			},
-		});
-		const r = await execute({ ...base, topic: "Docker Networking" });
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("outcome is unverified");
-		expect(r.message).not.toContain("SiYuan unreachable");
 	});
 });
 

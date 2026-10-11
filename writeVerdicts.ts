@@ -2,15 +2,16 @@
 // siyuan-kb-primitives returns. The primitives speak in closed `{ kind,
 // …detail }` unions, never agent-facing sentences; this module is the
 // wording layer: every exhaustive switch over a verdict union and the
-// sentence each arm renders — pure functions of the union, no flow state,
-// no kernel reads. The rule: verdict *fragments* word here; each flow
-// composes its own mode's envelope *frames* from them (frames need the
-// flow's echo tail, doc, and verdict keys); the one frame shared across
-// flows — the pre-judgment ladder, mutationFailureEnvelope — is worded
-// here too, so a new arm in a primitives release fails typecheck here
-// once instead of diverging across every flow. The trailing never-check
-// is the catch, not the hazard: a map that forgets an arm changes the
-// rendered message and fails the suites.
+// sentence each arm renders. The rule: verdict *fragments* word here;
+// each flow composes its own mode's envelope *frames* from them (frames
+// need the flow's echo tail, doc, and verdict keys); the one frame shared
+// across flows — the pre-judgment ladder, mutationFailureEnvelope — is
+// worded here too, so a new arm in a primitives release fails typecheck
+// here once instead of diverging across every flow. That frame is the one
+// non-pure piece: it is async and awaits the flow-supplied echo tail
+// (writeEcho.mutationFailure), which performs the post-write reads. The
+// trailing never-check is the catch, not the hazard: a map that forgets
+// an arm changes the rendered message and fails the suites.
 //
 // Tool-side policy refusals (grant, breaker, 429 cooldown) never cross the
 // boundary and keep their existing homes; the mint-title judgment runs on
@@ -109,7 +110,7 @@ export function postWriteAssemblyFailedMessage(detail: string): string {
  * marker type/guard live in envelope.ts beside `partialReplaceState`, the
  * other gate-read result marker. Rendered by the shared ladder and the
  * create mode's frame (writeCreate). */
-export function verificationAuthEventMessage(
+function verificationAuthEventMessage(
 	cause: AuthLockEvent,
 	detail: string,
 ): string {
