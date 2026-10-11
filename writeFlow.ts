@@ -93,6 +93,16 @@ export function walkTruncatedMessage(doc: DocTarget): string {
 	return `the walk of doc '${doc.title}' (${doc.rootId}) hit the document's depth bound, so the target judgment would read incomplete evidence — refused before any kernel call; restructure the document (or edit in place) instead`;
 }
 
+/** The flows' own depth-bound refusals, each worded once and shared by the
+ * flow's two truncation arms (projection refusal and the primitives'
+ * walk-truncated verdict) — the sentences differ per operation shape, not
+ * per arm. */
+export const appendWalkTruncatedMessage =
+	"the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead";
+
+export const replaceSectionWalkTruncatedMessage =
+	"the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead";
+
 /** The heading-target refusal map — wording only. The judgment (membership
  * + write-parent targetability, the kernel's CheckContainerParent set) is
  * the primitives' `resolveHeadingTarget`; a section target inside `tabs` or

@@ -17,7 +17,9 @@ const MODE_PARAMS: Record<string, string[]> = {
 	move: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
 };
 
-const WRITE_MODE_LIST = "create, edit, replace-section, append, delete, move";
+// Derived from the schema table so the list and the validation authority
+// cannot drift (key order is the documented mode order).
+const WRITE_MODE_LIST = Object.keys(MODE_PARAMS).join(", ");
 
 /** Modes that carry a body (schema table) — delete/move carry neither
  * markdown nor markdownFile and are valid without them. */

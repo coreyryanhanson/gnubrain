@@ -13,6 +13,7 @@ import {
 	echoTail,
 	headingInWalk,
 	mutationFailure,
+	appendWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
@@ -43,10 +44,7 @@ export async function runAppendMode(
 		// The projection refuses the same tree the verified insert's
 		// pre-walk gate would — refuse here, before any kernel call. No
 		// anchor echo exists: the anchor could not be derived.
-		return refusedEnvelope(
-			`the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead`,
-			{ kb: name },
-		);
+		return refusedEnvelope(appendWalkTruncatedMessage, { kb: name });
 	}
 	if (derived.kind === "heading-absent") {
 		// Unreachable — headingInWalk refused an absent id on the same walk
@@ -75,10 +73,10 @@ export async function runAppendMode(
 		// The primitive refuses a truncated pre-write walk before any kernel
 		// call — the anchor and the landed judgment's pre-write evidence
 		// would derive from an incomplete tree.
-		return refusedEnvelope(
-			`the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead`,
-			{ kb: name, anchor: echo },
-		);
+		return refusedEnvelope(appendWalkTruncatedMessage, {
+			kb: name,
+			anchor: echo,
+		});
 	}
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });

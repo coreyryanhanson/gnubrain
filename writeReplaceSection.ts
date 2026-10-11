@@ -23,6 +23,7 @@ import {
 	deletedBlocksTail,
 	headingInWalk,
 	mutationFailure,
+	replaceSectionWalkTruncatedMessage,
 	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
@@ -52,10 +53,7 @@ export async function runReplaceSectionMode(
 	if (deleteSet.kind === "walk-truncated") {
 		// The projection refuses the truncated tree the sequence's own gate
 		// would — refuse here, before any kernel call.
-		return refusedEnvelope(
-			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
-			{ kb: name },
-		);
+		return refusedEnvelope(replaceSectionWalkTruncatedMessage, { kb: name });
 	}
 	// Unreachable — headingInWalk and sectionOf re-find the heading with
 	// the same predicate on the same tree — kept as a fail-closed tripwire.
@@ -104,10 +102,10 @@ export async function runReplaceSectionMode(
 		// The sequence refuses a truncated pre-mutation walk before any
 		// kernel call — the enumeration, anchor, and pre-write id set would
 		// derive from incomplete evidence.
-		return refusedEnvelope(
-			`the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead`,
-			{ kb: name, anchor: echo },
-		);
+		return refusedEnvelope(replaceSectionWalkTruncatedMessage, {
+			kb: name,
+			anchor: echo,
+		});
 	}
 	if (outcome.kind === "no-section") {
 		// Unreachable — the sequence re-derives the same section from the

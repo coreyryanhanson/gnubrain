@@ -127,7 +127,12 @@ async function nearMatchStop(
 ): Promise<Envelope> {
 	const { kernel, name } = input;
 	const candidates: Record<string, unknown>[] = [];
-	for (const row of rows) {
+	// Truncated (cap+1) row sets render only the cap — each row costs a walk
+	// plus a markdown export, so overflow rows are sliced off before any
+	// read. The flag rides the primitives' TitleMatchResult; never re-derive
+	// it from row-count arithmetic here.
+	const visible = truncated ? rows.slice(0, GUARD_NEAR_CAP) : rows;
+	for (const row of visible) {
 		// First child block's content — cheap and excerpt-only by design
 		// (near-match tier). The document-order read itself lives in the
 		// primitives; only the swallow policy stays here (a vanished
@@ -157,7 +162,6 @@ async function nearMatchStop(
 	};
 	if (truncated) {
 		envelope.truncated = `capped at ${GUARD_NEAR_CAP} candidates — refine the title`;
-		candidates.length = GUARD_NEAR_CAP;
 	}
 	return stagedEnvelope(envelope, input);
 }
