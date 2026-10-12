@@ -28,10 +28,8 @@ import {
 	type GrantSelectFn,
 	type GrantSelectOptions,
 } from "../../writeConfirm.js";
-import {
-	registerWriteToolAndToolset,
-	type WriteToolHooks,
-} from "../../write.js";
+import { registerWriteToolAndToolset } from "../../write.js";
+import { type WriteToolHooks } from "../../writePrepare.js";
 import { validation } from "./fixtures.js";
 
 export { validation };

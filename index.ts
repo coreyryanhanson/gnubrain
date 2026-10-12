@@ -5,11 +5,9 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	TOOLSET_EVENTS,
-	toggleBatch,
 	type Toolset,
-	type ToolsetSpec,
-	effectiveEnabled,
 	readMergedToolsetDefaults,
+	type BatchOp,
 } from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
@@ -30,7 +28,12 @@ import {
 	type SessionValidation,
 } from "./validation.js";
 import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
-import { READ_TOOLSET_SPEC, registerReadToolsAndToolset } from "./tools.js";
+import {
+	applyToolsetToggleBatch,
+	toolsetIntent,
+	toolsetState,
+} from "./toolsets.js";
+import { registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import {
 	clearInteractionGrants,
@@ -38,7 +41,7 @@ import {
 	createWriteGrantState,
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
-import { registerWriteToolAndToolset, WRITE_TOOLSET_SPEC } from "./write.js";
+import { registerWriteToolAndToolset } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -231,16 +234,10 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|write|off])",
 		handler: async (args, ctx) => {
 			const ui = ctx.ui;
-			// Toolset display reads intent (the masking library's display
-			// contract): one settings snapshot + the live branch, resolved
-			// per spec. Settings cannot change mid-command, so the snapshot
-			// serves both the pre-toggle state lines and the post-toggle
-			// landed check; the branch is re-read after the batch.
-			const defaults = readMergedToolsetDefaults();
-			const intentOf = (
-				spec: ToolsetSpec,
-				branch: ReturnType<typeof ctx.sessionManager.getBranch>,
-			) => effectiveEnabled(spec, branch, defaults).enabled;
+			// One settings snapshot + the live branch resolve the toolset
+			// intent the state lines display and the toggles compare against
+			// (the masking library's display contract; see toolsets.ts).
+			const intent = toolsetIntent(readMergedToolsetDefaults());
 			const branch = ctx.sessionManager.getBranch();
 			// revalidate degrades rather than throwing, so a failed re-check
 			// re-engages all-or-nothing right here.
@@ -259,37 +256,22 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 					validation.rateLimitRetryAfterSeconds,
 				);
 			}
+			const state = toolsetState(intent, branch);
 			const result = dispatchKbCommand(
 				args,
 				validation,
-				[
-					// Bare `/kb` toolset-state lines (tool-masking record): a masked
-					// toolset is printed, never silent. Display reads intent
-					// (effectiveEnabled over the spec, the library's display
-					// contract) — an inert toolset's persisted intent is on even
-					// though its members cannot actuate.
-					`read toolset (kb_query, kb_search, kb_read): ${
-						intentOf(READ_TOOLSET_SPEC, branch)
-							? "on"
-							: "off (toggle, settings pin, or allowlist governance)"
-					}`,
-					`write toolset (kb_write): ${
-						intentOf(WRITE_TOOLSET_SPEC, branch)
-							? "on"
-							: "off (toggle, settings pin, or allowlist governance)"
-					}`,
-				],
+				state.lines,
 				// The /kb tools verbs are intent setters — the no-op detection
 				// reads the same recorded intent the lines above display.
-				intentOf(READ_TOOLSET_SPEC, branch),
-				intentOf(WRITE_TOOLSET_SPEC, branch),
+				state.readsOn,
+				state.writesOn,
 			);
 			if (result.newScope !== undefined) {
 				// A complete snapshot of the active set; latest entry wins.
 				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
 				validation.scope = result.newScope;
 			}
-			const toggleOps: { id: string; desired: boolean }[] = [];
+			const toggleOps: BatchOp[] = [];
 			if (result.newReadsEnabled !== undefined) {
 				toggleOps.push({
 					id: READ_TOOLSET_ID,
@@ -305,45 +287,14 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			let message = result.message;
 			let severity = result.severity;
 			if (toggleOps.length > 0) {
-				// One batch is one intent, over the library's sole toggle
-				// actuation path. The landed wording reads the batch's own
-				// change report, not a re-derivation from state: the report is
-				// an intent delta (an op absent from it was already in the
-				// desired state), and a full silent no-op — a deferring child —
-				// reports [], so nothing landed.
-				try {
-					const results = toggleBatch(pi, ctx.sessionManager, toggleOps);
-					const landedById = new Map(results.map((r) => [r.id, r.enabled]));
-					const landed =
-						results.length > 0 &&
-						toggleOps.every(
-							(op) =>
-								!landedById.has(op.id) || landedById.get(op.id) === op.desired,
-						);
-					if (!landed) {
-						const readsOn = intentOf(
-							READ_TOOLSET_SPEC,
-							ctx.sessionManager.getBranch(),
-						);
-						const writesOn = intentOf(
-							WRITE_TOOLSET_SPEC,
-							ctx.sessionManager.getBranch(),
-						);
-						message = `kb tools unchanged — read toolset ${readsOn ? "on" : "off"}, write toolset ${writesOn ? "on" : "off"}`;
-						severity = "warning";
-					}
-				} catch (err) {
-					// By name, never instanceof: the thrown handle may belong to
-					// a different physical copy of the library.
-					if (
-						(err as { name?: string } | null)?.name !== "AllowlistModeError"
-					) {
-						throw err;
-					}
-					message =
-						"kb tools toggle unavailable — this session runs under allowlist governance (toolsets are managed externally)";
-					severity = "error";
-				}
+				const patch = applyToolsetToggleBatch(
+					pi,
+					ctx.sessionManager,
+					toggleOps,
+					intent,
+				);
+				message = patch.message ?? message;
+				severity = patch.severity ?? severity;
 			}
 			renderStatus(ctx);
 			ui.notify(message, severity);

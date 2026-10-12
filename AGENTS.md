@@ -115,7 +115,10 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
 ## Architecture
 
 `index.ts` is the entry (`register(pi, deps)`): session lifecycle, `/kb`
-command, status slot, and both toolsets. `deps` is the injectable test seam
+command, status slot, and both toolsets. The command's library-facing half
+— toolset intent resolution, the state lines, and the toggle actuation —
+lives in `toolsets.ts`, so a `pi-tool-masking` upgrade touches one place.
+`deps` is the injectable test seam
 (`readFile`, `createClient`) — unit tests drive the extension through it
 instead of touching real files; the integration suite registers toolsets
 directly and seeds settings in memory through `loadGnubrainSettings` (or a
@@ -153,8 +156,10 @@ temp HOME for the headless child).
   `tools.ts`, three read tools) and `gnubrain.write` (`write.ts`, one
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
   `/kb tools read|write|off` toggles them live.
-- **Write flows** (`write.ts` dispatches edit / append / replace-section /
-  delete / move; create is `writeCreate.ts`) are tool-schema orchestration
+- **Write flows** (`writePrepare.ts` carries the ordered kernel-free entry
+  ladder and dispatches edit / append / replace-section /
+  delete / move; create is `writeCreate.ts`; `write.ts` is the tool
+  surface + registration) are tool-schema orchestration
   laced with session state: baselines seeding, spill receipts, move outlines,
   envelope wording. The kernel-coupled cores they compose —
   `findTitleMatches`, `createDocVerified`, `editVerified`, `insertVerified`,
