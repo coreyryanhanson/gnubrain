@@ -52,9 +52,16 @@ export interface SessionValidation {
 	 * recovery resets the breaker only on this (a successful authenticated
 	 * call), not on a network-failed pass. */
 	lsNotebooksOk: boolean;
-	/** Set when validation was skipped because the 429 cooldown was armed —
-	 * kb-name refusals must name the skip, not "stale or encrypted". */
+	/** Set when validation could not produce a valid set because the kernel
+	 * was inside a 429 lock — validation skipped under an armed cooldown, or
+	 * the listing call itself was refused. kb-name refusals must name the
+	 * skip, not "stale or encrypted". */
 	skippedDueToRateLimit?: boolean;
+	/** Retry-After served by a 429 the listing call observed — the session
+	 * start and /kb arm the local cooldown from it (the same reducer the
+	 * gate uses). Undefined when the cooldown was already armed and nothing
+	 * was observed. */
+	rateLimitRetryAfterSeconds?: number | undefined;
 }
 
 /** scope persistence payload — a complete snapshot of the active set. */
@@ -231,11 +238,16 @@ export async function runSessionValidation(input: {
 		// Fail-closed: the only throw site is the listing call itself, which
 		// precedes resolution — the valid set is untouched/empty; every tool
 		// call's `kb` name is rejected as not-in-scope until /kb recovery
-		// re-runs validation.
-		warnings.push(
-			`lsNotebooks failed (${err instanceof Error ? err.message : String(err)}) — no KBs are valid until /kb re-validates`,
-		);
-		return {
+		// re-runs validation. A 429 here is the kernel's live per-IP lock
+		// (reachable at startup: the in-process cooldown is deliberately not
+		// persisted), so the refusal must name the lock, not "stale or
+		// encrypted", and the served Retry-After arms the local cooldown —
+		// otherwise no op ever observes the 429 (the gate refuses on the kb
+		// name first) and the session stays kb-dead, wrongly attributed, until
+		// the lock expires. The probe verdict is kept verbatim: routing to
+		// `rateLimitedValidation` would overwrite it as `unreachable`.
+		const cause = causeOf(err);
+		const result: SessionValidation = {
 			settings,
 			shapeErrors,
 			probe,
@@ -243,9 +255,21 @@ export async function runSessionValidation(input: {
 			scope: [],
 			defaultKBs: configuredDefault,
 			warnings,
-			authFailed: causeOf(err)?.kind === "auth",
+			authFailed: cause?.kind === "auth",
 			lsNotebooksOk: false,
 		};
+		if (cause?.kind === "rate-limit") {
+			warnings.push(
+				"kernel is rate-limited (429 lock) — the notebook listing was refused; no KBs are valid until /kb re-validates after the lock expires",
+			);
+			result.skippedDueToRateLimit = true;
+			result.rateLimitRetryAfterSeconds = cause.retryAfterSeconds;
+		} else {
+			warnings.push(
+				`lsNotebooks failed (${err instanceof Error ? err.message : String(err)}) — no KBs are valid until /kb re-validates`,
+			);
+		}
+		return result;
 	}
 
 	// Scope resolution: persisted scope wins, else the configured default.

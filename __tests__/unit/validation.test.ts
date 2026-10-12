@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	SiYuanAuthError,
 	SiYuanNetworkError,
+	SiYuanRateLimitError,
 	PINNED_SIYUAN_VERSION,
 	type KernelProbeClient,
 	type NotebookList,
@@ -196,6 +197,27 @@ describe("notebook validation (lsNotebooks)", () => {
 		});
 		expect(result.validKBs.size).toBe(0);
 		expect(result.authFailed).toBe(false);
+	});
+
+	it("a 429 on the listing names the lock, not stale-or-encrypted, and surfaces the Retry-After", async () => {
+		const { kernel } = stubKernel({
+			listError: new SiYuanRateLimitError(429, 30),
+		});
+		const result = await runSessionValidation({
+			loaded: await loaded(globalSettings()),
+			kernel,
+		});
+		expect(result.validKBs.size).toBe(0);
+		expect(result.authFailed).toBe(false);
+		expect(result.skippedDueToRateLimit).toBe(true);
+		expect(result.rateLimitRetryAfterSeconds).toBe(30);
+		expect(result.warnings.some((w) => w.includes("rate-limited"))).toBe(true);
+		expect(result.warnings.some((w) => w.includes("stale or encrypted"))).toBe(
+			false,
+		);
+		// The step-2 probe verdict survives verbatim — the lock only blocked
+		// the authenticated listing, not the connectivity/version answer.
+		expect(result.probe.verdict).toBe("ok");
 	});
 });
 

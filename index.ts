@@ -214,7 +214,12 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		baselines.clear();
 		validation = await revalidate(ctx);
 		// An auth failure on the first authenticated call feeds the breaker.
+		// A 429 the listing observed arms the local cooldown from the served
+		// Retry-After — the same reducer the gate uses — so the session refuses
+		// locally instead of extending the live lock call by call.
 		if (validation.authFailed) breaker.recordAuthFailure();
+		else if (validation.rateLimitRetryAfterSeconds !== undefined)
+			breaker.recordRateLimitFromVerdict(validation.rateLimitRetryAfterSeconds);
 		renderStatus(ctx);
 	});
 
@@ -247,6 +252,12 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				// Recovery succeeded: clears degradation + the breaker counter.
 				// The 429 cooldown is deliberately untouched — it self-heals.
 				breaker.reset();
+			} else if (validation.rateLimitRetryAfterSeconds !== undefined) {
+				// Same arming as session start: a 429 the re-check's listing
+				// observed arms the local cooldown from the served Retry-After.
+				breaker.recordRateLimitFromVerdict(
+					validation.rateLimitRetryAfterSeconds,
+				);
 			}
 			const result = dispatchKbCommand(
 				args,

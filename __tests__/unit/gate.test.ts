@@ -143,6 +143,14 @@ describe("kb param contract", () => {
 		});
 	});
 
+	it("dedupes repeated names (the search fan-out runs one kernel call per name)", () => {
+		const v2 = validation({ scope: ["recipes"] });
+		expect(resolveKbParam(["recipes", "recipes"], "array", v2)).toEqual({
+			ok: true,
+			names: ["recipes"],
+		});
+	});
+
 	it("rejects a non-string 'kb' on single-name calls (the schema is the contract; this guard is the backstop)", () => {
 		const message = "'kb' must be exactly one KB name for this call";
 		expect(resolveKbParam(["a", "b"], "single", v)).toEqual({

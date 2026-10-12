@@ -115,5 +115,8 @@ export function resolveKbParam(
 			};
 		}
 	}
-	return { ok: true, names: requested };
+	// Dedupe: the search fan-out issues one kernel call per name, so a
+	// repeated name would run the same search twice and merge every row
+	// twice; the echo must reflect what actually ran.
+	return { ok: true, names: [...new Set(requested)] };
 }
