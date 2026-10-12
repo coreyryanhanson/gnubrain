@@ -477,6 +477,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.invalidRefs).toEqual({
 					count: 1,
 					hpaths: [referrerPath],
+					truncated: false,
 				});
 				const invalid = await client.listInvalidBlockRefs();
 				expect(JSON.stringify(invalid)).toContain(p1);
@@ -515,6 +516,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.invalidRefs).toEqual({
 					count: 1,
 					hpaths: [referrerPath],
+					truncated: false,
 				});
 				expect(result.deletedBlocks).toContainEqual(
 					expect.objectContaining({ content: "del body" }),
@@ -555,6 +557,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.invalidRefs).toEqual({
 					count: 1,
 					hpaths: [referrerPath],
+					truncated: false,
 				});
 			},
 			LIVE_TIMEOUT,
