@@ -58,6 +58,13 @@ export function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
 
+/** The never-retry-blindly clause shared by every unverified-write
+ * sentence: whatever leg failed, the closing instruction is the same —
+ * re-check the tree before repeating. The leads differ per leg below;
+ * this is the one part that must not drift between them. */
+const retryBlindlyClause =
+	"re-fetch the outline (kb_read) and confirm the write landed before repeating it";
+
 /** The transport-unverified sentence — tool-surface wording for the one
  * hazard the verified flows share: the mutation's kernel call failed at
  * the transport layer, so the write may already be applied and a blind
@@ -70,8 +77,7 @@ export function transportUnverifiedMessage(detail: string): string {
 		`the write's outcome is unverified: the kernel call failed at the ` +
 		`transport layer (${detail}) — ` +
 		`the request may have been delivered and the write may already be ` +
-		`applied; do NOT retry blindly — re-fetch the outline (kb_read) and ` +
-		`confirm whether it landed before repeating it`
+		`applied; do NOT retry blindly — ${retryBlindlyClause}`
 	);
 }
 
@@ -84,8 +90,7 @@ export function verificationReadsFailedMessage(detail: string): string {
 	return (
 		`the write call returned success but the post-write verification reads failed: ` +
 		`${detail} — the write's ` +
-		`outcome is unverified; do NOT retry blindly, re-fetch the outline ` +
-		`(kb_read) and confirm the write landed before repeating it`
+		`outcome is unverified; do NOT retry blindly, ${retryBlindlyClause}`
 	);
 }
 
@@ -98,8 +103,7 @@ export function postWriteAssemblyFailedMessage(detail: string): string {
 	return (
 		`the write call returned success but assembling its result failed: ` +
 		`${detail} — the write's outcome is unverified; do NOT retry blindly, ` +
-		`re-fetch the outline (kb_read) and confirm the write landed before ` +
-		`repeating it`
+		`${retryBlindlyClause}`
 	);
 }
 
@@ -123,8 +127,7 @@ function verificationAuthEventMessage(
 	return (
 		`${lead}: ${detail} — the write call returned success, so it may ` +
 		`already be applied; do NOT retry now (every authed call re-arms the ` +
-		`lock) — wait out the lockout, then re-fetch the outline (kb_read) ` +
-		`and confirm the write landed before repeating it`
+		`lock) — wait out the lockout, then ${retryBlindlyClause}`
 	);
 }
 
