@@ -163,7 +163,8 @@ export async function runReplaceSectionMode(
 	if (stale !== null) return stale;
 	// The anchor echo — projected from the section this flow already
 	// enumerated, the same projection the sequence derives internally for
-	// the mutation (the no-section tripwire below pins that re-derivation).
+	// the mutation (the heading-absent tripwire below pins that
+	// re-derivation).
 	// Reused for both the pre-mutation failure arms and the verdict arms —
 	// one source, never a second projection.
 	const echo = appendAnchorEcho(appendAnchorOf(section));
@@ -192,7 +193,7 @@ export async function runReplaceSectionMode(
 			anchor: echo,
 		});
 	}
-	if (outcome.kind === "no-section") {
+	if (outcome.kind === "heading-absent") {
 		// Unreachable — the sequence re-derives the same section from the
 		// same walk this flow just resolved. Fail-closed tripwire.
 		return refusedEnvelope(staleHeadingMessage(headingId, doc));
