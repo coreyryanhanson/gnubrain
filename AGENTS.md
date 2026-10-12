@@ -289,6 +289,16 @@ re-falsifies the changed fact in the primitives.
   found" — lives in `deleteBlockVerified` / `deleteDocVerified`
   (primitives `delete.ts`); this repo keeps the flow-side wording (kernel
   error verbatim with the fresh outline, the targetGone receipt gate).
+- The delete-freshness split — the block-delete path rides the same
+  fresh-content precondition as edit and replace-section
+  (`writeDelete.ts`, before `deleteBlockVerified`; no flow-side
+  membership read — a block outside the doc or already absent reads as
+  `vanished` there and refuses at the primitive's scoping arms), but the
+  doc-delete path is deliberately unguarded: the intent is
+  container-level destruction a member's content change cannot redirect,
+  the receipt itemizes every lost block with its content, and the
+  primitive's walk-then-mutate sequence leaves no interposable refusal
+  point without duplicating its walk.
 - The mint-policy claims (`validateMintTitle`, `writeGuard.ts`) —
   wording only; the facts themselves (the `normalizeDocTitle` 512-rune
   truncation bound, the `/` path-separator rule) live in the primitives'

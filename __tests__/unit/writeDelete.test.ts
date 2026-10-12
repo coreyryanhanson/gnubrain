@@ -50,6 +50,36 @@ describe("delete", () => {
 		).toEqual(["p1"]);
 	});
 
+	it("concurrent change → stale_content refusal before any kernel write", async () => {
+		// The blocks index still holds the pre-change row while the live tree
+		// already holds the kernel-side rewrite — the index-lag case the
+		// precondition exists to catch. No session baseline exists, so the
+		// judgment's seed path fails closed: a diverging row reads as stale,
+		// never silently matched.
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "doomed" }],
+				// The judgment's seed read (block-contents) — the SQL-now row the
+				// session holds no baseline for.
+				baselineRows: [{ id: "p1", content: "doomed" }],
+				childrenFor: {
+					"d-doc": [walkBlock("p1", "p", "", "concurrently rewritten")],
+				},
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.reason).toBe("stale_content");
+		expect(result.currentContent).toBe("concurrently rewritten");
+		expect(result.outline).toBeDefined();
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+	});
+
 	it("a kernel success no-op still reports ok — with the walk-set evidence naming it (3.8.3 kernel)", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
 		// nothing (ErrBlockNotFound → nil, a success no-op). 3.8.4

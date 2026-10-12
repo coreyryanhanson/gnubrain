@@ -13,7 +13,11 @@ import {
 } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
-import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
+import {
+	type DocTarget,
+	freshContentRefusal,
+	type WriteFlowInput,
+} from "./writeTarget.js";
 import { finishWrite } from "./writeResult.js";
 import { blockInDocRefusalKind } from "./writeVerdicts.js";
 
@@ -21,7 +25,7 @@ export async function runDeleteMode(
 	input: WriteFlowInput,
 	doc: DocTarget,
 ): Promise<Envelope> {
-	const { kernel, name, params } = input;
+	const { kernel, sessionId, name, baselines, params } = input;
 	if (params.doc === true) {
 		const outcome = await deleteDocVerified(kernel, input.probe, {
 			docId: doc.rootId,
@@ -50,6 +54,20 @@ export async function runDeleteMode(
 		});
 	}
 	const blockId = params.blockId as string;
+	// Fresh-content precondition: the same concurrency guard the edit flow
+	// applies — a delete's intent is formed on last-served content, and the
+	// act is the least recoverable one. Doc deletes are exempt:
+	// container-level destruction whose receipt itemizes every lost block.
+	// No flow-side membership read: the delete primitive judges scoping
+	// itself, and a block outside this doc or already absent reads as
+	// `vanished` here and refuses at the primitive's scoping arms instead.
+	const stale = await freshContentRefusal(
+		kernel,
+		baselines,
+		[{ blockId, baselineHash: baselines.servedHash(blockId) }],
+		{ sessionId, docId: doc.rootId },
+	);
+	if (stale !== null) return stale;
 	const outcome = await deleteBlockVerified(kernel, input.probe, {
 		blockId,
 		rootId: doc.rootId,

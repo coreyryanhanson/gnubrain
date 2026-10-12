@@ -23,8 +23,10 @@
     a no-op delete, or a lost move reads as a refusal, never as ok; minted and
     moved blocks are asserted against that tree; doc moves surface the kernel's
     own synchronous rejection of ancestor moves (identity included) verbatim;
-    edits carry a fresh-content precondition (`stale_content` refusal instead
-    of a silent clobber); and delete-bearing writes echo `invalidRefs` plus a
+    edits and block deletes carry a fresh-content precondition
+    (`stale_content` refusal instead of a silent clobber; doc deletes are
+    exempt by design — the receipt is the contract); and delete-bearing
+    writes echo `invalidRefs` plus a
     receipt of the removed blocks (ids + content; overflow spills to a file
     pointer).
 
