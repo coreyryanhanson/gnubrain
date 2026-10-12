@@ -12,14 +12,13 @@ import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { READ_TOOLSET_ID } from "./toolsetIds.js";
 import { CircuitBreaker } from "./breaker.js";
 import {
-	configRefusalEnvelope,
 	errorEnvelope,
 	type Envelope,
 	noSuchDocEnvelope,
 	refusedEnvelope,
 	textResult,
 } from "./envelope.js";
-import { runGatedTool } from "./gate.js";
+import { runGatedTool, shapeRefusal } from "./gate.js";
 import {
 	EMPTY_SCOPE_MESSAGE,
 	NOT_READY_VALIDATION,
@@ -345,13 +344,12 @@ function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
 			// armed and leaves the breaker state untouched. It cannot route
 			// through guardCall/runKbCall/runGatedTool: guardCall's pinned order
 			// fuses shape → breaker → cooldown and cannot stop between them, and
-			// runKbCall's success path would reset the breaker counter. The
-			// shape check is a deliberate duplicate of guardCall's first check —
-			// kept a one-liner so the two cannot drift.
+			// runKbCall's success path would reset the breaker counter. The shape
+			// leg rides the shared kernel-free helper (gate.ts shapeRefusal) so
+			// it cannot drift from guardCall's first check.
 			if (params.kb === "kbs") {
-				if (validation.shapeErrors.length > 0) {
-					return textResult(configRefusalEnvelope(validation.shapeErrors));
-				}
+				const shape = shapeRefusal(validation);
+				if (shape !== null) return textResult(shape);
 				return textResult(kbsDiscoveryEnvelope(validation));
 			}
 			const envelope = await runGatedTool(

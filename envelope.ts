@@ -98,7 +98,13 @@ export function kernelUnreachable(
 	baseUrl: string,
 	status: "error" | "refused",
 ): Envelope {
-	return { status, message: `SiYuan unreachable at ${baseUrl}` };
+	return {
+		status,
+		message:
+			baseUrl === ""
+				? "SiYuan unreachable"
+				: `SiYuan unreachable at ${baseUrl}`,
+	};
 }
 
 /** Read-path version-drift warning — reads warn and proceed: the op

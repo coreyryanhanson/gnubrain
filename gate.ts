@@ -44,6 +44,14 @@ type GateResult =
 	| { ok: true; names: string[] }
 	| { ok: false; envelope: Envelope };
 
+/** The kernel-free shape refusal, shared by guardCall's first leg and the
+ * `kb: "kbs"` discovery short-circuit (tools.ts), so the two checks cannot
+ * drift. Null when the session shape is clean. */
+export function shapeRefusal(validation: SessionValidation): Envelope | null {
+	if (validation.shapeErrors.length === 0) return null;
+	return configRefusalEnvelope(validation.shapeErrors);
+}
+
 /**
  * The dispatch point every kb tool call routes through: local refusals
  * first — shape, breaker, cooldown, `kb` param — each with zero kernel calls.
@@ -57,12 +65,8 @@ export function guardCall(input: {
 	arity: KbArity;
 	now?: number;
 }): GateResult {
-	if (input.validation.shapeErrors.length > 0) {
-		return {
-			ok: false,
-			envelope: configRefusalEnvelope(input.validation.shapeErrors),
-		};
-	}
+	const shape = shapeRefusal(input.validation);
+	if (shape !== null) return { ok: false, envelope: shape };
 	if (input.breaker.tripped) {
 		return { ok: false, envelope: breakerRefusalEnvelope() };
 	}
@@ -310,7 +314,9 @@ export async function runKbCall<K extends object>(
 	// Reads warn and proceed on version drift: the result already
 	// succeeded, so the drift rides the envelope as a payload field. Writes
 	// are separately refused in gateWriteAttempt; the kbs discovery form
-	// (tools.ts) makes zero kernel calls and skips this by design.
+	// (tools.ts) makes zero kernel calls and skips this by design. Drift
+	// attaches to a fully-ok result only — the other read statuses carry
+	// their own refusal/near-match wording.
 	if (result.status === "ok" && input.validation.probe.verdict === "drift") {
 		result.drift = driftWarning(
 			input.validation.probe.kernelVersion,
