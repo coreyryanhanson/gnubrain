@@ -1,5 +1,5 @@
 // The integration suite shares one live kernel and carries cross-file
-// execution order (search-shape first, gate/headless files later). Its files
+// execution order (harness self-check first, then gate/headless files). Its files
 // must never run in parallel with each other, and their order must not depend
 // on vitest's cache-driven default sort (unknown files by size, then
 // previous-run duration, longest first). Unit tests don't touch
@@ -14,8 +14,7 @@ import type { TestSpecification } from "vitest/node";
 // live suite (throttle.live, strictly last there). The order below is
 // convention (cheapest falsifier first, pi children last).
 const INTEGRATION_ORDER = [
-	"smoke.live.test.ts", // search-shape first (cheapest falsifier)
-	"harness.live.test.ts",
+	"harness.live.test.ts", // self-check + cheapest falsifier first
 	"headlessKb.live.test.ts", // pi -p child process, needs the kernel
 	"readPins.live.test.ts",
 	"writePlacement.live.test.ts",

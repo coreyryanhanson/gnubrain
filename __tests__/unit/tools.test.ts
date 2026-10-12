@@ -448,23 +448,11 @@ describe("read toolset + descriptions", () => {
 
 describe("degraded session (shape clause, asserted with the registered tools)", () => {
 	it("a shape failure keeps the tools registered and rejects calls with the problem named", async () => {
-		const registered: {
-			name: string;
-			execute?: (
-				...args: unknown[]
-			) => Promise<{ content: { text: string }[] }>;
-		}[] = [];
-		const pi = {
-			registerTool(tool: { name: string; execute?: never }) {
-				registered.push(tool as never);
-			},
-			on: () => {},
-			events: { emit: () => {} },
-		};
+		const { pi, toolDefs } = fakePi();
 		const degraded = validation();
 		degraded.shapeErrors = ["defaultKBs must be an array of KB name strings"];
 		const kernelCalls: unknown[] = [];
-		const toolset = registerReadToolsAndToolset(pi as never, {
+		const toolset = registerReadToolsAndToolset(pi, {
 			getValidation: () => degraded,
 			getKernel: () =>
 				({
@@ -477,13 +465,9 @@ describe("degraded session (shape clause, asserted with the registered tools)", 
 			breaker: new CircuitBreaker(),
 			baselines: ContentBaselines.create(),
 		});
-		expect(registered.map((t) => t.name)).toEqual([
-			"kb_query",
-			"kb_search",
-			"kb_read",
-		]);
+		expect([...toolDefs.keys()]).toEqual(["kb_query", "kb_search", "kb_read"]);
 		// Tools stay registered — masking never happened; the gate refuses.
-		const query = registered.find((t) => t.name === "kb_query") as unknown as {
+		const query = toolDefs.get("kb_query") as unknown as {
 			execute: (
 				id: string,
 				params: unknown,
@@ -525,28 +509,10 @@ function registeredReadTool(
 		kernel?: unknown;
 	} = {},
 ) {
-	const registered: {
-		name: string;
-		description?: string;
-		parameters?: unknown;
-		execute?: (
-			id: string,
-			params: unknown,
-			signal: undefined,
-			onUpdate: undefined,
-			ctx: unknown,
-		) => Promise<{ content: { text: string }[] }>;
-	}[] = [];
-	const pi = {
-		registerTool(tool: never) {
-			registered.push(tool as never);
-		},
-		on: () => {},
-		events: { emit: () => {} },
-	};
+	const { pi, toolDefs } = fakePi();
 	const kernelCalls: unknown[] = [];
 	const baselines = ContentBaselines.create();
-	registerReadToolsAndToolset(pi as never, {
+	registerReadToolsAndToolset(pi, {
 		getValidation: () => opts.validation ?? validation(),
 		getKernel: () =>
 			(opts.kernel ?? {
@@ -562,7 +528,17 @@ function registeredReadTool(
 	return {
 		baselines,
 		kernelCalls,
-		tool: registered.find((t) => t.name === (opts.tool ?? "kb_read"))!,
+		tool: toolDefs.get(opts.tool ?? "kb_read") as unknown as {
+			description?: string;
+			parameters?: unknown;
+			execute?: (
+				id: string,
+				params: unknown,
+				signal: undefined,
+				onUpdate: undefined,
+				ctx: unknown,
+			) => Promise<{ content: { text: string }[] }>;
+		},
 	};
 }
 

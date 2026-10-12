@@ -68,4 +68,18 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("harness self-check", () => {
 		},
 		LIVE_TIMEOUT,
 	);
+
+	it(
+		"runs a full-text search against a fixture notebook",
+		async () => {
+			const { client, notebookIds } = fixtures;
+			const result = await client.search({
+				query: "a",
+				paths: [notebookIds.fixtureA],
+				pageSize: 64,
+			});
+			expect(Array.isArray(result.blocks)).toBe(true);
+		},
+		LIVE_TIMEOUT,
+	);
 });
