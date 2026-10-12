@@ -125,11 +125,12 @@ temp HOME for the headless child).
   writes run the per-KB grant gate (after `guardCall`, before
   `gateWriteAttempt`), then `gateWriteAttempt`, then a flow. The gate
   order is pinned (shape → breaker → 429 cooldown → `kb` param → mode/body
-  shape → mint title → cached-verdict drift refusal → grant) and refuses
-  locally with zero kernel calls before the op runs. One deliberate
-  exception: `kb_read`'s `kb: "kbs"` discovery form short-circuits ahead
-  of the gate with zero kernel calls (it must run while the breaker is
-  tripped). Never call the kernel client outside this path.
+  shape → KB resolution → mint title → cached-verdict drift refusal →
+  grant) and refuses locally with zero kernel calls before the op runs.
+  One deliberate exception: `kb_read`'s `kb: "kbs"` discovery form runs
+  after the shape check but ahead of the breaker/cooldown/`kb`-param legs
+  with zero kernel calls (it must run while the breaker is tripped). Never
+  call the kernel client outside this path.
 - **Kernel contact is structural, not signaled.** `runKbCall` wraps the
   op's client in a tracked proxy (`trackKernel`) and only the op receives
   it: any method invocation marks contact, and contact alone drives
@@ -187,9 +188,11 @@ temp HOME for the headless child).
   mint-title kernel facts live in the primitives' `mintTitleProblem`).
 - **Session state** stays here: `baselines.ts` (what this chat was shown),
   `breaker.ts` (thin session holder over the barrel's `authLockDodge` —
-  session scoping, the genuine-error→event seam, and wording state; the
-  dodge schedule itself lives in the primitives), grant state, spill
-  receipts. These are session-lifetime
+  session scoping, the 429-accounting seam (every 429 funnels through
+  `recordRateLimitFromVerdict` — the classification of thrown errors and
+  verification-phase verdicts lives with `causeOf` and the primitives),
+  and wording state; the dodge schedule itself lives in the primitives),
+  grant state, spill receipts. These are session-lifetime
   policy, not kernel facts.
 - **SQL handling is pure and testable** in `sqlScope.ts` (node-sql-parser):
   only single-table `SELECT` from `blocks`/`refs`; scope is spliced into the
@@ -357,7 +360,7 @@ re-falsifies the changed fact in the primitives.
   endpoint is unauthenticated so a probe never counts as breaker contact
   (falsified live by the primitives' `version.live`), a 429 arms the
   local cooldown, and any call inside an active lock extends it. The
-  extension's half (holder wiring, the genuine-class seam) is pinned
+  extension's half (holder wiring, the 429-accounting seam) is pinned
   locally (`breaker.test.ts`), and the structural-contact policy on top
   of that fact (probe marks nothing, a real call resets once) is pinned
   by the gate unit suite (`gate.test.ts` with the prototype-shaped

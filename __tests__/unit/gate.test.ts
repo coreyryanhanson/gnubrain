@@ -202,7 +202,7 @@ describe("guardCall dispatch gate", () => {
 
 	it("an active 429 cooldown refuses locally with zero kernel round-trips", () => {
 		const breaker = new CircuitBreaker();
-		breaker.recordRateLimit(new SiYuanRateLimitError(429, 90), NOW);
+		breaker.recordRateLimitFromVerdict(90, NOW);
 		const result = guardCall({
 			validation: validation(),
 			breaker,
@@ -218,7 +218,7 @@ describe("guardCall dispatch gate", () => {
 
 	it("post-expiry the gate passes", () => {
 		const breaker = new CircuitBreaker();
-		breaker.recordRateLimit(new SiYuanRateLimitError(429, 60), NOW);
+		breaker.recordRateLimitFromVerdict(60, NOW);
 		const result = guardCall({
 			validation: validation(),
 			breaker,

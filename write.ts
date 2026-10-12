@@ -37,6 +37,7 @@ import { runMoveMode } from "./writeMove.js";
 import { resolveDocTarget, type WriteFlowBase } from "./writeTarget.js";
 import {
 	CONTENT_BEARING_MODES,
+	isWriteMode,
 	modeShapeProblem,
 	writeSchema,
 	type WriteParams,
@@ -105,6 +106,11 @@ async function prepareWrite(
 	const shapeProblem = modeShapeProblem(p);
 	if (shapeProblem !== undefined) {
 		return refusedEnvelope(shapeProblem);
+	}
+	// modeShapeProblem refused unknown modes above; this narrow only types
+	// p.mode as the closed union for the dispatch below (never fires).
+	if (!isWriteMode(p.mode)) {
+		return refusedEnvelope(`mode '${p.mode}' is not supported`);
 	}
 	// Content-body shape: markdown XOR markdownFile. Resolved
 	// before the probe gate and before any guard query — the
@@ -209,11 +215,12 @@ async function prepareWrite(
 			return runDeleteMode({ ...flowBase, params: p }, target);
 		case "move":
 			return runMoveMode({ ...flowBase, params: p }, target);
-		// Unreachable: modeShapeProblem refused any other mode at the entry.
-		// Kept because params.mode is a plain string, so TS needs a return.
-		default:
-			return errorEnvelope(`internal: unhandled write mode '${p.mode}'`);
 	}
+	// Exhaustive tail: modeShapeProblem and the isWriteMode narrow above
+	// guarantee p.mode is a dispatched mode — a new table key fails
+	// typecheck here until its flow case exists.
+	p.mode satisfies never;
+	return errorEnvelope(`internal: unhandled write mode '${p.mode}'`);
 }
 
 /** Register kb_write and declare the write toolset (one tool, all

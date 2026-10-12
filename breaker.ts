@@ -3,9 +3,10 @@
 // reserve under the kernel's 6-failure per-IP lock, the 429 cooldown floor,
 // deadline extension, reset-on-success — lives beside authLockSeconds in
 // siyuan-kb-primitives. This side owns only session scoping, the
-// SiYuanRateLimitError → event seams (a thrown error from the client, or a
-// verification-phase 429 verdict via recordRateLimitFromVerdict), and the
-// wording state.
+// rate-limit accounting seam (every 429 — a thrown client error
+// classified via `causeOf`, at the gate or in validation, or a
+// verification-phase verdict — funnels through
+// recordRateLimitFromVerdict), and the wording state.
 //
 // Session-lifetime by design, and deliberately not persisted across sessions
 // or processes: pi re-registers the extension per session, so a fresh
@@ -21,7 +22,6 @@ import {
 	authDodgeTripped,
 	authLockDodge,
 	type AuthDodgeState,
-	type SiYuanRateLimitError,
 } from "siyuan-kb-primitives";
 
 export class CircuitBreaker {
@@ -43,19 +43,13 @@ export class CircuitBreaker {
 		this.state = authLockDodge(this.state, { kind: "success" }, 0);
 	}
 
-	/** Arms the local cooldown. Takes the genuine `SiYuanRateLimitError` from the
-	 * client so the extension can never misclassify a synthetic 429 shape. */
-	recordRateLimit(err: SiYuanRateLimitError, now: number = Date.now()): void {
-		this.recordRateLimitFromVerdict(err.retryAfterSeconds, now);
-	}
-
-	/** Verdict-sourced 429 — same accounting as `recordRateLimit` for a
-	 * rate-limit event that arrived inside a verification-failed envelope
-	 * instead of as a thrown error (the primitives classify
-	 * verification-phase auth/429 because the mutation already acked; the
-	 * served Retry-After rides the verdict's cause leg). The primitives'
-	 * `instanceof` classifier is the trust boundary, so no synthetic-shape
-	 * guard is needed here. */
+	/** Verdict-sourced 429 — the single rate-limit accounting entry point.
+	 * A thrown `SiYuanRateLimitError` reaches here classified (the
+	 * primitives' `instanceof` classifier via `causeOf` is the trust
+	 * boundary, so no synthetic-shape guard is needed here); a
+	 * verification-phase 429 arrives inside a verification-failed envelope
+	 * because the mutation already acked, with the served Retry-After on
+	 * the verdict's cause leg. */
 	recordRateLimitFromVerdict(
 		servedRetryAfterSeconds: number | undefined,
 		now: number = Date.now(),

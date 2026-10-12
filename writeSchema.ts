@@ -13,7 +13,7 @@ const BODY_KEYS: string[] = ["markdown", "markdownFile"];
  * any kernel call. `confirmNew` is never declared in the tool schema but
  * accepted at runtime on create only — other modes reject it like any
  * invented param. */
-const MODE_PARAMS: Record<string, { targets: string[]; bodies: string[] }> = {
+const MODE_PARAMS = {
 	create: {
 		targets: ["topic", "parentId"],
 		bodies: BODY_KEYS,
@@ -32,7 +32,19 @@ const MODE_PARAMS: Record<string, { targets: string[]; bodies: string[] }> = {
 		targets: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
 		bodies: [],
 	},
-};
+} satisfies Record<string, { targets: string[]; bodies: string[] }>;
+
+/** The closed mode union, derived from the schema table: adding a table key
+ * without threading it through both dispatch switches is a compile error —
+ * an unknown mode can never reach a kernel call before its wording exists. */
+export type WriteMode = keyof typeof MODE_PARAMS;
+
+/** Type predicate over the mode union — the narrow the write-path switches
+ * rely on (the wire schema keeps `mode` a plain string). Own-property check:
+ * `in` would let an inherited name like "toString" slip past the narrow and
+ * crash the validation that must refuse it. */
+export const isWriteMode = (mode: string): mode is WriteMode =>
+	Object.hasOwn(MODE_PARAMS, mode);
 
 // Derived from the schema table so the list and the validation authority
 // cannot drift (key order is the documented mode order).
@@ -49,10 +61,10 @@ for (const [mode, { bodies }] of Object.entries(MODE_PARAMS)) {
  * calls. */
 export function modeShapeProblem(p: WriteParams): string | undefined {
 	const mode = p.mode;
-	const allowed = MODE_PARAMS[mode];
-	if (allowed === undefined) {
-		return `mode '${String(mode)}' is not supported — supported modes: ${WRITE_MODE_LIST}`;
+	if (!isWriteMode(mode)) {
+		return `mode '${mode}' is not supported — supported modes: ${WRITE_MODE_LIST}`;
 	}
+	const allowed = MODE_PARAMS[mode];
 	const base = new Set(["kb", "mode", "markdown", "markdownFile"]);
 	const unexpected = Object.keys(p).filter(
 		(k) =>
@@ -111,9 +123,12 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 				return "block-level move requires toDocId — the destination doc (same-doc moves name the source docId)";
 			}
 			return undefined;
-		default:
-			return undefined;
 	}
+	// Exhaustive tail: reached only if a WriteMode member lacks its
+	// required-param case above — a new table key fails typecheck here
+	// until that wording exists, before it can pass shape validation.
+	mode satisfies never;
+	return `internal: unhandled write mode '${mode}'`;
 }
 
 // ---------------------------------------------------------------------------

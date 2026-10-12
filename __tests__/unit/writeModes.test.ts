@@ -168,6 +168,12 @@ describe("freshContentRefusal", () => {
 describe("mode-target shape (schema table)", () => {
 	const cases: [WriteParams, string][] = [
 		[{ kb: "r", mode: "junk" } as WriteParams, "mode 'junk' is not supported"],
+		// An inherited Object.prototype name: `in` would pass it, crashing the
+		// validator on the fetched function instead of refusing the mode.
+		[
+			{ kb: "r", mode: "toString" } as WriteParams,
+			"mode 'toString' is not supported",
+		],
 		[
 			{ kb: "r", mode: "edit", docId: "d" } as WriteParams,
 			"mode 'edit' requires blockId",

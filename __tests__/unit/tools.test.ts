@@ -741,7 +741,7 @@ describe('kbs discovery (kb_read kb: "kbs")', () => {
 
 	it("discovery succeeds while a 429 cooldown is armed", async () => {
 		const breaker = new CircuitBreaker();
-		breaker.recordRateLimit({ retryAfterSeconds: 60 } as never, Date.now());
+		breaker.recordRateLimitFromVerdict(60, Date.now());
 		const { tool: read, kernelCalls } = registeredReadTool({
 			validation: validation(),
 			breaker,
