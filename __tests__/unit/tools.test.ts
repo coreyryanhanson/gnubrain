@@ -9,7 +9,6 @@ import { READ_TOOLSET_ID } from "../../toolsetIds.js";
 import { PREVIEW_CHARS, RESULT_LIMIT } from "../../spill.js";
 import {
 	registerReadToolsAndToolset,
-	registerSearchTool,
 	runRead,
 	runSearchFanOut,
 } from "../../tools.js";
@@ -28,19 +27,6 @@ function readSpilledJsonl<T>(path: string): T[] {
 
 // These tests exercise the full scope, unlike the shared fixture's default.
 const validation = () => makeValidation({ scope: ["recipes", "projects"] });
-
-/** Register the tools on a fake pi and return the captured tool definitions
- * for direct execution. */
-function fakePiWithTools() {
-	const { pi, toolDefs } = fakePi();
-	const hooks = {
-		getValidation: () => undefined,
-		getKernel: () => undefined,
-		breaker: new CircuitBreaker(),
-		baselines: ContentBaselines.create(),
-	};
-	return { tools: toolDefs, pi, hooks };
-}
 
 // ---------------------------------------------------------------------------
 // Tool surface — executed through the registered definitions
@@ -208,13 +194,9 @@ describe("search tool", () => {
 		expect(String(result.truncated)).toContain("full result in");
 	});
 
-	it("rejects agent-supplied method/aux params at the tool schema", async () => {
-		const { tools, pi, hooks } = fakePiWithTools();
-		registerSearchTool(pi as never, hooks);
-		const schema = tools.get("kb_search") as unknown as {
-			parameters: Record<string, unknown>;
-		};
-		expect(schema.parameters).toMatchObject({ additionalProperties: false });
+	it("rejects agent-supplied method/aux params at the tool schema", () => {
+		const { tool: search } = registeredReadTool({ tool: "kb_search" });
+		expect(search.parameters).toMatchObject({ additionalProperties: false });
 	});
 });
 
@@ -223,31 +205,17 @@ describe("search tool", () => {
 // ---------------------------------------------------------------------------
 
 describe("query tool", () => {
-	/** Register the read tools on a fake pi with a query-only kernel stub
-	 * returning `rows`; execute kb_query through the registered definition. */
+	/** kb_query through the registered definition, backed by a query-only
+	 * kernel stub returning `rows` and recording every SQL statement. */
 	async function executeQuery(rows: Record<string, unknown>[]) {
-		const { pi, toolDefs } = fakePi();
-		const kernelCalls: string[] = [];
-		registerReadToolsAndToolset(pi, {
-			getValidation: () => validation(),
-			getKernel: () =>
-				({
-					baseUrl: "http://127.0.0.1:6806",
-					query: async (stmt: string) => {
-						kernelCalls.push(stmt);
-						return rows;
-					},
-				}) as never,
-			breaker: new CircuitBreaker(),
-			baselines: ContentBaselines.create(),
+		const { tool, kernelCalls } = registeredReadTool({
+			tool: "kb_query",
+			rows,
 		});
-		const tool = toolDefs.get("kb_query") as unknown as {
-			execute: (...a: unknown[]) => Promise<{ details: unknown }>;
-		};
 		return {
 			run: async (sql: string) =>
 				(
-					await tool.execute(
+					await tool.execute!(
 						"id",
 						{ kb: ["recipes"], sql },
 						undefined,
@@ -412,8 +380,7 @@ describe("read tool", () => {
 
 describe("read toolset + descriptions", () => {
 	it("registers the read toolset with the three kb_ members, default-enabled, pinned persist key", () => {
-		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
-		registerReadToolsAndToolset(pi, hooks);
+		const { tools: toolDefs } = registeredReadTool();
 		expect([...toolDefs.keys()]).toEqual(["kb_query", "kb_search", "kb_read"]);
 		const entry = getRegisteredToolsets().find(
 			(t) => t.spec.id === READ_TOOLSET_ID,
@@ -429,11 +396,8 @@ describe("read toolset + descriptions", () => {
 	});
 
 	it("the query tool description carries the pinned table schemas, semantics notes, and discovery pattern", () => {
-		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
-		registerReadToolsAndToolset(pi, hooks);
-		const description = (
-			toolDefs.get("kb_query") as { description?: string } | undefined
-		)?.description as string;
+		const { tool: query } = registeredReadTool({ tool: "kb_query" });
+		const description = query.description as string;
 		// blocks schema + refs schema (pin)
 		expect(description).toContain(
 			"blocks: id, parent_id, root_id, hpath, box, type, content, updated, sort",
@@ -451,11 +415,8 @@ describe("read toolset + descriptions", () => {
 	});
 
 	it("the read tool description carries the pinned outline-notation markers", () => {
-		const { pi, tools: toolDefs, hooks } = fakePiWithTools();
-		registerReadToolsAndToolset(pi, hooks);
-		const description = (
-			toolDefs.get("kb_read") as { description?: string } | undefined
-		)?.description as string;
+		const { tool: read } = registeredReadTool();
+		const description = read.description as string;
 		// the anchor payload + the kernel write-parent wording
 		expect(description).toContain("→ <blockID>");
 		expect(description).toContain("(not targetable)");
@@ -465,35 +426,17 @@ describe("read toolset + descriptions", () => {
 
 describe("degraded session (shape clause, asserted with the registered tools)", () => {
 	it("a shape failure keeps the tools registered and rejects calls with the problem named", async () => {
-		const { pi, toolDefs } = fakePi();
 		const degraded = validation();
 		degraded.shapeErrors = ["defaultKBs must be an array of KB name strings"];
-		const kernelCalls: unknown[] = [];
-		const toolset = registerReadToolsAndToolset(pi, {
-			getValidation: () => degraded,
-			getKernel: () =>
-				({
-					baseUrl: "http://127.0.0.1:6806",
-					query: async (stmt: string) => {
-						kernelCalls.push(stmt);
-						return [];
-					},
-				}) as never,
-			breaker: new CircuitBreaker(),
-			baselines: ContentBaselines.create(),
-		});
+		const {
+			tools: toolDefs,
+			tool: query,
+			kernelCalls,
+			toolset,
+		} = registeredReadTool({ validation: degraded, tool: "kb_query" });
 		expect([...toolDefs.keys()]).toEqual(["kb_query", "kb_search", "kb_read"]);
 		// Tools stay registered — masking never happened; the gate refuses.
-		const query = toolDefs.get("kb_query") as unknown as {
-			execute: (
-				id: string,
-				params: unknown,
-				signal: undefined,
-				onUpdate: undefined,
-				ctx: unknown,
-			) => Promise<{ content: { text: string }[] }>;
-		};
-		const result = await query.execute(
+		const result = await query.execute!(
 			"id",
 			{ kb: ["recipes"], sql: "SELECT id FROM blocks" },
 			undefined,
@@ -514,29 +457,32 @@ function ctx2(sessionId: string) {
 	return { sessionManager: { getSessionId: () => sessionId } };
 }
 
-/** Register the read tools on a bare fake pi and return the requested tool
- * definition plus the baselines instance the tools were wired with. `kernel`
- * defaults to a query-only stub that records every SQL statement into
- * `kernelCalls`; tests needing richer kernels pass their own. */
+/** The one read-side registration scaffold: register the read tools and
+ * their toolset on a fake pi. Defaults: the full-scope validation fixture, a
+ * fresh breaker and baselines, and a query-only kernel stub returning `rows`
+ * while recording every SQL statement into `kernelCalls`; `kernel` replaces
+ * the stub wholesale. Returns the captured definitions (`tools`), the
+ * registered toolset, and the requested tool handle. */
 function registeredReadTool(
 	opts: {
 		validation?: SessionValidation;
 		breaker?: CircuitBreaker;
 		tool?: string;
+		rows?: Record<string, unknown>[];
 		kernel?: unknown;
 	} = {},
 ) {
 	const { pi, toolDefs } = fakePi();
-	const kernelCalls: unknown[] = [];
+	const kernelCalls: string[] = [];
 	const baselines = ContentBaselines.create();
-	registerReadToolsAndToolset(pi, {
+	const toolset = registerReadToolsAndToolset(pi, {
 		getValidation: () => opts.validation ?? validation(),
 		getKernel: () =>
 			(opts.kernel ?? {
 				baseUrl: "http://127.0.0.1:6806",
 				query: async (stmt: string) => {
 					kernelCalls.push(stmt);
-					return [];
+					return opts.rows ?? [];
 				},
 			}) as never,
 		breaker: opts.breaker ?? new CircuitBreaker(),
@@ -545,6 +491,8 @@ function registeredReadTool(
 	return {
 		baselines,
 		kernelCalls,
+		toolset,
+		tools: toolDefs,
 		tool: toolDefs.get(opts.tool ?? "kb_read") as unknown as {
 			description?: string;
 			parameters?: unknown;
@@ -554,7 +502,7 @@ function registeredReadTool(
 				signal: undefined,
 				onUpdate: undefined,
 				ctx: unknown,
-			) => Promise<{ content: { text: string }[] }>;
+			) => Promise<{ content: { text: string }[]; details?: unknown }>;
 		},
 	};
 }
