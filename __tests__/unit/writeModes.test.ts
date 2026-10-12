@@ -299,10 +299,9 @@ describe("write-tool doctrine lines", () => {
 // Network drop between a landed write and its post-write verification
 // reads: the result must never read as "SiYuan unreachable" — that
 // invites the blind retry that duplicates or re-applies the write.
+// (The classification-is-falsified-down-repo note lives once, in the
+// transport-failure describe below.)
 describe("network drop after a landed write", () => {
-	// One transport case per wording site: the classification (timeout vs
-	// fetch reject) is falsified down-repo in the primitives' failure suite;
-	// the tool-side contract is the wording, identical for both classes.
 	it("edit: post-write echo-read drop → verificationFailed, not 'unreachable'", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const { execute, calls } = setup({

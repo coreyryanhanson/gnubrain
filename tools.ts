@@ -164,11 +164,17 @@ function buildQueryEnvelope(
 	// filled with out-of-scope rows must still signal in-scope rows beyond it.
 	// The marker counts post-filter rows, never pre-filter ones.
 	// A negative LIMIT is sqlite's "no limit" — never truncate-flagged.
+	const payload = withRowPayload(envelope, sessionId, "kb_query", "rows", kept);
 	if (limit > 0 && kept.length + dropped >= limit) {
-		const path = spillFile(sessionId, "kb_query", jsonl(kept), "jsonl");
-		envelope.truncated = `${limit} rows — refine the query; full result in ${path}`;
+		// Inline rows already carry the full result — the pointer only earns
+		// its keep when the payload spilled.
+		const pointer =
+			payload.fullResultPath === undefined
+				? ""
+				: `; full result in ${payload.fullResultPath}`;
+		payload.truncated = `${limit} rows — refine the query${pointer}`;
 	}
-	return withRowPayload(envelope, sessionId, "kb_query", "rows", kept);
+	return payload;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,31 +4,46 @@
 
 import { Type, type Static } from "typebox";
 
-/** Mode-specific target params (schema table) — anything else the agent
- * sends is rejected before any kernel call. `confirmNew` is never declared
- * in the tool schema but accepted at runtime on create only — other
- * modes reject it like any invented param. */
-const MODE_PARAMS: Record<string, string[]> = {
-	create: ["topic", "parentId"],
-	edit: ["docId", "blockId"],
-	"replace-section": ["docId", "headingId"],
-	append: ["docId", "headingId", "placement"],
-	delete: ["docId", "blockId", "doc"],
-	move: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
+/** The two body keys, single-sourced for the table and the rejection check. */
+const BODY_KEYS: string[] = ["markdown", "markdownFile"];
+
+/** Mode-specific params (schema table): `targets` are the mode's target
+ * params, `bodies` its body params (markdown XOR markdownFile; empty = the
+ * mode carries no body) — anything else the agent sends is rejected before
+ * any kernel call. `confirmNew` is never declared in the tool schema but
+ * accepted at runtime on create only — other modes reject it like any
+ * invented param. */
+const MODE_PARAMS: Record<string, { targets: string[]; bodies: string[] }> = {
+	create: {
+		targets: ["topic", "parentId"],
+		bodies: BODY_KEYS,
+	},
+	edit: { targets: ["docId", "blockId"], bodies: BODY_KEYS },
+	"replace-section": {
+		targets: ["docId", "headingId"],
+		bodies: BODY_KEYS,
+	},
+	append: {
+		targets: ["docId", "headingId", "placement"],
+		bodies: BODY_KEYS,
+	},
+	delete: { targets: ["docId", "blockId", "doc"], bodies: [] },
+	move: {
+		targets: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
+		bodies: [],
+	},
 };
 
 // Derived from the schema table so the list and the validation authority
 // cannot drift (key order is the documented mode order).
 const WRITE_MODE_LIST = Object.keys(MODE_PARAMS).join(", ");
 
-/** Modes that carry a body (schema table) — delete/move carry neither
- * markdown nor markdownFile and are valid without them. */
-export const CONTENT_BEARING_MODES = new Set([
-	"create",
-	"edit",
-	"replace-section",
-	"append",
-]);
+/** Modes that carry a body — derived from the schema table, so the table
+ * stays the single validation authority. */
+export const CONTENT_BEARING_MODES = new Set<string>();
+for (const [mode, { bodies }] of Object.entries(MODE_PARAMS)) {
+	if (bodies.length > 0) CONTENT_BEARING_MODES.add(mode);
+}
 
 /** schema-table shape validation — mode-specific targets, zero kernel
  * calls. */
@@ -43,21 +58,21 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 		(k) =>
 			!base.has(k) &&
 			(k !== "confirmNew" || mode !== "create") &&
-			!allowed.includes(k) &&
+			!allowed.targets.includes(k) &&
 			(p as Record<string, unknown>)[k] !== undefined,
 	);
 	if (unexpected.length > 0) {
 		return `mode '${mode}' does not take: ${unexpected.join(", ")}`;
 	}
-	// schema-table split: content-bearing modes take markdown XOR
-	// markdownFile; delete/move carry neither (a sent body is a mistake,
-	// never silently ignored).
-	if (!CONTENT_BEARING_MODES.has(mode)) {
-		const bodies = ["markdown", "markdownFile"].filter(
+	// schema-table split: body-less modes reject both body keys (a sent
+	// body is a mistake, never silently ignored); body-bearing modes leave
+	// the markdown XOR markdownFile rule to writeConfirm's wording.
+	if (allowed.bodies.length === 0) {
+		const sent = BODY_KEYS.filter(
 			(k) => (p as Record<string, unknown>)[k] !== undefined,
 		);
-		if (bodies.length > 0) {
-			return `mode '${mode}' does not take: ${bodies.join(", ")}`;
+		if (sent.length > 0) {
+			return `mode '${mode}' does not take: ${sent.join(", ")}`;
 		}
 	}
 	if (mode === "create") {

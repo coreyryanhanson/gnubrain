@@ -225,46 +225,10 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 	);
 
 	// -------------------------------------------------------------------
-	// Title-guard kernel round-trip
+	// Title-guard kernel round-trip — the refusal-side mint facts are
+	// unit-pinned zero-kernel in writeGuard.test.ts; what stays live is
+	// the clean-title round-trip below.
 	// -------------------------------------------------------------------
-
-	it(
-		"tab titles are refused at mint with zero kernel calls",
-		async () => {
-			const w = writeSetup();
-			const result = await w.run({
-				kb: "fixture-a",
-				mode: "create",
-				topic: "bad\ttitle",
-				markdown: "body",
-			});
-			expect(result.status).toBe("refused");
-			expect(String(result.message)).toContain("tab");
-			expect(w.createCalls).toHaveLength(0);
-		},
-		LIVE_TIMEOUT,
-	);
-
-	it(
-		"a 513-rune title is refused with the bound named",
-		async () => {
-			const w = writeSetup();
-
-			// The clean-title mint facts (verbatim storage, exact hpath) are
-			// pinned in the primitives' title round-trip live suite; what
-			// stays here is the tool side: one rune over the bound is
-			// refused with the bound named.
-			const over = await w.run({
-				kb: "fixture-a",
-				mode: "create",
-				topic: "x".repeat(513),
-				markdown: "body",
-			});
-			expect(over.status).toBe("refused");
-			expect(String(over.message)).toContain("512");
-		},
-		LIVE_TIMEOUT,
-	);
 
 	it(
 		"renameDocByID mid-test — the guard re-finds by the new stored title",

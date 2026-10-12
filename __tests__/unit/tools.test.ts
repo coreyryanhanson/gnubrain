@@ -273,8 +273,11 @@ describe("query tool", () => {
 		expect(envelope.boxes).toEqual(["nb-r"]);
 		expect(Array.isArray(envelope.rows)).toBe(true);
 		// kept + dropped reaches the injected limit → the marker fires even
-		// though every returned row was in scope.
-		expect(String(envelope.truncated)).toContain("full result in");
+		// though every returned row was in scope. The rows ride inline, so
+		// the marker names no path — there is nothing the pointer could add.
+		expect(String(envelope.truncated)).toBe(
+			`${RESULT_LIMIT} rows — refine the query`,
+		);
 		// One kernel call carrying the spliced scope and the injected LIMIT.
 		expect(kernelCalls).toHaveLength(1);
 		expect(kernelCalls[0]).toContain("IN ('nb-r')");
@@ -326,6 +329,20 @@ describe("query tool", () => {
 		const spilled = readSpilledJsonl<{ id: string; content: string }>(path);
 		expect(spilled).toHaveLength(10);
 		expect(spilled[4]).toMatchObject({ id: "b4", content: "y".repeat(1000) });
+	});
+
+	it("oversized AND saturated: the truncation marker rides the spill path", async () => {
+		const rows = Array.from({ length: RESULT_LIMIT }, (_, i) => ({
+			id: `b${i}`,
+			root_id: "d1",
+			box: "nb-r",
+			content: "y".repeat(1000),
+		}));
+		const { run } = await executeQuery(rows);
+		const envelope = await run("SELECT id, root_id, box, content FROM blocks");
+		expect(String(envelope.truncated)).toContain(
+			`full result in ${String(envelope.fullResultPath)}`,
+		);
 	});
 });
 

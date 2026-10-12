@@ -21,7 +21,7 @@
 // `mint-title` arm, worded once by mintTitleMessage (writeGuard). The
 // fresh-content judgment lives in the primitives (`checkFreshContent`) —
 // only its refusal envelope stays tool-side (freshContentRefusal,
-// writeTarget).
+// writeFresh).
 
 import {
 	PINNED_SIYUAN_VERSION,
@@ -233,7 +233,8 @@ export const replaceSectionWalkTruncatedMessage =
 
 /** Anchor echo wording — the agent-facing rendering of the placement
  * primitives' evidence-only unions (kind + ids + the move `at`). Byte
- * pinning lives in writeModes.test.ts; the unions' shape contract lives in
+ * pinning lives in the flow suites (writeAppend.test.ts, writeMove.test.ts,
+ * writeReplaceSection.test.ts); the unions' shape contract lives in
  * the primitives' placement corpus. */
 export function appendAnchorEcho(anchor: AppendAnchor): string {
 	switch (anchor.kind) {
