@@ -30,6 +30,7 @@ import {
 } from "./writeSchema.js";
 import { validateMintTitle } from "./writeGuard.js";
 import type { ContentBaselines } from "./baselines.js";
+import type { KernelProbeClient } from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 
 /** Runtime deps the write tool adds to the register seam. */
@@ -61,6 +62,12 @@ export async function prepareWrite(
 	names: string[],
 	ctx: ExtensionContext,
 	signal: AbortSignal | undefined,
+	/** The raw (untracked) client the gate hands the op alongside the
+	 * tracked one — the probe handle. Declared as the narrow probe type, so
+	 * a real kernel call through it fails typecheck. Defaults to `kernel`
+	 * for direct callers (untracked stubs: observationally identical); the
+	 * production wiring pin asserts write.ts passes the raw client. */
+	probe: KernelProbeClient = kernel,
 ): Promise<Envelope> {
 	// Uniform mode-target shape check before anything else —
 	// zero kernel calls, and it covers create too (create's
@@ -133,13 +140,13 @@ export async function prepareWrite(
 	// Write-path probe gate: a successful probe (or a per-attempt retry)
 	// must precede any write. The probe is unauthenticated, so it marks no
 	// kernel contact — the breaker's reset-on-success contract counts only
-	// authenticated calls, and the gate's tracked client marks nothing for
-	// getVersion. The returned verdict is the stamp the flow input
-	// carries: the cached-ok verdict on the cached path, the fresh
-	// re-probe result on the retry path.
+	// authenticated calls, and the probe runs on the raw client, which the
+	// tracked proxy never wraps (the trap never sees it). The returned
+	// verdict is the stamp the flow input carries: the cached-ok verdict on
+	// the cached path, the fresh re-probe result on the retry path.
 	const probeGate = await gateWriteAttempt({
 		validation,
-		kernel,
+		kernel: probe,
 		breaker: hooks.breaker,
 	});
 	if (!probeGate.ok) return probeGate.envelope;

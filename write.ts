@@ -59,7 +59,7 @@ export function registerWriteToolAndToolset(
 				hooks,
 				params.kb,
 				"single",
-				(kernel, validation, names) =>
+				(kernel, validation, names, probe) =>
 					prepareWrite(
 						params as WriteParams,
 						hooks,
@@ -68,6 +68,7 @@ export function registerWriteToolAndToolset(
 						names,
 						ctx,
 						signal,
+						probe,
 					),
 			);
 			return textResult(envelope);

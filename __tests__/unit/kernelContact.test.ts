@@ -1,9 +1,9 @@
-// The trackKernel trap, falsified directly: contact marking, the
-// getVersion exemption, passthrough of non-function properties, the
-// no-wrapper-on-wrapper property, and the constructor-escape caveat the
-// doc comment names. The end-to-end structural-contact policy (a probe
-// marks nothing, a real call resets the breaker once) stays pinned in
-// gate.test.ts.
+// The trackKernel trap, falsified directly: unconditional contact marking
+// (the probe runs on the raw client, so the trap is exception-free),
+// passthrough of non-function properties, the no-wrapper-on-wrapper
+// property, and the constructor-escape caveat the doc comment names. The
+// end-to-end structural-contact policy (a probe marks nothing, a real
+// call resets the breaker once) stays pinned in gate.test.ts.
 
 import { describe, expect, it } from "vitest";
 import { trackKernel } from "../../kernelContact.js";
@@ -37,19 +37,39 @@ describe("trackKernel — structural contact trap", () => {
 		expect(t.marks()).toBe(1);
 	});
 
-	it("getVersion runs bound to the raw target and marks nothing", async () => {
+	it("every function-valued invocation marks contact exactly once — getVersion included", async () => {
+		// The trap is exception-free: the version probe runs on the raw
+		// client the gate hands the op alongside the tracked one, so no
+		// method name is exempt here.
 		const t = tracked();
 		const version = await t.wrapped.getVersion();
 		expect(version.display_version).toBe("3.8.6");
-		expect(t.marks()).toBe(0);
+		expect(t.marks()).toBe(1);
 	});
 
-	it("a getVersion running with `this` on the proxy would mark — the raw-target binding is what keeps the probe silent", async () => {
-		// The doc comment's load-bearing claim: returning getVersion
-		// unwrapped would hand it `this = proxy`, and its own this.request
-		// would re-enter this trap and mark contact for an unauthenticated
-		// route. Pin the failure mode by invoking such a method with the
-		// proxy as receiver — exactly what an unbound return would do.
+	it("the target-bound binding keeps an internal this.request from re-entering the trap — one invocation, one mark", async () => {
+		// A method invoked through the trap runs with `this` on the raw
+		// target, so its internal this.request resolves against the
+		// un-proxied client instead of marking again.
+		let marks = 0;
+		class SelfRouting extends ProbeShapeKernel {
+			override async getVersion() {
+				await this.request("/api/version", {});
+				return { display_version: "3.8.6" };
+			}
+		}
+		const wrapped = trackKernel(new SelfRouting(), () => {
+			marks += 1;
+		});
+		await wrapped.getVersion();
+		expect(marks).toBe(1);
+	});
+
+	it("a getVersion running with `this` on the proxy would double-mark — the raw-target binding is what prevents it", async () => {
+		// The failure mode the binding prevents, pinned by invoking such a
+		// method with the proxy as receiver — exactly what an unbound
+		// return would hand it: the internal request marks its own contact
+		// through the trap.
 		let marks = 0;
 		class SelfRouting extends ProbeShapeKernel {
 			override async getVersion() {

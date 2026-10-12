@@ -4,7 +4,7 @@
 
 import type { AST, BaseFrom, Binary, Select } from "node-sql-parser";
 import { Parser } from "node-sql-parser";
-import { RESULT_LIMIT } from "./spill.js";
+import { RESULT_LIMIT } from "./limits.js";
 
 const CERT_TABLES = new Set(["blocks", "refs"]);
 const parser = new Parser();

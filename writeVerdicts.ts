@@ -236,8 +236,7 @@ export const replaceSectionWalkTruncatedMessage =
 
 /** Anchor echo wording — the agent-facing rendering of the placement
  * primitives' evidence-only unions (kind + ids + the move `at`). Byte
- * pinning lives in the flow suites (writeAppend.test.ts, writeMove.test.ts,
- * writeReplaceSection.test.ts); the unions' shape contract lives in
+ * pinning lives in the per-flow suites; the unions' shape contract lives in
  * the primitives' placement corpus. */
 export function appendAnchorEcho(anchor: AppendAnchor): string {
 	switch (anchor.kind) {

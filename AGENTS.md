@@ -138,14 +138,19 @@ temp HOME for the headless child).
   op's client in a tracked proxy (`trackKernel`) and only the op receives
   it: any method invocation marks contact, and contact alone drives
   `breaker.recordSuccess()`. Two load-bearing assumptions — every public
-  client method except `getVersion` is an authenticated route (`getVersion`'s
-  route needs no token, live-pinned by the primitives' `version.live`; the
-  other half — no token fails every other route — by layer 1's auth smoke
-  matrix), and an op reaches the
-  kernel only through the client the gate passed it — so a flow that
+  client method is an authenticated route (the version endpoint's
+  tokenlessness is live-pinned by the primitives' `version.live`; that
+  it is the *only* tokenless route is comment-pinned here, not
+  suite-pinned — the probe runs on the raw client the gate hands the op
+  alongside the tracked one, so the trap never sees it and carries no
+  exemption), and an op reaches the
+  kernel only through the clients the gate passed it — so a flow that
   captured or rebuilt a client would silently stop resetting the
-  breaker. The probe is target-bound and marks nothing, so a
-  probe-only refusal (drift, 429, unreachable retry) never resets the
+  breaker, and a real call through the raw probe handle would silently
+  skip marking (the probe parameter is declared as the narrow
+  `KernelProbeClient`, so such a call fails typecheck). A
+  probe-only refusal (drift, 429, unreachable retry) therefore never
+  resets the
   consecutive-auth-failure count. The one exception to contact-drives-
   reset: a verification-phase auth/lock verdict (`authEvent` marker on the
   envelope — the primitives classify verification-phase 401/429 into
@@ -205,7 +210,8 @@ temp HOME for the headless child).
   is a tool-surface problem — the primitives' own statements are hand-built
   with fixed heads, no parser.
 - **Result shaping** stays here: `spill.ts` owns inline-vs-spill
-  (`withRowPayload`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`, `RESULT_LIMIT`) and
+  (`withRowPayload`, `PREVIEW_CHARS`, `OUTLINE_HEADINGS`); the shared
+  query-window dial (`RESULT_LIMIT`) lives in `limits.ts`;
   `outline.ts` owns outline serving (`serveOutline`/`serveOutlineFromWalk` —
   the required-baselines wrappers: seeding, the inline cut, the spill tail).
   The notation itself (`renderExtendedOutlineLines`, the primitives read
@@ -362,7 +368,8 @@ re-falsifies the changed fact in the primitives.
 - The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
   cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
   the primitives; `breaker.ts` holds it as session state); the version
-  endpoint is unauthenticated so a probe never counts as breaker contact
+  endpoint is unauthenticated and the probe runs on the raw client the
+  gate hands the op, so a probe never counts as breaker contact
   (falsified live by the primitives' `version.live`), a 429 arms the
   local cooldown, and any call inside an active lock extends it. The
   extension's half (holder wiring, the 429-accounting seam) is pinned

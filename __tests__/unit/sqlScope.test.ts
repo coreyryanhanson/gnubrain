@@ -9,7 +9,7 @@ import {
 	rebuildWithScope,
 	verifyRebuilt,
 } from "../../sqlScope.js";
-import { RESULT_LIMIT } from "../../spill.js";
+import { RESULT_LIMIT } from "../../limits.js";
 
 // ---------------------------------------------------------------------------
 // Rung 1 — parser certification

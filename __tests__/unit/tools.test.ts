@@ -6,7 +6,8 @@ import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import { EMPTY_SCOPE_MESSAGE, RATE_LIMIT_SKIP_MESSAGE } from "../../kbScope.js";
 import { READ_TOOLSET_ID } from "../../toolsetIds.js";
-import { PREVIEW_CHARS, RESULT_LIMIT } from "../../spill.js";
+import { RESULT_LIMIT } from "../../limits.js";
+import { PREVIEW_CHARS } from "../../spill.js";
 import {
 	registerReadToolsAndToolset,
 	runRead,

@@ -32,10 +32,10 @@ import {
 	searchBoxes,
 	type KernelReadClient,
 } from "siyuan-kb-primitives";
+import { RESULT_LIMIT } from "./limits.js";
 import {
 	inlineOrSpill,
 	jsonl,
-	RESULT_LIMIT,
 	spillFile,
 	spillPointer,
 	withRowPayload,

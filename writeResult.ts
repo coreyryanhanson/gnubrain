@@ -1,11 +1,7 @@
 // Write-result machinery: finishWrite, the post-mutation verification
 // contract (a network drop in the verification reads must read as
-// unverified, never as unreachable). The shared transport contract every
-// verified mutation rides: the mutation and the landed judgment are one
-// primitive call, so transport failures in the mutation phase are
-// outcome-UNKNOWN (the write may already be applied) — auth / rate-limit
-// errors rethrow for runKbCall's classification (breaker counting, 429
-// cooldown).
+// unverified, never as unreachable). The rethrow policy lives on the
+// finishWrite docstring below.
 
 import { causeOf } from "siyuan-kb-primitives";
 import {
@@ -35,7 +31,8 @@ import {
  * rethrow so runKbCall keeps classifying them (breaker counting, 429
  * cooldown, the partial-apply state merged into the classified envelope
  * by withPartialState) — the sweep's mid-sequence 429 rides exactly this
- * rethrow. */
+ * rethrow. The classification itself lives down-repo (`causeOf`); this
+ * site keeps only the rethrow policy. */
 export async function finishWrite(
 	kb: string,
 	extra: Record<string, unknown>,
@@ -44,12 +41,6 @@ export async function finishWrite(
 	try {
 		return await build();
 	} catch (err) {
-		// The classification itself lives down-repo (`causeOf`); this site
-		// keeps only the rethrow policy: auth and rate-limit errors rethrow
-		// so runKbCall keeps classifying them (breaker counting, 429
-		// cooldown, the partial-apply state merged into the classified
-		// envelope by withPartialState) — the sweep's mid-sequence 429 rides
-		// exactly this rethrow.
 		const cause = causeOf(err);
 		if (
 			cause !== undefined &&

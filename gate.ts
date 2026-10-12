@@ -153,9 +153,10 @@ type WriteProbeGate =
  * attempt — a still-failed retry refuses only that write. Returns the stamp
  * (the verdict to carry into the flow) on success. The probe marks no
  * kernel contact: the breaker's reset-on-success contract counts only
- * authenticated calls, and getVersion is unauthenticated — the tracked
- * client excludes it, while any write that actually reaches the kernel
- * marks contact through that same client. A probe that
+ * authenticated calls, and the probe runs on the raw client the gate
+ * hands the op alongside the tracked one — the trap never sees it —
+ * while any write that actually reaches the kernel marks contact
+ * through that same tracked client. A probe that
  * comes back 429/auth classifies like any kernel call: the 429 arms the
  * local cooldown (retrying writes then refuse locally with zero kernel
  * calls — any call inside an active lock extends it), and the verdict stays
@@ -338,6 +339,11 @@ export async function runGatedTool<K extends object>(
 		kernel: K,
 		validation: SessionValidation,
 		names: string[],
+		/** The raw (untracked) client — probe-class calls only. Declare the
+		 * parameter as the narrow `KernelProbeClient`, never this `K`: a
+		 * real kernel call through the raw handle would bypass contact
+		 * marking entirely. */
+		probe: K,
 	) => Promise<Envelope> | Envelope,
 ): Promise<Envelope> {
 	const validation = hooks.getValidation();
@@ -348,10 +354,12 @@ export async function runGatedTool<K extends object>(
 	return runKbCall(
 		{ validation, breaker: hooks.breaker, kernel, kb, arity },
 		async (names, tracked) => {
-			if (tracked === undefined) {
+			// tracked is built from kernel inside runKbCall, so the two are
+			// defined together — one check narrows both.
+			if (tracked === undefined || kernel === undefined) {
 				return errorEnvelope(NOT_READY_KERNEL);
 			}
-			return op(tracked, validation, names);
+			return op(tracked, validation, names, kernel);
 		},
 	);
 }

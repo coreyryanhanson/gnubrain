@@ -15,9 +15,6 @@ export function jsonl(rows: unknown[]): string {
 	return rows.map((r) => JSON.stringify(r)).join("\n");
 }
 
-/** Shared limit constant: the injected query LIMIT default and the per-KB
- * search `pageSize`. */
-export const RESULT_LIMIT = 64;
 /** Inline preview budget, chars. */
 export const PREVIEW_CHARS = 8000;
 /** Outline lines that ride inline before the outline spills. */

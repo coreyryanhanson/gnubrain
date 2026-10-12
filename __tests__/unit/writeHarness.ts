@@ -4,8 +4,8 @@
 // block-in-doc, refs, baselines), a fake-pi setup() bound to the registered
 // kb_write tool, and the base create params. Consumed by
 // writeConfirm/writeGuard/writeCreate tests and the per-mode suites
-// (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) plus the
-// shared writeModes suite.
+// (writeEdit/writeAppend/writeReplaceSection/writeDelete/writeMove) plus
+// the shared writeModes/writeSchema/writeFresh suites.
 
 import {
 	GUARD_NEAR_CAP,
@@ -18,7 +18,7 @@ import { statementKind } from "siyuan-kb-primitives/testing";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
 import { CircuitBreaker } from "../../breaker.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
-import type { WriteParams } from "../../writeSchema.js";
+import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import { expect } from "vitest";
@@ -83,6 +83,9 @@ export interface StubConfig {
 	/** Arm for exportMarkdown — the vanished-candidate race mid-guard-stop
 	 * (the spill read fails after the guard query matched). */
 	armExportError?: (arm: (err: Error) => void) => void;
+	/** Arm for getVersion — the retry-probe transport failure (a network
+	 * drop on the probe itself refuses the write with zero further calls). */
+	armVersionError?: (arm: (err: Error) => void) => void;
 	/** Model the kernel's cascading delete: an indexed id is removed together
 	 * with its tree descendants, and a delete of an id no longer in the index
 	 * throws the kernel's synchronous tree-not-found error. Off (default):
@@ -137,6 +140,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 	config.armExportError?.((err) => {
 		exportError = err;
 	});
+	let versionError: Error | undefined;
+	config.armVersionError?.((err) => {
+		versionError = err;
+	});
 	/** Remove an indexed block and its tree descendants from the live
 	 * children map — the kernel's delete cascade (an indexed container's
 	 * descendants leave the index with it). Returns false when the id is no
@@ -162,6 +169,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		baseUrl: "http://127.0.0.1:6806",
 		getVersion: async () => {
 			calls.push({ method: "getVersion", args: undefined });
+			if (versionError) throw versionError;
 			return PINNED_SIYUAN_VERSION;
 		},
 		listNotebooks: async () => ({ notebooks: [] }),
@@ -474,6 +482,18 @@ export function setup(
 		childrenFor: kernel.childrenFor,
 		baselines,
 	};
+}
+
+// The mode list derives from the authority's own unsupported-mode
+// message, so neither side of an invariant can go stale independently.
+export function modeList(): string[] {
+	const unsupported = modeShapeProblem({
+		kb: "k",
+		mode: "bogus",
+	} as unknown as WriteParams);
+	const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
+	expect(modes.length).toBeGreaterThan(0);
+	return modes;
 }
 
 export const base = {

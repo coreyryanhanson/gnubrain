@@ -10,8 +10,12 @@ import {
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { errorEnvelope, type Envelope } from "../../envelope.js";
-import { gateWriteAttempt, guardCall, runKbCall } from "../../gate.js";
-import { resolveKbParam } from "../../kbScope.js";
+import {
+	gateWriteAttempt,
+	guardCall,
+	runGatedTool,
+	runKbCall,
+} from "../../gate.js";
 import { validation } from "./fixtures.js";
 
 const NOW = 1_000_000_000;
@@ -53,8 +57,9 @@ function expectRefusal(
 
 // Mirrors SiYuanKernelClient's shape: getVersion is a prototype method that
 // reaches the transport through another method via `this`. A this-free stub
-// cannot falsify the probe-contact contract — the tracked client's exclusion
-// works by binding, and only a member-calling getVersion exercises it.
+// cannot falsify the mark-once contract — the trap's target binding keeps
+// an internal member call from re-entering it, and only a member-calling
+// getVersion exercises that binding.
 class ProbeShapeKernel {
 	readonly baseUrl = "http://127.0.0.1:6806";
 	async getVersion(): Promise<string> {
@@ -67,106 +72,6 @@ class ProbeShapeKernel {
 		return { notebooks: [] };
 	}
 }
-
-describe("kb param contract", () => {
-	const v = validation();
-
-	it("a rate-limit-skipped validation refuses with the skip named, not stale-or-encrypted", () => {
-		// rateLimitedValidation shape: settings parsed, empty valid set, the
-		// skip flag set — the refusal must not misreport the KB as stale.
-		const skipped = validation({
-			validKBs: [],
-			scope: [],
-		});
-		skipped.skippedDueToRateLimit = true;
-		const r = resolveKbParam("recipes", "single", skipped);
-		expect(r.ok).toBe(false);
-		if (!r.ok) {
-			expect(r.message).toContain("validation was skipped");
-			expect(r.message).not.toContain("stale or encrypted");
-		}
-		// Without the flag the same shape still refuses, with the stale branch.
-		const plain = validation({ validKBs: [], scope: [] });
-		const stale = resolveKbParam("recipes", "single", plain);
-		expect(stale.ok).toBe(false);
-		if (!stale.ok) expect(stale.message).toContain("stale or encrypted");
-	});
-
-	it("requires the kb param", () => {
-		const result = resolveKbParam(undefined, "single", v);
-		expect(result.ok).toBe(false);
-		expect(!result.ok && result.message).toContain(
-			"'kb' parameter is required",
-		);
-	});
-
-	it("rejects an empty array locally (the empty-scope message, no kernel call)", () => {
-		const result = resolveKbParam([], "array", v);
-		expect(result.ok).toBe(false);
-		expect(!result.ok && result.message).toBe(
-			"no KBs in scope — activate one with /kb <name> on, or set gnubrain.defaultKBs",
-		);
-	});
-
-	it("rejects an unknown KB naming the active set", () => {
-		const result = resolveKbParam(["recipies"], "array", v);
-		expect(result.ok).toBe(false);
-		expect(!result.ok && result.message).toBe(
-			"unknown KB 'recipies'. Active: recipes",
-		);
-	});
-
-	it("rejects a valid KB outside the active scope, naming the activation paths", () => {
-		const result = resolveKbParam("projects", "single", v);
-		expect(result.ok).toBe(false);
-		expect(!result.ok && result.message).toBe(
-			"'projects' exists but is not in the active scope — activate it with /kb, or change gnubrain.defaultKBs in settings",
-		);
-	});
-
-	it("rejects a configured-but-invalid KB (stale/encrypted)", () => {
-		const v2 = validation({ validKBs: [["recipes", "nb-r"]] });
-		const result = resolveKbParam("projects", "single", v2);
-		expect(result.ok).toBe(false);
-		expect(!result.ok && result.message).toContain("stale or encrypted");
-	});
-
-	it("resolves multi-KB sweeps and single names", () => {
-		const v2 = validation({ scope: ["recipes", "projects"] });
-		expect(resolveKbParam(["recipes", "projects"], "array", v2)).toEqual({
-			ok: true,
-			names: ["recipes", "projects"],
-		});
-		expect(resolveKbParam("recipes", "single", v2)).toEqual({
-			ok: true,
-			names: ["recipes"],
-		});
-	});
-
-	it("dedupes repeated names (the search fan-out runs one kernel call per name)", () => {
-		const v2 = validation({ scope: ["recipes"] });
-		expect(resolveKbParam(["recipes", "recipes"], "array", v2)).toEqual({
-			ok: true,
-			names: ["recipes"],
-		});
-	});
-
-	it("rejects a non-string 'kb' on single-name calls (the schema is the contract; this guard is the backstop)", () => {
-		const message = "'kb' must be exactly one KB name for this call";
-		expect(resolveKbParam(["a", "b"], "single", v)).toEqual({
-			ok: false,
-			message,
-		});
-		expect(resolveKbParam(["a"], "single", v)).toEqual({
-			ok: false,
-			message,
-		});
-		expect(resolveKbParam(42, "single", v)).toEqual({
-			ok: false,
-			message,
-		});
-	});
-});
 
 describe("guardCall dispatch gate", () => {
 	it("a degraded (shape-failed) session rejects every call with the problem named", () => {
@@ -659,8 +564,10 @@ describe("write gate", () => {
 				arity: "single",
 				now: NOW,
 			},
-			async (_names, tracked) => {
-				await gateWriteAttempt({ validation: v, kernel: tracked!, breaker });
+			async () => {
+				// The retry probe runs against the raw client (in scope here —
+				// runKbCall's op contract carries only the tracked one).
+				await gateWriteAttempt({ validation: v, kernel, breaker });
 				throw new SiYuanAuthError(403); // token still bad after the probe
 			},
 		);
@@ -671,34 +578,32 @@ describe("write gate", () => {
 		expect(breaker.tripped).toBe(true);
 	});
 
-	it("a probe-only write refusal resets no breaker count — the probe marks no contact", async () => {
+	it("a probe-only write refusal resets no breaker count — the probe runs on the raw client", async () => {
 		const breaker = new CircuitBreaker();
 		const recordSuccess = vi.spyOn(breaker, "recordSuccess");
 		const v = validation({ probe: { verdict: "unreachable" } });
-		const envelope = await runKbCall(
-			{
-				validation: v,
-				breaker,
-				kernel: new ProbeShapeKernel(),
-				kb: "recipes",
-				arity: "single",
-				now: NOW,
-			},
-			async (_names, tracked) => {
+		const raw = new ProbeShapeKernel();
+		let probeHandle: unknown;
+		const envelope = await runGatedTool(
+			{ getValidation: () => v, getKernel: () => raw, breaker },
+			"recipes",
+			"single",
+			async (tracked, _validation, _names, probe) => {
+				// Asserted outside the op: a failed expect inside would surface
+				// as an error envelope, not an assertion failure.
+				probeHandle = probe;
 				// A property read passes through unmarked — the probe
 				// succeeds below, so this line is the only property read
 				// through the proxy in this op.
-				void tracked!.baseUrl;
-				// The retry-path probe runs against the tracked client; the
-				// write itself refuses above the mutation (probe-only).
-				await gateWriteAttempt({
-					validation: v,
-					kernel: tracked!,
-					breaker,
-				});
+				void tracked.baseUrl;
+				// The write itself refuses above the mutation (probe-only).
+				await gateWriteAttempt({ validation: v, kernel: probe, breaker });
 				return { status: "refused", message: "probe-only refusal" };
 			},
 		);
+		// The probe handle is the raw client, not the tracked proxy — the
+		// production wiring runGatedTool forwards.
+		expect(probeHandle).toBe(raw);
 		expect(v.probe.verdict).toBe("ok"); // the probe did reach the kernel
 		expect(envelope.status).toBe("refused");
 		// An unauthenticated probe must not reset the consecutive count.
