@@ -13,6 +13,14 @@ import {
 } from "siyuan-kb-primitives";
 import type { GnubrainSettings, LoadedSettings } from "./settings.js";
 
+/** The configured default-KB names: project defaultKBs over global. */
+function configuredDefaultKBs(
+	project: { defaultKBs: string[] | undefined },
+	settings: GnubrainSettings,
+): string[] {
+	return project.defaultKBs ?? settings.defaultKBs ?? [];
+}
+
 /** probe verdict, cached for the session. A discriminated union of objects:
  * the ok/drift members carry the observed kernel version (one home that
  * cannot disagree with the verdict); `never-probed` = the shape check
@@ -149,7 +157,7 @@ export function rateLimitedValidation(input: {
 		probe: { verdict: "unreachable" },
 		validKBs: new Map(),
 		scope: [],
-		defaultKBs: project.defaultKBs ?? settings.defaultKBs ?? [],
+		defaultKBs: configuredDefaultKBs(project, settings),
 		warnings: [
 			"kernel is rate-limited (429 cooldown) — validation skipped so the lock is not extended; run /kb after the cooldown expires to re-validate",
 		],
@@ -205,7 +213,7 @@ export async function runSessionValidation(input: {
 	// call: an auth failure feeds the breaker; a network drop never counts.
 	// The configured default (project defaultKBs over global) is retained on
 	// every result so /tree navigation can re-resolve scope offline.
-	const configuredDefault = project.defaultKBs ?? settings.defaultKBs ?? [];
+	const configuredDefault = configuredDefaultKBs(project, settings);
 	let validKBs: Map<string, string>;
 	try {
 		const { valid, problems } = resolveNotebooks(

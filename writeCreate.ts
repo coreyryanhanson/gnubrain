@@ -111,20 +111,21 @@ async function duplicateStop(
 	if (truncated) {
 		envelope.truncated = `capped at ${GUARD_EXACT_CAP} candidates — refine the title`;
 	}
-	// Single-row: block IDs with content so the agent can go straight to
+	if (rows.length !== 1) return stagedEnvelope(envelope, input);
+	// Single row: block IDs with content so the agent can go straight to
 	// `edit` by blockId — reuses the outline walk already in hand.
-	if (rows.length === 1) {
-		const blocks = walks[0]!.blocks.map((b) => ({
-			id: b.id,
-			type: b.type,
-			content: b.content,
-		}));
-		// Same serve-time seeding as the outline above — blockIds is the
-		// payload the agent is invited to edit by id.
-		rememberServedRows(input.baselines, blocks);
-		withRowPayload(envelope, sessionId, "kb_write-blocks", "blockIds", blocks);
-	}
-	return stagedEnvelope(envelope, input);
+	const blocks = walks[0]!.blocks.map((b) => ({
+		id: b.id,
+		type: b.type,
+		content: b.content,
+	}));
+	// Same serve-time seeding as the outline above — blockIds is the
+	// payload the agent is invited to edit by id.
+	rememberServedRows(input.baselines, blocks);
+	return stagedEnvelope(
+		withRowPayload(envelope, sessionId, "kb_write-blocks", "blockIds", blocks),
+		input,
+	);
 }
 
 async function nearMatchStop(

@@ -9,7 +9,7 @@ import {
 	type NotebookList,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
-import { errorEnvelope } from "../../envelope.js";
+import { errorEnvelope, type Envelope } from "../../envelope.js";
 import { gateWriteAttempt, guardCall, runKbCall } from "../../gate.js";
 import { resolveKbParam } from "../../kbScope.js";
 import { validation } from "./fixtures.js";
@@ -38,6 +38,17 @@ function kernelStub(
 			},
 		},
 	};
+}
+
+/** Narrow a gate result to its refusal arm: asserts and narrows in one
+ * step, so each case needs no repeated `!== undefined && !ok` ladder. */
+function expectRefusal(
+	gate: { ok: true; probe: unknown } | { ok: false; envelope: Envelope },
+	why = "refusal",
+): { ok: false; envelope: Envelope } {
+	expect(gate.ok).toBe(false);
+	if (gate.ok) throw new Error(`expected ${why}`);
+	return gate;
 }
 
 // Mirrors SiYuanKernelClient's shape: getVersion is a prototype method that
@@ -255,15 +266,14 @@ describe("runKbCall version-drift warning", () => {
 		const drifted = validation({
 			probe: { verdict: "drift", kernelVersion: "3.8.5" },
 		});
-		const refusal = await gateWriteAttempt({
-			validation: drifted,
-			kernel: kernelStub(async () => "3.8.5").client,
-			breaker,
-			now: NOW,
-		});
-		expect(refusal !== undefined && !refusal.ok).toBe(true);
-		if (refusal === undefined || refusal.ok)
-			throw new Error("expected refusal");
+		const refusal = expectRefusal(
+			await gateWriteAttempt({
+				validation: drifted,
+				kernel: kernelStub(async () => "3.8.5").client,
+				breaker,
+				now: NOW,
+			}),
+		);
 		expect(refusal.envelope.message).toContain("3.8.5");
 	});
 });
@@ -487,14 +497,13 @@ describe("write gate", () => {
 		const v = validation({
 			probe: { verdict: "drift", kernelVersion: "3.9.0" },
 		});
-		const envelope = await gateWriteAttempt({
-			validation: v,
-			kernel: client,
-			breaker: new CircuitBreaker(),
-		});
-		expect(envelope !== undefined && !envelope.ok).toBe(true);
-		if (envelope === undefined || envelope.ok)
-			throw new Error("expected refusal");
+		const envelope = expectRefusal(
+			await gateWriteAttempt({
+				validation: v,
+				kernel: client,
+				breaker: new CircuitBreaker(),
+			}),
+		);
 		expect(envelope.envelope.message).toContain("3.9.0");
 		expect(envelope.envelope.message).toContain(PINNED_SIYUAN_VERSION);
 		expect(envelope.envelope.message).toContain("PINNED_SIYUAN_VERSION");
@@ -537,14 +546,13 @@ describe("write gate", () => {
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanNetworkError();
 		});
-		const envelope = await gateWriteAttempt({
-			validation: v,
-			kernel,
-			breaker: new CircuitBreaker(),
-		});
-		expect(envelope !== undefined && !envelope.ok).toBe(true);
-		if (envelope === undefined || envelope.ok)
-			throw new Error("expected refusal");
+		const envelope = expectRefusal(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker: new CircuitBreaker(),
+			}),
+		);
 		expect(envelope.envelope.status).toBe("refused");
 		expect(envelope.envelope.message).toContain(
 			"SiYuan unreachable at http://127.0.0.1:6806",
@@ -558,15 +566,14 @@ describe("write gate", () => {
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanRateLimitError(429, 90);
 		});
-		const envelope = await gateWriteAttempt({
-			validation: v,
-			kernel,
-			breaker,
-			now: NOW,
-		});
-		expect(envelope !== undefined && !envelope.ok).toBe(true);
-		if (envelope === undefined || envelope.ok)
-			throw new Error("expected refusal");
+		const envelope = expectRefusal(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker,
+				now: NOW,
+			}),
+		);
 		expect(envelope.envelope.message).toContain("rate-limit lockout");
 		expect(envelope.envelope.message).toContain("Retry-After: 90s");
 		// The 429 arms the local cooldown — subsequent writes refuse in
@@ -585,14 +592,14 @@ describe("write gate", () => {
 		const { client: kernel } = kernelStub(async () => {
 			throw new SiYuanAuthError(401);
 		});
-		const envelope = await gateWriteAttempt({
-			validation: v,
-			kernel,
-			breaker,
-		});
-		expect(envelope !== undefined && !envelope.ok).toBe(true);
-		if (envelope === undefined || envelope.ok)
-			throw new Error("expected classification");
+		const envelope = expectRefusal(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker,
+			}),
+			"classification",
+		);
 		expect(envelope.envelope.status).toBe("error");
 		expect(envelope.envelope.message).toContain("auth rejected the request");
 		// The probe's own 401 counted toward the threshold — two more
@@ -618,14 +625,13 @@ describe("write gate", () => {
 	it("version drift after a probe retry fails closed", async () => {
 		const v = validation({ probe: { verdict: "unreachable" } });
 		const { client: kernel } = kernelStub(async () => "4.0.0");
-		const envelope = await gateWriteAttempt({
-			validation: v,
-			kernel,
-			breaker: new CircuitBreaker(),
-		});
-		expect(envelope !== undefined && !envelope.ok).toBe(true);
-		if (envelope === undefined || envelope.ok)
-			throw new Error("expected refusal");
+		const envelope = expectRefusal(
+			await gateWriteAttempt({
+				validation: v,
+				kernel,
+				breaker: new CircuitBreaker(),
+			}),
+		);
 		expect(envelope.envelope.message).toContain("4.0.0");
 		expect(v.probe.verdict).toBe("drift");
 	});

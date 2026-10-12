@@ -25,6 +25,9 @@ The extension registers four tools with pi:
 | `kb_query` | Read-only SQL against the KB index (scoped and safety-checked) |
 | `kb_write` | Create, edit, append, replace-section, move, or delete — approved once per KB per interaction |
 
+`kb_read` also accepts `kb: "kbs"` in place of a docId to list the active
+KBs — a discovery call that touches no kernel endpoint.
+
 Writes are approved once per KB per interaction: the first `kb_write` targeting a
 KB opens a dialog naming that KB (writes may include deletes). **Yes** approves
 writes to it for the interaction, **Always this session** for the whole session,
@@ -84,11 +87,15 @@ History lookup has something to search for.
 | `/kb` | Show current KB scope and tool state |
 | `/kb <name> on` / `off` | Toggle a KB in/out of scope (idempotent) |
 | `/kb all on` / `off` | Toggle every KB at once |
+| `/kb tools` | Print the current tool state (read / write / off per toolset) |
 | `/kb tools read` | Read-only mode (write tools masked out) |
 | `/kb tools write` | Read + write mode |
 | `/kb tools off` | Disable the extension's tools |
 
-Scope changes survive restart and resume.
+Scope changes survive restart and resume. Tool toggles are session-scoped:
+they persist across restart and resume of the session (records under
+`toolset-state:gnubrain.*`), a fresh session starts with both toolsets
+enabled, and `/kb tools write` cascades read on since write requires read.
 
 ## Options
 

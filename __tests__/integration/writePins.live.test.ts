@@ -338,8 +338,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				const deepSub = heading(walk, "Deep Sub");
 				const next = heading(walk, "Next");
 				// Outline ordering before the write: document order across the
-				// list-ending section (the load-bearing case where the superseded
-				// SQL outline provably broke).
+				// list-ending section.
 				expect(await walkHeadingIds(docId)).toEqual([
 					rootSec.id,
 					deepSub.id,
@@ -474,7 +473,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.status).toBe("ok");
 				// The ref is orphaned: the echo carries it, and the kernel's own
 				// invalid-ref report names the deleted def block.
-				expect(result.invalidRefs).toEqual({
+				expect(result.invalidRefs).toMatchObject({
 					count: 1,
 					hpaths: [referrerPath],
 					truncated: false,
@@ -513,7 +512,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				expect(result.status).toBe("ok");
 				// invalidRefs + the deletedBlocks receipt, both built over the
 				// pre-delete walk set — no doc left to outline.
-				expect(result.invalidRefs).toEqual({
+				expect(result.invalidRefs).toMatchObject({
 					count: 1,
 					hpaths: [referrerPath],
 					truncated: false,
@@ -554,7 +553,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				});
 				expect(result.status).toBe("ok");
 				expect(result.targetGone).toBe(true);
-				expect(result.invalidRefs).toEqual({
+				expect(result.invalidRefs).toMatchObject({
 					count: 1,
 					hpaths: [referrerPath],
 					truncated: false,

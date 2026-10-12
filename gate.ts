@@ -168,10 +168,11 @@ export async function gateWriteAttempt(input: {
 	if (validation.probe.verdict === "ok") {
 		return { ok: true, probe: validation.probe };
 	}
-	// unreachable in production; defensive: per-write-attempt probe retry — never a
-	// session-wide loop. The probe rethrows on failure so classifyKernelError
-	// sees the thrown object (429 → cooldown, auth → breaker); the comparison
-	// lives in the pin-owning package, not re-encoded here.
+	// The cached verdict was unreachable or never-probed: retry the probe here,
+	// per write attempt — never a session-wide loop. The probe rethrows on
+	// failure so classifyKernelError sees the thrown object (429 → cooldown,
+	// auth → breaker); the comparison lives in the pin-owning package, not
+	// re-encoded here.
 	try {
 		const fresh = await probeKernel(kernel);
 		validation.probe = fresh;
