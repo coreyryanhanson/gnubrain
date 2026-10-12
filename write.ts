@@ -10,7 +10,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { defineToolset, type Toolset } from "pi-tool-masking";
+import { defineToolset, type Toolset, type ToolsetSpec } from "pi-tool-masking";
 import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
 
 import type { CircuitBreaker } from "./breaker.js";
@@ -67,6 +67,17 @@ export interface WriteToolHooks {
 // ---------------------------------------------------------------------------
 
 const WRITE_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.write";
+
+/** Display-intent spec, exported for the same reason as READ_TOOLSET_SPEC
+ * (tools.ts) — display surfaces resolve `effectiveEnabled` over it. */
+export const WRITE_TOOLSET_SPEC: ToolsetSpec = {
+	id: WRITE_TOOLSET_ID,
+	label: "GNUbrain KB writes",
+	names: new Set(["kb_write"]),
+	persistKey: WRITE_TOOLSET_PERSIST_KEY,
+	defaultEnabled: true,
+	requires: [READ_TOOLSET_ID],
+};
 
 const WRITE_DESCRIPTION = `Write to a GNUbrain knowledge base. Modes: create — mint a new doc by title (topic), optionally nested under an echoed parentId; edit — updateBlock on a blockId target (the outline carries heading IDs only; non-heading block IDs come from kb_query rows); replace-section — swap a section's body in one call (the heading ID survives); append — insert new content under a heading (omitted headingId → doc end; the anchor is always tool-derived); delete — a block, or a whole doc with doc: true; move — block-level (toDocId + optional toHeadingId) or doc-level (doc: true; omitted toDocId → notebook root).
 
@@ -239,12 +250,5 @@ export function registerWriteToolAndToolset(
 			return textResult(envelope);
 		},
 	});
-	return defineToolset(pi, {
-		id: WRITE_TOOLSET_ID,
-		label: "GNUbrain KB writes",
-		names: new Set(["kb_write"]),
-		persistKey: WRITE_TOOLSET_PERSIST_KEY,
-		defaultEnabled: true,
-		requires: [READ_TOOLSET_ID],
-	});
+	return defineToolset(pi, WRITE_TOOLSET_SPEC);
 }

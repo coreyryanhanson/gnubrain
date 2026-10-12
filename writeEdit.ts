@@ -7,11 +7,8 @@ import { blockInDoc } from "siyuan-kb-primitives";
 import { editVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { echoTail, mutationFailure } from "./writeEcho.js";
-import {
-	type DocTarget,
-	freshContentRefusal,
-	type WriteFlowInput,
-} from "./writeTarget.js";
+import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
+import { freshContentRefusal } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	editVerifyFailureReason,
@@ -29,9 +26,8 @@ export async function runEditMode(
 	const refusal = blockInDocRefusal(row, blockId, doc);
 	if (refusal !== undefined) return refusedEnvelope(refusal);
 	if (row.kind === "in-doc") {
-		// Fresh-content precondition: a concurrency guard, not a consent
-		// mechanism (the grant resolved at the kb_write entry). Read reuse,
-		// not a seeding step: the blockInDoc row is already in hand, so
+		// Fresh-content precondition (writeFresh.ts). Read reuse, not a
+		// seeding step: the blockInDoc row is already in hand, so
 		// supplying its hash spares the judgment's own seed read — the
 		// primitive reaches the same arms either way (diverged row → stale,
 		// matching or absent row → the walk content is adopted).
@@ -51,11 +47,8 @@ export async function runEditMode(
 	// never walk-rendered content — is its concern, not ours). An absent
 	// target is never refused here — updateBlock's synchronous
 	// not-found error surfaces verbatim through the kernel-refused arm.
-	// The verified edit: the mutation and the landed judgment are one
-	// primitive call. Transport failures in the mutation phase are outcome-
-	// UNKNOWN (the edit may already be applied); auth / rate-limit errors
-	// rethrow for runKbCall's classification (breaker counting, 429
-	// cooldown).
+	// The verified edit: one primitive call — the shared transport
+	// contract lives in writeResult.ts's header.
 	const outcome = await editVerified(kernel, input.probe, {
 		blockId,
 		body: input.body,

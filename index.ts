@@ -3,7 +3,14 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { TOOLSET_EVENTS, toggleBatch, type Toolset } from "pi-tool-masking";
+import {
+	TOOLSET_EVENTS,
+	toggleBatch,
+	type Toolset,
+	type ToolsetSpec,
+	effectiveEnabled,
+	readMergedToolsetDefaults,
+} from "pi-tool-masking";
 import { SiYuanKernelClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "./breaker.js";
 import { dispatchKbCommand } from "./kbCommand.js";
@@ -23,7 +30,7 @@ import {
 	type SessionValidation,
 } from "./validation.js";
 import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
-import { registerReadToolsAndToolset } from "./tools.js";
+import { READ_TOOLSET_SPEC, registerReadToolsAndToolset } from "./tools.js";
 import { ContentBaselines } from "./baselines.js";
 import {
 	clearInteractionGrants,
@@ -31,7 +38,7 @@ import {
 	createWriteGrantState,
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
-import { registerWriteToolAndToolset } from "./write.js";
+import { registerWriteToolAndToolset, WRITE_TOOLSET_SPEC } from "./write.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -219,6 +226,17 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|write|off])",
 		handler: async (args, ctx) => {
 			const ui = ctx.ui;
+			// Toolset display reads intent (the masking library's display
+			// contract): one settings snapshot + the live branch, resolved
+			// per spec. Settings cannot change mid-command, so the snapshot
+			// serves both the pre-toggle state lines and the post-toggle
+			// landed check; the branch is re-read after the batch.
+			const defaults = readMergedToolsetDefaults();
+			const intentOf = (
+				spec: ToolsetSpec,
+				branch: ReturnType<typeof ctx.sessionManager.getBranch>,
+			) => effectiveEnabled(spec, branch, defaults).enabled;
+			const branch = ctx.sessionManager.getBranch();
 			// revalidate degrades rather than throwing, so a failed re-check
 			// re-engages all-or-nothing right here.
 			validation = await revalidate(ctx);
@@ -235,21 +253,25 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 				validation,
 				[
 					// Bare `/kb` toolset-state lines (tool-masking record): a masked
-					// toolset is printed, never silent.
+					// toolset is printed, never silent. Display reads intent
+					// (effectiveEnabled over the spec, the library's display
+					// contract) — an inert toolset's persisted intent is on even
+					// though its members cannot actuate.
 					`read toolset (kb_query, kb_search, kb_read): ${
-						readToolset.isEnabled(pi)
+						intentOf(READ_TOOLSET_SPEC, branch)
 							? "on"
-							: "off — masked (toggle, settings pin, or external manager)"
+							: "off (toggle, settings pin, or allowlist governance)"
 					}`,
 					`write toolset (kb_write): ${
-						writeToolset.isEnabled(pi)
+						intentOf(WRITE_TOOLSET_SPEC, branch)
 							? "on"
-							: "off — masked (toggle, settings pin, or external manager)"
+							: "off (toggle, settings pin, or allowlist governance)"
 					}`,
 				],
-				// The /kb tools verbs are state setters over the live toolset state.
-				readToolset.isEnabled(pi),
-				writeToolset.isEnabled(pi),
+				// The /kb tools verbs are intent setters — the no-op detection
+				// reads the same recorded intent the lines above display.
+				intentOf(READ_TOOLSET_SPEC, branch),
+				intentOf(WRITE_TOOLSET_SPEC, branch),
 			);
 			if (result.newScope !== undefined) {
 				// A complete snapshot of the active set; latest entry wins.
@@ -273,19 +295,29 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			let severity = result.severity;
 			if (toggleOps.length > 0) {
 				// One batch is one intent, over the library's sole toggle
-				// actuation path. The toggle is the authority, not the
-				// pre-toggle prediction: allowlist governance throws before
-				// anything writes, and a deferring child no-ops — so the
-				// wording is checked against the live set after the batch.
+				// actuation path. The landed wording reads the batch's own
+				// change report, not a re-derivation from state: the report is
+				// an intent delta (an op absent from it was already in the
+				// desired state), and a full silent no-op — a deferring child —
+				// reports [], so nothing landed.
 				try {
-					toggleBatch(pi, ctx.sessionManager, toggleOps);
-					const readsOn = readToolset.isEnabled(pi);
-					const writesOn = writeToolset.isEnabled(pi);
-					const landed = toggleOps.every(
-						(op) =>
-							(op.id === READ_TOOLSET_ID ? readsOn : writesOn) === op.desired,
-					);
+					const results = toggleBatch(pi, ctx.sessionManager, toggleOps);
+					const landedById = new Map(results.map((r) => [r.id, r.enabled]));
+					const landed =
+						results.length > 0 &&
+						toggleOps.every(
+							(op) =>
+								!landedById.has(op.id) || landedById.get(op.id) === op.desired,
+						);
 					if (!landed) {
+						const readsOn = intentOf(
+							READ_TOOLSET_SPEC,
+							ctx.sessionManager.getBranch(),
+						);
+						const writesOn = intentOf(
+							WRITE_TOOLSET_SPEC,
+							ctx.sessionManager.getBranch(),
+						);
 						message = `kb tools unchanged — read toolset ${readsOn ? "on" : "off"}, write toolset ${writesOn ? "on" : "off"}`;
 						severity = "warning";
 					}

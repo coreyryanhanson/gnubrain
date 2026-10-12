@@ -585,9 +585,11 @@ describe("read + write toolset wiring", () => {
 	});
 
 	it("/kb tools write targets read+write (cascade); /kb tools read lands read-only; /kb tools off masks both", async () => {
-		const { pi, fire, runCommand } = fakePi();
+		const { pi, fire, runCommand, entries } = fakePi();
 		register(pi, deps());
-		const { ctx, notifications, statuses } = fakeCtx();
+		// The branch shares pi's appendEntry store, as a real session does —
+		// the intent display resolves the entries toggles persist.
+		const { ctx, notifications, statuses } = fakeCtx({ entries });
 		await fire("session_start", ctx);
 		await runCommand("tools write", ctx);
 		expect([...pi.getActiveTools()].sort()).toEqual([
@@ -607,14 +609,15 @@ describe("read + write toolset wiring", () => {
 		await runCommand("tools off", ctx);
 		expect(pi.getActiveTools()).toEqual([]);
 		expect(statuses.at(-1)?.[1]).toBe("○ kb: dev");
-		// Masked ≠ refused: the off-lines are computed from live toolset
-		// state, so an externally pinned toolset prints its absence too.
+		// Masked ≠ refused: the off-lines read recorded intent (the masking
+		// library's display contract), so a toggled-off toolset prints its
+		// absence too.
 		await runCommand("", ctx);
 		expect(notifications.at(-1)?.[0]).toContain(
-			"read toolset (kb_query, kb_search, kb_read): off — masked",
+			"read toolset (kb_query, kb_search, kb_read): off (toggle, settings pin, or allowlist governance)",
 		);
 		expect(notifications.at(-1)?.[0]).toContain(
-			"write toolset (kb_write): off — masked",
+			"write toolset (kb_write): off (toggle, settings pin, or allowlist governance)",
 		);
 		await runCommand("tools write", ctx);
 		expect([...pi.getActiveTools()].sort()).toEqual([

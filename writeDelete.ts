@@ -13,11 +13,8 @@ import {
 } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
-import {
-	type DocTarget,
-	freshContentRefusal,
-	type WriteFlowInput,
-} from "./writeTarget.js";
+import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
+import { freshContentRefusal } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import { blockInDocRefusalKind } from "./writeVerdicts.js";
 

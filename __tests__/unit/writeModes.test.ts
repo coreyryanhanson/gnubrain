@@ -28,7 +28,7 @@ import {
 	writeKernelStub,
 } from "./writeHarness.js";
 import { ContentBaselines } from "../../baselines.js";
-import { freshContentRefusal } from "../../writeTarget.js";
+import { freshContentRefusal } from "../../writeFresh.js";
 
 // The mode list derives from the authority's own unsupported-mode
 // message, so neither side of an invariant can go stale independently.

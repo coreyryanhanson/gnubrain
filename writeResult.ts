@@ -1,6 +1,11 @@
 // Write-result machinery: finishWrite, the post-mutation verification
 // contract (a network drop in the verification reads must read as
-// unverified, never as unreachable).
+// unverified, never as unreachable). The shared transport contract every
+// verified mutation rides: the mutation and the landed judgment are one
+// primitive call, so transport failures in the mutation phase are
+// outcome-UNKNOWN (the write may already be applied) — auth / rate-limit
+// errors rethrow for runKbCall's classification (breaker counting, 429
+// cooldown).
 
 import {
 	SiYuanApiError,

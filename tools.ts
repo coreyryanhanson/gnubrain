@@ -6,7 +6,7 @@
 // the SQL certification layer in sqlScope.ts.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { defineToolset, type Toolset } from "pi-tool-masking";
+import { defineToolset, type Toolset, type ToolsetSpec } from "pi-tool-masking";
 import { Type } from "typebox";
 import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { READ_TOOLSET_ID } from "./toolsetIds.js";
@@ -444,6 +444,17 @@ export async function runRead(
 
 const READ_TOOLSET_PERSIST_KEY = "toolset-state:gnubrain.read";
 
+/** Exported for display surfaces: per the masking library's contract,
+ * display reads intent (`effectiveEnabled` over this spec), observation
+ * (`isEnabled`) stays for declaration-sensitive sites only. */
+export const READ_TOOLSET_SPEC: ToolsetSpec = {
+	id: READ_TOOLSET_ID,
+	label: "GNUbrain KB reads",
+	names: new Set(["kb_query", "kb_search", "kb_read"]),
+	persistKey: READ_TOOLSET_PERSIST_KEY,
+	defaultEnabled: true,
+};
+
 /** Register the three read tools and declare the read toolset: the
  * toolset exists so the surface is maskable from day one — default behavior
  * unchanged; /kb tools read|write|off sets the toolsets at runtime. */
@@ -454,11 +465,5 @@ export function registerReadToolsAndToolset(
 	registerQueryTool(pi, hooks);
 	registerSearchTool(pi, hooks);
 	registerReadTool(pi, hooks);
-	return defineToolset(pi, {
-		id: READ_TOOLSET_ID,
-		label: "GNUbrain KB reads",
-		names: new Set(["kb_query", "kb_search", "kb_read"]),
-		persistKey: READ_TOOLSET_PERSIST_KEY,
-		defaultEnabled: true,
-	});
+	return defineToolset(pi, READ_TOOLSET_SPEC);
 }

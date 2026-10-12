@@ -27,9 +27,9 @@ import {
 	headingInWalk,
 	staleHeadingMessage,
 	type DocTarget,
-	freshContentRefusal,
 	type WriteFlowInput,
 } from "./writeTarget.js";
+import { freshContentRefusal } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	appendAnchorEcho,
@@ -131,8 +131,8 @@ export async function runReplaceSectionMode(
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
 	const deleteSet = sectionOf(tree, headingId);
-	// Inline narrowing + the fail-closed tripwire (headingInWalk refused an
-	// absent id on this same walk) word in anchorRefusal (writeTarget).
+	// Inline narrowing: the fail-closed arms word in anchorRefusal
+	// (writeTarget.ts).
 	if (
 		deleteSet.kind === "walk-truncated" ||
 		deleteSet.kind === "heading-absent"
@@ -146,12 +146,11 @@ export async function runReplaceSectionMode(
 		);
 	}
 	const section = deleteSet.section;
-	// Fresh-content precondition: a concurrency guard, not a consent
-	// mechanism (the grant resolved at the kb_write entry). One wrapper step
-	// right before the kernel call — the judgment seeds missing baselines
-	// from the SQL index and checks against the live tree in one pass (a
-	// change landing since the walk is caught as stale_content, not
-	// laundered into the baseline).
+	// Fresh-content precondition (writeFresh.ts), one wrapper step right
+	// before the kernel call: the judgment seeds missing baselines from the
+	// SQL index and checks against the live tree in one pass (a change
+	// landing since the walk is caught as stale_content, not laundered into
+	// the baseline).
 	const stale = await freshContentRefusal(
 		kernel,
 		baselines,

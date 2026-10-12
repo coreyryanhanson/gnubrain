@@ -165,7 +165,7 @@ temp HOME for the headless child).
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,
-  `writeTarget.ts`);
+  `writeFresh.ts`);
   `writeVerdicts.ts` is the wording layer over those unions: exhaustive
   switches (no default) mapping every kind to the sentence it renders,
   so a new kind in a
@@ -357,7 +357,9 @@ re-falsifies the changed fact in the primitives.
   locally (`breaker.test.ts`), and the structural-contact policy on top
   of that fact (probe marks nothing, a real call resets once) is pinned
   by the gate unit suite (`gate.test.ts` with the prototype-shaped
-  `ProbeShapeKernel` stub, `writeCreate.test.ts`).
+  `ProbeShapeKernel` stub, `writeCreate.test.ts`); the trap itself lives
+  in `kernelContact.ts` and is falsified directly by
+  `kernelContact.test.ts`.
 - The verbatim-title fact (`writeGuard.ts` wording) — doc titles store
   verbatim, unescaped, in `blocks.content` (the HTML-escaped form lives
   only in `blocks.ial`, which the guard does not query); falsified by the

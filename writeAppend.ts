@@ -42,8 +42,8 @@ export async function runAppendMode(
 		params.headingId,
 		params.placement as AppendPlacement | undefined,
 	);
-	// Inline narrowing + the fail-closed tripwire (headingInWalk refused an
-	// absent id on this same walk) word in anchorRefusal (writeTarget).
+	// Inline narrowing: the fail-closed arms word in anchorRefusal
+	// (writeTarget.ts).
 	if (anchor.kind === "walk-truncated" || anchor.kind === "heading-absent") {
 		return anchorRefusal(
 			anchor.kind,
@@ -54,11 +54,8 @@ export async function runAppendMode(
 		);
 	}
 	const echo = appendAnchorEcho(anchor);
-	// The verified insert: the mutation and the landed judgment are one
-	// primitive call. Transport failures in the mutation phase are outcome-
-	// UNKNOWN (the insert may already be applied); auth / rate-limit errors
-	// rethrow for runKbCall's classification (breaker counting, 429
-	// cooldown).
+	// The verified insert: one primitive call — the shared transport
+	// contract lives in writeResult.ts's header.
 	const outcome = await insertVerified(kernel, input.probe, {
 		anchor,
 		body: input.body,
