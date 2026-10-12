@@ -4,7 +4,7 @@
 // later tool call is rejected with the problem named, never a crash.
 
 import {
-	SiYuanAuthError,
+	causeOf,
 	probeKernel,
 	resolveNotebooks,
 	type KernelProbeClient,
@@ -243,7 +243,7 @@ export async function runSessionValidation(input: {
 			scope: [],
 			defaultKBs: configuredDefault,
 			warnings,
-			authFailed: err instanceof SiYuanAuthError,
+			authFailed: causeOf(err)?.kind === "auth",
 			lsNotebooksOk: false,
 		};
 	}

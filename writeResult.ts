@@ -7,13 +7,7 @@
 // errors rethrow for runKbCall's classification (breaker counting, 429
 // cooldown).
 
-import {
-	SiYuanApiError,
-	SiYuanAuthError,
-	SiYuanNetworkError,
-	SiYuanRateLimitError,
-	SiYuanTimeoutError,
-} from "siyuan-kb-primitives";
+import { causeOf } from "siyuan-kb-primitives";
 import {
 	errorEnvelope,
 	takePartialReplace,
@@ -50,30 +44,43 @@ export async function finishWrite(
 	try {
 		return await build();
 	} catch (err) {
-		// Siblings of SiYuanApiError, never subclasses — the same class list
-		// contract the primitives' classifiers pin.
-		if (err instanceof SiYuanAuthError || err instanceof SiYuanRateLimitError) {
+		// The classification itself lives down-repo (`causeOf`); this site
+		// keeps only the rethrow policy: auth and rate-limit errors rethrow
+		// so runKbCall keeps classifying them (breaker counting, 429
+		// cooldown, the partial-apply state merged into the classified
+		// envelope by withPartialState) — the sweep's mid-sequence 429 rides
+		// exactly this rethrow.
+		const cause = causeOf(err);
+		if (
+			cause !== undefined &&
+			(cause.kind === "auth" || cause.kind === "rate-limit")
+		) {
 			throw err;
 		}
 		const partial = takePartialReplace(err);
 		const detail = err instanceof Error ? err.message : String(err);
-		// A kernel rejection mid-verification (unknown/locked id) leaves the
-		// write's outcome unverified too — same envelope. No breaker effect:
-		// breaker counting and 429 cooldown ride the rethrown auth/rate-limit
-		// arm above; these three classes never classified there anyway.
-		const kernelClass =
-			err instanceof SiYuanNetworkError ||
-			err instanceof SiYuanTimeoutError ||
-			err instanceof SiYuanApiError;
 		let message: string;
 		if (partial !== undefined) {
 			message =
 				`the write is partially applied — a mid-write step failed: ` +
 				`${detail} — the earlier steps have landed; ${PARTIAL_APPLY_GUIDANCE}`;
-		} else if (kernelClass) {
-			message = verificationReadsFailedMessage(detail);
-		} else {
+		} else if (cause === undefined) {
 			message = postWriteAssemblyFailedMessage(detail);
+		} else {
+			switch (cause.kind) {
+				case "transport":
+				case "kernel":
+					// A kernel rejection mid-verification (unknown/locked id)
+					// leaves the write's outcome unverified too — same envelope.
+					// No breaker effect: breaker counting and 429 cooldown ride
+					// the rethrown auth/rate-limit arm above; those causes never
+					// reach here.
+					message = verificationReadsFailedMessage(detail);
+					break;
+				default:
+					cause satisfies never;
+					message = postWriteAssemblyFailedMessage(detail);
+			}
 		}
 		// A mid-sequence failure (replace-section's delete sweep) attaches
 		// its partial-apply state to the error before it lands here — the

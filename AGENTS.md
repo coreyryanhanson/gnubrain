@@ -63,7 +63,11 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   No source file in this repo
   names `siyuan-kernel-api` — take the client constructor, error classes,
   and kernel types from the read barrel (one requirer = one layer-1 copy in
-  every install, which keeps `instanceof` identity alive). A test-only
+  every install, which keeps `instanceof` identity alive); error
+  classification rides the read barrel's `causeOf` too — the gate and the
+  write-result wrapper switch exhaustively on its `KernelCause` union
+  instead of re-encoding the layer-1 class list (the remaining inline
+  class checks are deliberate policy sites, not the list). A test-only
   third entry (`siyuan-kb-primitives/testing`) is allowed under
   `__tests__/` only — statement-shape helpers for the suites, pinned by
   `layerBoundary.test.ts`.

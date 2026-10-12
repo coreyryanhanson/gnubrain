@@ -9,11 +9,9 @@
 
 import {
 	PINNED_SIYUAN_VERSION,
-	SiYuanAuthError,
-	SiYuanNetworkError,
-	SiYuanRateLimitError,
-	SiYuanTimeoutError,
+	causeOf,
 	probeKernel,
+	type KernelCause,
 	type KernelProbeClient,
 	type KernelProbeResult,
 } from "siyuan-kb-primitives";
@@ -88,31 +86,38 @@ export function guardCall(input: {
 /**
  * Breaker-mutating error legs shared by the read dispatch and the write
  * probe: auth feeds the consecutive-failure count, 429 arms the local
- * cooldown (never counted toward the breaker). Returns null for any other
- * error — callers keep their own network/unknown envelopes.
+ * cooldown (never counted toward the breaker). The layer-1 classification
+ * itself lives down-repo (`causeOf`); this site keeps only the session
+ * policy. Returns null for transport/kernel causes — callers keep their
+ * own network/unknown envelopes.
  */
 function classifyKernelError(
-	err: unknown,
+	cause: KernelCause,
 	breaker: CircuitBreaker,
 	now: number,
 ): Envelope | null {
-	if (err instanceof SiYuanAuthError) {
-		breaker.recordAuthFailure();
-		if (breaker.tripped) {
-			return breakerRefusalEnvelope();
+	switch (cause.kind) {
+		case "auth": {
+			breaker.recordAuthFailure();
+			if (breaker.tripped) {
+				return breakerRefusalEnvelope();
+			}
+			return errorEnvelope(
+				`SiYuan auth rejected the request (HTTP ${cause.status}) — check the apiToken in the global settings file`,
+			);
 		}
-		return errorEnvelope(
-			`SiYuan auth rejected the request (HTTP ${err.status}) — check the apiToken in the global settings file`,
-		);
+		case "rate-limit":
+			breaker.recordRateLimitFromVerdict(cause.retryAfterSeconds, now);
+			return rateLimitRefusalEnvelope(
+				breaker.cooldownUntil,
+				cause.retryAfterSeconds,
+				now,
+			);
+		case "transport":
+		case "kernel":
+			return null;
 	}
-	if (err instanceof SiYuanRateLimitError) {
-		breaker.recordRateLimit(err, now);
-		return rateLimitRefusalEnvelope(
-			breaker.cooldownUntil,
-			err.retryAfterSeconds,
-			now,
-		);
-	}
+	cause satisfies never;
 	return null;
 }
 
@@ -194,11 +199,11 @@ export async function gateWriteAttempt(input: {
 		fresh satisfies never;
 		throw new Error("internal: unhandled probe verdict");
 	} catch (err) {
-		const classified = classifyKernelError(
-			err,
-			input.breaker,
-			input.now ?? Date.now(),
-		);
+		const cause = causeOf(err);
+		const classified =
+			cause !== undefined
+				? classifyKernelError(cause, input.breaker, input.now ?? Date.now())
+				: null;
 		if (classified !== null) return { ok: false, envelope: classified };
 		validation.probe = { verdict: "unreachable" };
 		return {
@@ -262,12 +267,13 @@ export async function runKbCall<K extends object>(
 		result = await op(gate.names, tracked);
 	} catch (err) {
 		const now = input.now ?? Date.now();
-		const classified = classifyKernelError(err, input.breaker, now);
+		const cause = causeOf(err);
+		const classified =
+			cause !== undefined
+				? classifyKernelError(cause, input.breaker, now)
+				: null;
 		if (classified !== null) return withPartialState(classified, err);
-		if (
-			err instanceof SiYuanNetworkError ||
-			err instanceof SiYuanTimeoutError
-		) {
+		if (cause?.kind === "transport") {
 			return kernelUnreachable(
 				input.validation.settings?.baseUrl ?? "",
 				"error",
