@@ -153,18 +153,30 @@ rendering. It is not lost from the KB:
 
 - `siyuan-kernel-api` AGENTS.md gains the systemic **explicit-knob rule**:
   wherever a request-optional knob's absent-value fallback is workspace config,
-  the client must surface it as an explicit opt — tool-visible output must not
-  depend on unobservable workspace settings. On the current surface this is
-  `exportMdContent`'s `addTitle`/`refMode`/`embedMode` (`yfm`'s fallback is
-  hardcoded `true`, but it is settable for the same reason); conf-only knobs
-  with no request override on this endpoint (tag markers, ref text markers,
-  `fileAnnotationRefMode`, `inlineMemo`) are unpinnable and stay covered by the
+  the client must surface it as an explicit opt — consumer-visible output must
+  not depend on unobservable workspace settings ("consumer", not "tool":
+  layer 1 is tool-agnostic and the rule binds its callers generally). The rule
+  carries its own upkeep hook so it cannot rot: a kernel-upgrade sweep of the
+  request contracts must check every new request-optional knob against the rule
+  — surface it in the client or name it in the rendering-not-serialization
+  wording, never let omission choose. `census.test.ts` is the natural future
+  mechanical enforcement point; deliberately not built now — the class recurs
+  roughly once per kernel minor version, so a rule referenced from the upgrade
+  sweep is proportionate. On the current surface this is `exportMdContent`'s
+  `addTitle`/`refMode`/`embedMode` (`yfm`'s fallback is hardcoded `true`, but
+  it is settable for the same reason); conf-only knobs with no request override
+  on this endpoint (tag markers, ref text markers, `fileAnnotationRefMode`,
+  `inlineMemo`) are unpinnable and stay covered by the
   rendering-not-serialization wording.
 - `gnubrain` version-coupling list gains one line: **body-only,
   config-independent read posture** — kb_read serves `exportMdContent` with
   `yfm:false`/`addTitle:false`/`refMode:2`/`embedMode:1` → `docMarkdown` opts
   (primitives `byId.ts`) → this repo keeps the request args and the description
   wording → falsifier: the primitives' body-only and ref-rendering live cases.
+  The Upgrade checklist (Hard constraints) gains one clause: the kernel-upgrade
+  sweep of the request contracts for new request-optional knobs runs against
+  the layer-1 explicit-knob rule — new knobs surface exactly when they appear,
+  which is the only moment the rule needs to be re-read.
 - `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
   the opts threading (four knobs, pass-through, no posture) and the
   body-only/ref-rendering postures its live cases falsify.
