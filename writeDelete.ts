@@ -80,8 +80,17 @@ export async function runDeleteMode(
 	}
 	const verdict = outcome.verdict;
 	return finishWrite(name, { blockId }, async () => {
-		const invalidRefs = await backlinkCheck(kernel, [blockId]);
 		const tail = await echoTail(input, doc, outcome.postWalk);
+		if (verdict.kind === "still-present") {
+			// A silent no-op behind HTTP success is a failed delete — the
+			// doctrine the replace-section sweep refuses on (members-survived).
+			return errorEnvelope(
+				`verified-delete failed: the delete of '${blockId}' reported success but the block is still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the block by id only if it is still wanted gone`,
+				{ kb: name, blockId, ...tail },
+			);
+		}
+		// Orphan-ref evidence is only meaningful once something was deleted.
+		const invalidRefs = await backlinkCheck(kernel, [blockId]);
 		if (verdict.kind === "absence-unconfirmed") {
 			return errorEnvelope(
 				`delete applied but unverified: block '${blockId}' acked deleted, but the verification walk hit the document's depth bound — whether the target is gone could not be confirmed (it may sit past the bound). Do NOT re-run blind; re-fetch the outline (kb_read) and check the block by id first`,
@@ -89,23 +98,16 @@ export async function runDeleteMode(
 			);
 		}
 		// The deleted block's stored content rides the judged arm (the
-		// primitive's own membership read) — the receipt is free. Gated on
-		// the walk-set evidence: a still-present verdict deleted nothing, so
-		// there is no receipt to give.
-		const receipt =
-			verdict.kind === "gone"
-				? deletedBlocksTail(input.sessionId, [
-						{ id: blockId, content: outcome.content },
-					])
-				: undefined;
+		// primitive's own membership read) — the receipt is free.
 		return {
 			status: "ok",
-			message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target ${verdict.kind === "gone" ? "absent from" : "STILL PRESENT in"} the post-write tree; ${invalidRefs.count} doc(s) with orphaned refs`,
+			message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target absent from the post-write tree; ${invalidRefs.count} doc(s) with orphaned refs`,
 			kb: name,
 			blockId,
-			targetGone: verdict.kind === "gone",
 			invalidRefs,
-			...receipt,
+			...deletedBlocksTail(input.sessionId, [
+				{ id: blockId, content: outcome.content },
+			]),
 			...tail,
 		};
 	});

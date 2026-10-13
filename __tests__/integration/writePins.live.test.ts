@@ -553,7 +553,6 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					blockId: orphan,
 				});
 				expect(result.status).toBe("ok");
-				expect(result.targetGone).toBe(true);
 				expect(result.invalidRefs).toMatchObject({
 					count: 1,
 					hpaths: [referrerPath],

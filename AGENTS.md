@@ -294,7 +294,7 @@ primitives.
 - **Delete generation** — 3.8.3 success no-op vs 3.8.4 "tree not found" →
   `deleteBlockVerified` / `deleteDocVerified` (primitives `delete.ts`). This
   repo keeps the flow-side wording: kernel error verbatim with the fresh
-  outline, the targetGone receipt gate.
+  outline; a still-present verdict is an error, never an ok receipt.
 - **Delete-freshness split** (policy, not fact — this repo owns it) — the
   block-delete path rides the same fresh-content precondition as edit and
   replace-section (`writeDelete.ts`, before `deleteBlockVerified`; no

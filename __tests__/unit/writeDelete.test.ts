@@ -15,7 +15,7 @@ import { expectUnverified, setup, walkBlock } from "./writeHarness.js";
 // ---------------------------------------------------------------------------
 
 describe("delete", () => {
-	it("block-level: targetGone from the post-write walk set, invalidRefs echo", async () => {
+	it("block-level: ok with the receipt from the post-write walk set, invalidRefs echo", async () => {
 		const { execute, calls, childrenFor } = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "doomed" }],
@@ -33,7 +33,6 @@ describe("delete", () => {
 			blockId: "p1",
 		});
 		expect(result.status).toBe("ok");
-		expect(result.targetGone).toBe(true);
 		// Wording pin: the orphaned-refs count is agent-visible (0 here —
 		// no refRows configured).
 		expect(result.message).toContain("0 doc(s) with orphaned refs");
@@ -80,11 +79,10 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
 
-	it("the still-present arm: a success-reported delete that left the block in the tree reports ok, targetGone false, no receipt", async () => {
+	it("the still-present arm: a success-reported delete that left the block in the tree is an error, never an ok receipt", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
-		// nothing (ErrBlockNotFound → nil, a success no-op) — the
-		// still-present arm of the delete judgment. The synchronous-error
-		// case is below.
+		// nothing behind HTTP success — the still-present arm of the delete
+		// judgment. The synchronous-error case is below.
 		const { execute } = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "survivor" }],
@@ -97,11 +95,14 @@ describe("delete", () => {
 			docId: "d-doc",
 			blockId: "p1",
 		});
-		expect(result.status).toBe("ok");
-		expect(result.targetGone).toBe(false);
-		expect(result.message).toContain("STILL PRESENT");
-		// A no-op deleted nothing — no receipt next to a STILL PRESENT verdict.
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("silent no-op");
+		expect(result.message).toContain("still present");
+		// A failed delete deleted nothing — no receipt, no orphan-ref echo,
+		// but the fresh outline for re-targeting rides.
 		expect(result.deletedBlocks).toBeUndefined();
+		expect(result.invalidRefs).toBeUndefined();
+		expect(result.outline).toBeDefined();
 	});
 
 	it("a synchronous kernel rejection with a simultaneous echo failure: the kernel's error still surfaces verbatim, not 'unreachable'", async () => {
@@ -154,12 +155,16 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
 
-	it("a pre-deleted target: kernel no-op → ok with the absent-target evidence", async () => {
-		// blockRows [] — the target vanished before the call; nothing to
-		// protect, the kernel no-op still reports ok.
+	it("an absent target: the kernel's synchronous rejection surfaces verbatim with the fresh outline", async () => {
+		// blockRows [] — the membership read sees no row, the flow proceeds,
+		// and the pinned kernel refuses the delete of an absent block
+		// synchronously ("tree not found") instead of no-oping behind success.
 		const { execute, calls } = setup({
 			config: {
 				childrenFor: { "d-doc": [] },
+				onDelete: () => {
+					throw new SiYuanApiError(-1, -1, "tree not found");
+				},
 			},
 		});
 		const result = await execute({
@@ -168,8 +173,9 @@ describe("delete", () => {
 			docId: "d-doc",
 			blockId: "p1",
 		});
-		expect(result.status).toBe("ok");
-		expect(result.targetGone).toBe(true);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("tree not found");
+		expect(result.outline).toBeDefined();
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});
 
@@ -195,7 +201,6 @@ describe("delete", () => {
 			blockId: "p1",
 		});
 		expectUnverified(result);
-		expect(result.targetGone).toBeUndefined();
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});
 
@@ -256,7 +261,6 @@ describe("delete", () => {
 		// "SiYuan unreachable" shape (the stub's own network-error text
 		// legitimately rides the detail interpolation).
 		expect(result.blockId).toBe("p1");
-		expect(result.targetGone).toBeUndefined();
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});
 
