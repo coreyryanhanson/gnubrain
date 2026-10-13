@@ -80,10 +80,11 @@ describe("delete", () => {
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
 
-	it("a kernel success no-op still reports ok — with the walk-set evidence naming it (3.8.3 kernel)", async () => {
+	it("the still-present arm: a success-reported delete that left the block in the tree reports ok, targetGone false, no receipt", async () => {
 		// childrenFor keeps the block post-delete: the kernel "deleted"
-		// nothing (ErrBlockNotFound → nil, a success no-op). 3.8.4
-		// instead answers a synchronous error — the echo-failure case below.
+		// nothing (ErrBlockNotFound → nil, a success no-op) — the
+		// still-present arm of the delete judgment. The synchronous-error
+		// case is below.
 		const { execute } = setup({
 			config: {
 				blockRows: [{ id: "p1", content: "survivor" }],
@@ -103,7 +104,7 @@ describe("delete", () => {
 		expect(result.deletedBlocks).toBeUndefined();
 	});
 
-	it("3.8.4 delete with a simultaneous echo failure: the kernel's error still surfaces verbatim, not 'unreachable'", async () => {
+	it("a synchronous kernel rejection with a simultaneous echo failure: the kernel's error still surfaces verbatim, not 'unreachable'", async () => {
 		// The outline re-read rides the walk route; arm it to drop at the same
 		// moment the kernel answers the delete with a synchronous error. The
 		// verdict is the kernel's error — the echo is garnish — and an

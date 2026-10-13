@@ -7,8 +7,9 @@
 //
 // No-honest-live-route notes (unit-pinned instead, primitives-side):
 // append's walk-set rollback branch and move's tree-level-miss branch are
-// unreachable live — 3.8.4 executes block writes synchronously and errors on
-// unresolvable ids/anchors instead of rolling back behind an HTTP success.
+// unreachable live — the pinned kernel executes block writes synchronously
+// and errors on unresolvable ids/anchors instead of rolling back behind an
+// HTTP success.
 // The adjacent honest route (a concurrently deleted boundary anchor → the
 // kernel's synchronous error with the fresh outline attached) is live-pinned
 // in writePlacement.live.test.ts; the rollback arm is unit-pinned in the
@@ -16,7 +17,7 @@
 // move landing facts
 // (block-level judgment, placement-through-move, depth cap) are live-pinned
 // in the primitives' move.live; this file keeps the move envelope pins.
-// The delete-generation fact (3.8.3 success no-op vs 3.8.4 "tree not found")
+// The delete-generation fact (success-reported no-op vs "tree not found")
 // is live-pinned in the primitives' delete.live; this file keeps the delete
 // envelope pins (the verbatim kernel message + fresh outline). The insert
 // transaction's response shape (one insert op carrying the whole body in its
@@ -166,7 +167,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 					markdown: "attempted body",
 				});
 				expect(result.status).toBe("error");
-				// The kernel error verbatim (3.8.4's synchronous not-found), never
+				// The kernel error verbatim (the synchronous not-found), never
 				// a silent success or a bare transport message.
 				expect(String(result.message)).toContain("tree not found");
 				// The fresh outline rides the error so the agent re-targets.

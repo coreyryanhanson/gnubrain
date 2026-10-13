@@ -1,27 +1,20 @@
 // Typed-reason → agent-facing wording for the write-path verdict unions
 // siyuan-kb-primitives returns. The primitives speak in closed `{ kind,
 // …detail }` unions, never agent-facing sentences; this module is the
-// wording layer: the sentence each verdict arm renders, the anchor
-// echoes, and the one frame shared across flows — the pre-judgment
-// ladder (mutationFailureEnvelope) — so a new arm in a primitives release
-// fails typecheck here once instead of diverging across every flow. Each
-// flow composes its own mode's envelope frames from these pieces (frames
-// need the flow's echo tail, doc, and verdict keys). The one shared map
-// worded elsewhere is headingInWalk (writeTarget): the heading-target
-// refusal arms sit beside the DocTarget resolution they return into.
-// mutationFailureEnvelope is the one non-pure piece: it is async and
-// awaits the flow-supplied echo tail (writeEcho.mutationFailure), which
-// performs the post-write reads. The
-// trailing never-check is the catch, not the hazard: a map that forgets
-// an arm changes the rendered message and fails the suites.
-//
-// Tool-side policy refusals (grant, breaker, 429 cooldown) never cross the
-// boundary and keep their existing homes; the mint-title judgment runs on
-// both sides — the tool-surface pre-flight and the primitives' own
-// `mint-title` arm, worded once by mintTitleMessage (writeGuard). The
-// fresh-content judgment lives in the primitives (`checkFreshContent`) —
-// only its refusal envelope stays tool-side (freshContentRefusal,
-// writeFresh).
+// wording layer: the sentence each verdict arm renders (exhaustive
+// switches, no default — a new arm in a primitives release fails
+// typecheck here once instead of diverging across every flow; the
+// trailing never-check is the catch), the anchor echoes, and the one
+// frame shared across flows — the pre-judgment ladder
+// (mutationFailureEnvelope), which is the one async piece: it awaits the
+// flow-supplied echo tail (writeEcho.mutationFailure). Each flow
+// composes its own mode's envelope frames from these pieces (frames need
+// the flow's echo tail, doc, and verdict keys). Worded elsewhere:
+// headingInWalk (writeTarget), mintTitleMessage (writeGuard, shared by
+// the tool-surface pre-flight and the primitives' `mint-title` arm), and
+// the fresh-content refusal envelope (freshContentRefusal, writeFresh).
+// Tool-side policy refusals (grant, breaker, 429 cooldown) never cross
+// the boundary and keep their existing homes.
 
 import {
 	PINNED_SIYUAN_VERSION,

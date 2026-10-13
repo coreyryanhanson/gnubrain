@@ -43,7 +43,7 @@ type WriteMode = keyof typeof MODE_PARAMS;
  * rely on (the wire schema keeps `mode` a plain string). Own-property check:
  * `in` would let an inherited name like "toString" slip past the narrow and
  * crash the validation that must refuse it. */
-export const isWriteMode = (mode: string): mode is WriteMode =>
+const isWriteMode = (mode: string): mode is WriteMode =>
 	Object.hasOwn(MODE_PARAMS, mode);
 
 // Derived from the schema table so the list and the validation authority
@@ -60,7 +60,7 @@ for (const [mode, { bodies }] of Object.entries(MODE_PARAMS)) {
 /** schema-table shape validation — mode-specific targets, zero kernel
  * calls. The ok arm carries the narrowed mode, so callers dispatch on it
  * directly. */
-export type ModeVerdict =
+type ModeVerdict =
 	| { ok: true; mode: WriteMode }
 	| { ok: false; message: string };
 

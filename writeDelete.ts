@@ -90,7 +90,7 @@ export async function runDeleteMode(
 		}
 		// The deleted block's stored content rides the judged arm (the
 		// primitive's own membership read) — the receipt is free. Gated on
-		// the walk-set evidence: a no-op kernel (3.8.3) deleted nothing, so
+		// the walk-set evidence: a still-present verdict deleted nothing, so
 		// there is no receipt to give.
 		const receipt =
 			verdict.kind === "gone"
