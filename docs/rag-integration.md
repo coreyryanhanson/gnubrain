@@ -388,7 +388,7 @@ except one rename, across ~14 files in three repositories.
 | --- | --- |
 | `kb_search` echo `box` → `kb` | Independent of the seam and a breaking output change. It must land in v1, so it is cheapest before v1 ships. |
 | `searchBoxes` → `keywordSearchBoxes` | Symmetry with the incoming `semanticSearchBoxes`. At the primitives' pre-release version this is one function and a handful of call sites; deferring costs a primitives release plus a downstream pin bump for nothing. |
-| Layer-1 `search` → `keywordSearch` | **Not doing this.** `search` is a published method on a 0.3.1 package; renaming it would create the deprecation baggage this table exists to avoid. `search` and `semanticSearch` read fine side by side, and the docstring names the real endpoint. |
+| Layer-1 `search` → `fullTextSearch` | Done in `siyuan-kernel-api` 0.4.0 (supersedes this table's original "not doing this" call): the name mirrors the kernel route and keeps the client surface unambiguous for the deferred `semanticSearch`. |
 
 ## 13. Rollout
 

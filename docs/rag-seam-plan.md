@@ -141,7 +141,7 @@ semantic recall or its readiness probe.
 ### Scope
 
 - `semanticSearch({ query, paths, page?, pageSize? })` → `/api/search/semanticSearchBlock`.
-  Same parameters as `search`, but **no `method` field** — the semantic endpoint ignores
+  Same parameters as `fullTextSearch`, but **no `method` field** — the semantic endpoint ignores
   it, and omitting it keeps the request minimal.
 - `embeddingStat()` → `/api/ai/embeddingStat`, returning `{ enabled, total, indexed,
   pending, failed, ignoredByLen, ignoredByConfig }`.
@@ -154,7 +154,7 @@ both ride the normal request path and the existing token attachment.
 
 - `semanticSearch` returns the existing `SearchResult` shape; no new response type.
 - `embeddingStat` returns the readiness record; `page`/`pageSize` are omitted from the
-  wire body when unset, matching `search`.
+  wire body when unset, matching `fullTextSearch`.
 - Both names are added to the pinned public surface and the signature-checked `ARGS` map
   in `census.test.ts` — an unpinned method must remain a compile error.
 - The kernel's response carries **no relevance score**; the client must not invent one.
