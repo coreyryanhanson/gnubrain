@@ -19,15 +19,13 @@ acceptance criteria, tests, and the files it touches.
 
 | # | Issue | Repo | When | Depends on |
 | --- | --- | --- | --- | --- |
-| 1 | v1: rename `kb_search` echo field `box` → `kb` | gnubrain | v1 | — |
-| 2 | v1: rename `searchBoxes` → `keywordSearchBoxes` | siyuan-kb-primitives | v1 | — |
-| 3 | Add `semanticSearch` and `embeddingStat` client methods | siyuan-kernel-api | post-v1 | — |
-| 4 | Add `semanticSearchBoxes` and `embeddingReadiness` primitives | siyuan-kb-primitives | post-v1 | 3 |
-| 5 | Add `KbHit` record and the RRF fusion function (pure, unwired) | gnubrain | post-v1 | 4 |
-| 6 | Wire `kb_search { mode }`: two arms, RRF, availability policy | gnubrain | post-v1 | 5 |
+| 1 | Add `semanticSearch` and `embeddingStat` client methods | siyuan-kernel-api | post-v1 | — |
+| 2 | Add `semanticSearchBoxes` and `embeddingReadiness` primitives | siyuan-kb-primitives | post-v1 | 1 |
+| 3 | Add `KbHit` record and the RRF fusion function (pure, unwired) | gnubrain | post-v1 | 2 |
+| 4 | Wire `kb_search { mode }`: two arms, RRF, availability policy | gnubrain | post-v1 | 3 |
 
-Issues 1 and 2 are independent of the seam and land with v1. Issues 3–5 are the seam and
-land bottom-up (each is a release of the layer below). Issue 6 is the feature.
+Issues 1–3 are the seam and land bottom-up (each is a release of the layer below). Issue 4
+is the feature.
 
 ## Creating these
 
@@ -35,98 +33,15 @@ Labels below are suggestions; check each repository's actual label set first
 (`gh label list --repo <repo>`). To create, save a draft body to a file and pass it:
 
 ```sh
-gh issue create --repo coreyryanhanson/gnubrain \
-  --title "v1: rename kb_search echo field box → kb" \
-  --label breaking-change \
+gh issue create --repo coreyryanhanson/siyuan-kernel-api \
+  --title "Add semanticSearch and embeddingStat client methods" \
+  --label enhancement \
   --body-file /tmp/issue-1.md
 ```
 
 ---
 
-## 1. v1: rename `kb_search` echo field `box` → `kb`
-
-**Repo:** `coreyryanhanson/gnubrain` · **Labels:** `breaking-change`, `v1` ·
-**Depends on:** none
-
-### Context
-
-`kb_search` rows echo `box` as the **resolved KB name**, while `kb_query` rows carry `box`
-as the **raw kernel box ID** (it is the SQL column the agent selects, and the tool scopes
-with `box IN (…)`). The same field name means two different things across two read tools.
-
-The agent passes KB *names* to `kb_read` and `kb_write` and never writes box IDs, so the
-resolved value is the one that deserves a name matching the tool parameter.
-
-### Scope
-
-Rename the echo field in `kb_search` rows from `box` to `kb`, and update
-`SEARCH_DESCRIPTION` to say `kb (the resolved KB name)`. Leave the raw `box` column in
-`kb_query` rows untouched.
-
-### Acceptance criteria
-
-- `kb_search` rows carry `kb` (the resolved KB name) instead of `box`.
-- `SEARCH_DESCRIPTION` names `kb`, and no longer describes an echoed `box`.
-- `kb_query` rows are unchanged; the discovery-pattern wording that selects the raw `box`
-  column still refers to `box`.
-- This is the only breaking output change in v1, and it ships with v1.
-
-### Tests
-
-- Update the `runSearchFanOut` merged-row assertions in `__tests__/unit/tools.test.ts`
-  (the two-row fan-out case).
-- Update the `SEARCH_DESCRIPTION` wording assertions if any test pins that string.
-
-### Files
-
-- `tools.ts` — the echo object in `runSearchFanOut`, and `SEARCH_DESCRIPTION`.
-- `__tests__/unit/tools.test.ts`.
-
----
-
-## 2. v1: rename `searchBoxes` → `keywordSearchBoxes`
-
-**Repo:** `coreyryanhanson/siyuan-kb-primitives` · **Labels:** `breaking-change`, `v1` ·
-**Depends on:** none
-
-### Context
-
-`searchBoxes` is the keyword fan-out: one scoped `fullTextSearchBlock` call per box. The
-seam adds a semantic counterpart, `semanticSearchBoxes`. Renaming the keyword function now
-gives the pair symmetric names, and the package is pre-release, so the rename is cheap.
-Deferring it would cost a primitives release plus a downstream pin bump later, for nothing.
-
-### Scope
-
-Rename the exported function and update every call site and test. No behaviour change.
-
-### Acceptance criteria
-
-- The read barrel exports `keywordSearchBoxes` and no longer exports `searchBoxes`.
-- `gnubrain`'s `runSearchFanOut` calls the new name.
-- `index.test.ts` (barrel completeness) passes.
-- `check-pack.mjs` passes — the `package.json` `files` list is unchanged, since no module
-  is added.
-
-### Tests
-
-- Rename call sites in the primitives' own unit tests.
-- Update the primitives' README/API examples if the function is named there.
-
-### Downstream follow-up
-
-`gnubrain` v1 must pin the primitives release containing this rename; v1 needs an exact pin
-anyway to drop the `file:` co-development link.
-
-### Files
-
-- `search.ts`, `index.ts`, `package.json` (no change expected), tests, `README.md` if the
-  function is documented.
-- `gnubrain/tools.ts` (call site).
-
----
-
-## 3. Add `semanticSearch` and `embeddingStat` client methods
+## 1. Add `semanticSearch` and `embeddingStat` client methods
 
 **Repo:** `coreyryanhanson/siyuan-kernel-api` · **Labels:** `enhancement` ·
 **Depends on:** none
@@ -172,10 +87,10 @@ both ride the normal request path and the existing token attachment.
 
 ---
 
-## 4. Add `semanticSearchBoxes` and `embeddingReadiness` primitives
+## 2. Add `semanticSearchBoxes` and `embeddingReadiness` primitives
 
 **Repo:** `coreyryanhanson/siyuan-kb-primitives` · **Labels:** `enhancement` ·
-**Depends on:** issue 3
+**Depends on:** issue 1
 
 ### Context
 
@@ -228,10 +143,10 @@ downstream truncation claims must never be driven by semantic counts.
 
 ---
 
-## 5. Add `KbHit` record and the RRF fusion function (pure, unwired)
+## 3. Add `KbHit` record and the RRF fusion function (pure, unwired)
 
 **Repo:** `coreyryanhanson/gnubrain` · **Labels:** `enhancement` ·
-**Depends on:** issue 4
+**Depends on:** issue 2
 
 ### Context
 
@@ -286,10 +201,10 @@ Plus a unit test for the `KbHit` mapping from a kernel row.
 
 ---
 
-## 6. Wire `kb_search { mode }`: two arms, RRF, availability policy
+## 4. Wire `kb_search { mode }`: two arms, RRF, availability policy
 
 **Repo:** `coreyryanhanson/gnubrain` · **Labels:** `enhancement` ·
-**Depends on:** issue 5
+**Depends on:** issue 3
 
 ### Context
 

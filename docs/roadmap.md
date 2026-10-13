@@ -69,7 +69,8 @@ These are deliberate and, in most cases, permanent:
 The work that is landing or starts immediately after the first release:
 
 - **First release (v1).**
-  - `kb_search` results echo **`kb`** (the resolved KB name) instead of `box`.
+  - `kb_search` results echo **`kb`** (the resolved KB name); the raw `box` column stays
+    in `kb_query`'s SQL rows.
   - The keyword fan-out is named **`keywordSearchBoxes`**, making room for a semantic
     counterpart.
   - Echoed row handles use the same vocabulary the tools accept — **`docId` / `blockId`** —

@@ -18,7 +18,8 @@ provider.
 
 That makes "build a vector sidecar" the wrong first move. The plan is instead:
 
-- **v1:** ship clean, RAG-free, with two independent renames that must not be deferred.
+- **v1:** ship clean, RAG-free — the search vocabulary (`kb` / `docId` / `blockId`,
+  `keywordSearchBoxes`, layer-1 `fullTextSearch`) is already in its final shape.
 - **First post-v1 release:** land the seam — a layer-1 `semanticSearch` method, layer-2
   `semanticSearchBoxes` and `embeddingReadiness` primitives, and (in `gnubrain`) the
   `KbHit` record plus the RRF fusion function, pure and unwired.
@@ -225,10 +226,10 @@ backoff, retry, ignore file); and notebook/type filters, pagination, and rerank 
 | **B3** | `kb_search` gains `mode: "keyword" \| "semantic" \| "hybrid"`, defaulting to `keyword`. Backwards compatible; the agent opts in explicitly; the envelope names the arms that ran. |
 | **B4** | `semantic`/`hybrid` with embeddings unconfigured → `status: refused`, naming the fix. Embeddings configured but the index behind (`embeddingStat.pending > 0`) → run anyway, with an index-pending caveat on the envelope. |
 | **B5** | Pre-seam delivery: layer-1 `semanticSearch` + `embeddingStat`; layer-2 `semanticSearchBoxes` + `embeddingReadiness`; `KbHit` and RRF in `gnubrain`, pure and unwired. The `mode` param, the two-arm flow, and the wiring follow. |
-| **B5a** | `KbHit = { blockId, docId, hpath, kb, updated, arms }`. No `score`, no `rank`, no per-hit `stale`. `kb_search`'s echo field `box` is renamed to `kb`, and the row handles use the frozen v1 vocabulary (`docId`/`blockId`) rather than raw kernel names (`root_id`/`id`). |
+| **B5a** | `KbHit = { blockId, docId, hpath, kb, updated, arms }`. No `score`, no `rank`, no per-hit `stale`. `kb_search` rows echo the tool vocabulary (`blockId`/`docId`/`hpath`/`kb`/`updated`) rather than raw kernel names (`id`/`root_id`/`box`). |
 | **B6** | Layered falsification (§9). No retrieval-quality benchmark yet. |
 | **B7** | Revisit thresholds deferred; the trigger is block-grain context loss and the response ladder is recorded (§10). Numbers are not invented. |
-| **B8** | v1 ships clean; the seam lands in the first post-v1 release, bottom-up. Both renames land in v1. Non-goals as in §3. |
+| **B8** | v1 ships clean; the seam lands in the first post-v1 release, bottom-up. Non-goals as in §3. |
 
 ### Rationale notes
 
@@ -248,10 +249,9 @@ backoff, retry, ignore file); and notebook/type filters, pagination, and rerank 
   confidence — the failure mode that motivated the reference implementation's evidence
   contract. If a grounded signal ever arrives, the right addition is a named evidence
   label, not a bare float.
-- **`box` → `kb`.** `box` currently means the resolved KB name in `kb_search` rows and the
-  raw kernel box ID in `kb_query` rows. The agent passes KB *names* to the other tools and
-  never writes box IDs, so the resolved field is named `kb` (matching the tool parameter)
-  and `box` keeps exactly one meaning: the raw SQL column.
+- **`kb` vs `box`.** `kb_search` rows echo `kb` — the resolved KB name, matching the tool
+  parameter the agent already passes to `kb_read` and `kb_write` — and `box` keeps exactly
+  one meaning: the raw kernel box ID in `kb_query`'s SQL rows.
 
 ## 8. Availability and honesty
 
@@ -259,7 +259,7 @@ backoff, retry, ignore file); and notebook/type filters, pagination, and rerank 
 
 | Situation | Behaviour |
 | --- | --- |
-| `mode: "keyword"` | Always available; current behaviour, unchanged except the `box` → `kb` echo field. |
+| `mode: "keyword"` | Always available; current behaviour. |
 | `mode: "semantic"` / `"hybrid"`, embeddings unconfigured | `status: refused`, with a message naming the fix (configure an embedding model in SiYuan). Never an empty ok. |
 | `mode: "semantic"` / `"hybrid"`, embeddings configured, `embeddingStat.pending > 0` | Run anyway; stamp an index-pending caveat on the envelope, because results are ranked from an index that is behind the content. |
 | `mode: "semantic"` / `"hybrid"`, embeddings configured, index idle | Normal path. |
@@ -359,8 +359,8 @@ It needs its own result shape — or explicitly named fields — and the query e
 
 ## 12. Churn
 
-Measured against the current tree: roughly 440–470 lines, about 250 of them tests, additive
-except one rename, across ~14 files in three repositories.
+Measured against the current tree: roughly 440–470 lines, about 250 of them tests, additive,
+across ~14 files in three repositories.
 
 #### Layer 1 — `siyuan-kernel-api` (~90 lines, 4 files)
 - `client.ts`: `semanticSearch` (no `method` field on the wire) and `embeddingStat`.
@@ -374,29 +374,17 @@ except one rename, across ~14 files in three repositories.
 - New `embedding.ts`: `embeddingReadiness` — requires a `package.json` `files` entry and a
   barrel export; `index.test.ts` enforces barrel completeness and `check-pack.mjs` enforces
   the file list.
-- The `searchBoxes` → `keywordSearchBoxes` rename.
 - Unit tests, plus one self-skipping live case.
 
 #### Layer 3 — `gnubrain` (~190 lines, 5 files)
-- The `box` → `kb` rename: two lines in `tools.ts` (the echo field and
-  `SEARCH_DESCRIPTION`) and two assertion blocks in `tools.test.ts`.
 - `KbHit` type, `rrf.ts`, and their unit tests. New root `.ts` files ship automatically.
-
-### Renames that must not be deferred
-
-| Rename | Why now |
-| --- | --- |
-| `kb_search` echo `box` → `kb` | Independent of the seam and a breaking output change. It must land in v1, so it is cheapest before v1 ships. |
-| `searchBoxes` → `keywordSearchBoxes` | Symmetry with the incoming `semanticSearchBoxes`. At the primitives' pre-release version this is one function and a handful of call sites; deferring costs a primitives release plus a downstream pin bump for nothing. |
-| Layer-1 `search` → `fullTextSearch` | Done in `siyuan-kernel-api` 0.4.0 (supersedes this table's original "not doing this" call): the name mirrors the kernel route and keeps the client surface unambiguous for the deferred `semanticSearch`. |
 
 ## 13. Rollout
 
-**v1:** ships clean, RAG-free. Two changes ride it:
-- `kb_search` echoes `kb` instead of `box` (gnubrain).
-- `searchBoxes` is renamed to `keywordSearchBoxes` (primitives), which means a primitives
-  release at v1 time and an exact pin from gnubrain — the pin v1 needs anyway to drop the
-  `file:` co-development link.
+**v1:** ships clean, RAG-free. The vocabulary the seam needs is already frozen:
+`kb_search` rows echo `kb` / `docId` / `blockId`, the primitives export
+`keywordSearchBoxes`, and layer 1 exposes `fullTextSearch` — no breaking change is left
+between v1 and the seam.
 
 **First post-v1 release:** the seam, bottom-up.
 1. `siyuan-kernel-api` — `semanticSearch` + `embeddingStat` + census pin.
