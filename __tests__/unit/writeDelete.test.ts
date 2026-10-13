@@ -8,7 +8,7 @@ import {
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 } from "siyuan-kb-primitives";
-import { setup, walkBlock } from "./writeHarness.js";
+import { expectUnverified, setup, walkBlock } from "./writeHarness.js";
 
 // ---------------------------------------------------------------------------
 // delete — walk-set evidence + the doc-level pinned shape
@@ -193,9 +193,7 @@ describe("delete", () => {
 			docId: "d-doc",
 			blockId: "p1",
 		});
-		expect(result.status).toBe("error");
-		expect(result.verificationFailed).toBe(true);
-		expect(result.message).toContain("post-write verification reads failed");
+		expectUnverified(result);
 		expect(result.targetGone).toBeUndefined();
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
 	});

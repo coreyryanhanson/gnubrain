@@ -37,11 +37,7 @@ describe("network drop after a landed write", () => {
 			},
 		});
 		const r = await execute(editBase);
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("post-write verification reads failed");
-		expect(r.message).toContain("do NOT retry blindly");
-		expect(r.message).not.toContain("SiYuan unreachable");
+		expectUnverified(r);
 		// The mutation itself landed — the failure is in the reads.
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(1);
 	});
@@ -62,9 +58,7 @@ describe("network drop after a landed write", () => {
 			docId: "d-doc",
 			markdown: "new section",
 		});
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).not.toContain("SiYuan unreachable");
+		expectUnverified(r);
 		expect(
 			calls.filter(
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",
@@ -88,12 +82,10 @@ describe("network drop after a landed write", () => {
 			docId: "d-doc",
 			markdown: "new section",
 		});
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
+		expectUnverified(r);
 		// The dangerous message: the write LANDED — a silent-rollback reading
 		// invites the blind retry that duplicates it.
 		expect(r.message).not.toContain("rolled back silently");
-		expect(r.message).toContain("post-write verification reads failed");
 		expect(
 			calls.filter(
 				(c) => c.method === "insertBlock" || c.method === "appendBlock",

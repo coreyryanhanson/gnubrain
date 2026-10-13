@@ -32,7 +32,7 @@
 
 - **`/kb` command** for session-scoped control:
 
-  - `kb on|off` scope toggles per KB name, `all on|off` for everything; the
+  - `/kb <name> on|off` toggles a KB, `/kb all on|off` for everything; the
     post-toggle snapshot persists via a `kb-scope` session entry and survives
     restart/resume.
   - `tools read|write|off` toggles the toolsets at runtime (masked tools

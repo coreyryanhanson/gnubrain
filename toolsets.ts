@@ -25,7 +25,7 @@ import { WRITE_TOOLSET_SPEC } from "./write.js";
  * cannot change mid-command, so one snapshot serves the pre-toggle state
  * lines and the post-toggle landed check; the branch is re-read after the
  * batch. */
-export type ToolsetIntent = (
+type ToolsetIntent = (
 	spec: ToolsetSpec,
 	branch: readonly SessionEntry[],
 ) => boolean;
@@ -34,7 +34,7 @@ export function toolsetIntent(defaults: ToolsetDefaultsMap): ToolsetIntent {
 	return (spec, branch) => effectiveEnabled(spec, branch, defaults).enabled;
 }
 
-export interface ToolsetState {
+interface ToolsetState {
 	/** Bare-`/kb` toolset-state lines (tool-masking record): a masked
 	 * toolset is printed, never silent. Display reads intent — an inert
 	 * toolset's persisted intent is on even though its members cannot
@@ -65,7 +65,7 @@ export function toolsetState(
 /** The /kb tools verbs are intent setters; when the batch reports nothing
  * landed (a deferring child reports [], so nothing landed) or throws the
  * allowlist refusal, the caller's message/severity are patched. */
-export interface ToolsetTogglePatch {
+interface ToolsetTogglePatch {
 	message?: string;
 	severity?: "warning" | "error";
 }

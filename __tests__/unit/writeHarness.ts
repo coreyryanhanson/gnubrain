@@ -18,7 +18,7 @@ import { statementKind } from "siyuan-kb-primitives/testing";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
 import { CircuitBreaker } from "../../breaker.js";
 import { createFakeCtx, createFakePi } from "../helpers/fakePi.js";
-import { modeShapeProblem, type WriteParams } from "../../writeSchema.js";
+import { modeVerdict, type WriteParams } from "../../writeSchema.js";
 import { ContentBaselines } from "../../baselines.js";
 import type { SessionValidation } from "../../validation.js";
 import { expect } from "vitest";
@@ -487,11 +487,13 @@ export function setup(
 // The mode list derives from the authority's own unsupported-mode
 // message, so neither side of an invariant can go stale independently.
 export function modeList(): string[] {
-	const unsupported = modeShapeProblem({
+	const unsupported = modeVerdict({
 		kb: "k",
 		mode: "bogus",
 	} as unknown as WriteParams);
-	const modes = (unsupported ?? "").split(": ")[1]?.split(", ") ?? [];
+	const modes =
+		(unsupported.ok ? "" : unsupported.message).split(": ")[1]?.split(", ") ??
+		[];
 	expect(modes.length).toBeGreaterThan(0);
 	return modes;
 }
@@ -545,10 +547,12 @@ export const replaceParams = {
 	markdown: "rewritten section",
 };
 
-/** Shared assertions for the outcome-unverified contract: a transport-class
- * failure on the mutation call itself (the kernel's response never arrived)
- * must read as verificationFailed — never runKbCall's "SiYuan unreachable",
- * whose retry invitation would duplicate an applied write. The transport
+/** Shared assertions for the outcome-unverified contract, both classes:
+ * a transport-class failure on the mutation call itself (the kernel's
+ * response never arrived) and a drop after the write landed (the
+ * post-write verification reads failed). Both must read as
+ * verificationFailed — never runKbCall's "SiYuan unreachable", whose
+ * retry invitation would duplicate an applied write. The transport
  * classification itself (timeout vs fetch reject) is falsified down-repo in
  * the primitives' failure suite; one wording case per site here. */
 export function expectUnverified(r: Record<string, unknown>): void {

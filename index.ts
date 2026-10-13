@@ -55,7 +55,8 @@ import { type WriteToolHooks } from "./writePrepare.js";
 
 const STATUS_KEY = "kb";
 
-/** Runtime deps the write tool adds to the register seam. */
+/** Test seams for register(pi, deps): injectable settings read and
+ * kernel-client factory. */
 export interface GnubrainDeps {
 	/** Injectable file read — unit tests mock it; harness code feeds fixture
 	 * settings to loadGnubrainSettings through the same shape. Key mocks off
@@ -218,21 +219,25 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		}
 	}
 
+	// The session-scoped triple — kernel client, grants/denials, baselines
+	// — is swept as one at every session boundary (session_start after the
+	// breaker reset, session_shutdown at teardown): a shape-failed
+	// revalidate builds no client, grants and denials are terminal within
+	// their scope, and baselines are session-scoped — none may leak across
+	// a session replacement in the same process, and a stale denial must
+	// not survive one.
+	function sweepSessionState(): void {
+		kernelClient = undefined;
+		clearSessionGrants(grantState);
+		baselines.clear();
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		// The breaker counts per session; a new session in this process must
 		// not inherit a partial or tipped count from the previous one. The 429
 		// cooldown is deliberately untouched — wall-clock and self-healing.
 		breaker.reset();
-		// Same lifecycle: a shape-failed revalidate builds no client, so the
-		// previous session's client must not linger in the closure.
-		kernelClient = undefined;
-		// Same lifecycle class: grants and denials are terminal within their
-		// scope and baselines are session-scoped — none may leak across a new
-		// session in the same process (session grants are the only ones that
-		// need this hook, but all three sets are swept: a stale denial must
-		// not survive a session replacement).
-		clearSessionGrants(grantState);
-		baselines.clear();
+		sweepSessionState();
 		validation = await revalidate(ctx);
 		applyValidationVerdict(validation, false);
 		renderStatus(ctx);
@@ -346,11 +351,9 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			// Headless — nothing to clear.
 		}
 		validation = undefined;
-		kernelClient = undefined;
 		// A later toolset event must not repaint the cleared slot against a
 		// dead ctx — drop the render anchor with the session.
 		lastRenderCtx = undefined;
-		clearSessionGrants(grantState);
-		baselines.clear();
+		sweepSessionState();
 	});
 }

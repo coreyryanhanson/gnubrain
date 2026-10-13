@@ -2,11 +2,7 @@
 // table, and the description doctrine lines that enumerate the modes.
 
 import { describe, expect, it } from "vitest";
-import {
-	modeShapeProblem,
-	writeSchema,
-	WriteParams,
-} from "../../writeSchema.js";
+import { modeVerdict, writeSchema, WriteParams } from "../../writeSchema.js";
 import {
 	base,
 	editBase,
@@ -14,6 +10,13 @@ import {
 	registerKbWrite,
 	setup,
 } from "./writeHarness.js";
+
+// The verdict's message half — the rejection table asserts the refusal
+// strings themselves.
+const refusalOf = (p: WriteParams): string | undefined => {
+	const v = modeVerdict(p);
+	return v.ok ? undefined : v.message;
+};
 
 describe("kb_write schema", () => {
 	it("does not declare confirmNew (learned only from rejections)", () => {
@@ -28,7 +31,7 @@ describe("kb_write schema", () => {
 
 	it("declares every schema key as accepted by at least one mode", () => {
 		// Invariant: a key declared in the tool schema but absent from every
-		// mode's allowed set would be rejected by modeShapeProblem for every
+		// mode's allowed set would be rejected by modeVerdict for every
 		// mode — the surface fails silently until someone exercises it by
 		// hand.
 		const modes = modeList();
@@ -36,7 +39,7 @@ describe("kb_write schema", () => {
 		for (const key of Object.keys(writeSchema.properties)) {
 			if (commonKeys.has(key)) continue;
 			const accepted = modes.some((mode) => {
-				const problem = modeShapeProblem({
+				const problem = refusalOf({
 					kb: "k",
 					mode,
 					[key]: key === "doc" ? true : "x",
@@ -122,16 +125,20 @@ describe("mode-target shape (schema table)", () => {
 		],
 	];
 	it.each(cases)("rejects %# with the reason named", (params, expected) => {
-		expect(modeShapeProblem(params as WriteParams)).toContain(expected);
+		expect(refusalOf(params as WriteParams)).toContain(expected);
 	});
 
 	it("accepts every declared shape", () => {
-		expect(modeShapeProblem(editBase as WriteParams)).toBeUndefined();
+		expect(modeVerdict(editBase as WriteParams)).toEqual({
+			ok: true,
+			mode: "edit",
+		});
+		expect(refusalOf(editBase as WriteParams)).toBeUndefined();
 		expect(
-			modeShapeProblem({ kb: "r", mode: "append", docId: "d" } as WriteParams),
+			refusalOf({ kb: "r", mode: "append", docId: "d" } as WriteParams),
 		).toBeUndefined();
 		expect(
-			modeShapeProblem({
+			refusalOf({
 				kb: "r",
 				mode: "append",
 				docId: "d",
@@ -139,7 +146,7 @@ describe("mode-target shape (schema table)", () => {
 			} as WriteParams),
 		).toBeUndefined();
 		expect(
-			modeShapeProblem({
+			refusalOf({
 				kb: "r",
 				mode: "append",
 				docId: "d",
@@ -147,7 +154,7 @@ describe("mode-target shape (schema table)", () => {
 			} as WriteParams),
 		).toBeUndefined();
 		expect(
-			modeShapeProblem({
+			refusalOf({
 				kb: "r",
 				mode: "move",
 				docId: "d",
@@ -156,7 +163,7 @@ describe("mode-target shape (schema table)", () => {
 			} as WriteParams),
 		).toBeUndefined();
 		expect(
-			modeShapeProblem({
+			refusalOf({
 				kb: "r",
 				mode: "create",
 				topic: "t",

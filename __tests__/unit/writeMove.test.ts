@@ -4,7 +4,12 @@
 
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError, SiYuanNetworkError } from "siyuan-kb-primitives";
-import { setup, walkBlock, StubConfig } from "./writeHarness.js";
+import {
+	expectUnverified,
+	setup,
+	walkBlock,
+	StubConfig,
+} from "./writeHarness.js";
 
 // ---------------------------------------------------------------------------
 // move — verification + doc-level record
@@ -346,12 +351,7 @@ describe("block-level move", () => {
 			docId: "d-doc",
 			doc: true,
 		});
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		// The mutation's transport succeeded — the move may already be
-		// applied. Never the retry invitation, never "unreachable".
-		expect(r.message).not.toContain("SiYuan unreachable");
-		expect(r.message).toContain("post-write verification reads failed");
+		expectUnverified(r);
 		expect(
 			harness.calls.filter((c) => c.method === "moveDocsByID"),
 		).toHaveLength(1);

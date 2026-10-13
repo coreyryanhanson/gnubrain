@@ -86,7 +86,7 @@ function registerQueryTool(
 			},
 			// Reject invented params at schema level so the calling model learns
 			// immediately. kb_write deliberately omits this flag — its runtime
-			// check (modeShapeProblem) enforces the same strictness while
+			// check (modeVerdict) enforces the same strictness while
 			// exempting confirmNew on create only.
 			{ additionalProperties: false },
 		),
@@ -326,7 +326,7 @@ function registerReadTool(
 			},
 			// kb_read has no runtime shape check, so the schema is the only
 			// defense against invented params. kb_write deliberately omits this
-			// flag — modeShapeProblem enforces the same strictness at runtime
+			// flag — modeVerdict enforces the same strictness at runtime
 			// while exempting confirmNew on create only.
 			{ additionalProperties: false },
 		),

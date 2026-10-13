@@ -24,8 +24,7 @@ import { runMoveMode } from "./writeMove.js";
 import { resolveDocTarget, type WriteFlowBase } from "./writeTarget.js";
 import {
 	CONTENT_BEARING_MODES,
-	isWriteMode,
-	modeShapeProblem,
+	modeVerdict,
 	type WriteParams,
 } from "./writeSchema.js";
 import { validateMintTitle } from "./writeGuard.js";
@@ -63,22 +62,18 @@ export async function prepareWrite(
 	// zero kernel calls, and it covers create too (create's
 	// flow never reaches runWriteMode, so this is the only
 	// check point).
-	const shapeProblem = modeShapeProblem(p);
-	if (shapeProblem !== undefined) {
-		return refusedEnvelope(shapeProblem);
+	const verdict = modeVerdict(p);
+	if (!verdict.ok) {
+		return refusedEnvelope(verdict.message);
 	}
-	// modeShapeProblem refused unknown modes above; this narrow only types
-	// p.mode as the closed union for the dispatch below (never fires).
-	if (!isWriteMode(p.mode)) {
-		return refusedEnvelope(`mode '${p.mode}' is not supported`);
-	}
+	const mode = verdict.mode;
 	// Content-body shape: markdown XOR markdownFile. Resolved
 	// before the probe gate and before any guard query — the
 	// file read is the call's first content step, so a bad
 	// path refuses with zero kernel calls.
 	let body: string | undefined = p.markdown;
 	const fromFile = p.markdownFile !== undefined;
-	if (CONTENT_BEARING_MODES.has(p.mode)) {
+	if (CONTENT_BEARING_MODES.has(mode)) {
 		if ((body !== undefined) === fromFile) {
 			return refusedEnvelope(
 				"provide exactly one of 'markdown' (inline string) or 'markdownFile' (path)",
@@ -99,7 +94,7 @@ export async function prepareWrite(
 	// Create's mint-title validation: kernel-free, part of the same shape
 	// leg that must precede the grant dialog.
 	let title = "";
-	if (p.mode === "create") {
+	if (mode === "create") {
 		const mint = validateMintTitle(p.topic ?? "");
 		if (!mint.ok) return refusedEnvelope(mint.message);
 		title = mint.title;
@@ -149,7 +144,7 @@ export async function prepareWrite(
 		baselines: hooks.baselines,
 		probe: probeGate.probe,
 	};
-	if (p.mode === "create") {
+	if (mode === "create") {
 		return runCreateFlow({
 			...flowBase,
 			title,
@@ -159,12 +154,12 @@ export async function prepareWrite(
 		});
 	}
 	// Non-create modes: dispatch. The mode-specific target shape (schema
-	// table) was already validated by modeShapeProblem at the entry, and
+	// table) was already validated by modeVerdict at the entry, and
 	// the per-KB grant already resolved before the probe gate — a denied
 	// write costs zero kernel round-trips.
 	const target = await resolveDocTarget(kernel, boxId, name, p.docId as string);
 	if ("status" in target) return target;
-	switch (p.mode) {
+	switch (mode) {
 		case "edit":
 			return runEditMode({ ...flowBase, params: p }, target);
 		case "append":
@@ -176,11 +171,11 @@ export async function prepareWrite(
 		case "move":
 			return runMoveMode({ ...flowBase, params: p }, target);
 	}
-	// Exhaustive tail: modeShapeProblem and the isWriteMode narrow above
-	// guarantee p.mode is a dispatched mode — a new table key fails
-	// typecheck here until its flow case exists.
-	p.mode satisfies never;
-	return errorEnvelope(`internal: unhandled write mode '${p.mode}'`);
+	// Exhaustive tail: the mode verdict's ok arm guarantees mode is a
+	// dispatched mode — a new table key fails typecheck here until its
+	// flow case exists.
+	mode satisfies never;
+	return errorEnvelope(`internal: unhandled write mode '${mode}'`);
 }
 
 // Body input — markdown XOR markdownFile, read once at call start

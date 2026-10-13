@@ -58,11 +58,24 @@ for (const [mode, { bodies }] of Object.entries(MODE_PARAMS)) {
 }
 
 /** schema-table shape validation — mode-specific targets, zero kernel
- * calls. */
-export function modeShapeProblem(p: WriteParams): string | undefined {
+ * calls. The ok arm carries the narrowed mode, so callers dispatch on it
+ * directly. */
+export type ModeVerdict =
+	| { ok: true; mode: WriteMode }
+	| { ok: false; message: string };
+
+const modeRefusal = (message: string): ModeVerdict => ({
+	ok: false,
+	message,
+});
+const modeAccepted = (mode: WriteMode): ModeVerdict => ({ ok: true, mode });
+
+export function modeVerdict(p: WriteParams): ModeVerdict {
 	const mode = p.mode;
 	if (!isWriteMode(mode)) {
-		return `mode '${mode}' is not supported — supported modes: ${WRITE_MODE_LIST}`;
+		return modeRefusal(
+			`mode '${mode}' is not supported — supported modes: ${WRITE_MODE_LIST}`,
+		);
 	}
 	const allowed = MODE_PARAMS[mode];
 	const base = new Set(["kb", "mode", "markdown", "markdownFile"]);
@@ -74,7 +87,9 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 			(p as Record<string, unknown>)[k] !== undefined,
 	);
 	if (unexpected.length > 0) {
-		return `mode '${mode}' does not take: ${unexpected.join(", ")}`;
+		return modeRefusal(
+			`mode '${mode}' does not take: ${unexpected.join(", ")}`,
+		);
 	}
 	// schema-table split: body-less modes reject both body keys (a sent
 	// body is a mistake, never silently ignored); body-bearing modes leave
@@ -84,51 +99,61 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 			(k) => (p as Record<string, unknown>)[k] !== undefined,
 		);
 		if (sent.length > 0) {
-			return `mode '${mode}' does not take: ${sent.join(", ")}`;
+			return modeRefusal(`mode '${mode}' does not take: ${sent.join(", ")}`);
 		}
 	}
 	if (mode === "create") {
 		return p.topic === undefined
-			? 'mode "create" requires topic (a title)'
-			: undefined;
+			? modeRefusal('mode "create" requires topic (a title)')
+			: modeAccepted(mode);
 	}
 	if (p.docId === undefined) {
-		return `mode '${mode}' requires docId — an echoed root_id target`;
+		return modeRefusal(
+			`mode '${mode}' requires docId — an echoed root_id target`,
+		);
 	}
 	if (mode === "append" && p.placement !== undefined) {
 		if (p.placement !== "section-end" && p.placement !== "section-start") {
-			return `placement must be "section-end" or "section-start"`;
+			return modeRefusal(`placement must be "section-end" or "section-start"`);
 		}
 	}
 	switch (mode) {
 		case "edit":
 			return p.blockId === undefined
-				? "mode 'edit' requires blockId — an echoed block ID"
-				: undefined;
+				? modeRefusal("mode 'edit' requires blockId — an echoed block ID")
+				: modeAccepted(mode);
 		case "replace-section":
 			return p.headingId === undefined
-				? "mode 'replace-section' requires headingId — a heading block ID from the outline"
-				: undefined;
+				? modeRefusal(
+						"mode 'replace-section' requires headingId — a heading block ID from the outline",
+					)
+				: modeAccepted(mode);
 		case "append":
-			return undefined; // headingId optional → doc end
+			return modeAccepted(mode); // headingId optional → doc end
 		case "delete":
 		case "move":
 			if ((p.blockId !== undefined) === (p.doc === true)) {
-				return `mode '${mode}' requires exactly one of blockId or doc: true`;
+				return modeRefusal(
+					`mode '${mode}' requires exactly one of blockId or doc: true`,
+				);
 			}
 			if (mode === "move" && p.doc === true && p.toHeadingId !== undefined) {
-				return "toHeadingId is block-level only — doc-level moves take docId + doc: true + optional toDocId";
+				return modeRefusal(
+					"toHeadingId is block-level only — doc-level moves take docId + doc: true + optional toDocId",
+				);
 			}
 			if (mode === "move" && p.doc !== true && p.toDocId === undefined) {
-				return "block-level move requires toDocId — the destination doc (same-doc moves name the source docId)";
+				return modeRefusal(
+					"block-level move requires toDocId — the destination doc (same-doc moves name the source docId)",
+				);
 			}
-			return undefined;
+			return modeAccepted(mode);
 	}
 	// Exhaustive tail: reached only if a WriteMode member lacks its
 	// required-param case above — a new table key fails typecheck here
 	// until that wording exists, before it can pass shape validation.
 	mode satisfies never;
-	return `internal: unhandled write mode '${mode}'`;
+	return modeRefusal(`internal: unhandled write mode '${mode}'`);
 }
 
 // ---------------------------------------------------------------------------

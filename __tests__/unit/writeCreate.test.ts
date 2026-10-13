@@ -410,10 +410,7 @@ describe("network drop after a landed create", () => {
 			return origCreate(params);
 		};
 		const r = await execute({ ...base, topic: "Docker Networking" });
-		expect(r.status).toBe("error");
-		expect(r.verificationFailed).toBe(true);
-		expect(r.message).toContain("post-write verification reads failed");
-		expect(r.message).not.toContain("SiYuan unreachable");
+		expectUnverified(r);
 		expect(calls.some((c) => c.method === "createDocWithMarkdown")).toBe(true);
 	});
 });
