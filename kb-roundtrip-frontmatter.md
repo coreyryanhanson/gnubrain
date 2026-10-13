@@ -7,15 +7,22 @@ verbatim, and the write route does not consume YFM (`SetYamlFrontMatter(false)`,
 lands the frontmatter as two thematic breaks + a key-lines paragraph, plus a
 duplicate title H1 — while the echo reports `created` with a clean outline. The
 same paste hazard applies to `edit`/`append`/`replace-section`; the read-side fix
-below covers every content mode at once.
+below covers every content mode at once. And the client's omission defaults reach
+further than the frontmatter: the same export endpoint selects how block refs and
+query embeds translate into markdown from workspace config when the request omits
+them — the fix below pins the whole knob set explicitly, not just the frontmatter.
 
 ## Root cause
 
 `siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-335`).
-The endpoint reads both knobs **from the request**, falling back to workspace
-config (`kernel/api/export.go:388-404`; `addTitle` defaults from
-`Conf.Export.AddTitle`, default `true`, user-toggleable). Live-verified on the
-pinned kernel:
+The endpoint takes four knobs **from the request** when the client sends them
+(`kernel/api/export.go:388-404`): `yfm` (hardcoded `true` when absent — no
+workspace toggle can suppress it, so an explicit `yfm:false` is the only fix),
+and `addTitle`/`refMode`/`embedMode`, each falling back to workspace config
+(`addTitle` ← `Conf.Export.AddTitle`, default `true`; `refMode` ←
+`Conf.Export.BlockRefMode`, default `4`; `embedMode` ←
+`Conf.Export.BlockEmbedMode`, default `1` — all user-toggleable). Live-verified
+on the pinned kernel:
 
 ```text
 {id}                            → frontmatter + title H1 + body
@@ -23,6 +30,26 @@ pinned kernel:
 {id, addTitle:false}            → frontmatter + body
 {id, yfm:false, addTitle:false} → exactly the doc body
 ```
+
+The same omission silently selects how kernel-native constructs translate into
+markdown (`model/export.go:3370-3391`, `model/render.go:455-466`):
+
+- **Block refs** (`((id "text"))`): refMode 3 renders the anchor text alone —
+  the pointer vanishes without a trace; refMode 4 (workspace default) fabricates
+  `text[^1]` footnote markers plus an appended footnotes section carrying the
+  referenced block's content — generated body that round-trips as real content;
+  refMode 2 renders `[text](siyuan://blocks/defID)`, preserving the pointer as
+  an address. (Modes 0/1 are unreachable — `model/conf.go` force-normalizes them
+  to 4.)
+- **Query embeds** (`{{SELECT ...}}`): no mode preserves the script — every mode
+  resolves and inlines the result; mode 1 (workspace default) inlines as quote
+  blocks (`> ` per line), mode 0 inlines raw, indistinguishable from authored
+  text.
+
+Config-dependent output means the same doc reads differently across deployments,
+on a dial gnubrain cannot observe — the same never-silently-wrong violation as
+the frontmatter omission, and footnote fabrication is the same export-artifact
+class.
 
 The artifacts are therefore **our client's omission defaults, not kernel facts the
 write side must undo**. Fixing them on the write side would mean a recognizer over
@@ -39,23 +66,35 @@ moves. Development lands in one pass over the `file:` co-development link;
 publish order stays bottom-up.
 
 1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
-   addTitle?: boolean })`, each field sent only when defined (`compact` already
-   drops `undefined`). Update the census args pin (`census.test.ts`) and the
-   `client.test.ts` pins asserting the bare `{ id }` body (the no-opts call must
-   stay byte-identical to today).
+   addTitle?: boolean; refMode?: number; embedMode?: number })`, each field sent
+   only when defined (`compact` already drops `undefined`). Layer 1 chooses no
+   posture — it only guarantees the knobs are *settable* (the explicit-knob rule
+   codified in its AGENTS.md, see below); the values are the caller's. Update
+   the census args pin (`census.test.ts`) and the `client.test.ts` pins
+   asserting the bare `{ id }` body (the no-opts call must stay byte-identical
+   to today).
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
    (`client.ts:52`). Doc comment: body-only posture on the tool path, faithful
    pass-through of whatever the caller requests.
 3. **`gnubrain`** — `runRead` (`tools.ts`) requests `{ yfm: false, addTitle:
-   false }`. `kb_write` and `prepareWrite` untouched.
+   false, refMode: 2, embedMode: 1 }`: body-only; refs render as
+   `siyuan://blocks/<id>` links (the id is directly `kb_read`-able — pointers,
+   not stale copies, matching the stack's id-addressed notation); embeds
+   materialize with the quote-block seam distinguishing embedded from authored
+   text. The duplicate-stop excerpt (`writeCreate.ts:108`) passes the same bag,
+   so every agent-served markdown speaks one dialect — the only write-side
+   change; the write modes' verdict paths and schemas are untouched.
 
-Plus one wording line in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
-output is a **rendering, not a serialization** — block IAL is not exported
-(`SetKramdownIAL(false)`) and tab titles can materialize as content
-(`MaterializeTabTitles`), so treat it as a body source, not a byte-exact backup.
-No option achieves byte fidelity through the export; the wording covers the
-residual class honestly.
+Plus wording lines in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
+output is a **rendering, not a serialization** — it is the body alone (no
+frontmatter, no title H1; the title rides the `hpath` echo), block IAL is not
+exported (`SetKramdownIAL(false)`), tab titles can materialize as content
+(`MaterializeTabTitles`), block refs render as `siyuan://blocks/<id>` links,
+and query embeds materialize as quoted content (the embed script itself is not
+preserved in any mode). So treat it as a body source, not a byte-exact backup.
+No option achieves byte fidelity through the export — refs and embeds are
+translated, not serialized; the wording covers the residual class honestly.
 
 ## Metadata disposition
 
@@ -92,8 +131,16 @@ rendering. It is not lost from the KB:
   H1, no IAL, and the body byte-identical. Nothing is timestamped in body-only
   output, so no wildcarding. Place it next to the existing `docMarkdown` live
   case.
-- **Gnubrain unit**: `runRead` passes `{ yfm: false, addTitle: false }` (client
-  stub via the `deps` seam); `READ_DESCRIPTION` wording pin updated.
+- **Primitives live, second case (the ref/embed falsifier)**: export a
+  ref-bearing doc — a block ref to another doc's block plus a query embed;
+  assert structure, not byte identity (refs are translated, not serialized):
+  refs render as `[text](siyuan://blocks/…)`, there are no `[^1]` markers and
+  no footnotes section, and the embed's content appears as a quote block. The
+  ref-free fixture above stays byte-identical; this one cannot be.
+- **Gnubrain unit**: `runRead` passes `{ yfm: false, addTitle: false, refMode:
+  2, embedMode: 1 }` and the writeCreate duplicate-stop excerpt passes the same
+  bag (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
+  updated.
 - **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
   inline paste) → `kb_read` the new doc → exactly one title H1, zero frontmatter
   lines, body verbatim.
@@ -104,12 +151,23 @@ rendering. It is not lost from the KB:
 
 ## AGENTS.md updates
 
-- `gnubrain` version-coupling list gains one line: **body-only read posture** —
-  kb_read serves `exportMdContent` with `yfm:false`/`addTitle:false` →
-  `docMarkdown` opts (primitives `byId.ts`) → this repo keeps the request args and
-  the description wording → falsifier: the primitives' body-only live case.
+- `siyuan-kernel-api` AGENTS.md gains the systemic **explicit-knob rule**:
+  wherever a request-optional knob's absent-value fallback is workspace config,
+  the client must surface it as an explicit opt — tool-visible output must not
+  depend on unobservable workspace settings. On the current surface this is
+  `exportMdContent`'s `addTitle`/`refMode`/`embedMode` (`yfm`'s fallback is
+  hardcoded `true`, but it is settable for the same reason); conf-only knobs
+  with no request override on this endpoint (tag markers, ref text markers,
+  `fileAnnotationRefMode`, `inlineMemo`) are unpinnable and stay covered by the
+  rendering-not-serialization wording.
+- `gnubrain` version-coupling list gains one line: **body-only,
+  config-independent read posture** — kb_read serves `exportMdContent` with
+  `yfm:false`/`addTitle:false`/`refMode:2`/`embedMode:1` → `docMarkdown` opts
+  (primitives `byId.ts`) → this repo keeps the request args and the description
+  wording → falsifier: the primitives' body-only and ref-rendering live cases.
 - `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
-  the opts threading and the body-only posture its live case falsifies.
+  the opts threading (four knobs, pass-through, no posture) and the
+  body-only/ref-rendering postures its live cases falsify.
 
 ## Timing
 
