@@ -1,136 +1,119 @@
-# kb_read → kb_write round-trip friction: frontmatter and title heading are not reconciled on the write side
+# kb_read → kb_write round-trip: stop emitting export artifacts at the source
 
-Observed hands-on while restoring a deleted doc in the `scratch` KB (Kim Simons artist
-doc), 2026-10-13. Reproduced twice, verified against the live kernel and the source.
+`kb_read` serves a doc as markdown carrying the kernel's YAML frontmatter block
+(`title`/`date`/`lastmod`/`tags`) and the doc-title H1. `kb_write` accepts bodies
+verbatim, and the write route does not consume YFM (`SetYamlFrontMatter(false)`,
+`kernel/util/lute.go:89`), so feeding a `kb_read` export back to `create` silently
+lands the frontmatter as two thematic breaks + a key-lines paragraph, plus a
+duplicate title H1 — while the echo reports `created` with a clean outline. The
+same paste hazard applies to `edit`/`append`/`replace-section`; the read-side fix
+below covers every content mode at once.
 
-## The problem
+## Root cause
 
-`kb_read` returns a doc as markdown that carries **the kernel's YAML frontmatter block
-and the doc-title H1** (pinned by `__tests__/integration/readPins.live.test.ts`:
-"The export carries the kernel's YAML frontmatter + title heading"). That output is the
-natural source an agent reaches for when re-creating or moving a doc. But `kb_write`
-accepts the body **verbatim** — `prepareWrite` (writePrepare.ts) resolves
-`markdown`/`markdownFile` and passes it straight through to `createDocVerified`, which
-mints the title separately (`createDocWithMarkdown({ title, body })`). Nothing strips
-or reconciles the export artifacts.
+`siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-335`).
+The endpoint reads both knobs **from the request**, falling back to workspace
+config (`kernel/api/export.go:388-404`; `addTitle` defaults from
+`Conf.Export.AddTitle`, default `true`, user-toggleable). Live-verified on the
+pinned kernel:
 
-Feeding a `kb_read` export back to `create` therefore produces, silently:
-
-1. The frontmatter block embedded as body content — two thematic-break blocks (`---`)
-   plus a paragraph block containing the raw `title: … / date: … / lastmod: …` lines.
-2. A duplicate title H1 — one from the export's title heading, one minted by the
-   kernel. Both become real content blocks.
-
-Failure looks like success: the echo reports `created` with a clean outline, and the
-junk sits at the top of the doc until someone reads it. Recovery costs a delete +
-recreate (and, if unnoticed, pollutes the doc permanently). The same hazard applies to
-`edit`, `replace-section`, and `append` when the agent pastes `kb_read` output.
-
-## Where the fix lives
-
-The export shape is a **pinned kernel fact**: the frontmatter block is exactly the
-kernel's `yfm()` output (`kernel/model/export.go`, keys `title`/`date`/`lastmod`/
-optional `tags`, values unescaped) followed by the raw-title H1. Verified live against
-the pinned kernel (2026-10): the export of a doc is
-`---\ntitle: …\ndate: …\nlastmod: …\n---\n\n# <title>\n`.
-
-Per the AGENTS.md rule — *executable dependence on a pinned behavior moves down into
-the primitives* — the recognizer lives in the **`siyuan-kb-primitives` read barrel** as
-a pure, kernel-free helper:
-
-```ts
-stripExportArtifacts(body, { dropTitleHeading: boolean })
-  → { body, stripped: { frontmatterLines, titleHeading } }
+```text
+{id}                            → frontmatter + title H1 + body
+{id, yfm:false}                 → title H1 + body
+{id, addTitle:false}            → frontmatter + body
+{id, yfm:false, addTitle:false} → exactly the doc body
 ```
 
-falsified by a live case in the primitives' suite that exports a known doc and asserts
-the exact export block (include a title with `&`, `<`, `>` in the falsifier). The
-plugin keeps only policy and wording: which modes invoke the strip, and the echo.
-This means the fix ships as a primitives release first (bottom-up), then gnubrain
-consumes it.
-
-Note the asymmetry stays plugin/tool-side in one sense: `docMarkdown`'s read shape is
-pinned expected behavior and must **not** change — we normalize on the write side
-only. And the `kb_write` description today never warns about the round trip at all;
-that wording is added below.
+The artifacts are therefore **our client's omission defaults, not kernel facts the
+write side must undo**. Fixing them on the write side would mean a recognizer over
+the `yfm()` byte shape — a shape it can never match soundly (a hand-authored YAML
+header using exactly those keys is byte-indistinguishable), gated on a workspace
+setting gnubrain cannot observe (`AddTitle` off ⇒ an H1-drop rule silently deletes
+the doc's own first heading). The write side keeps its invariant instead: *a body
+is content, taken verbatim*.
 
 ## Proposed fix
 
-Normalize the body at the single choke point in `prepareWrite` (writePrepare.ts),
-immediately after the `markdown` XOR `markdownFile` resolution, so every content-bearing
-mode benefits and the guard-stop staging path (`spillFile(input.body)`) stages the
-normalized form. The recognizer itself is the primitives' `stripExportArtifacts`
-(see above); the plugin only chooses when to call it and how to word the echo:
+One change per repo; defaults everywhere stay unchanged, so no other consumer
+moves. Development lands in one pass over the `file:` co-development link;
+publish order stays bottom-up.
 
-1. **Strip a leading YAML frontmatter block — matched tightly against the kernel's
-   actual key set.** Line 1 exactly `---`, closing marker exactly `---` (the kernel
-   never writes `...`; allowing it only widens the false-positive surface), and every
-   line inside a top-level `title:`/`date:`/`lastmod:`/`tags:` key (plus indented
-   `- '…'` items under `tags`). Otherwise the body is untouched: a body that opens
-   with a thematic break and contains another `---` is legitimate prose, and the
-   loose "any `---` … `---`" rule would silently strip it — the very failure mode
-   this fix exists to prevent. No closing marker, or a line outside the key set,
-   → leave the body untouched.
-2. **On `create` only: after a *recognized* frontmatter block, drop the next
-   non-blank line if it is an H1.** Gate the drop on "frontmatter was stripped", NOT
-   on title-equality. After a recognized kernel frontmatter block the next non-blank
-   line *is* the export's title H1 by construction, so this catches the rename case
-   (agent restores a doc under a new title — title-equality would leave the old-title
-   H1 behind as junk) and sidesteps the title-vs-H1 escaping question entirely.
-   Without a recognized frontmatter block, no H1 is ever dropped: a body that
-   legitimately opens with its own H1 is content.
-3. `edit` / `replace-section` / `append` get frontmatter stripping only, never the
-   H1 drop (their bodies don't carry the export's title heading as a duplicate).
+1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
+   addTitle?: boolean })`, each field sent only when defined (`compact` already
+   drops `undefined`). Update the census args pin (`census.test.ts`) and the
+   `client.test.ts` pins asserting the bare `{ id }` body (the no-opts call must
+   stay byte-identical to today).
+2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
+   option through (`byId.ts`); widen the `ExportClient` capability
+   (`client.ts:52`). Doc comment: body-only posture on the tool path, faithful
+   pass-through of whatever the caller requests.
+3. **`gnubrain`** — `runRead` (`tools.ts`) requests `{ yfm: false, addTitle:
+   false }`. `kb_write` and `prepareWrite` untouched.
 
-All matching is strict and no-op when the pattern doesn't fit, so hand-written bodies
-are untouched.
+Plus one wording line in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
+output is a **rendering, not a serialization** — block IAL is not exported
+(`SetKramdownIAL(false)`) and tab titles can materialize as content
+(`MaterializeTabTitles`), so treat it as a body source, not a byte-exact backup.
+No option achieves byte fidelity through the export; the wording covers the
+residual class honestly.
 
-**Echo the normalization** when anything was stripped — a `normalized` field plus a
-message suffix that names *what* was stripped, so a kept H1 is inferable:
-`stripped YAML frontmatter (4 lines) and title heading from body — kernel manages doc
-metadata` / `stripped YAML frontmatter (4 lines); body's own H1 kept`. Silent
-transformation is the failure mode we're fixing; the echo keeps it observable.
+## Metadata disposition
 
-**Document the round trip** in the `kb_write` tool description: read output carries
-kernel-managed frontmatter + title heading; these are stripped automatically on write.
+Body-only read output drops the frontmatter's derived metadata from the markdown
+rendering. It is not lost from the KB:
+
+- Doc-level tags ride the doc's IAL `tags` attribute, which the SQL index renders
+  into `blocks.tag` on the root row (`kernel/sql/database.go:1059-1075`) —
+  reachable via `kb_query`:
+
+  ```sql
+  SELECT id, content, tag FROM blocks WHERE type='d' AND tag != ''
+  ```
+
+- Inline tags (`#tag#` spans) are body content — untouched.
+- `date`/`lastmod` are queryable (`blocks.updated`, etc.).
+- The planned tags-on-create feature rides the `tags` param `createDocWithMd`
+  already models (plain string; an array would panic into a silent `code: 0`,
+  hence its doc comment) — a structured field, not markdown scraping. Body-only
+  is what keeps that future clean.
+- If the agent ever needs metadata alongside the body in one read, add an
+  explicit opt-in read form (e.g. a `meta` flag returning `{title, tags,
+  updated}` as fields) — never re-fatten the markdown.
 
 ## Test plan
 
-- Unit (primitives, `stripExportArtifacts`): kernel-shaped frontmatter → stripped with
-  exact line count; unterminated `---` → untouched; block containing a non-key line →
-  untouched; closing `...` → untouched (not recognized); create (dropTitleHeading) →
-  H1 after frontmatter dropped, H1 without frontmatter kept, non-H1 after frontmatter
-  kept; edit-shape (no drop) → frontmatter stripped, H1 kept.
-- Unit (writePrepare ladder): create with export-shaped body → normalized before
-  `createDocVerified`; guard-stop staging path stages the normalized form; echo
-  `normalized` field + message suffix present when anything was stripped, absent when
-  nothing was.
-- Live (primitives suite): export a known doc (title containing `&`, `<`, `>`), assert
-  the exact export block shape — the falsifier for the recognizer's pinned-fact claim.
-- Integration: `kb_read` a doc → feed its spilled `fullResultPath` back as
-  `markdownFile: create` (fresh topic) → `kb_read` the new doc → assert exactly one
-  title H1 and zero `title:`/`date:`/`lastmod:` paragraphs in the body.
+- **Layer 1 unit**: no-opts call posts `{ id }` exactly as today; opts included
+  only when defined; census args pin updated.
+- **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
+  args).
+- **Primitives live (the falsifier for the new posture)**: export a doc whose
+  title contains `&`, `<`, `>` and whose body opens with its own H1 and a `---`
+  thematic break; assert the body-only export carries no frontmatter, no title
+  H1, no IAL, and the body byte-identical. Nothing is timestamped in body-only
+  output, so no wildcarding. Place it next to the existing `docMarkdown` live
+  case.
+- **Gnubrain unit**: `runRead` passes `{ yfm: false, addTitle: false }` (client
+  stub via the `deps` seam); `READ_DESCRIPTION` wording pin updated.
+- **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
+  inline paste) → `kb_read` the new doc → exactly one title H1, zero frontmatter
+  lines, body verbatim.
+- **`readPins.live.test.ts`**: the "export carries the kernel's YAML frontmatter
+  + title heading" line is currently an unasserted comment — delete it. The real
+  body-only pin is owned by the primitives' live suite (above); this repo pins
+  the tool-side behavior through the integration round-trip case.
 
-## Alternative considered
+## AGENTS.md updates
 
-Warn-instead-of-strip (detect the patterns, refuse with "strip the frontmatter and
-retry"). Smaller blast radius, but it turns every doc-restore/move/copy into a
-two-step dance for a transformation the plugin can do correctly by strict match. Strip
-+ echo is the smallest change that makes the round trip safe by default.
-
-Also considered and rejected: matching the H1 by title equality (misses the
-rename case; drags in escaping questions), and keeping the recognizer tool-side
-(the `yfm()` shape is a pinned kernel fact — its live falsifier lives in the
-primitives, and an executable copy up-repo is what the layering rule forbids).
+- `gnubrain` version-coupling list gains one line: **body-only read posture** —
+  kb_read serves `exportMdContent` with `yfm:false`/`addTitle:false` →
+  `docMarkdown` opts (primitives `byId.ts`) → this repo keeps the request args and
+  the description wording → falsifier: the primitives' body-only live case.
+- `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
+  the opts threading and the body-only posture its live case falsifies.
 
 ## Timing
 
-Fix **before v1**, not after. The change is additive under the tool contract either
-way (pure input transform + new `normalized` field + message suffix), but it is
-*preventive, not corrective*: every `kb_read → kb_write` round-trip between v1 and
-the fix silently writes frontmatter blocks + duplicate title H1s into the store, and
-those docs need manual cleanup. Churn is free pre-squash; deferred data hygiene is
-not.
-
-Release order (bottom-up): primitives release with `stripExportArtifacts` + live
-falsifier first, then the gnubrain change that consumes it.
+Fix before v1 — preventive, not corrective: the sweep
+`SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%lastmod:%'` returns
+0 in the live workspace. Re-run it in any other workspace before declaring the
+class closed.
