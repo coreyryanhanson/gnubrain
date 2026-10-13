@@ -5,7 +5,7 @@
 import {
 	GUARD_EXACT_CAP,
 	GUARD_NEAR_CAP,
-	SiYuanApiError,
+	causeOf,
 	docMarkdown,
 	findTitleMatches,
 	firstChildContent,
@@ -63,7 +63,10 @@ async function swallowVanished<T>(
 	try {
 		return await fn();
 	} catch (err) {
-		if (!(err instanceof SiYuanApiError)) throw err;
+		// causeOf classifies the specific classes ahead of the SiYuanApiError
+		// catch-all, so the swallow stays kernel-refusal-only even if layer 1
+		// ever nests them under it.
+		if (causeOf(err)?.kind !== "kernel") throw err;
 		return fallback;
 	}
 }

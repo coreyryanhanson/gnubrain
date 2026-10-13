@@ -5,9 +5,9 @@
 // duplication, never loss — that invariant lives with the sequence.
 
 import {
-	SiYuanKernelError,
 	appendAnchorOf,
 	backlinkCheck,
+	causeOf,
 	sectionOf,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
@@ -227,7 +227,7 @@ export async function runReplaceSectionMode(
 				// error for the catch sites to merge into whatever envelope the
 				// classifier produces. Non-kernel error classes rethrow
 				// unmarked.
-				if (outcome.error instanceof SiYuanKernelError) {
+				if (causeOf(outcome.error) !== undefined) {
 					markPartialReplace(outcome.error, {
 						partialReplace: true,
 						newBlockId: outcome.insertedId,
@@ -244,7 +244,7 @@ export async function runReplaceSectionMode(
 				// finish-write wrapper with the partial state attached: the
 				// fully-swept delete set rides as the receipt, nothing remains
 				// pending, and the classifier renders verificationFailed.
-				if (outcome.error instanceof SiYuanKernelError) {
+				if (causeOf(outcome.error) !== undefined) {
 					markPartialReplace(outcome.error, {
 						partialReplace: true,
 						newBlockId: outcome.insertedId,

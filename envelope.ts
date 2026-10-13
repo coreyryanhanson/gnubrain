@@ -4,7 +4,7 @@
 // `status: "ok"` plus their payload.
 
 import { AUTH_DODGE_THRESHOLD as BREAKER_THRESHOLD } from "siyuan-kb-primitives";
-import type { VerificationCause } from "siyuan-kb-primitives/write";
+import type { KernelCause } from "siyuan-kb-primitives";
 
 type EnvelopeStatus = "ok" | "near_matches" | "duplicate" | "error" | "refused";
 
@@ -74,7 +74,7 @@ export const PARTIAL_APPLY_GUIDANCE =
  * structured state attached to a result, read by the gate, never worded
  * here. */
 export type AuthLockEvent = Extract<
-	VerificationCause,
+	KernelCause,
 	{ kind: "auth" | "rate-limit" }
 >;
 

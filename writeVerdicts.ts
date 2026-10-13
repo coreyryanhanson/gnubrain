@@ -50,10 +50,14 @@ export function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
 
-/** The never-retry-blindly clause shared by every unverified-write
- * sentence: whatever leg failed, the closing instruction is the same —
- * re-check the tree before repeating. The leads differ per leg below;
- * this is the one part that must not drift between them. */
+/** The never-retry-blindly clause shared by the unverified-write
+ * sentences in this module (transport-unverified, the two verification-
+ * failed twins, and the auth/lock twin): whatever leg failed, the closing
+ * instruction is the same — re-check the tree before repeating. The leads
+ * differ per leg; this is the one part that must not drift between them.
+ * Flows with their own evidence-specific closers (insert/move landed
+ * refusals, edit's confirm-before-repeat) word their own instead of
+ * reusing this clause. */
 const retryBlindlyClause =
 	"re-fetch the outline (kb_read) and confirm the write landed before repeating it";
 
