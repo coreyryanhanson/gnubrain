@@ -183,19 +183,16 @@ temp HOME for the headless child).
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,
-  `writeFresh.ts`);
-  `writeVerdicts.ts` is the wording layer over those unions: exhaustive
-  switches (no default) mapping every kind to the sentence it renders,
-  so a new kind in a
-  primitives release fails typecheck until its wording is written there
-  (the anchor echoes ride the same rule — `appendAnchorEcho` /
-  `moveAnchorEcho`). Each flow composes its own mode's envelope *frames*
-  from those words (frames need the flow's echo tail, doc, and verdict
-  keys); the one frame shared across flows — the pre-judgment failure
-  ladder of the verified mutation flows (`mutationFailureEnvelope`) — is
-  worded in `writeVerdicts.ts` too, so a new failure arm fails typecheck
-  once, not per flow (that frame is the one async piece: it awaits the
-  flow-supplied echo tail, `writeEcho.mutationFailure`).
+  `writeFresh.ts`); the wording over those unions is exhaustive switches
+  (no default) with `satisfies never`, so a new kind in a primitives
+  release fails typecheck until its sentence is written, wherever that
+  sentence lives. Shared fragments live in `writeVerdicts.ts` — transport/verification/drift
+  sentences, the anchor echoes (`appendAnchorEcho` / `moveAnchorEcho`),
+  the `blockInDocRefusal*` pair, and the one frame shared across flows, the
+  pre-judgment failure ladder (`mutationFailureEnvelope`, the one async
+  piece: it awaits the flow-supplied echo tail, `writeEcho.mutationFailure`).
+  Each mode's own verdict sentences co-locate with that mode's flow, which
+  composes its envelope frames from both halves.
   Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
   policy in `writeGuard.ts` (`validateMintTitle` — wording only; the
   mint-title kernel facts live in the primitives' `mintTitleProblem`).
