@@ -69,10 +69,18 @@ publish order stays bottom-up.
    addTitle?: boolean; refMode?: number; embedMode?: number })`, each field sent
    only when defined (`compact` already drops `undefined`). Layer 1 chooses no
    posture — it only guarantees the knobs are *settable* (the explicit-knob rule
-   codified in its AGENTS.md, see below); the values are the caller's. Update
-   the census args pin (`census.test.ts`) and the `client.test.ts` pins
-   asserting the bare `{ id }` body (the no-opts call must stay byte-identical
-   to today).
+   codified in its AGENTS.md, see below); the values are the caller's. Test
+   edits, both shaped by what each pin actually verifies: `client.test.ts`
+   gains *additive* cases (full opts; partial opts — `{ id, yfm: false }` with
+   no `addTitle` key), keeping the bare `{ id }` body pin unchanged — that pin
+   *is* the byte-identity proof of the no-opts call, not a stale assertion to
+   update. And the census `ARGS` entry (`census.test.ts`) is *replaced* with
+   the full opts tuple, not left as the bare `"x"`: the census drives its args
+   against a stubbed fetch and asserts token attachment on every outgoing call
+   (`census.test.ts:130-140`), so a short tuple compiles fine yet silently
+   exits the drive — the opts path must join the token-attachment sweep like
+   every other method's representative call. Body shape stays `client.test.ts`'s
+   job; the census verifies reachability and auth posture.
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
    (`client.ts:52`). Doc comment: body-only posture on the tool path, faithful
@@ -122,7 +130,9 @@ rendering. It is not lost from the KB:
 ## Test plan
 
 - **Layer 1 unit**: no-opts call posts `{ id }` exactly as today; opts included
-  only when defined; census args pin updated.
+only when defined (additive cases, bare body pin untouched); the census `ARGS`
+entry becomes the full opts tuple so the opts path joins the token-attachment
+drive.
 - **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
   args).
 - **Primitives live (the falsifier for the new posture)**: export a doc whose
