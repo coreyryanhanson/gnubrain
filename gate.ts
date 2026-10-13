@@ -326,6 +326,17 @@ export async function runKbCall<K extends object>(
 	return result;
 }
 
+/** The gate's served client narrowed to the probe surface: a real kernel
+ * call through the raw probe handle fails typecheck — it would bypass
+ * contact marking entirely. `Extract` keeps this structural for every K
+ * the gate serves: read clients carry no probe methods and narrow to
+ * `{}`; write clients satisfy `KernelProbeClient` and hide their
+ * mutation surface. */
+type ProbeSurface<K extends object> = Pick<
+	K,
+	Extract<keyof K, keyof KernelProbeClient>
+>;
+
 /** Tool-level dispatch shared by the kb tool registrations: the two "not
  * ready" refusals and the runKbCall invocation live here instead of one
  * copy per tool. The missing-kernel check stays inside the gated op —
@@ -345,11 +356,9 @@ export async function runGatedTool<K extends object>(
 		kernel: K,
 		validation: SessionValidation,
 		names: string[],
-		/** The raw (untracked) client — probe-class calls only. Declare the
-		 * parameter as the narrow `KernelProbeClient`, never this `K`: a
-		 * real kernel call through the raw handle would bypass contact
-		 * marking entirely. */
-		probe: K,
+		/** The raw (untracked) client, narrowed by `ProbeSurface` —
+		 * probe-class calls only. */
+		probe: ProbeSurface<K>,
 	) => Promise<Envelope> | Envelope,
 ): Promise<Envelope> {
 	const validation = hooks.getValidation();

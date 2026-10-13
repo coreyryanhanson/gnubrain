@@ -10,6 +10,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { KernelProbeClient } from "siyuan-kb-primitives";
 import { defineToolset, type Toolset, type ToolsetSpec } from "pi-tool-masking";
 import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
 
@@ -59,7 +60,7 @@ export function registerWriteToolAndToolset(
 				hooks,
 				params.kb,
 				"single",
-				(kernel, validation, names, probe) =>
+				(kernel, validation, names, probe: KernelProbeClient) =>
 					prepareWrite(
 						params as WriteParams,
 						hooks,

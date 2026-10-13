@@ -37,7 +37,7 @@ const MODE_PARAMS = {
 /** The closed mode union, derived from the schema table: adding a table key
  * without threading it through both dispatch switches is a compile error —
  * an unknown mode can never reach a kernel call before its wording exists. */
-export type WriteMode = keyof typeof MODE_PARAMS;
+type WriteMode = keyof typeof MODE_PARAMS;
 
 /** Type predicate over the mode union — the narrow the write-path switches
  * rely on (the wire schema keeps `mode` a plain string). Own-property check:
@@ -78,7 +78,7 @@ export function modeShapeProblem(p: WriteParams): string | undefined {
 	}
 	// schema-table split: body-less modes reject both body keys (a sent
 	// body is a mistake, never silently ignored); body-bearing modes leave
-	// the markdown XOR markdownFile rule to writeConfirm's wording.
+	// the markdown XOR markdownFile rule to writePrepare's wording.
 	if (allowed.bodies.length === 0) {
 		const sent = BODY_KEYS.filter(
 			(k) => (p as Record<string, unknown>)[k] !== undefined,

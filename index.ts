@@ -200,6 +200,28 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		});
 	}
 
+	// The validation verdict's breaker accounting, shared by session_start
+	// and the /kb re-check: an auth failure feeds the breaker (counting),
+	// a 429 the listing observed arms the local cooldown from the served
+	// Retry-After — the same reducer the gate uses — so the session refuses
+	// locally instead of extending the live lock call by call. Only a
+	// successful recovery listing resets the counter, and only the /kb
+	// re-check can be one: session_start has already reset above.
+	function applyValidationVerdict(
+		validation: SessionValidation,
+		recoveryResets: boolean,
+	): void {
+		if (validation.authFailed) {
+			breaker.recordAuthFailure();
+		} else if (recoveryResets && validation.lsNotebooksOk) {
+			// Recovery succeeded: clears degradation + the breaker counter.
+			// The 429 cooldown is deliberately untouched — it self-heals.
+			breaker.reset();
+		} else if (validation.rateLimitRetryAfterSeconds !== undefined) {
+			breaker.recordRateLimitFromVerdict(validation.rateLimitRetryAfterSeconds);
+		}
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		// The breaker counts per session; a new session in this process must
 		// not inherit a partial or tipped count from the previous one. The 429
@@ -216,13 +238,7 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 		clearSessionGrants(grantState);
 		baselines.clear();
 		validation = await revalidate(ctx);
-		// An auth failure on the first authenticated call feeds the breaker.
-		// A 429 the listing observed arms the local cooldown from the served
-		// Retry-After — the same reducer the gate uses — so the session refuses
-		// locally instead of extending the live lock call by call.
-		if (validation.authFailed) breaker.recordAuthFailure();
-		else if (validation.rateLimitRetryAfterSeconds !== undefined)
-			breaker.recordRateLimitFromVerdict(validation.rateLimitRetryAfterSeconds);
+		applyValidationVerdict(validation, false);
 		renderStatus(ctx);
 	});
 
@@ -242,20 +258,9 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 			// revalidate degrades rather than throwing, so a failed re-check
 			// re-engages all-or-nothing right here.
 			validation = await revalidate(ctx);
-			if (validation.authFailed) {
-				// The re-check's own auth failure feeds the breaker (counting).
-				breaker.recordAuthFailure();
-			} else if (validation.lsNotebooksOk) {
-				// Recovery succeeded: clears degradation + the breaker counter.
-				// The 429 cooldown is deliberately untouched — it self-heals.
-				breaker.reset();
-			} else if (validation.rateLimitRetryAfterSeconds !== undefined) {
-				// Same arming as session start: a 429 the re-check's listing
-				// observed arms the local cooldown from the served Retry-After.
-				breaker.recordRateLimitFromVerdict(
-					validation.rateLimitRetryAfterSeconds,
-				);
-			}
+			// The re-check is the recovery path: its success resets the
+			// breaker counter (see applyValidationVerdict).
+			applyValidationVerdict(validation, true);
 			const state = toolsetState(intent, branch);
 			const result = dispatchKbCommand(
 				args,
