@@ -238,7 +238,14 @@ export async function gateWriteAttempt(input: {
 /** Merge a mid-sequence write's attached partial-apply state into a
  * classified envelope (429 → cooldown refusal, auth → breaker refusal).
  * The write may be half-applied — the model must see that even though the
- * error classified elsewhere, or the post-lock re-run duplicates it. */
+ * error classified elsewhere, or the post-lock re-run duplicates it. Every
+ * catch arm of runKbCall renders through this: the attached state exists
+ * only for mid/post-mutation errors (the mark sites sit inside
+ * finishWrite), but the gate upholds the render invariant itself rather
+ * than per arm. The merged envelope keeps its own status — a 429 refusal
+ * stays `refused`, an unreachable transport stays `error` — only the
+ * message gains the do-not-re-run NOTE and the payload the receipt rides
+ * in. */
 function withPartialState(envelope: Envelope, err: unknown): Envelope {
 	const partial = takePartialReplace(err);
 	if (partial === undefined) return envelope;
@@ -296,12 +303,15 @@ export async function runKbCall<K extends object>(
 				: null;
 		if (classified !== null) return withPartialState(classified, err);
 		if (cause?.kind === "transport") {
-			return kernelUnreachable(
-				input.validation.settings?.baseUrl ?? "",
-				"error",
+			return withPartialState(
+				kernelUnreachable(input.validation.settings?.baseUrl ?? "", "error"),
+				err,
 			);
 		}
-		return errorEnvelope(err instanceof Error ? err.message : String(err));
+		return withPartialState(
+			errorEnvelope(err instanceof Error ? err.message : String(err)),
+			err,
+		);
 	}
 	// A call that actually reached the kernel resets the consecutive count —
 	// but never the 429 cooldown, which self-heals on expiry alone. This

@@ -10,7 +10,11 @@ import {
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
-import { errorEnvelope, type Envelope } from "../../envelope.js";
+import {
+	errorEnvelope,
+	markPartialReplace,
+	type Envelope,
+} from "../../envelope.js";
 import {
 	gateWriteAttempt,
 	guardCall,
@@ -403,6 +407,44 @@ describe("runKbCall error classification", () => {
 			expect(breaker.tripped).toBe(false);
 		},
 	);
+
+	// Partial-apply state attached to a transport-class error must still
+	// render its do-not-re-run receipt: the state exists only for
+	// mid/post-mutation errors (the mark sites sit inside finishWrite), but
+	// the gate upholds the render invariant itself, so a marked error that
+	// reaches runKbCall outside finishWrite still carries the receipt
+	// instead of a bare "SiYuan unreachable" that invites a blind retry.
+	it("a transport error carrying partial-apply state renders the receipt, not a bare unreachable", async () => {
+		const err = new SiYuanNetworkError();
+		markPartialReplace(err, {
+			partialReplace: true,
+			newBlockId: "20240101120000-abcdefg",
+			deletedBlockIds: ["20240101120000-h"],
+			remainingBlockIds: ["20240101120000-i"],
+		});
+		const envelope = await runKbCall(
+			{
+				validation: validation(),
+				breaker: new CircuitBreaker(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async () => {
+				throw err;
+			},
+		);
+		expect(envelope.status).toBe("error");
+		expect(envelope.message).toContain("SiYuan unreachable");
+		expect(envelope.message).toContain("partially applied");
+		expect(envelope.message).toContain("do NOT re-run");
+		expect(envelope).toMatchObject({
+			partialReplace: true,
+			newBlockId: "20240101120000-abcdefg",
+			deletedBlockIds: ["20240101120000-h"],
+			remainingBlockIds: ["20240101120000-i"],
+		});
+	});
 });
 
 describe("write gate", () => {
