@@ -42,7 +42,7 @@
 		"siyuan-kb-primitives": "file:../siyuan-kb-primitives"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "^1.1.0",
+		"@earendil-works/pi-coding-agent": "^1.2.0",
 		"@types/node": "^22.0.0",
 		"husky": "9.1.7",
 		"lint-staged": "17.5.1",
