@@ -512,28 +512,22 @@ export const editBase = {
 };
 
 export const SECTION_DOC = {
-	// Heading sections are seeded as the kernel returns them (a heading's
-	// getChildBlocks answer is its section: following siblings up to the next
-	// heading of same-or-higher level). The walk never recurses into `h` — it
-	// reaches these blocks through the `d-doc` loop — so these entries are here
-	// to fail the suite if heading recursion is ever reintroduced.
+	// A heading's getChildBlocks answer is its section: following siblings
+	// up to the next heading of same-or-higher level. The walk reads the
+	// whole doc through the `d-doc` loop — it never recurses into `h`.
 	"d-doc": [
 		walkBlock("h1", "h", "h1", "Goals"),
 		walkBlock("p1", "p", "", "body one"),
 		walkBlock("h2", "h", "h2", "Details"),
 		walkBlock("p2", "p", "", "body two"),
 	],
-	h1: [
-		walkBlock("p1", "p", "", "body one"),
-		walkBlock("h2", "h", "h2", "Details"),
-		walkBlock("p2", "p", "", "body two"),
-	],
-	h2: [walkBlock("p2", "p", "", "body two")],
 };
 
 export const REPLACE_DOC = {
 	// The boundary heading is same-level (h1): the section is [p1, p2] — the
 	// same-or-shallower pin (deeper headings would belong to the section).
+	// Kernel-shaped heading sections (see SECTION_DOC): the delete set must
+	// stay the enumerated section, never the heading's answer re-emitted.
 	"d-doc": [
 		walkBlock("h1", "h", "h1", "Goals"),
 		walkBlock("p1", "p", "", "old one"),
@@ -541,13 +535,6 @@ export const REPLACE_DOC = {
 		walkBlock("h2", "h", "h1", "Details"),
 		walkBlock("p3", "p", "", "tail"),
 	],
-	// Kernel-shaped heading sections (see SECTION_DOC): the delete set must
-	// stay the enumerated section, never the heading's answer re-emitted.
-	h1: [
-		walkBlock("p1", "p", "", "old one"),
-		walkBlock("p2", "p", "", "old two"),
-	],
-	h2: [walkBlock("p3", "p", "", "tail")],
 };
 
 export const replaceParams = {
