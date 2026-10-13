@@ -139,10 +139,11 @@ temp HOME for the headless child).
   it: any method invocation marks contact, and contact alone drives
   `breaker.recordSuccess()`. Two load-bearing assumptions — every public
   client method is an authenticated route (the version endpoint's
-  tokenlessness is live-pinned by the primitives' `version.live`; that
-  it is the *only* tokenless route is suite-pinned by
-  `siyuan-kernel-api`'s `census.test.ts` — a new public method must
-  join the pinned surface list before it can ship — the probe runs on
+  tokenlessness is live-pinned by the primitives' `version.live`;
+  `siyuan-kernel-api`'s `census.test.ts` pins the public surface and
+  per-method token attachment — a new public method must join the
+  pinned surface list, with its route's auth posture verified, before
+  it can ship — the probe runs on
   the raw client the gate hands the op
   alongside the tracked one, so the trap never sees it and carries no
   exemption), and an op reaches the
@@ -346,9 +347,10 @@ primitives.
   mutation vector. The tool still rejects DML by shape (`sqlScope.ts`);
   pinned locally (`sqlScope.test.ts`).
 - **Breaker floor, probe, cooldown** (`gate.ts`) — the version endpoint is
-  unauthenticated and it is the only tokenless route: both falsified by
-  `siyuan-kernel-api`'s `census.test.ts` (pinned public surface) and the
-  primitives' `version.live`; the probe runs on the raw client the gate
+  unauthenticated (live-pinned by the primitives' `version.live`); that
+  it is the only tokenless route is a manually verified invariant, with
+  the surface/token-attachment half enforced by `siyuan-kernel-api`'s
+  `census.test.ts`; the probe runs on the raw client the gate
   hands the op, so a probe never counts as breaker contact. The local
   cooldown is the barrel's `authLockDodge` reducer (schedule in the
   primitives; `breaker.ts` holds it as session state); a 429 arms it and
