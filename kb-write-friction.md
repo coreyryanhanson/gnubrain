@@ -1,0 +1,73 @@
+# GNUbrain KB write-tool friction points
+
+Observed hands-on while editing the `scratch` KB (Kim Simons artist doc), 2026-10-13.
+All findings verified against the live kernel, not assumed from docs.
+
+## 1. Heading delete does not cascade to section body
+
+`mode: delete` with a heading's `blockId` removes **only the heading block**. The section
+body survives and silently re-parents to the nearest preceding heading — with no warning
+in the response ("0 orphaned refs" refers to cross-document refs, not orphaned content
+blocks).
+
+- Failure looks like success. Contaminated content lands in an unrelated section where it
+  can sit unnoticed until someone reads the doc closely.
+- Full section removal requires N deletes: heading + each top-level body block. Children
+  *inside* a list container go with the container, so a single-list section costs 2 deletes;
+  a section with mixed paragraphs + lists costs one delete per top-level block.
+- Recoverable (delete the re-parented container afterward), but only if you notice.
+
+## 2. Heading move leaves the body behind (same problem, move flavor)
+
+`mode: move` on a heading block moves only the heading. Body blocks stay at the old
+location and re-parent to the preceding heading, exactly as in delete. Verified by moving
+a section heading to another section and querying the body block's `parent_id`.
+
+- A section move is therefore: move the heading, then move each top-level body block —
+  and order matters. Moving the heading back lands it *after* the orphaned body
+  ("end of section" anchors to the re-parented body as the last child), so the body must
+  be moved under the heading as a second step.
+
+## 3. Section-level anchoring can refuse a legitimate-looking move
+
+Anchoring `toHeadingId` to heading H means "end of H's section." If the block already
+directly follows H's content, the kernel refuses with "already sits at the destination
+position." Correct behavior, but surprising: there is no way to express "re-nest this
+section under that heading" via move at all.
+
+## 4. True outline nesting is a heading-level edit, not a move
+
+In the markdown outline, a `##` heading following another `##` heading's content is a
+sibling section regardless of position. Nesting a section under another means **demoting
+the heading's `#` level** (one `edit` call on the heading text); the body follows
+automatically since nothing moves. This is not documented anywhere obvious and took an
+experiment to discover.
+
+## 5. Block index lags after writes (stale reads)
+
+After a successful write, `kb_query` can still return pre-write rows (deleted blocks
+reappearing, pre-edit content). One write also produced "block not found" for a block the
+same index had just served, and a verified-edit false alarm. Writes themselves succeeded;
+only the read side lagged.
+
+- Practical rule: after any structural write, verify with a **fresh `kb_read`**, never a
+  cached result or an immediately-following query.
+
+## 6. Edit replaces block type as well as content
+
+`mode: edit` replaces the block with the given markdown as-is. Editing a list-item block
+without including the `- ` marker converts it to a paragraph; sibling list items can be
+collapsed with it. Keep the list marker in replacement markdown when the target is a list
+item.
+
+## Suggested kernel improvements
+
+1. **`delete-section` / `move-section` modes** (heading + descendants, atomic). The
+   primitives exist but the safe composition (heading op + per-block sweep, in the right
+   order, with verification between) is undiscoverable and silent-failure-prone. This is
+   the highest-value fix: it removes a data-corruption-by-default path.
+2. Cheaper alternative: make heading delete/move responses report re-parented child
+   blocks explicitly (e.g. "N child blocks re-parented to <heading>") instead of only
+   counting cross-doc ref orphans.
+3. Document the heading-level-demotion idiom for nesting, and the "end of section" anchor
+   semantics, in the `kb_write` tool description.
