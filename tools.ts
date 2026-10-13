@@ -10,7 +10,6 @@ import { defineToolset, type Toolset, type ToolsetSpec } from "pi-tool-masking";
 import { Type } from "typebox";
 import { rememberServedRows, type ContentBaselines } from "./baselines.js";
 import { READ_TOOLSET_ID } from "./toolsetIds.js";
-import { CircuitBreaker } from "./breaker.js";
 import {
 	errorEnvelope,
 	type Envelope,
@@ -18,7 +17,7 @@ import {
 	refusedEnvelope,
 	textResult,
 } from "./envelope.js";
-import { runGatedTool, shapeRefusal } from "./gate.js";
+import { runGatedTool, shapeRefusal, type SessionHooks } from "./gate.js";
 import {
 	EMPTY_SCOPE_MESSAGE,
 	NOT_READY_VALIDATION,
@@ -49,18 +48,6 @@ import {
 import { serveOutline } from "./outline.js";
 import type { SessionValidation } from "./validation.js";
 
-interface ReadToolHooks {
-	/** Live session validation — set by session_start / /kb recovery. */
-	getValidation(): SessionValidation | undefined;
-	/** Kernel client built from the freshest settings (revalidate). */
-	getKernel(): KernelReadClient | undefined;
-	breaker: CircuitBreaker;
-	/** Session-scoped fresh-content baselines — read tools seed it where
-	 * content is served to the agent, so the map holds exactly what the
-	 * tool last served; the write precondition re-checks against it. */
-	baselines: ContentBaselines;
-}
-
 // ---------------------------------------------------------------------------
 // kb_query
 // ---------------------------------------------------------------------------
@@ -80,7 +67,10 @@ Spill keys: under the inline budget the result rows ride the envelope as \`rows\
 
 Rules: exactly one top-level SELECT; FROM blocks or refs only; single-table FROM (no JOINs, subqueries, CTEs, UNION, or HAVING). LIMIT is injected as 64 when absent; an agent-supplied LIMIT passes through uncapped. Aggregate queries (COUNT/GROUP BY) are allowed — their rows carry no box and are exempt from re-scoping.`;
 
-function registerQueryTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
+function registerQueryTool(
+	pi: ExtensionAPI,
+	hooks: SessionHooks<KernelReadClient>,
+) {
 	pi.registerTool({
 		name: "kb_query",
 		label: "KB Query",
@@ -182,7 +172,10 @@ function buildQueryEnvelope(
 
 const SEARCH_DESCRIPTION = `Full-text search across GNUbrain knowledge bases. Pass kb as an array of KB names; the tool fans out one scoped kernel call per KB and merges results. Every row echoes id, root_id (the docId kb_read consumes), hpath, box (the resolved KB name), and updated. Search is the discovery step: a hit is directly consumable as kb_read { kb, docId: root_id }.`;
 
-export function registerSearchTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
+export function registerSearchTool(
+	pi: ExtensionAPI,
+	hooks: SessionHooks<KernelReadClient>,
+) {
 	pi.registerTool({
 		name: "kb_search",
 		label: "KB Search",
@@ -308,7 +301,10 @@ function kbsDiscoveryEnvelope(validation: SessionValidation): Envelope {
 	};
 }
 
-function registerReadTool(pi: ExtensionAPI, hooks: ReadToolHooks) {
+function registerReadTool(
+	pi: ExtensionAPI,
+	hooks: SessionHooks<KernelReadClient>,
+) {
 	pi.registerTool({
 		name: "kb_read",
 		label: "KB Read",
@@ -464,7 +460,7 @@ export const READ_TOOLSET_SPEC: ToolsetSpec = {
  * unchanged; /kb tools read|write|off sets the toolsets at runtime. */
 export function registerReadToolsAndToolset(
 	pi: ExtensionAPI,
-	hooks: ReadToolHooks,
+	hooks: SessionHooks<KernelReadClient>,
 ): Toolset {
 	registerQueryTool(pi, hooks);
 	registerSearchTool(pi, hooks);

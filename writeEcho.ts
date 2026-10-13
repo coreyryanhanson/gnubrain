@@ -21,8 +21,7 @@ import type { DocTarget, WriteFlowBase } from "./writeTarget.js";
  * would escape the flow's per-arm mapping and runKbCall would reclassify a
  * kernel-answered call as "SiYuan unreachable". Success-path echoes
  * (finishWrite) stay loud on purpose: a dropped verification read must read
- * as unverified, never as success. The flows reach this rule through
- * mutationFailure's tail thunk; nothing imports it directly. */
+ * as unverified, never as success. */
 async function errorTail(
 	input: WriteFlowBase,
 	doc: DocTarget,

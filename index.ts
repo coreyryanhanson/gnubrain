@@ -42,6 +42,7 @@ import {
 } from "./writeConfirm.js";
 import { type WriteKernelClient } from "siyuan-kb-primitives/write";
 import { registerWriteToolAndToolset } from "./write.js";
+import { type WriteToolHooks } from "./writePrepare.js";
 
 // Chassis: the machinery every kb tool call routes through —
 // validation, scope resolution, breaker/cooldown gate, status slot, the
@@ -88,25 +89,20 @@ export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
 	// after resume/fork, the no-baseline fallback applies).
 	const baselines = ContentBaselines.create();
 
-	// Read tools + toolset: the hooks read the live closure state,
-	// so masking and post-toggle scope compose mid-session.
-	const readToolset: Toolset = registerReadToolsAndToolset(pi, {
-		getValidation: () => validation,
-		getKernel: () => kernelClient,
-		breaker,
-		baselines,
-	});
-
-	// Write tool: rides the same gate + probe verdict. The grant state is
-	// session-scoped machinery, same lifecycle class as the breaker.
+	// Both registrations ride one hooks literal over the live closure state,
+	// so masking and post-toggle scope compose mid-session. The grant state
+	// is session-scoped machinery, same lifecycle class as the breaker.
 	const grantState = createWriteGrantState();
-	const writeToolset: Toolset = registerWriteToolAndToolset(pi, {
+	const hooks: WriteToolHooks = {
 		getValidation: () => validation,
 		getKernel: () => kernelClient,
 		breaker,
-		grantState,
 		baselines,
-	});
+		grantState,
+	};
+	const readToolset: Toolset = registerReadToolsAndToolset(pi, hooks);
+	// Write tool: rides the same gate + probe verdict.
+	const writeToolset: Toolset = registerWriteToolAndToolset(pi, hooks);
 
 	const statusInput = (
 		validation: SessionValidation | undefined,

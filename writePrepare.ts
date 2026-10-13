@@ -5,9 +5,12 @@
 // before the grant — are a unit under test, not an inline closure.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { CircuitBreaker } from "./breaker.js";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
-import { gateWriteAttempt, staticDriftRefusal } from "./gate.js";
+import {
+	gateWriteAttempt,
+	staticDriftRefusal,
+	type SessionHooks,
+} from "./gate.js";
 import { resolveBox } from "./kbScope.js";
 import type { SessionValidation } from "./validation.js";
 import {
@@ -29,23 +32,15 @@ import {
 	type WriteParams,
 } from "./writeSchema.js";
 import { validateMintTitle } from "./writeGuard.js";
-import type { ContentBaselines } from "./baselines.js";
 import type { KernelProbeClient } from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 
-/** Runtime deps the write tool adds to the register seam. */
-export interface WriteToolHooks {
-	/** Live session validation — set by session_start / /kb recovery. */
-	getValidation(): SessionValidation | undefined;
-	/** Kernel client built from the freshest settings (revalidate). */
-	getKernel(): WriteKernelClient | undefined;
-	breaker: CircuitBreaker;
+/** Session hooks the write tool adds to the shared SessionHooks seam:
+ * the per-KB write-grant state and the injectable body-file read. */
+export interface WriteToolHooks extends SessionHooks<WriteKernelClient> {
 	/** Session-scoped per-KB write-grant state — same lifecycle class as the
 	 * breaker. */
 	grantState: WriteGrantState;
-	/** Session-scoped fresh-content baselines — same
-	 * lifecycle class as the breaker/grant state. */
-	baselines: ContentBaselines;
 	/** Injectable file-read seam (unit tests); defaults to the real
 	 * readBodyFile from writeConfirm. */
 	readBodyFile?: (path: string) => Promise<string>;
@@ -64,10 +59,8 @@ export async function prepareWrite(
 	signal: AbortSignal | undefined,
 	/** The raw (untracked) client the gate hands the op alongside the
 	 * tracked one — the probe handle. Declared as the narrow probe type, so
-	 * a real kernel call through it fails typecheck. Defaults to `kernel`
-	 * for direct callers (untracked stubs: observationally identical); the
-	 * production wiring pin asserts write.ts passes the raw client. */
-	probe: KernelProbeClient = kernel,
+	 * a real kernel call through it fails typecheck. */
+	probe: KernelProbeClient,
 ): Promise<Envelope> {
 	// Uniform mode-target shape check before anything else —
 	// zero kernel calls, and it covers create too (create's

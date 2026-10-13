@@ -31,6 +31,7 @@ import {
 	PARTIAL_APPLY_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
+import type { ContentBaselines } from "./baselines.js";
 import type { SessionValidation } from "./validation.js";
 import {
 	NOT_READY_VALIDATION,
@@ -50,6 +51,22 @@ type GateResult =
 export function shapeRefusal(validation: SessionValidation): Envelope | null {
 	if (validation.shapeErrors.length === 0) return null;
 	return configRefusalEnvelope(validation.shapeErrors);
+}
+
+/** The session-state hooks every kb tool registration receives: closures
+ * over session-start state, so masking and post-toggle scope compose
+ * mid-session. The write registrar extends this with its grant state and
+ * body-file seam (WriteToolHooks). */
+export interface SessionHooks<K extends object> {
+	/** Live session validation — set by session_start / /kb recovery. */
+	getValidation(): SessionValidation | undefined;
+	/** Kernel client built from the freshest settings (revalidate). */
+	getKernel(): K | undefined;
+	breaker: CircuitBreaker;
+	/** Session-scoped fresh-content baselines — read tools seed it where
+	 * content is served to the agent, so the map holds exactly what the
+	 * tool last served; the write precondition re-checks against it. */
+	baselines: ContentBaselines;
 }
 
 /**
@@ -345,11 +362,7 @@ type ProbeSurface<K extends object> = Pick<
  * "kbs"` discovery form deliberately bypasses this helper (it must run
  * while the breaker is tripped); see tools.ts. */
 export async function runGatedTool<K extends object>(
-	hooks: {
-		getValidation(): SessionValidation | undefined;
-		getKernel(): K | undefined;
-		breaker: CircuitBreaker;
-	},
+	hooks: SessionHooks<K>,
 	kb: unknown,
 	arity: KbArity,
 	op: (

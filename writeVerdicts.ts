@@ -52,8 +52,7 @@ import {
  * module constant, deliberately: this arm only renders if the gate order
  * is ever violated, and the primitives let no caller choose a pin, so in
  * production the effective pin IS the constant — the gate stays the one
- * home for the resolution. Rendered by the shared ladder and the create
- * mode's frame (writeCreate). */
+ * home for the resolution. */
 export function driftRefusal(observed: string): Envelope {
 	return versionRefusalEnvelope(observed, PINNED_SIYUAN_VERSION);
 }
@@ -68,10 +67,7 @@ const retryBlindlyClause =
 /** The transport-unverified sentence — tool-surface wording for the one
  * hazard the verified flows share: the mutation's kernel call failed at
  * the transport layer, so the write may already be applied and a blind
- * retry duplicates it. Rendered by mutationFailureEnvelope and the create
- * mode's frame (writeCreate); its sibling verificationReadsFailedMessage
- * is the twin the finishWrite catch reuses from the flow side of the
- * primitives boundary. */
+ * retry duplicates it. */
 export function transportUnverifiedMessage(detail: string): string {
 	return (
 		`the write's outcome is unverified: the kernel call failed at the ` +
@@ -114,8 +110,7 @@ export function postWriteAssemblyFailedMessage(detail: string): string {
  * may-already-be-applied fact the raw rethrow erased, and add the lock
  * fact: every authed call re-arms the lock, so the wait comes first. The
  * marker type/guard live in envelope.ts beside `partialReplaceState`, the
- * other gate-read result marker. Rendered by the shared ladder and the
- * create mode's frame (writeCreate). */
+ * other gate-read result marker. */
 function verificationAuthEventMessage(
 	cause: AuthLockEvent,
 	detail: string,

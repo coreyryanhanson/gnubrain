@@ -29,11 +29,11 @@ export function validateMintTitle(
 	return { ok: false, message: mintTitleMessage(problem) };
 }
 
-/** Agent-facing wording over the primitives' `MintTitleProblem` — one
- * home, two call sites: the tool-surface pre-flight (validateMintTitle)
- * and the flow-side `mint-title` verdict arm (the primitives run the
- * same judgment internally, so this arm is defense-in-depth behind the
- * pre-flight, worded identically by construction). */
+/** Agent-facing wording over the primitives' `MintTitleProblem` — worded
+ * once so the tool-surface pre-flight (validateMintTitle) and the
+ * flow-side `mint-title` verdict arm (the primitives run the same
+ * judgment internally, defense-in-depth behind the pre-flight) stay
+ * identical by construction. */
 export function mintTitleMessage(problem: MintTitleProblem): string {
 	switch (problem.kind) {
 		case "empty":

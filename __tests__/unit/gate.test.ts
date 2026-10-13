@@ -9,6 +9,7 @@ import {
 	type NotebookList,
 } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
+import { ContentBaselines } from "../../baselines.js";
 import { errorEnvelope, type Envelope } from "../../envelope.js";
 import {
 	gateWriteAttempt,
@@ -585,7 +586,12 @@ describe("write gate", () => {
 		const raw = new ProbeShapeKernel();
 		let probeHandle: unknown;
 		const envelope = await runGatedTool(
-			{ getValidation: () => v, getKernel: () => raw, breaker },
+			{
+				getValidation: () => v,
+				getKernel: () => raw,
+				breaker,
+				baselines: ContentBaselines.create(),
+			},
 			"recipes",
 			"single",
 			async (tracked, _validation, _names, probe) => {
