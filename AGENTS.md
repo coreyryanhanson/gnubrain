@@ -140,8 +140,10 @@ temp HOME for the headless child).
   `breaker.recordSuccess()`. Two load-bearing assumptions — every public
   client method is an authenticated route (the version endpoint's
   tokenlessness is live-pinned by the primitives' `version.live`; that
-  it is the *only* tokenless route is comment-pinned here, not
-  suite-pinned — the probe runs on the raw client the gate hands the op
+  it is the *only* tokenless route is suite-pinned by
+  `siyuan-kernel-api`'s `census.test.ts` — a new public method must
+  join the pinned surface list before it can ship — the probe runs on
+  the raw client the gate hands the op
   alongside the tracked one, so the trap never sees it and carries no
   exemption), and an op reaches the
   kernel only through the clients the gate passed it — so a flow that
@@ -228,187 +230,164 @@ temp HOME for the headless child).
 
 The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.6"`), the drift probe
 (`probeKernel` → `KernelProbeResult`), and the pinned lock schedule
-(`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts`. This
-repo consumes them through the read barrel: writes fail closed on a
-`drift` verdict — the gate refuses
-before the op runs, and the probe-taking primitives refuse again inside
-(defence-in-depth; the sweep alone takes no probe — it runs mid-sequence
-after the gate's refusal), reads warn, and the breaker's cooldown rides the barrel's
-`authLockDodge`. Change the pin only deliberately, in the primitives repo — its live
-suite asserts the kernel reports the pin exactly, and the checklist above
-gates the bump.
+(`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts`. This repo
+consumes them through the read barrel: writes fail closed on a `drift` verdict
+— the gate refuses before the op runs, and the probe-taking primitives refuse
+again inside (defence-in-depth; the sweep alone takes no probe — it runs
+mid-sequence after the gate's refusal), reads warn, and the breaker's cooldown
+rides the barrel's `authLockDodge`. Change the pin only deliberately, in the
+primitives repo — its live suite asserts the kernel reports the pin
+exactly, and the upgrade checklist above gates the bump.
 
-**Tool-side kernel-fact list** — the complete set of spots in *this* repo
-whose comments or wording reference a pinned kernel behavior. Every fact
-here is falsified in the primitives repo's unit + live suites (an upgrade
-pass re-runs them wholesale); this repo's suites exercise them transitively
-and never sole-falsify a pinned fact, so entries name a test only where
-this repo pins something of its own — tool-surface wording, or a live case
-riding the tool path. The three `sqlScope.ts` entries are the standing
-exception named in the rule below: their guard is tool-surface by design,
-so this repo falsifies them itself. The tool-side code at each spot is wording and
-precondition, not the fact itself; an upgrade pass re-reads this list and
-re-falsifies the changed fact in the primitives.
+**Tool-side kernel-fact list** — one line per fact: the kernel behavior → its
+home (primitives module:symbol) → what this repo keeps (wording/precondition
+only) → falsifier. Every fact is falsified in the primitives repo's unit +
+live suites; this repo's suites exercise them transitively and never
+sole-falsify a pinned fact, so an entry names a local test only where this
+repo pins something of its own — tool-surface wording, or a live case riding
+the tool path. The three `sqlScope.ts` entries are the standing exception
+named in the rule below: their guard is tool-surface by design, so this repo
+falsifies them itself. An upgrade pass re-runs the primitives' suites
+wholesale, then re-reads this list and re-falsifies the changed facts in the
+primitives.
 
-- The fresh-content judgment (`checkFreshContent`, the primitives' read
-  barrel) — the precondition rides the live tree, never the SQL index
-  (`blocks.content` converges asynchronously), and the walk ≡ SQL
-  equivalence (the kernel builds both via `nodeStaticContent`, so walk-form
-  and SQL-form baselines hash identically) remains a cross-boundary
-  property: the judgment and both reads live in the primitives, the read
-  tools' serve seeds ride the walk, and the SQL-form seed sites are
-  exactly two — `runEditMode`'s pre-write seed from `blockInDoc`
-  (`writeEdit.ts`) and `kb_query`'s served rows (`tools.ts`, via
-  `rememberServedRows`; the sites the `rememberServedRows` entry below
-  names). The write echo tail seeds its served baselines from the walk
-  it serves — never overwritten by a later read — and SQL-reads only the
-  write's own block IDs. Fail-closed on any split (a diverging seed reads
-  as `stale`, named, never silently matched — the retry proceeds).
-- The child-order fact — `getChildBlocks` returns a parent's children in
-  document order, so the first element is the doc's first block — lives in
-  `firstChildContent` (primitives `byId.ts`); the near-match
-  excerpt read (`writeCreate.ts`) keeps only the swallow policy (a
-  vanished candidate mid-scan → empty excerpt, kernel errors rethrown
-  for classification).
-- `rememberServedRows` (`baselines.ts`) — its doc comment claims the same
-  getChildBlocks ≡ `blocks.content` equivalence; the code depends on
-  nothing (the same for the `serveOutlineFromWalk` doc comment in
-  `outline.ts`). The executable-dependence sites are the two SQL-form
-  seeds the fresh-content entry above names: `runEditMode`'s pre-write
-  seed (`writeEdit.ts`) and `kb_query`'s served rows (`tools.ts`) — both
-  seed SQL-form content into the baseline map the judgment hashes
-  walk-form against; the echo tail (`writeEcho.ts`) seeds its served rows
-  from the walk it serves and SQL-reads only the write's own block IDs.
-- The type-`'d'` root-row fact behind doc targeting (`writeTarget.ts`
-  `resolveDocTarget` consumes the primitives' `rootEcho` directly; the
-  refusal is `noSuchDocEnvelope`) — a block id passed as `docId` reads as
-  absent, never normalized to its containing doc. The same type-`'d'` row
-  fact is exercised by `kb_read`'s doc resolution (`runRead` in `tools.ts`,
-  via the primitives' `ownership` read: a block id there exports its
-  containing doc); the missing-docId refusal is wording-only and names
-  the same fact.
-- The insert-shape fact — one `doOperations` entry per markdown insert,
-  whole body in its `data` — lives in `insertVerified` (primitives
-  `write.ts`).
-- The `lsNotebooks` encrypted-flag fact — `encrypted` is always present in
-  the listing regardless of lock state, and the SQL surface cannot see
-  encrypted boxes, so one rejection covers both lock states — lives in
-  `resolveNotebooks` (primitives `notebooks.ts`); this repo keeps the
-  rejection wording and the warn-and-drop policy (`validation.ts`); the
-  tool path is pinned locally (`encryptedNotebook.live`).
-- The delete-scoping fact — the kernel mutates by raw block id with no
-  doc scoping of its own, so `deleteBlockVerified` judges membership
-  itself (the shared `blockInDoc` read): `foreign` / `doc-id` refuse
-  before any kernel call while `absent` falls through to the
-  generation answer; this repo words the refusal arms through the same
-  sentence pair the edit flow's pre-guard uses
+- **Fresh-content judgment** — the precondition rides the live tree, never
+  the SQL index (`blocks.content` converges asynchronously), and walk-form ≡
+  SQL-form baselines hash identically (the kernel builds both via
+  `nodeStaticContent`) → `checkFreshContent` (primitives read barrel). This
+  repo keeps the seed-site policy: serve seeds ride the walk everywhere
+  except exactly two SQL-form seed sites — `runEditMode`'s pre-write seed
+  from `blockInDoc` (`writeEdit.ts`) and `kb_query`'s served rows
+  (`tools.ts`, via `rememberServedRows`) — and the write echo tail seeds
+  from the walk it serves, never overwritten by a later read, SQL-reading
+  only the write's own block IDs. Fail-closed on any split: a diverging seed
+  reads as `stale`, named, never silently matched. The equivalence claims in
+  `rememberServedRows` (`baselines.ts`) and `serveOutlineFromWalk`
+  (`outline.ts`) are prose-only; the executable-dependence sites are the two
+  SQL-form seeds just named.
+- **Child order** — `getChildBlocks` returns document order; the first
+  element is the doc's first block → `firstChildContent` (primitives
+  `byId.ts`). This repo keeps only the near-match swallow policy
+  (`writeCreate.ts`): a vanished candidate mid-scan → empty excerpt, kernel
+  errors rethrown for classification.
+- **Doc targeting** — a block id passed as `docId` reads as absent
+  (type-`'d'` root row), never normalized to its containing doc →
+  `rootEcho`. Consumed by `resolveDocTarget` (`writeTarget.ts`, refusal
+  `noSuchDocEnvelope`) and exercised by `kb_read`'s doc resolution
+  (`runRead`, `tools.ts`, via the primitives' `ownership` read: a block id
+  there exports its containing doc); the missing-docId refusal is
+  wording-only and names the same fact.
+- **Insert shape** — one `doOperations` entry per markdown insert, whole
+  body in its `data` → `insertVerified` (primitives `write.ts`).
+- **`lsNotebooks` encrypted flag** — `encrypted` is always present
+  regardless of lock state, and the SQL surface cannot see encrypted boxes,
+  so one rejection covers both lock states → `resolveNotebooks` (primitives
+  `notebooks.ts`). This repo keeps the rejection wording and the
+  warn-and-drop policy (`validation.ts`); tool path pinned locally
+  (`encryptedNotebook.live`).
+- **Delete scoping** — the kernel mutates by raw block id with no doc
+  scoping of its own, so membership is judged by the shared `blockInDoc`
+  read → `deleteBlockVerified` (primitives `delete.ts`). This repo words the
+  refusal arms through the edit flow's pre-guard sentence pair
   (`blockInDocRefusalKind`, `writeVerdicts.ts`).
-- The delete-generation fact — 3.8.3 success no-op vs 3.8.4 "tree not
-  found" — lives in `deleteBlockVerified` / `deleteDocVerified`
-  (primitives `delete.ts`); this repo keeps the flow-side wording (kernel
-  error verbatim with the fresh outline, the targetGone receipt gate).
-- The delete-freshness split — the block-delete path rides the same
-  fresh-content precondition as edit and replace-section
-  (`writeDelete.ts`, before `deleteBlockVerified`; no flow-side
-  membership read — a block outside the doc or already absent reads as
-  `vanished` there and refuses at the primitive's scoping arms), but the
-  doc-delete path is deliberately unguarded: the intent is
-  container-level destruction a member's content change cannot redirect,
-  the receipt itemizes every lost block with its content, and the
-  primitive's walk-then-mutate sequence leaves no interposable refusal
-  point without duplicating its walk.
-- The mint-policy claims (`validateMintTitle`, `writeGuard.ts`) —
-  wording only; the facts themselves (the `normalizeDocTitle` 512-rune
-  truncation bound, the `/` path-separator rule) live in the primitives'
-  `mintTitleProblem` (`/write` entry); the rejection set remains a
-  superset claim over `normalizeDocTitle`.
-- The synchronous-move-rejection fact — the kernel rejects ancestor and
-  identity moves synchronously ("Cannot move to this location", doc-level
-  record, no echo tail; the identity member live-pinned in the primitives'
-  `move.live`) — lives in `moveDocVerified` (primitives `move.ts`); this
-  repo keeps the doc-level move record shape wording (outline + title/hpath
-  echo, no anchor/newBlockId/destOutline) and carries no pre-mutation
-  self-check of its own.
-- The hpath-rebuild fact — `blocks.hpath` is a derived column the index
-  rebuilds asynchronously after `moveDocsByID` (still the pre-move value
-  immediately after the move), so the landed judgment and the echoed hpath
-  ride the live tree — the fact lives in `moveDocVerified` (primitives
-  `move.ts`).
-- The search-window fact — the kernel shares one `pageSize` window across
-  every `paths` entry of a full-text search call, so a hit-rich KB fills
-  the pre-filter window and silently drops the other KBs' matches — lives
-  in `searchBoxes` (primitives `search.ts`); the tool side owns only
-  the resolve/echo/spill around the per-box fan-out.
-- The delete-cascade fact — the kernel's cascade removes a container
-  member's descendants with it, so the sweep deletes only the enumerated
-  members — lives in `sweepSectionMembers` (primitives `sweep.ts`;
-  internal to the replace-section sequence, not on the write barrel);
-  the replace-section sequence itself (`replaceSectionVerified`, the
-  insert-before-sweep ordering and the enumeration timing) also lives in
-  the primitives, and this repo keeps the sweep's partial-apply envelope
-  wording (byte-identical receipt, do-not-retry guidance).
-- The `kb_query` description claims (`tools.ts`, `QUERY_DESCRIPTION`) —
+- **Delete generation** — 3.8.3 success no-op vs 3.8.4 "tree not found" →
+  `deleteBlockVerified` / `deleteDocVerified` (primitives `delete.ts`). This
+  repo keeps the flow-side wording: kernel error verbatim with the fresh
+  outline, the targetGone receipt gate.
+- **Delete-freshness split** (policy, not fact — this repo owns it) — the
+  block-delete path rides the same fresh-content precondition as edit and
+  replace-section (`writeDelete.ts`, before `deleteBlockVerified`; no
+  flow-side membership read — a block outside the doc or already absent
+  reads as `vanished` there and refuses at the primitive's scoping arms),
+  but the doc-delete path is deliberately unguarded: the intent is
+  container-level destruction a member's content change cannot redirect, the
+  receipt itemizes every lost block, and the primitive's walk-then-mutate
+  sequence leaves no interposable refusal point without duplicating its walk.
+- **Mint policy** — the `normalizeDocTitle` 512-rune truncation bound and
+  the `/` path-separator rule → `mintTitleProblem` (primitives `/write`
+  entry). This repo keeps the wording (`validateMintTitle`,
+  `writeGuard.ts`); the rejection set remains a superset claim over
+  `normalizeDocTitle`.
+- **Synchronous move rejection** — the kernel rejects ancestor and identity
+  moves synchronously (doc-level record, no echo tail; identity member
+  live-pinned in `move.live`) → `moveDocVerified` (primitives `move.ts`).
+  This repo keeps the doc-level move record shape wording (outline +
+  title/hpath echo, no anchor/newBlockId/destOutline) and carries no
+  pre-mutation self-check of its own.
+- **hpath rebuild** — `blocks.hpath` is derived and the index rebuilds it
+  asynchronously after `moveDocsByID` (still the pre-move value immediately
+  after the move), so the landed judgment and the echoed hpath ride the live
+  tree → `moveDocVerified` (primitives `move.ts`).
+- **Search window** — the kernel shares one `pageSize` window across every
+  `paths` entry of a full-text search call, so a hit-rich KB fills the
+  pre-filter window and silently drops the other KBs' matches →
+  `searchBoxes` (primitives `search.ts`). The tool side owns only the
+  resolve/echo/spill around the per-box fan-out.
+- **Delete cascade** — the kernel's cascade removes a container member's
+  descendants with it, so the sweep deletes only the enumerated members →
+  `sweepSectionMembers` (primitives `sweep.ts`). The replace-section
+  sequence itself (`replaceSectionVerified`: insert-before-sweep ordering,
+  enumeration timing) lives in the primitives; this repo keeps the sweep's
+  partial-apply envelope wording (byte-identical receipt, do-not-retry
+  guidance).
+- **`kb_query` description claims** (`QUERY_DESCRIPTION`, `tools.ts`) —
   agent-facing wording: `sort` is a block-type weight, not display order
-  (document order comes from the outline or the anchor ids), and `hpath`
-  is a derived display label, never an address. Wording pinned by the
-  local unit suite (`tools.test.ts`).
-- The `kb_read` description claims (`tools.ts`, `READ_DESCRIPTION`) —
-  agent-facing wording over the placement module's notation: the
-  `(not targetable)` marker and the `[unnamed]` fallback name the kernel's
-  write-parent set (`TARGETABLE_CONTAINER_TYPES`, the primitives'
-  targetable-container set, keyed on by the heading-target judgment
-  (`walk.ts`) and the notation's glyph table (`outline.ts`); exported for
-  consumers, though no gnubrain code imports it today). Wording pinned
-  by the local unit suite (`tools.test.ts`).
-- The DML-through-the-query-endpoint fact — since 3.8.4 DML via the query
-  endpoint is a silent no-op in every mode (code 0, row untouched), so the
-  endpoint is no longer a mutation vector and the tool still rejects DML
-  by shape; the tool-side shape rejection is pinned locally
-  (`sqlScope.test.ts`).
-- The breaker-floor and probe/cooldown comments (`gate.ts`) — the local
-  cooldown is the barrel's `authLockDodge` reducer (its schedule lives in
-  the primitives; `breaker.ts` holds it as session state); the version
-  endpoint is unauthenticated and the probe runs on the raw client the
-  gate hands the op, so a probe never counts as breaker contact
-  (falsified live by the primitives' `version.live`), a 429 arms the
-  local cooldown, and any call inside an active lock extends it. The
-  extension's half (holder wiring, the 429-accounting seam) is pinned
-  locally (`breaker.test.ts`), and the structural-contact policy on top
-  of that fact (probe marks nothing, a real call resets once) is pinned
-  by the gate unit suite (`gate.test.ts` with the prototype-shaped
-  `ProbeShapeKernel` stub, `writeCreate.test.ts`); the trap itself lives
-  in `kernelContact.ts` and is falsified directly by
-  `kernelContact.test.ts`.
-- The verbatim-title fact (`writeGuard.ts` wording) — doc titles store
-  verbatim, unescaped, in `blocks.content` (the HTML-escaped form lives
-  only in `blocks.ial`, which the guard does not query); falsified by the
+  (document order comes from the outline or the anchor ids), and `hpath` is
+  a derived display label, never an address. Wording pinned locally
+  (`tools.test.ts`).
+- **`kb_read` description claims** (`READ_DESCRIPTION`, `tools.ts`) —
+  agent-facing wording over the placement module's notation: the `(not
+  targetable)` marker and the `[unnamed]` fallback name the kernel's
+  write-parent set (`TARGETABLE_CONTAINER_TYPES`, keyed on by the
+  heading-target judgment (`walk.ts`) and the notation's glyph table
+  (`outline.ts`)). Wording pinned locally (`tools.test.ts`).
+- **DML through the query endpoint** — since 3.8.4 DML via the query
+  endpoint is a silent no-op in every mode (code 0, row untouched): not a
+  mutation vector. The tool still rejects DML by shape (`sqlScope.ts`);
+  pinned locally (`sqlScope.test.ts`).
+- **Breaker floor, probe, cooldown** (`gate.ts`) — the version endpoint is
+  unauthenticated and it is the only tokenless route: both falsified by
+  `siyuan-kernel-api`'s `census.test.ts` (pinned public surface) and the
+  primitives' `version.live`; the probe runs on the raw client the gate
+  hands the op, so a probe never counts as breaker contact. The local
+  cooldown is the barrel's `authLockDodge` reducer (schedule in the
+  primitives; `breaker.ts` holds it as session state); a 429 arms it and
+  any call inside an active lock extends it. This repo pins its half: the
+  429-accounting seam (`breaker.test.ts`), the structural-contact policy
+  (probe marks nothing, a real call resets once — `gate.test.ts` with the
+  prototype-shaped `ProbeShapeKernel` stub, `writeCreate.test.ts`), and the
+  trap itself (`kernelContact.ts`, falsified directly by
+  `kernelContact.test.ts`).
+- **Verbatim title** — doc titles store verbatim, unescaped, in
+  `blocks.content` (the HTML-escaped form lives only in `blocks.ial`, which
+  the guard does not query). `writeGuard.ts` wording; falsified by the
   primitives' title round-trip live case.
-- The WITH-permitted fact (`sqlScope.ts`) — the kernel's readonly layer
-  permits CTEs, so rung 1 is the only line of defense against a WITH
-  shadowing an allowlisted table (pinned locally by `sqlScope.test.ts`).
-- The negative-`LIMIT` fact (`sqlScope.ts` `limitOf`, `tools.ts`
-  `buildQueryEnvelope`) — a negative LIMIT is sqlite's "no limit": it is
-  passed through unclamped and never truncate-flagged (an absent LIMIT, by
-  contrast, gets `RESULT_LIMIT` injected and can flag); the tool-side
-  guard is pinned locally (`tools.test.ts`).
-- The aggregate-row claim (`sqlScope.ts`) — SQL projection semantics, not
-  kernel behavior: rows whose projection omits `box` (per-type aggregates
-  like `SELECT type, COUNT(*)`) carry no `box` field, and `postFilterRows`
-  exempts exactly those rows. Re-checked against the live row shape on an
-  upgrade pass (`readPins.live`).
-- The updateBlock-not-found fact (`writeEdit.ts` wording) — an absent
-  edit target is never refused flow-side; updateBlock's synchronous
-  not-found error surfaces verbatim through the kernel-refused arm (the
+- **WITH permitted** — the kernel's readonly layer permits CTEs, so rung 1
+  is the only line of defense against a WITH shadowing an allowlisted table
+  (`sqlScope.ts`). Standing exception — pinned locally
+  (`sqlScope.test.ts`).
+- **Negative LIMIT** — a negative LIMIT is sqlite's "no limit": passed
+  through unclamped, never truncate-flagged (an absent LIMIT, by contrast,
+  gets `RESULT_LIMIT` injected and can flag). `sqlScope.ts` `limitOf` /
+  `tools.ts` `buildQueryEnvelope`; pinned locally (`tools.test.ts`).
+- **Aggregate rows** — SQL projection semantics, not kernel behavior: rows
+  whose projection omits `box` (per-type aggregates like
+  `SELECT type, COUNT(*)`) carry no `box` field, and `postFilterRows`
+  exempts exactly those rows (`sqlScope.ts`). Re-checked against the live
+  row shape on an upgrade pass (`readPins.live`).
+- **updateBlock not-found** — an absent edit target is never refused
+  flow-side; updateBlock's synchronous not-found error surfaces verbatim
+  through the kernel-refused arm (`writeEdit.ts` wording; the
   delete-generation entry is the delete analogue).
-- The re-parse fact (`baselines.ts` wording) — submitted markdown is
-  re-parsed by the kernel, so the stored form is unknowable at submit
-  time and baselines are never seeded from it; owned by the primitives'
-  normalization pin.
+- **Re-parse** — submitted markdown is re-parsed by the kernel, so the
+  stored form is unknowable at submit time and baselines are never seeded
+  from it (`baselines.ts` wording; owned by the primitives' normalization
+  pin).
 
 If an entry here ever grows executable dependence on a pinned behavior, move
 the code down into the primitives — do not lengthen the list. The standing
-exception is the SQL scope (`sqlScope.ts`): the model-authored-SQL guard is
-a tool-surface problem (the primitives' own statements are hand-built and
+exception is the SQL scope (`sqlScope.ts`): the model-authored-SQL guard is a
+tool-surface problem (the primitives' own statements are hand-built and
 parser-free), so its kernel assumptions stay here and are re-checked against
 the live kernel on an upgrade pass.
 

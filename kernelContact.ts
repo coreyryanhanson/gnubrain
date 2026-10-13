@@ -3,9 +3,12 @@
  * method invocation marks kernel contact, and contact alone drives the
  * breaker's reset-on-success — which counts only authenticated calls.
  * Two load-bearing assumptions live here: every public client method is
- * an authenticated route (comment-pinned, not suite-pinned — the version
- * probe runs on the raw client the gate hands the op alongside the
- * tracked one, declared as the narrow probe type so a real call through
+ * an authenticated route (suite-pinned by the layer-1 client's
+ * `census.test.ts`: the public surface is a pinned list, so a new
+ * method requires a conscious auth-posture verification before it can
+ * join — while the version probe runs on the raw client the gate hands
+ * the op alongside the tracked one, declared as the narrow probe type
+ * so a real call through
  * it fails typecheck, so the trap is exception-free by construction),
  * and an op reaches the kernel only through the clients the gate passed
  * it. An op-internal refusal that invokes no method (shape, missing
