@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { GUARD_EXACT_CAP } from "siyuan-kb-primitives";
 import { statementKind } from "siyuan-kb-primitives/testing";
 import { validateMintTitle } from "../../writeGuard.js";
-import { base, setup } from "./writeHarness.js";
+import { DEFAULT_CHILDREN, base, setup } from "./writeHarness.js";
 
 describe("mint policy", () => {
 	it("rejects each mint violation with its message and zero kernel calls", async () => {
@@ -127,6 +127,7 @@ describe("title guard", () => {
 						updated: "20260101120000",
 					},
 				],
+				fallbackChildren: DEFAULT_CHILDREN,
 			},
 		});
 		const r = await execute({ ...base });
@@ -146,7 +147,7 @@ describe("title guard", () => {
 		const { execute, calls } = setup({
 			config: {
 				nearRows,
-				childRows: [
+				fallbackChildren: [
 					{ id: "p1", type: "p", subType: "", content: "first para" },
 				],
 			},

@@ -18,6 +18,7 @@ import { CircuitBreaker } from "../../breaker.js";
 import { validation } from "./fixtures.js";
 import {
 	type StubConfig,
+	DEFAULT_CHILDREN,
 	base,
 	expectUnverified,
 	setup,
@@ -99,6 +100,9 @@ describe("guard-stop staging", () => {
 		const { execute, calls } = setup({
 			config: {
 				...duplicateConfig,
+				// The single candidate's walk must serve a real tree for the
+				// outline leg — unseeded ids are childless by default.
+				fallbackChildren: DEFAULT_CHILDREN,
 				armExportError: (arm) => arm(new SiYuanApiError(404)),
 			},
 		});
@@ -115,8 +119,7 @@ describe("guard-stop staging", () => {
 
 	/** Single-row duplicate stop over a doc with a heading and a paragraph —
 	 * the served outline + blockIds rows the seeding legs ride. Per-doc seeds
-	 * (childrenFor, not the create-flow alias childRows) so unseeded walk ids
-	 * stay childless. */
+	 * (childrenFor) so unseeded walk ids stay childless. */
 	const stopChildren = [
 		{ id: "h1", type: "h", subType: "h1", content: "Heading" },
 		{ id: "p1", type: "p", subType: "", content: "served body" },
@@ -231,7 +234,11 @@ describe("verified-create", () => {
 
 	it("top-level create: submission path, by-ID assert, stored-shape echo", async () => {
 		const { execute, calls } = setup({
-			config: { createdRows: [createdRow] },
+			config: {
+				createdRows: [createdRow],
+				// The minted doc's post-create walk serves the outline echo.
+				fallbackChildren: DEFAULT_CHILDREN,
+			},
 		});
 		const r = await execute({ ...base, topic: " Docker Networking " });
 		expect(r.status).toBe("ok");

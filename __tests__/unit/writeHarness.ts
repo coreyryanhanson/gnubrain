@@ -53,12 +53,14 @@ export interface StubConfig {
 	docRoots?: Record<string, { content: string; hpath: string } | undefined>;
 	/** docId → child-block rows; the map is live — tests mutate it inside
 	 * the write callbacks to simulate the kernel applying (or rolling back)
-	 * an op. */
+	 * an op. Any id without a seed (including "d-doc") falls back to
+	 * `fallbackChildren`. */
 	childrenFor?: Record<string, unknown[]>;
-	/** Create-flow alias for childrenFor["d-doc"] (the pre-create doc walk).
-	 * Named childRows, not children: two identically-shaped optional array
-	 * properties in one interface trip a tsgo 7.0.x excess-property bug. */
-	childRows?: Record<string, unknown>[];
+	/** Children served for every doc/block id without a `childrenFor` seed
+	 * (the create flow's candidate and minted-doc walks). Default [] —
+	 * childless; create tests that assert outline/block content seed this
+	 * deliberately. */
+	fallbackChildren?: Record<string, unknown>[];
 	// Mutation hooks + error arming.
 	onCreate?: () => void;
 	onInsert?: () => void;
@@ -98,30 +100,23 @@ export interface StubConfig {
 /** Kernel stub with a SQL router over every write-flow route. Verified rows
  * default to a well-formed minted row unless the test pins the read (empty
  * array = missing row → fail-loud). The returned `childrenFor` map is live.
- * The default minted doc ("d-new", returned by createDocWithMarkdown and the
- * verified-create read) carries one heading child — the create flow's
- * post-create outline read walks it. */
+ * Unseeded ids read `fallbackChildren` (default [] — childless; create
+ * tests seed it deliberately). */
 export function writeKernelStub(config: StubConfig = {}) {
 	const calls: { method: string; args: unknown }[] = [];
 	const tx = [{ doOperations: [{ id: "b-new" }] }];
 	const docRoots = config.docRoots ?? {
 		"d-doc": { content: "Docker Networking", hpath: "/Docker Networking" },
 	};
-	const defaultChildren = [
-		{ id: "h1", type: "h", subType: "h1", content: "Heading" },
-	];
-	const childrenFor: Record<string, unknown[]> = {
-		"d-doc": [],
-		...(config.childRows ? { "d-doc": config.childRows } : {}),
-		...JSON.parse(JSON.stringify(config.childrenFor ?? {})),
-	};
-	// Unseeded ids: per-doc seeds exist → mode-flow semantics, unseeded ids
-	// (block ids reached by the walk's recursion) are childless; otherwise
-	// create-flow semantics — one tree for every doc (candidates, the minted
-	// doc) riding childRows or the default heading walk.
-	const unseededDefault = config.childrenFor
-		? []
-		: (config.childRows ?? defaultChildren);
+	const childrenFor: Record<string, unknown[]> = JSON.parse(
+		JSON.stringify(config.childrenFor ?? {}),
+	);
+	// Defensive copy: fallback rows are never live — a test mutating a walked
+	// row must not reach other tests sharing the same constant (e.g.
+	// DEFAULT_CHILDREN). Per-doc live seeds go through `childrenFor`.
+	const fallbackChildren: Record<string, unknown>[] = JSON.parse(
+		JSON.stringify(config.fallbackChildren ?? []),
+	);
 	const stmtDocId = (stmt: string): string | undefined =>
 		/id = '([^']+)'/.exec(stmt)?.[1];
 	let queryError: Error | undefined;
@@ -248,7 +243,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
 			if (walkError) throw walkError;
-			return (childrenFor[id] ?? unseededDefault) as Record<string, unknown>[];
+			return (childrenFor[id] ?? fallbackChildren) as Record<string, unknown>[];
 		},
 		async createDocWithMarkdown(params) {
 			calls.push({ method: "createDocWithMarkdown", args: params });
@@ -324,6 +319,12 @@ export function walkBlock(
 ): WalkedBlock {
 	return { id, type, subType, content, parentId, parentType };
 }
+
+/** The default create-flow tree (one heading) — tests that assert outline
+ * or block content off an unseeded id seed it via `fallbackChildren`. */
+export const DEFAULT_CHILDREN: Record<string, unknown>[] = [
+	{ id: "h1", type: "h", subType: "h1", content: "Heading" },
+];
 
 type Exec = (params: Record<string, unknown>) => Promise<{
 	content: { type: "text"; text: string }[];
