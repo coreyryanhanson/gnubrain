@@ -40,8 +40,8 @@ function kernelStub() {
 			calls.push({ method: "query", args: stmt });
 			return [{ id: "b1", root_id: "d1", box: "nb-r" }];
 		},
-		async search(params) {
-			calls.push({ method: "search", args: params });
+		async fullTextSearch(params) {
+			calls.push({ method: "fullTextSearch", args: params });
 			// The kernel echoes the called box — the post-filter keys on it.
 			return {
 				blocks: [
@@ -88,7 +88,7 @@ describe("search tool", () => {
 			["recipes", "projects"],
 			"docker",
 		);
-		const searches = calls.filter((c) => c.method === "search");
+		const searches = calls.filter((c) => c.method === "fullTextSearch");
 		expect(searches).toHaveLength(2);
 		expect(searches[0]?.args).toEqual({
 			query: "docker",
@@ -103,17 +103,17 @@ describe("search tool", () => {
 		expect(result.kb).toEqual(["recipes", "projects"]);
 		expect(result.rows).toEqual([
 			{
-				id: "s1",
-				root_id: "d1",
+				blockId: "s1",
+				docId: "d1",
 				hpath: "/doc",
-				box: "recipes",
+				kb: "recipes",
 				updated: "20260101120000",
 			},
 			{
-				id: "s1",
-				root_id: "d1",
+				blockId: "s1",
+				docId: "d1",
 				hpath: "/doc",
-				box: "projects",
+				kb: "projects",
 				updated: "20260101120000",
 			},
 		]);
@@ -123,7 +123,7 @@ describe("search tool", () => {
 		const { client } = kernelStub();
 		const contaminated: KernelReadClient = {
 			...client,
-			async search() {
+			async fullTextSearch() {
 				return {
 					blocks: [
 						{
@@ -159,13 +159,13 @@ describe("search tool", () => {
 	it("a single active KB degenerates to the single-call shape", async () => {
 		const { calls, client } = kernelStub();
 		await runSearchFanOut("sess-1", client, validation(), ["recipes"], "q");
-		expect(calls.filter((c) => c.method === "search")).toHaveLength(1);
+		expect(calls.filter((c) => c.method === "fullTextSearch")).toHaveLength(1);
 	});
 
 	it("aggregates the truncation marker across fan-out calls", async () => {
 		const saturated: KernelReadClient = {
 			...kernelStub().client,
-			async search(params) {
+			async fullTextSearch(params) {
 				// Deliberately short window plus a match count beyond it —
 				// pins the surplus arithmetic in the truncation marker. Echo
 				// the called box so the post-filter keeps every row.

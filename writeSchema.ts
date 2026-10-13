@@ -109,7 +109,7 @@ export function modeVerdict(p: WriteParams): ModeVerdict {
 	}
 	if (p.docId === undefined) {
 		return modeRefusal(
-			`mode '${mode}' requires docId — an echoed root_id target`,
+			`mode '${mode}' requires docId — an echoed docId target`,
 		);
 	}
 	if (mode === "append" && p.placement !== undefined) {

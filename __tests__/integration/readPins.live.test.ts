@@ -126,14 +126,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			});
 			expect(s.status).toBe("ok");
 			for (const row of rowsOf(s)) {
-				expect(row.box).toBe("fixture-a");
+				expect(row.kb).toBe("fixture-a");
 			}
 		},
 		LIVE_TIMEOUT,
 	);
 
 	it(
-		"recall-loop echo — a two-fixture search hit carries root_id/box/resolved-KB/updated, and reads back",
+		"recall-loop echo — a two-fixture search hit carries blockId/docId/resolved-KB/updated, and reads back",
 		async () => {
 			const term = unique("recall").replaceAll(" ", "-");
 			await mintDoc(
@@ -163,22 +163,22 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			expect(res.status).toBe("ok");
 			const rows = rowsOf(res);
 			expect(rows.length).toBeGreaterThanOrEqual(2);
-			expect(new Set(rows.map((r) => r.box))).toEqual(
+			expect(new Set(rows.map((r) => r.kb))).toEqual(
 				new Set(["fixture-a", "fixture-b"]),
 			);
 			for (const row of rows) {
-				expect(row.root_id).toBeTruthy();
+				expect(row.docId).toBeTruthy();
 				expect(row.hpath).toBeTruthy();
 				expect(String(row.updated)).toMatch(/^\d{14}$/);
 			}
-			// A hit's root_id is directly consumable as kb_read.
-			const hit = rows.find((r) => r.box === "fixture-a")!;
+			// A hit's docId is directly consumable as kb_read.
+			const hit = rows.find((r) => r.kb === "fixture-a")!;
 			const readBack = await read("kb_read", {
 				kb: "fixture-a",
-				docId: hit.root_id,
+				docId: hit.docId,
 			});
 			expect(readBack.status).toBe("ok");
-			expect(readBack.docId).toBe(hit.root_id);
+			expect(readBack.docId).toBe(hit.docId);
 		},
 		LIVE_TIMEOUT,
 	);
@@ -200,7 +200,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("read-side cases", () => {
 			expect(rows.length).toBeGreaterThan(0);
 			// Aggregates are exempt from the post-filter, so a leaked box would
 			// be visible here — the box column carries the notebook id, never
-			// the KB name (that rename is the search echo's contract).
+			// the KB name (the KB name is the search echo's `kb` field).
 			for (const row of rows) {
 				expect([
 					fixtures.notebookIds.fixtureA,

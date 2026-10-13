@@ -195,6 +195,6 @@ export function configRefusalEnvelope(errors: string[]): Envelope {
  * paths so the discovery hint cannot drift between them. */
 export function noSuchDocEnvelope(name: string, docId: string): Envelope {
 	return errorEnvelope(
-		`no doc '${docId}' in KB '${name}' — docIds are echoed root_id values from kb_query/kb_search/kb_read/write results; an ID from another KB reads as nothing`,
+		`no doc '${docId}' in KB '${name}' — docIds come from kb_search rows (docId), kb_query rows (root_id), or kb_read/write results; an ID from another KB reads as nothing`,
 	);
 }

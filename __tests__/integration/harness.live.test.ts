@@ -73,7 +73,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")("harness self-check", () => {
 		"runs a full-text search against a fixture notebook",
 		async () => {
 			const { client, notebookIds } = fixtures;
-			const result = await client.search({
+			const result = await client.fullTextSearch({
 				query: "a",
 				paths: [notebookIds.fixtureA],
 				pageSize: 64,

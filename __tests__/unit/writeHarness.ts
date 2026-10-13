@@ -227,7 +227,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 			}
 			throw new Error(`stub has no route for: ${stmt}`);
 		},
-		async search() {
+		async fullTextSearch() {
 			throw new Error("write flow never searches");
 		},
 		async exportMarkdown(id) {

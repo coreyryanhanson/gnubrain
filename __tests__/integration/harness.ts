@@ -127,7 +127,7 @@ export async function awaitSearchable(
 	await pollUntil(
 		`search index surfacing ${minHits} hits for '${query}'`,
 		async () => {
-			const result = await client.search({
+			const result = await client.fullTextSearch({
 				query,
 				paths: boxIds,
 				pageSize: 64,

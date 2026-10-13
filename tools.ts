@@ -27,7 +27,7 @@ import {
 import {
 	docMarkdown,
 	ownership,
-	searchBoxes,
+	keywordSearchBoxes,
 	type KernelReadClient,
 } from "siyuan-kb-primitives";
 import { RESULT_LIMIT } from "./limits.js";
@@ -170,7 +170,7 @@ function buildQueryEnvelope(
 // kb_search — per-KB fan-out
 // ---------------------------------------------------------------------------
 
-const SEARCH_DESCRIPTION = `Full-text search across GNUbrain knowledge bases. Pass kb as an array of KB names; the tool fans out one scoped kernel call per KB and merges results. Every row echoes id, root_id (the docId kb_read consumes), hpath, box (the resolved KB name), and updated. Search is the discovery step: a hit is directly consumable as kb_read { kb, docId: root_id }.`;
+const SEARCH_DESCRIPTION = `Full-text search across GNUbrain knowledge bases. Pass kb as an array of KB names; the tool fans out one scoped kernel call per KB and merges results. Every row echoes blockId, docId (the doc root_id kb_query's raw SQL rows carry), hpath, kb (the resolved KB name), and updated. Search is the discovery step: a hit is directly consumable as kb_read { kb, docId }.`;
 
 export function registerSearchTool(
 	pi: ExtensionAPI,
@@ -217,11 +217,11 @@ export async function runSearchFanOut(
 	names: string[],
 	query: string,
 ): Promise<Envelope> {
-	// One kernel call per resolved KB rides the barrel's searchBoxes — the
+	// One kernel call per resolved KB rides the barrel's keywordSearchBoxes — the
 	// shared pre-filter window (a hit-rich KB silently dropping the other
 	// KBs' matches) is kernel behavior the primitives own; this side owns
 	// resolve, echo, and spill.
-	const results = await searchBoxes(kernel, {
+	const results = await keywordSearchBoxes(kernel, {
 		query,
 		boxIds: names.map((name) => resolveBox(name, validation)),
 		pageSize: RESULT_LIMIT,
@@ -238,14 +238,14 @@ export async function runSearchFanOut(
 		dropped += box.dropped;
 		if (box.hidden > 0) truncatedKBs++;
 		truncatedRows += box.hidden;
-		// Echo contract: id, root_id, hpath, box → resolved KB name,
-		// updated — never raw.
+		// Echo contract: blockId, docId, hpath, kb → resolved KB name,
+		// updated — the tool vocabulary, never raw kernel names.
 		for (const block of box.rows) {
 			merged.push({
-				id: block.id,
-				root_id: block.rootID,
+				blockId: block.id,
+				docId: block.rootID,
 				hpath: block.hPath,
-				box: name,
+				kb: name,
 				updated: block.updated,
 			});
 		}
@@ -268,7 +268,7 @@ export async function runSearchFanOut(
 // kb_read — the barrel's docMarkdown export read (+ the outline ride-along)
 // ---------------------------------------------------------------------------
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a root_id echoed by kb_query/kb_search, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Spill keys: the inline \`outline\` gains \`fullOutlinePath\` (full heading rows, JSONL) and the inline \`content\` gains \`fullResultPath\` (the full markdown) whenever the payload exceeds the inline budget. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a docId echoed by kb_search or a root_id from kb_query's raw SQL rows, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Spill keys: the inline \`outline\` gains \`fullOutlinePath\` (full heading rows, JSONL) and the inline \`content\` gains \`fullResultPath\` (the full markdown) whenever the payload exceeds the inline budget. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
 
 /**
  * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns
@@ -320,7 +320,7 @@ function registerReadTool(
 				docId: Type.Optional(
 					Type.String({
 						description:
-							"Document root block ID (root_id from kb_query/kb_search rows)",
+							"Document root block ID (docId from kb_search rows, root_id from kb_query rows)",
 					}),
 				),
 			},

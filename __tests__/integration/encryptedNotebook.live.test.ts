@@ -56,9 +56,11 @@ function countingKernel(
 			counts.query += 1;
 			return client.query(stmt);
 		},
-		search: async (p: Parameters<SiYuanKernelClient["search"]>[0]) => {
+		fullTextSearch: async (
+			p: Parameters<SiYuanKernelClient["fullTextSearch"]>[0],
+		) => {
 			counts.search += 1;
-			return client.search(p);
+			return client.fullTextSearch(p);
 		},
 		exportMarkdown: async (id: string) => {
 			counts.exportMarkdown += 1;

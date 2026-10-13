@@ -319,7 +319,7 @@ primitives.
 - **Search window** — the kernel shares one `pageSize` window across every
   `paths` entry of a full-text search call, so a hit-rich KB fills the
   pre-filter window and silently drops the other KBs' matches →
-  `searchBoxes` (primitives `search.ts`). The tool side owns only the
+  `keywordSearchBoxes` (primitives `search.ts`). The tool side owns only the
   resolve/echo/spill around the per-box fan-out.
 - **Delete cascade** — the kernel's cascade removes a container member's
   descendants with it, so the sweep deletes only the enumerated members →
