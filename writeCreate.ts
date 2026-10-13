@@ -39,6 +39,35 @@ interface CreateFlowInput extends WriteFlowBase {
 	confirmNew: boolean;
 }
 
+/** Truncated (cap+1) guard-row sets render only the cap — each candidate
+ * costs kernel reads (walk + markdown export in the exact tier, a
+ * first-child read in the near tier), so overflow rows are sliced off
+ * before any read. The flag rides the primitives' TitleMatchResult; never
+ * re-derive it from row-count arithmetic here. */
+function visibleGuardRows(
+	rows: GuardRow[],
+	truncated: boolean,
+	cap: number,
+): GuardRow[] {
+	return truncated ? rows.slice(0, cap) : rows;
+}
+
+/** The guard-stop vanished-candidate swallow: a candidate deleted between
+ * the guard query and its evidence read degrades to the fallback (empty
+ * excerpt/markdown, row still shown) instead of discarding the whole stop.
+ * Auth/rate-limit/network rethrow for runKbCall's classification. */
+async function swallowVanished<T>(
+	fn: () => Promise<T>,
+	fallback: T,
+): Promise<T> {
+	try {
+		return await fn();
+	} catch (err) {
+		if (!(err instanceof SiYuanApiError)) throw err;
+		return fallback;
+	}
+}
+
 async function duplicateStop(
 	input: CreateFlowInput,
 	title: string,
@@ -46,11 +75,7 @@ async function duplicateStop(
 	truncated: boolean,
 ): Promise<Envelope> {
 	const { kernel, sessionId, name } = input;
-	// Cap rendering like nearMatchStop — each row costs a walk plus a
-	// markdown export, so a truncated (cap+1) row set renders only the cap.
-	// The flag rides the primitives' TitleMatchResult; never re-derive it
-	// from row-count arithmetic here.
-	const shown = truncated ? rows.slice(0, GUARD_EXACT_CAP) : rows;
+	const shown = visibleGuardRows(rows, truncated, GUARD_EXACT_CAP);
 	const detailed: Record<string, unknown>[] = [];
 	const walks: WalkedTree[] = [];
 	for (const row of shown) {
@@ -76,14 +101,10 @@ async function duplicateStop(
 			tree,
 			input.baselines,
 		);
-		let markdown = "";
-		try {
-			const md = await docMarkdown(kernel, docId);
-			markdown = md.content;
-		} catch (err) {
-			// Same vanished-candidate rule as the walk above.
-			if (!(err instanceof SiYuanApiError)) throw err;
-		}
+		const markdown = await swallowVanished(
+			async () => (await docMarkdown(kernel, docId)).content,
+			"",
+		);
 		const markdownPath = spillFile(
 			sessionId,
 			"kb_write-candidate",
@@ -136,24 +157,15 @@ async function nearMatchStop(
 ): Promise<Envelope> {
 	const { kernel, name } = input;
 	const candidates: Record<string, unknown>[] = [];
-	// Truncated (cap+1) row sets render only the cap — each row costs a walk
-	// plus a markdown export, so overflow rows are sliced off before any
-	// read. The flag rides the primitives' TitleMatchResult; never re-derive
-	// it from row-count arithmetic here.
-	const visible = truncated ? rows.slice(0, GUARD_NEAR_CAP) : rows;
+	const visible = visibleGuardRows(rows, truncated, GUARD_NEAR_CAP);
 	for (const row of visible) {
 		// First child block's content — cheap and excerpt-only by design
 		// (near-match tier). The document-order read itself lives in the
-		// primitives; only the swallow policy stays here (a vanished
-		// candidate mid-scan means an empty excerpt, row still shown;
-		// auth/rate-limit/network rethrow for runKbCall's classification).
-		let firstParagraph = "";
-		try {
-			firstParagraph = (await firstChildContent(kernel, row.root_id)) ?? "";
-		} catch (err) {
-			if (!(err instanceof SiYuanApiError)) throw err;
-			firstParagraph = "";
-		}
+		// primitives; the swallow policy lives in swallowVanished.
+		const firstParagraph = await swallowVanished(
+			async () => (await firstChildContent(kernel, row.root_id)) ?? "",
+			"",
+		);
 		candidates.push({
 			docId: row.root_id,
 			title: row.content,

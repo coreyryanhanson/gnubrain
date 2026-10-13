@@ -116,6 +116,11 @@ export function modeVerdict(p: WriteParams): ModeVerdict {
 		if (p.placement !== "section-end" && p.placement !== "section-start") {
 			return modeRefusal(`placement must be "section-end" or "section-start"`);
 		}
+		if (p.headingId === undefined) {
+			return modeRefusal(
+				"placement requires headingId — without a heading the append lands at doc end",
+			);
+		}
 	}
 	switch (mode) {
 		case "edit":

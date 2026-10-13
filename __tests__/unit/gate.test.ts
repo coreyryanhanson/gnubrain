@@ -351,6 +351,83 @@ describe("runKbCall error classification", () => {
 		expect(breaker.tripped).toBe(false);
 	});
 
+	it("a post-contact non-transport throw resets the consecutive count", async () => {
+		const breaker = new CircuitBreaker();
+		const v = validation();
+		const authFail = () =>
+			runKbCall(
+				{ validation: v, breaker, kb: "recipes", arity: "single", now: NOW },
+				async () => {
+					throw new SiYuanAuthError(403);
+				},
+			);
+		await authFail();
+		await authFail();
+		// The kernel answered but the op threw a non-layer-1 error after the
+		// call (e.g. a tool-side fan-out bug): real contact, no auth event —
+		// the reset rides contact like the success path.
+		await runKbCall(
+			{
+				validation: v,
+				breaker,
+				kernel: kernelStub().client,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async (_names, kernel) => {
+				await kernel?.query();
+				throw new Error("internal: post-contact failure");
+			},
+		);
+		// The reset is observable, not just "not tripped": with the count
+		// back at zero, the next two auth failures are errors and only the
+		// one after that trips the breaker (3 consecutive, mirroring the
+		// success-path reset test above).
+		const third = await authFail();
+		expect(third.status).toBe("error");
+		expect(third.message).toContain("403");
+		const fourth = await authFail();
+		expect(fourth.status).toBe("error");
+		const fifth = await authFail();
+		expect(fifth.status).toBe("refused");
+		expect(fifth.message).toContain("circuit breaker");
+		expect(breaker.tripped).toBe(true);
+		// The transport arm stays reset-free: no response ever arrived.
+		const breakerB = new CircuitBreaker();
+		const authFailB = () =>
+			runKbCall(
+				{
+					validation: v,
+					breaker: breakerB,
+					kb: "recipes",
+					arity: "single",
+					now: NOW,
+				},
+				async () => {
+					throw new SiYuanAuthError(403);
+				},
+			);
+		await authFailB();
+		await authFailB();
+		await runKbCall(
+			{
+				validation: v,
+				breaker: breakerB,
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async () => {
+				throw new SiYuanNetworkError();
+			},
+		);
+		expect(breakerB.tripped).toBe(false); // transport error, not tripped yet
+		const thirdB = await authFailB();
+		expect(thirdB.status).toBe("refused");
+		expect(thirdB.message).toContain("circuit breaker");
+	});
+
 	it("an op-internal refusal that never touched the kernel does not reset the consecutive count", async () => {
 		const breaker = new CircuitBreaker();
 		const v = validation();

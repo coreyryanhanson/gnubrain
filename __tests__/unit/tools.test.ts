@@ -373,6 +373,41 @@ describe("read tool", () => {
 		// write flow's outline echo shows.
 		expect(lines[0]).toBe("## Heading 0 → h0");
 	});
+
+	it("an oversized doc body spills in full: newline-boundary preview + pointer inline, bytes in the file", async () => {
+		// Long enough to spill, with a newline well past the cut so the
+		// preview lands on a real line boundary below PREVIEW_CHARS.
+		const body = Array.from(
+			{ length: 400 },
+			(_, i) => `paragraph ${i} ${"x".repeat(80)}`,
+		).join("\n");
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async exportMarkdown() {
+				return { hPath: "/doc", content: body };
+			},
+		};
+		const result = await runRead(
+			"sess-1",
+			client,
+			validation(),
+			"recipes",
+			"d1",
+			ContentBaselines.create(),
+		);
+		expect(body.length).toBeGreaterThan(PREVIEW_CHARS);
+		const content = String(result.content);
+		expect(content.length).toBeLessThanOrEqual(PREVIEW_CHARS + 100);
+		// content = newline-boundary preview of the body + "\n" + pointer.
+		const m = /^([\s\S]*)\n… (\d+) more — full result in (.+)$/.exec(content);
+		expect(m).not.toBeNull();
+		const inline = m?.[1] ?? "";
+		const path = m?.[3] ?? "";
+		expect(path).toBe(String(result.fullResultPath));
+		expect(Number(m?.[2])).toBe(body.length - inline.length);
+		expect(body.startsWith(inline)).toBe(true);
+		expect(readFileSync(path, "utf8")).toBe(body);
+	});
 });
 
 // ---------------------------------------------------------------------------

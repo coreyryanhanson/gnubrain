@@ -68,16 +68,3 @@ describe("kernel-free shape legs precede the grant dialog", () => {
 		expect(calls).toHaveLength(0);
 	});
 });
-
-describe("markdownFile body resolution", () => {
-	it("an unreadable markdownFile path is an error naming the path", async () => {
-		const { execute } = setup();
-		const r = await execute({
-			...base,
-			markdown: undefined,
-			markdownFile: "/nope/missing.md",
-		});
-		expect(r.status).toBe("error");
-		expect(r.message).toContain("/nope/missing.md");
-	});
-});

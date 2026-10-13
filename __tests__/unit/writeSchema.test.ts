@@ -123,6 +123,10 @@ describe("mode-target shape (schema table)", () => {
 			{ kb: "r", mode: "append", docId: "d", placement: "sideways" },
 			'placement must be "section-end" or "section-start"',
 		],
+		[
+			{ kb: "r", mode: "append", docId: "d", placement: "section-end" },
+			"placement requires headingId — without a heading the append lands at doc end",
+		],
 	];
 	it.each(cases)("rejects %# with the reason named", (params, expected) => {
 		expect(refusalOf(params as WriteParams)).toContain(expected);
@@ -143,6 +147,7 @@ describe("mode-target shape (schema table)", () => {
 				mode: "append",
 				docId: "d",
 				placement: "section-end",
+				headingId: "h",
 			} as WriteParams),
 		).toBeUndefined();
 		expect(
@@ -151,6 +156,7 @@ describe("mode-target shape (schema table)", () => {
 				mode: "append",
 				docId: "d",
 				placement: "section-start",
+				headingId: "h",
 			} as WriteParams),
 		).toBeUndefined();
 		expect(

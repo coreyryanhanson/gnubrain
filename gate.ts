@@ -308,6 +308,12 @@ export async function runKbCall<K extends object>(
 				err,
 			);
 		}
+		// A kernel-cause throw always rode a real call (the kernel answered,
+		// without an auth event); an unclassified throw resets only if the
+		// tracked client was actually invoked. Either way the consecutive
+		// count resets like the success path. The transport arm above stays
+		// reset-free: the response never arrived.
+		if (kernelContact) input.breaker.recordSuccess();
 		return withPartialState(
 			errorEnvelope(err instanceof Error ? err.message : String(err)),
 			err,
