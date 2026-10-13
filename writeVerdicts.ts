@@ -24,7 +24,7 @@ import {
 } from "siyuan-kb-primitives";
 import type {
 	EditLandedOutcome,
-	InsertLandedOutcome,
+	InsertUnlandedVerdict,
 	MutationFailure,
 	MoveBlockLandedOutcome,
 	VerificationCause,
@@ -299,13 +299,13 @@ export function blockInDocRefusal(
 	outcome satisfies never;
 }
 
-/** Refusal wording for an insertLanded outcome, or undefined when the
- * insert landed. The predicate lives in the primitives' insertLanded
- * judgment; these sentences are its shared wording — one home so the
- * refusal cannot drift between the insert-bearing modes. */
-export function insertLandedRefusal(
-	outcome: InsertLandedOutcome,
-): string | undefined {
+/** Refusal wording for an insertLanded verdict that did not land
+ * (`InsertUnlandedVerdict` — every insertLanded outcome but `landed`,
+ * which cannot occur in the unlanded arms this words). The predicate
+ * lives in the primitives' insertLanded judgment; these sentences are
+ * its shared wording — one home so the refusal cannot drift between the
+ * insert-bearing modes. */
+export function insertLandedRefusal(outcome: InsertUnlandedVerdict): string {
 	switch (outcome.kind) {
 		case "no-id":
 			return "the kernel returned no block id";
@@ -315,11 +315,8 @@ export function insertLandedRefusal(
 			return `the kernel returned '${outcome.blockId}' but the post-write walk hit the document's depth bound, so its landing could not be confirmed — it may have landed past the bound; re-fetch the outline (kb_read) before any retry (a blind retry duplicates the write)`;
 		case "pre-write-id":
 			return `the kernel returned '${outcome.blockId}' but that block already existed before the write`;
-		case "landed":
-			return undefined;
 	}
 	outcome satisfies never;
-	return undefined;
 }
 
 /** Reason wording for a verifyMoveLanded outcome, or undefined when the
