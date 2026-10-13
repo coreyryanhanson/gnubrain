@@ -14,7 +14,6 @@ import {
 	GRANT_OPTIONS,
 	GRANT_SESSION,
 	GRANT_YES,
-	readBodyFile,
 } from "../../writeConfirm.js";
 import { base, setup, validation } from "./writeHarness.js";
 
@@ -106,12 +105,6 @@ describe("markdownFile input", () => {
 		} finally {
 			rmSync(dir, { recursive: true });
 		}
-	});
-
-	it("readBodyFile — missing file throws a structured error naming the path", async () => {
-		await expect(readBodyFile("/nope/missing.md")).rejects.toThrow(
-			"/nope/missing.md",
-		);
 	});
 });
 

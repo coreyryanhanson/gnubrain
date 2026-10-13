@@ -1,11 +1,9 @@
 // The per-KB, per-interaction write grant: one tri-state dialog per KB per
 // interaction (ctx.ui.select), the turn/session grant sets, the
 // turn-denial set every non-answer lands in, and the process-wide dialog
-// lock — plus the markdownFile trust posture. Every path here is a
-// zero-kernel-call local decision: the gate runs before the probe's live
-// legs and before any guard query.
+// lock. Every path here is a zero-kernel-call local decision: the gate
+// runs before the probe's live legs and before any guard query.
 
-import { stat as fsStat, readFile as fsReadFile } from "node:fs/promises";
 import type {
 	ExtensionUIDialogOptions,
 	ExtensionUIContext,
@@ -165,31 +163,4 @@ export async function grantGate(input: {
 		() => undefined,
 	);
 	return run;
-}
-
-// ---------------------------------------------------------------------------
-// File-path input — markdown XOR markdownFile, read once at call start
-// ---------------------------------------------------------------------------
-
-/** The trust posture: "must exist, must be a regular file" — no path
- * allowlisting (single-user VM holding an admin token). */
-export async function readBodyFile(path: string): Promise<string> {
-	let stat;
-	try {
-		stat = await fsStat(path);
-	} catch (err) {
-		throw new Error(
-			`markdownFile '${path}' is not readable: ${err instanceof Error ? err.message : String(err)}`,
-		);
-	}
-	if (!stat.isFile()) {
-		throw new Error(`markdownFile '${path}' is not a regular file`);
-	}
-	try {
-		return await fsReadFile(path, "utf8");
-	} catch (err) {
-		throw new Error(
-			`markdownFile '${path}' is unreadable: ${err instanceof Error ? err.message : String(err)}`,
-		);
-	}
 }

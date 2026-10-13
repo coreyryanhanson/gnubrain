@@ -4,6 +4,7 @@
 // drift refusal before the grant, grant before the probe gate, mint
 // before the grant — are a unit under test, not an inline closure.
 
+import { stat as fsStat, readFile as fsReadFile } from "node:fs/promises";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import {
@@ -13,11 +14,7 @@ import {
 } from "./gate.js";
 import { resolveBox } from "./kbScope.js";
 import type { SessionValidation } from "./validation.js";
-import {
-	grantGate,
-	readBodyFile,
-	type WriteGrantState,
-} from "./writeConfirm.js";
+import { grantGate, type WriteGrantState } from "./writeConfirm.js";
 import { runCreateFlow } from "./writeCreate.js";
 import { runEditMode } from "./writeEdit.js";
 import { runAppendMode } from "./writeAppend.js";
@@ -42,7 +39,7 @@ export interface WriteToolHooks extends SessionHooks<WriteKernelClient> {
 	 * breaker. */
 	grantState: WriteGrantState;
 	/** Injectable file-read seam (unit tests); defaults to the real
-	 * readBodyFile from writeConfirm. */
+	 * readBodyFile. */
 	readBodyFile?: (path: string) => Promise<string>;
 }
 
@@ -184,4 +181,30 @@ export async function prepareWrite(
 	// typecheck here until its flow case exists.
 	p.mode satisfies never;
 	return errorEnvelope(`internal: unhandled write mode '${p.mode}'`);
+}
+
+// Body input — markdown XOR markdownFile, read once at call start
+// (the XOR is enforced above; this is the markdownFile half).
+
+/** The trust posture: "must exist, must be a regular file" — no path
+ * allowlisting (single-user VM holding an admin token). */
+async function readBodyFile(path: string): Promise<string> {
+	let stat;
+	try {
+		stat = await fsStat(path);
+	} catch (err) {
+		throw new Error(
+			`markdownFile '${path}' is not readable: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+	if (!stat.isFile()) {
+		throw new Error(`markdownFile '${path}' is not a regular file`);
+	}
+	try {
+		return await fsReadFile(path, "utf8");
+	} catch (err) {
+		throw new Error(
+			`markdownFile '${path}' is unreadable: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
 }
