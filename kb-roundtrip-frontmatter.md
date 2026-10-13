@@ -39,8 +39,8 @@ markdown (`model/export.go:3370-3391`, `model/render.go:455-466`):
   `text[^1]` footnote markers plus an appended footnotes section carrying the
   referenced block's content — generated body that round-trips as real content;
   refMode 2 renders `[text](siyuan://blocks/defID)`, preserving the pointer as
-  an address. (Modes 0/1 are unreachable — `model/conf.go` force-normalizes them
-  to 4.)
+  an address. (Modes 0/1/5 are unreachable — `model/conf.go` force-normalizes
+  them to 4.)
 - **Query embeds** (`{{SELECT ...}}`): no mode preserves the script — every mode
   resolves and inlines the result; mode 1 (workspace default) inlines as quote
   blocks (`> ` per line), mode 0 inlines raw, indistinguishable from authored
@@ -61,9 +61,9 @@ is content, taken verbatim*.
 
 ## Proposed fix
 
-One change per repo; defaults everywhere stay unchanged, so no other consumer
-moves. Development lands in one pass over the `file:` co-development link;
-publish order stays bottom-up.
+One posture per repo; the shared defaults stay unchanged, so no consumer beyond
+the two agent-serving sites named below moves. Development lands in one pass
+over the `file:` co-development link; publish order stays bottom-up.
 
 1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
    addTitle?: boolean; refMode?: number; embedMode?: number })`, each field sent
@@ -130,9 +130,9 @@ rendering. It is not lost from the KB:
 ## Test plan
 
 - **Layer 1 unit**: no-opts call posts `{ id }` exactly as today; opts included
-only when defined (additive cases, bare body pin untouched); the census `ARGS`
-entry becomes the full opts tuple so the opts path joins the token-attachment
-drive.
+  only when defined (additive cases, bare body pin untouched); the census `ARGS`
+  entry becomes the full opts tuple so the opts path joins the token-attachment
+  drive.
 - **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
   args).
 - **Primitives live (the falsifier for the new posture)**: export a doc whose
