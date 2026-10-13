@@ -73,10 +73,9 @@ describe("append", () => {
 
 	it("the echo tail baselines served headings from the walk it serves, never a later SQL read", async () => {
 		// The outline the result serves and the baselines it seeds are one
-		// snapshot: a post-walk read could only repeat the same strings or
-		// launder a concurrent change / stale index row past the
-		// fresh-content precondition. The write's own block is the one
-		// SQL-read (its stored form is unknowable at submit time).
+		// snapshot (the anti-laundering invariant: baselines.ts). The write's
+		// own block is the one SQL-read (its stored form is unknowable at
+		// submit time).
 		const harness = setup({
 			config: {
 				childrenFor: BOUNDED_DOC,

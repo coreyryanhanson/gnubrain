@@ -8,6 +8,15 @@
 // unknowable at submit time). Same lifecycle class as the breaker/grant
 // state: after resume/fork the map is empty and the no-baseline fallback
 // applies.
+//
+// The anti-laundering invariant — the one rule every seed/refresh site
+// obeys: no stored baseline ever moves without its content being visible
+// to the agent in the same result. Baselines are seeded from what a tool
+// served (a walk's heading rows, kb_query's rows) or from a write verdict's
+// own judged evidence, never from a later or broad read: a refresh beyond
+// the served snapshot would smuggle a concurrent change or a stale index
+// row past the fresh-content precondition, so the next edit would
+// hash-match the laundered content and apply unseen.
 
 import { contentHash } from "siyuan-kb-primitives";
 

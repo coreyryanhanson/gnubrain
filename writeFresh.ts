@@ -24,8 +24,8 @@ import { serveOutlineFromWalk } from "./outline.js";
  * - `unseen` → adopt the live form (the no-baseline fallback, visible:
  *   nothing stored existed to launder)
  * - `stale` → re-baseline from the judged content AND name the target —
- *   the anti-laundering invariant: no stored baseline moves without its
- *   content being visible in the same envelope, so the retry proceeds
+ *   the content moves only because it is visible in the same envelope
+ *   (the anti-laundering invariant: baselines.ts), so the retry proceeds
  *   against informed consent instead of refuse-looping
  * - `vanished` → skip (delete no-op class; the baseline is retained, so a
  *   return via undo re-judges as `fresh` if unchanged, `stale` if not)
@@ -69,10 +69,9 @@ export async function freshContentRefusal(
 	}
 	const first = staleArms[0];
 	if (first === undefined) return null;
-	// The refusal's outline renders from the judged snapshot — its heading
-	// content is seeded like every other serve site, or a follow-up edit on
-	// a served heading takes the no-baseline fallback and launders a
-	// concurrent change past the precondition. The walk is already in hand.
+	// The refusal's outline renders from the judged snapshot — seeded like
+	// every other serve site (anti-laundering invariant: baselines.ts). The
+	// walk is already in hand.
 	const fresh = serveOutlineFromWalk(
 		context.sessionId,
 		"kb_write",

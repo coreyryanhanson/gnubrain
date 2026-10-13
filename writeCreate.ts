@@ -67,9 +67,9 @@ async function duplicateStop(
 		});
 		walks.push(tree);
 		// The stop serves heading content — seed the baselines so a follow-up
-		// edit on a served heading verifies against what the agent saw here,
-		// not against content read at edit time (which launders a concurrent
-		// kernel-side change past the stale_content precondition).
+		// edit on a served heading verifies against what the agent saw here
+		// (the anti-laundering invariant: baselines.ts), not against content
+		// read at edit time.
 		const outline = serveOutlineFromWalk(
 			sessionId,
 			"kb_write",

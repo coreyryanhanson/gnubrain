@@ -85,10 +85,9 @@ export async function runEditMode(
 		}
 		const tail = await echoTail(input, doc);
 		// The landed verdict carries the stored pair it judged — baseline the
-		// write's own block from it instead of a post-write read (a
-		// concurrent change landing in the echo window would be laundered
-		// into the baseline). Remembered after the echo so the stored form
-		// wins over the walk-seeded serve.
+		// write's own block from it instead of a post-write read (the
+		// anti-laundering invariant: baselines.ts). Remembered after the echo
+		// so the stored form wins over the walk-seeded serve.
 		// An `unobserved` baseline (no pre-write pair — create → edit
 		// immediately) means the stored pair may still be the pre-edit row
 		// arriving through the index lag, so it never seeds a baseline: the

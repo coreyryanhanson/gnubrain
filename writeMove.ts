@@ -122,10 +122,8 @@ function moveDocScopingRefusalEnvelope(
 /** Cross-doc block move's `destOutline`: the destination outline served
  * from the verified move's post-move walk (the judgment's own evidence —
  * consumed verbatim, never re-fetched). The walk's heading rows are served
- * content — seed the baselines so a follow-up edit on a served destination
- * heading verifies against what the agent saw here, not against content
- * read at edit time (which launders a concurrent kernel-side change past
- * the stale_content precondition). */
+ * content — seed the baselines from the serve, per the anti-laundering
+ * invariant (baselines.ts). */
 async function destOutlinePayload(
 	input: WriteFlowInput,
 	destWalk: WalkedTree,

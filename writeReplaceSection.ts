@@ -149,8 +149,8 @@ export async function runReplaceSectionMode(
 	// Fresh-content precondition (writeFresh.ts), one wrapper step right
 	// before the kernel call: the judgment seeds missing baselines from the
 	// SQL index and checks against the live tree in one pass (a change
-	// landing since the walk is caught as stale_content, not laundered into
-	// the baseline).
+	// landing since the walk is caught as stale_content, never moved into
+	// a baseline — anti-laundering invariant: baselines.ts).
 	const stale = await freshContentRefusal(
 		kernel,
 		baselines,

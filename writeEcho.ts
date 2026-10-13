@@ -72,10 +72,8 @@ export async function echoTail(
 	const docId = doc.rootId;
 	const fullWalk = walk ?? (await walkBlockTree(kernel, docId));
 	// The serve seeds every walk heading's baseline, and nothing later
-	// overwrites it: the baseline is exactly the snapshot the result
-	// serves. A post-walk read would either repeat the same strings (the
-	// walk ≡ SQL equivalence) or launder a concurrent change or a stale
-	// index row into the baseline past the fresh-content precondition.
+	// overwrites it: the baseline is exactly the snapshot the result serves
+	// (the anti-laundering invariant: baselines.ts).
 	const outline = serveOutlineFromWalk(
 		sessionId,
 		"kb_write",
@@ -92,9 +90,8 @@ export async function echoTail(
 	// The only SQL-form baseline seed here is the write's own blocks:
 	// submitted markdown is re-parsed by the kernel, so the stored form is
 	// knowable only by reading it back. Served rows keep their walk-seeded
-	// baseline — a broad refresh would launder a concurrent change past
-	// the fresh-content precondition (an intervening write would make the
-	// next edit on it hash-match laundered content).
+	// baseline (the anti-laundering invariant: baselines.ts — a broad
+	// refresh would overwrite them with un-served content).
 	if (refreshBlockIds?.length) {
 		for (const row of await blockContents(kernel, [...refreshBlockIds])) {
 			baselines.remember(row.id, row.content);
