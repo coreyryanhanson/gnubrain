@@ -153,8 +153,11 @@ the wording says so plainly — without overstating what the kernel can do:
   a link, not the stored `((id "text"))` ref form.
 - The lossless ref form exists at the knob level: `refMode: 0` emits the
   verbatim `((id "text"))` source — live-verified to round-trip as a real
-  ref. It is deliberately not the read rendering's dialect; a future
-  source-form read (below) would ride it, not v1.
+  ref. It is deliberately not the read rendering's dialect — and it is not
+  the future source-form read either: no export mode preserves embeds, so a
+  doc-level lossless export is impossible at any refMode. The source form
+  rides the walk/`getBlockKramdown` path (see *Parked* below), not this
+  endpoint.
 - A pasted embed freezes the query's resolved result as authored quote text —
   a stale snapshot indistinguishable from real content, in every mode. This
   warning is unconditional.
@@ -170,11 +173,48 @@ the wording says so plainly — without overstating what the kernel can do:
   the kernel already returns (`walk.ts`), and the outline serves headings
   only — so routing ref-bearing bodies through them would silently drop the
   pointer. No current tool surface carries the stored ref/embed source; the
-  parked item is a **read-side** source form — thread the kernel's
-  `markdown` field through `WalkedBlock`, or a `getBlockKramdown`-backed
-  source read — not a write-side rehydrator. Until it exists the wording
-  says plainly that `kb_read` output is a body source for plain content
-  only, not a byte-exact backup.
+  root-cause fix is a read-side source form, specified in *Parked: the
+  source-form read* below — not a write-side rehydrator. Until it exists
+  the wording says plainly that `kb_read` output is a body source for plain
+  content only, not a byte-exact backup.
+
+## Parked: the source-form read (the walk path's root-cause fix)
+
+The wording above stops the bleeding for v1; it does not close the walk
+path's gap. The root cause there: the kernel already returns a per-child
+`markdown` field on every `getChildBlocks` call — the stored source, refs
+(`((id "text"))`) and embeds (`{{SELECT ...}}`) verbatim — and the
+primitives' `WalkedBlock` (`walk.ts`) keeps only the ref-stripped `content`
+and discards it. The stack's lossless surface is one discarded field away.
+The parked fix is read-side, two moves:
+
+1. **Primitives**: thread `markdown` through `WalkedBlock` — one field,
+   zero new kernel calls. The fresh-content judgment and baselines are
+   untouched by design: they hash the ref-stripped `content`, both sides of
+   every comparison read that same stripped form, and `markdown` rides
+   along as evidence only. Pin the field's shape in the primitives' live
+   suite when it lands (refs and embeds verbatim) — it is version-coupled
+   kernel surface like everything else in the walk.
+2. **gnubrain, when a surface exists**: an agent-facing read form that
+   serves the source field. Threading the field alone closes nothing the
+   agent can touch — the walk is internal (outlines serve headings;
+   judgments consume `content`), so the tool-side form is where the
+   notation decision lives. After it ships, replace the `READ_DESCRIPTION`
+   sentence "no current tool surface carries the stored ref/embed source"
+   with a pointer to that form — "source ref-bearing bodies from the
+   source read" becomes a true sentence then, and only then.
+
+The per-block alternative — a `getBlockKramdown`-backed read primitive —
+stays named but secondary: it returns stored kramdown verbatim, but also
+block IAL, which the read posture deliberately omits
+(`SetKramdownIAL(false)`), so it needs an IAL strip or an accepted caveat,
+and it is per-block rather than per-walk. Prefer the walk field unless a
+per-block need appears.
+
+Deliberately not in this pass: threading the field alone touches no
+agent-facing surface, and inventing the read form here would out-design
+the need before the posture fix has landed. Record both moves when this
+plan ships so the next session finds them instead of re-deriving them.
 
 ## Metadata disposition
 
