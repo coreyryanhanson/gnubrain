@@ -70,9 +70,10 @@ reads only `hPath`/`title` and deliberately keeps the bare `{id}` call —
 opts-neutral by design, not a missed site. Development lands in one pass
 over the `file:` co-development link; publish order stays bottom-up.
 
-1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
-   addTitle?: boolean; refMode?: 2 | 3 | 4; embedMode?: 0 | 1 })`, each field
-   sent only when defined (`compact` already drops `undefined`). The ref/embed
+1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: ExportMarkdownOpts)`, with the
+   exported `ExportMarkdownOpts = { yfm?: boolean; addTitle?: boolean;
+   refMode?: 2 | 3 | 4; embedMode?: 0 | 1 }` — each field sent only when defined
+   (`compact` already drops `undefined`). The ref/embed
    values are literal unions, not `number`: `model/conf.go` normalizes 0/1/5
    only at config load, while the request path (where `Validate` is a no-op,
    `apicontract/export.go:90`) honors raw values — once the knob exists, a
@@ -124,16 +125,22 @@ exported (`SetKramdownIAL(false)`), tab titles can materialize as content
 and query embeds materialize as quoted content (the embed script itself is not
 preserved in any mode). **Ref/embed round-trip is out of scope for v1**, and
 the wording says so plainly: no export mode emits importable `((id "text"))`
-ref syntax, so `kb_read` output is not a valid `old`/section-body source for
-ref- or embed-bearing content — the agent must not reconstruct a write body
-from the rendering there. Creating from a pasted rendering degrades
+ref syntax, so `kb_read` output is not a valid body source for ref- or
+embed-bearing content — the agent must not reconstruct a write body from
+the rendering there. Creating from a pasted rendering degrades
 acceptably (a `siyuan://` link imports as a real block link,
 `treenode/node.go:148`), but a pasted embed freezes the query's resolved
 result as authored quote text — a stale snapshot indistinguishable from real
-content. An edit whose target region contains a ref or embed can never match
-the stored source from a rendering, so the edit path's refusal (never silent
-corruption) is the expected outcome, not a bug to chase. Treat the output as
-a body source for plain content, not a byte-exact backup; a true round-trip
+content. The same degradation reaches `edit`/`replace-section`, whose body is
+taken verbatim: rewriting a ref-bearing block from the rendering lands the
+link form over the stored `((id "text"))` source, and nothing refuses it —
+the flows seed the fresh precondition from the live row when the session has
+no baseline (`writeEdit.ts`; `unseen` → adopt), so the corruption is silent,
+visible only in the echo. The wording says so: for ref- or embed-bearing
+content, source the write body from the outline/walk form, which carries the
+stored source — the same baselines the edit flow already judges against.
+Treat the output as a body source for plain content, not a byte-exact backup;
+a true round-trip
 (rehydrating refs, re-materializing embed scripts) is a parked write-side
 primitive, not something this fix delivers.
 
