@@ -39,8 +39,10 @@ markdown (`model/export.go:3370-3391`, `model/render.go:455-466`):
   `text[^1]` footnote markers plus an appended footnotes section carrying the
   referenced block's content — generated body that round-trips as real content;
   refMode 2 renders `[text](siyuan://blocks/defID)`, preserving the pointer as
-  an address. (Modes 0/1/5 are unreachable — `model/conf.go` force-normalizes
-  them to 4.)
+  an address. (Workspace config cannot select modes 0/1/5 — `model/conf.go`
+  force-normalizes them to 4 at config load — but the request path honors raw
+  values with no range check, which is why the client's opts type below narrows
+  the union instead of taking `number`.)
 - **Query embeds** (`{{SELECT ...}}`): no mode preserves the script — every mode
   resolves and inlines the result; mode 1 (workspace default) inlines as quote
   blocks (`> ` per line), mode 0 inlines raw, indistinguishable from authored
@@ -66,8 +68,13 @@ the two agent-serving sites named below moves. Development lands in one pass
 over the `file:` co-development link; publish order stays bottom-up.
 
 1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
-   addTitle?: boolean; refMode?: number; embedMode?: number })`, each field sent
-   only when defined (`compact` already drops `undefined`). Layer 1 chooses no
+   addTitle?: boolean; refMode?: 2 | 3 | 4; embedMode?: 0 | 1 })`, each field
+   sent only when defined (`compact` already drops `undefined`). The ref/embed
+   values are literal unions, not `number`: `model/conf.go` normalizes 0/1/5
+   only at config load, while the request path (where `Validate` is a no-op,
+   `apicontract/export.go:90`) honors raw values — once the knob exists, a
+   stray `0` would reach the deprecated raw-block translation. The type, not
+   policy, keeps the config-unreachable modes out of layer 1. Layer 1 chooses no
    posture — it only guarantees the knobs are *settable* (the explicit-knob rule
    codified in its AGENTS.md, see below); the values are the caller's. Test
    edits, both shaped by what each pin actually verifies: `client.test.ts`
@@ -77,9 +84,10 @@ over the `file:` co-development link; publish order stays bottom-up.
    update. And the census `ARGS` entry (`census.test.ts`) is *replaced* with
    the full opts tuple, not left as the bare `"x"`: the census drives its args
    against a stubbed fetch and asserts token attachment on every outgoing call
-   (`census.test.ts:130-140`), so a short tuple compiles fine yet silently
-   exits the drive — the opts path must join the token-attachment sweep like
-   every other method's representative call. Body shape stays `client.test.ts`'s
+   (`census.test.ts:130-140`), so the bare tuple does still reach the drive and
+   assert auth — the full opts tuple is preferred so the representative call
+   exercises the `compact`-spread opts branch, matching the shape the method
+   actually sends. Body shape stays `client.test.ts`'s
    job; the census verifies reachability and auth posture.
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
@@ -147,8 +155,12 @@ rendering. It is not lost from the KB:
 - **Primitives live (the falsifier for the new posture)**: export a doc whose
   title contains `&`, `<`, `>` and whose body opens with its own H1 and a `---`
   thematic break; assert the body-only export carries no frontmatter, no title
-  H1, no IAL, and the body byte-identical. Nothing is timestamped in body-only
-  output, so no wildcarding. Place it next to the existing `docMarkdown` live
+  H1, no IAL, and the body present via `toContain(originalBody)` rather than
+  byte equality — the export re-renders through lute (`SetSanitize(true)` and
+  friends), so byte identity is stronger than the fix needs and would flake on
+  fixtures; the repo's existing live style is `toContain`
+  (`readPins.live.test.ts:452`). Nothing is timestamped in body-only output,
+  so no wildcarding. Place it next to the existing `docMarkdown` live
   case. Both live cases call `docMarkdown` with `READ_EXPORT_POSTURE` — never
   hand-rolled literals — so the constant itself joins the falsified surface
   and cannot drift from its evidence.
@@ -156,8 +168,9 @@ rendering. It is not lost from the KB:
   ref-bearing doc — a block ref to another doc's block plus a query embed;
   assert structure, not byte identity (refs are translated, not serialized):
   refs render as `[text](siyuan://blocks/…)`, there are no `[^1]` markers and
-  no footnotes section, and the embed's content appears as a quote block. The
-  ref-free fixture above stays byte-identical; this one cannot be.
+  no footnotes section, and the embed's content appears as a quote block. Like
+  the ref-free fixture above, this case asserts containment and absence,
+  never byte identity.
 - **Gnubrain unit**: `runRead` passes `READ_EXPORT_POSTURE` (imported from the
   read barrel) and the writeCreate duplicate-stop excerpt passes the same
   constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
