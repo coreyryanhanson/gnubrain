@@ -15,8 +15,10 @@ them — the fix below pins the whole knob set explicitly, not just the frontmat
 ## Root cause
 
 `siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-334`).
-The endpoint takes four knobs **from the request** when the client sends them
-(`kernel/api/export.go:388-404`): `yfm` (hardcoded `true` when absent — no
+The endpoint takes seven knobs **from the request** when the client sends them
+(`kernel/api/export.go:388-404`); four have config-dependent fallbacks and are
+this plan's subject — `fillCSSVar`/`adjustHeadingLevel`/`imgTag` default to a
+fixed `false` and stay out of scope: `yfm` (hardcoded `true` when absent — no
 workspace toggle can suppress it, so an explicit `yfm:false` is the only fix),
 and `addTitle`/`refMode`/`embedMode`, each falling back to workspace config
 (`addTitle` ← `Conf.Export.AddTitle`, default `true`; `refMode` ←
@@ -39,17 +41,21 @@ markdown (`model/export.go:3370-3408`, `model/render.go:455-466`):
   `text[^1]` footnote markers plus an appended footnotes section carrying the
   referenced block's content — generated body that round-trips as real content;
   refMode 2 renders `[text](siyuan://blocks/defID)`, preserving the pointer as
-  an address; refMode 0 (and identically 1 and 5) falls through the kernel's
+  an address; refMode 0 (and identically 1 and 5 — all three marked deprecated
+  upstream, `conf/export.go:20-27`) falls through the kernel's
   mode switch — `model/export.go:3370-3408` has cases only for 2/3/4, no
   default — and emits the ref node verbatim, `((id "text"))`, the lossless
   source form, live-verified on the pinned kernel to round-trip as a real
   block ref on re-import. (Workspace config cannot select 0/1/5 —
   `model/conf.go` force-normalizes them to 4 at config load — but the request
   path honors raw values with no range validation, which is why the client's
-  opts type below still narrows the union instead of taking `number`.) Modes
-  1 and 5 stay unnamed despite behaving like 0: their documented semantics
-  ("raw text", "Blockquote") no longer describe anything the kernel does, so
-  0 is the single exposed verbatim mode.
+  opts type below still narrows the union instead of taking `number`.)
+  Deprecated is not undocumented: upstream's own mode table names 0 "raw
+  text" (`conf/export.go:20-27`), and that documented meaning is exactly what
+  the fall-through realizes — verbatim emission. Mode 1's documented meaning
+  ("Blockquote") no longer describes anything the kernel does, and 5's
+  (anchor hash) matches nothing a caller wants, so 0 is the single exposed
+  mode whose documented semantics and realized behavior agree.
 - **Query embeds** (`{{SELECT ...}}`): no mode preserves the script — every mode
   resolves and inlines the result; mode 1 (workspace default) inlines as quote
   blocks (`> ` per line), mode 0 inlines raw, indistinguishable from authored
@@ -88,11 +94,21 @@ over the `file:` co-development link; publish order stays bottom-up.
    Mode 0 is exposed deliberately — the lossless verbatim form established in
    the root cause above — symmetric with `embedMode: 0` (raw inline), which
    was already a real mode; 1 and 5 stay out, per the root-cause reasoning.
-   Because 0's behavior is an upstream fall-through rather than a documented
-   case, its semantics are pinned by a live falsifier in the primitives
-   (below) and re-checked on every kernel upgrade; a future kernel that gives
-   the switch a case for 0 fires that pin. The type, not policy, keeps the
-   unnamed modes out of layer 1. Layer 1 chooses no
+   refMode 0 is documented upstream — deprecated "raw text",
+   `conf/export.go:20-27` —
+   but its realization is the mode switch's fall-through (cases only for
+   2/3/4, no default, `model/export.go:3370-3408`), so its emitted form is
+   pinned by a live falsifier in the primitives (below) and re-checked on
+   every kernel upgrade; a future kernel that gives the switch a case for 0
+   fires that pin. That falsifier is a live-suite case, env-gated: it fires
+   on the next live/upgrade run, not as a CI tripwire. The type, not policy,
+   keeps the unnamed modes out of layer 1 — the union is a curated set, not
+   the kernel's numeric range, and its doc comment says so (0 rides the
+   deprecated-but-documented fall-through above). The opts type carries a
+   JSDoc naming the explicit-knob rule at the method — layer 1's house style
+   puts kernel-fallback caveats at the call site (`listInvalidBlockRefs`,
+   `client.ts:300-322`) — so a caller reads the caveat where it bites, not
+   only in AGENTS.md. Layer 1 chooses no
    posture — it only guarantees the knobs are *settable* (the explicit-knob rule
    codified in its AGENTS.md, see below); the values are the caller's. Test
    edits, both shaped by what each pin actually verifies: `client.test.ts`
@@ -110,9 +126,14 @@ over the `file:` co-development link; publish order stays bottom-up.
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
    (`client.ts:52`). Beside it, export the frozen posture constant
-   `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`Object.freeze({ yfm: false,
-   addTitle: false, refMode: 0, embedMode: 1 } as const)` — the primitives'
-   house freeze pattern (`outline.ts:25`) with the literal type added) as the
+   `READ_EXPORT_POSTURE: Readonly<ExportMarkdownOpts>` (`Object.freeze({ yfm:
+   false, addTitle: false, refMode: 0, embedMode: 1 } as const)` — the
+   primitives' house freeze pattern (`outline.ts:25`, which annotates
+   `Readonly`) with the literal type added; the annotation matters because the
+   opts members are mutable optional props, so a bare `ExportMarkdownOpts`
+   annotation would let a consumer legally write `READ_EXPORT_POSTURE.refMode
+   = 0` and only fail at runtime, while `Readonly<…>` fails typecheck and
+   stays assignable to the mutable-props parameter) as the
    single home of the four values:
    the kernel magic numbers live where their semantics are pinned and
    falsified, not in the tool layer. The posture's refMode 0 is the
@@ -147,7 +168,9 @@ Plus wording lines in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
 output is a **rendering, not a serialization** — it is the body alone (no
 frontmatter, no title H1; the title rides the `hpath` echo), block IAL is not
 exported (`SetKramdownIAL(false)`), tab titles can materialize as content
-(`MaterializeTabTitles`), block refs render in their stored `((id "text"))`
+(`MaterializeTabTitles`), inline memos can materialize as content
+(`InlineMemo` — workspace config, no request override on this endpoint),
+block refs render in their stored `((id "text"))`
 source form, and query embeds materialize as quoted content (the embed script
 itself is not preserved in any mode). **Embed round-trip is out of scope for
 v1** — no export mode preserves the query script — while refs round-trip
@@ -287,8 +310,16 @@ rendering. It is not lost from the KB:
   falsifier.
 - **Gnubrain unit**: `runRead` passes `READ_EXPORT_POSTURE` (imported from the
   read barrel) and the writeCreate duplicate-stop excerpt passes the same
-  constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
-  updated.
+  constant (client stubs via the `deps` seam — the recording stubs in
+  `writeHarness.ts`, `tools.test.ts`, and the primitives' `readStub`/
+  `writeStub` record the opts alongside `id`); `READ_DESCRIPTION` wording pin
+  updated. The integration counting wrapper
+  (`encryptedNotebook.live.test.ts:54-73`) forwards the new second parameter:
+  its `Object.assign(Object.create(client))` cast would otherwise keep
+  compiling while silently dropping the opts, so the wrapped `kb_read` serves
+  kernel-default markdown — frontmatter + title H1 — with the case still
+  passing on `status === "ok"`: exactly the stale-dialect drift the other
+  pins exist to catch, hiding behind a cast.
 - **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
   inline paste) → `kb_read` the new doc → zero frontmatter lines, no
   fabricated title H1 (the body's own headings appear exactly once), body
@@ -356,10 +387,24 @@ rendering. It is not lost from the KB:
   — the posture cases constructed from the constant, so the fact and its
   falsifier share one home; the shipped dialect itself is pinned tool-side
   in gnubrain, since layer 2 only passes through.
+- All three repos' CHANGELOGs gain drafted `[Unreleased]` entries in the same
+  pass — the release scripts promote `[Unreleased]`, and publish order stays
+  bottom-up.
 
 ## Timing
 
 Fix before v1 — preventive, not corrective: the sweep
 `SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%lastmod:%'` returns
-0 in the live workspace. Re-run it in any other workspace before declaring the
-class closed.
+0 in the live workspace — that is the YFM/title-H1 arm only. The refMode-4
+arm leaves `[^1]` markers plus referenced-block content as body paragraphs,
+so the second arm is
+`SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%[^1]%'`
+(authored literal `[^1]` is indistinguishable — the write path never parses
+footnotes, `SetFootnotes(false)`, `kernel/util/lute.go:80` — so a nonzero
+count is a hypothesis, not a verdict). Re-run both in any other workspace
+before declaring the class closed. The same evidence gate governs the parked
+source-form read: a refs-table count plus an embed scan (`markdown LIKE
+'%{{SELECT%'` on body blocks) decides by prevalence whether threading the
+walk's `markdown` field joins this pass — pull move 1 forward if
+ref/embed-bearing docs are common in target KBs, keep it parked if they are
+dormant.
