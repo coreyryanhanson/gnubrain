@@ -83,16 +83,24 @@ over the `file:` co-development link; publish order stays bottom-up.
    job; the census verifies reachability and auth posture.
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
-   (`client.ts:52`). Doc comment: body-only posture on the tool path, faithful
-   pass-through of whatever the caller requests.
-3. **`gnubrain`** — `runRead` (`tools.ts`) requests `{ yfm: false, addTitle:
-   false, refMode: 2, embedMode: 1 }`: body-only; refs render as
+   (`client.ts:52`). Beside it, export the frozen posture constant
+   `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`yfm: false, addTitle: false,
+   refMode: 2, embedMode: 1`, `as const`) as the single home of the four values:
+   the kernel magic numbers live where their semantics are pinned and
+   falsified, not in the tool layer. Doc comment: body-only posture on the tool
+   path, faithful pass-through of whatever the caller requests — the constant
+   names the tool-path dialect without changing the pass-through behavior.
+3. **`gnubrain`** — `runRead` (`tools.ts`) passes the primitives'
+   `READ_EXPORT_POSTURE`: body-only; refs render as
    `siyuan://blocks/<id>` links (the id is directly `kb_read`-able — pointers,
    not stale copies, matching the stack's id-addressed notation); embeds
    materialize with the quote-block seam distinguishing embedded from authored
-   text. The duplicate-stop excerpt (`writeCreate.ts:108`) passes the same bag,
-   so every agent-served markdown speaks one dialect — the only write-side
-   change; the write modes' verdict paths and schemas are untouched.
+   text. The duplicate-stop excerpt (`writeCreate.ts:108`) passes the same
+   constant, so every agent-served markdown speaks one dialect — the only
+   write-side change; the write modes' verdict paths and schemas are untouched.
+   No kernel numbers appear in this repo: the posture is a named fact consumed
+   from the read barrel, so the values and their falsifiers share one home
+   down-repo.
 
 Plus wording lines in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
 output is a **rendering, not a serialization** — it is the body alone (no
@@ -134,22 +142,25 @@ rendering. It is not lost from the KB:
   entry becomes the full opts tuple so the opts path joins the token-attachment
   drive.
 - **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
-  args).
+  args); `READ_EXPORT_POSTURE` is frozen and carries the four documented
+  values.
 - **Primitives live (the falsifier for the new posture)**: export a doc whose
   title contains `&`, `<`, `>` and whose body opens with its own H1 and a `---`
   thematic break; assert the body-only export carries no frontmatter, no title
   H1, no IAL, and the body byte-identical. Nothing is timestamped in body-only
   output, so no wildcarding. Place it next to the existing `docMarkdown` live
-  case.
+  case. Both live cases call `docMarkdown` with `READ_EXPORT_POSTURE` — never
+  hand-rolled literals — so the constant itself joins the falsified surface
+  and cannot drift from its evidence.
 - **Primitives live, second case (the ref/embed falsifier)**: export a
   ref-bearing doc — a block ref to another doc's block plus a query embed;
   assert structure, not byte identity (refs are translated, not serialized):
   refs render as `[text](siyuan://blocks/…)`, there are no `[^1]` markers and
   no footnotes section, and the embed's content appears as a quote block. The
   ref-free fixture above stays byte-identical; this one cannot be.
-- **Gnubrain unit**: `runRead` passes `{ yfm: false, addTitle: false, refMode:
-  2, embedMode: 1 }` and the writeCreate duplicate-stop excerpt passes the same
-  bag (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
+- **Gnubrain unit**: `runRead` passes `READ_EXPORT_POSTURE` (imported from the
+  read barrel) and the writeCreate duplicate-stop excerpt passes the same
+  constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
   updated.
 - **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
   inline paste) → `kb_read` the new doc → exactly one title H1, zero frontmatter
@@ -179,17 +190,22 @@ rendering. It is not lost from the KB:
   `inlineMemo`) are unpinnable and stay covered by the
   rendering-not-serialization wording.
 - `gnubrain` version-coupling list gains one line: **body-only,
-  config-independent read posture** — kb_read serves `exportMdContent` with
-  `yfm:false`/`addTitle:false`/`refMode:2`/`embedMode:1` → `docMarkdown` opts
-  (primitives `byId.ts`) → this repo keeps the request args and the description
-  wording → falsifier: the primitives' body-only and ref-rendering live cases.
+  config-independent read posture** — kb_read serves the primitives'
+  `READ_EXPORT_POSTURE` (frozen constant beside `docMarkdown`, `byId.ts`) →
+  this repo keeps only the description wording; no kernel numbers or request
+  args live here → falsifier: the primitives' body-only and ref-rendering live
+  cases (built on the constant), plus this repo's `runRead` unit pinning that
+  the constant is what reaches the client.
   The Upgrade checklist (Hard constraints) gains one clause: the kernel-upgrade
   sweep of the request contracts for new request-optional knobs runs against
   the layer-1 explicit-knob rule — new knobs surface exactly when they appear,
   which is the only moment the rule needs to be re-read.
 - `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
-  the opts threading (four knobs, pass-through, no posture) and the
-  body-only/ref-rendering postures its live cases falsify.
+  the opts threading (four knobs, pass-through, no posture), the exported
+  `READ_EXPORT_POSTURE` constant (the four values, frozen, beside
+  `docMarkdown`), and the body-only/ref-rendering postures its live cases
+  falsify — the cases constructed from the constant, so the fact and its
+  falsifier share one home.
 
 ## Timing
 
