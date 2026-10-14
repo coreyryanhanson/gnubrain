@@ -64,7 +64,10 @@ is content, taken verbatim*.
 ## Proposed fix
 
 One posture per repo; the shared defaults stay unchanged, so no consumer beyond
-the two agent-serving sites named below moves. Development lands in one pass
+the two agent-serving sites named below moves. The only other `docMarkdown`
+callers are the primitives' own move-hpath judgment (`move.ts:371,375`), which
+reads only `hPath`/`title` and deliberately keeps the bare `{id}` call —
+opts-neutral by design, not a missed site. Development lands in one pass
 over the `file:` co-development link; publish order stays bottom-up.
 
 1. **`siyuan-kernel-api`** — `exportMarkdown(id, opts?: { yfm?: boolean;
@@ -108,7 +111,10 @@ over the `file:` co-development link; publish order stays bottom-up.
    write-side change; the write modes' verdict paths and schemas are untouched.
    No kernel numbers appear in this repo: the posture is a named fact consumed
    from the read barrel, so the values and their falsifiers share one home
-   down-repo.
+   down-repo. Baselines and the fresh-content judgment are untouched by the
+   posture change: `runRead` seeds no baseline from the exported rendering
+   (seeds ride `serveOutline`'s walk and `kb_query`'s served rows), and the
+   fresh judgment hashes walk-form/SQL content, never the export.
 
 Plus wording lines in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
 output is a **rendering, not a serialization** — it is the body alone (no
@@ -116,9 +122,20 @@ frontmatter, no title H1; the title rides the `hpath` echo), block IAL is not
 exported (`SetKramdownIAL(false)`), tab titles can materialize as content
 (`MaterializeTabTitles`), block refs render as `siyuan://blocks/<id>` links,
 and query embeds materialize as quoted content (the embed script itself is not
-preserved in any mode). So treat it as a body source, not a byte-exact backup.
-No option achieves byte fidelity through the export — refs and embeds are
-translated, not serialized; the wording covers the residual class honestly.
+preserved in any mode). **Ref/embed round-trip is out of scope for v1**, and
+the wording says so plainly: no export mode emits importable `((id "text"))`
+ref syntax, so `kb_read` output is not a valid `old`/section-body source for
+ref- or embed-bearing content — the agent must not reconstruct a write body
+from the rendering there. Creating from a pasted rendering degrades
+acceptably (a `siyuan://` link imports as a real block link,
+`treenode/node.go:148`), but a pasted embed freezes the query's resolved
+result as authored quote text — a stale snapshot indistinguishable from real
+content. An edit whose target region contains a ref or embed can never match
+the stored source from a rendering, so the edit path's refusal (never silent
+corruption) is the expected outcome, not a bug to chase. Treat the output as
+a body source for plain content, not a byte-exact backup; a true round-trip
+(rehydrating refs, re-materializing embed scripts) is a parked write-side
+primitive, not something this fix delivers.
 
 ## Metadata disposition
 
@@ -152,7 +169,7 @@ rendering. It is not lost from the KB:
 - **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
   args); `READ_EXPORT_POSTURE` is frozen and carries the four documented
   values.
-- **Primitives live (the falsifier for the new posture)**: export a doc whose
+- **Primitives live (the falsifier for the knob semantics)**: export a doc whose
   title contains `&`, `<`, `>` and whose body opens with its own H1 and a `---`
   thematic break; assert the body-only export carries no frontmatter, no title
   H1, no IAL, and the body present via `toContain(originalBody)` rather than
@@ -170,7 +187,10 @@ rendering. It is not lost from the KB:
   refs render as `[text](siyuan://blocks/…)`, there are no `[^1]` markers and
   no footnotes section, and the embed's content appears as a quote block. Like
   the ref-free fixture above, this case asserts containment and absence,
-  never byte identity.
+  never byte identity. Both primitives live cases falsify what the knobs do;
+  the shipped dialect is pinned tool-side by the gnubrain unit and
+  integration cases below — layer 2 only passes through, so it cannot be the
+  dialect's falsifier.
 - **Gnubrain unit**: `runRead` passes `READ_EXPORT_POSTURE` (imported from the
   read barrel) and the writeCreate duplicate-stop excerpt passes the same
   constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
@@ -179,9 +199,14 @@ rendering. It is not lost from the KB:
   inline paste) → `kb_read` the new doc → exactly one title H1, zero frontmatter
   lines, body verbatim.
 - **`readPins.live.test.ts`**: the "export carries the kernel's YAML frontmatter
-  + title heading" line is currently an unasserted comment — delete it. The real
-  body-only pin is owned by the primitives' live suite (above); this repo pins
-  the tool-side behavior through the integration round-trip case.
+  + title heading" line (`readPins.live.test.ts:449-452`) is an unasserted
+  comment explaining why that case asserts `toContain(bigBody)` rather than
+  byte equality — frontmatter precedes the body. The comment stays true after
+  this change because that case rides the raw client with no opts: reword it
+  to name the raw-client posture (bare `{id}` call, kernel defaults) instead
+  of deleting it. The body-only pin itself is owned by the primitives' live
+  suite (above); this repo pins the tool-side behavior through the
+  integration round-trip case.
 
 ## AGENTS.md updates
 
@@ -208,17 +233,24 @@ rendering. It is not lost from the KB:
   this repo keeps only the description wording; no kernel numbers or request
   args live here → falsifier: the primitives' body-only and ref-rendering live
   cases (built on the constant), plus this repo's `runRead` unit pinning that
-  the constant is what reaches the client.
+  the constant is what reaches the client, and the integration round-trip case
+  pinning the landed shape — together they are the dialect's falsifiers, since
+  the primitives' live cases only falsify knob semantics.
   The Upgrade checklist (Hard constraints) gains one clause: the kernel-upgrade
   sweep of the request contracts for new request-optional knobs runs against
   the layer-1 explicit-knob rule — new knobs surface exactly when they appear,
   which is the only moment the rule needs to be re-read.
+- `siyuan-kernel-api` README: the `exportMarkdown(id)` row (`README.md:57`)
+  gains the opts note alongside the AGENTS.md rule.
+- `siyuan-kb-primitives` README: the `docMarkdown` section (`README.md:242`)
+  gains the opts threading and the exported `READ_EXPORT_POSTURE` constant.
 - `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
   the opts threading (four knobs, pass-through, no posture), the exported
   `READ_EXPORT_POSTURE` constant (the four values, frozen, beside
-  `docMarkdown`), and the body-only/ref-rendering postures its live cases
-  falsify — the cases constructed from the constant, so the fact and its
-  falsifier share one home.
+  `docMarkdown`), and the knob semantics its live cases falsify (body-only,
+  ref-rendering) — the cases constructed from the constant, so the fact and
+  its falsifier share one home; the shipped dialect itself is pinned tool-side
+  in gnubrain, since layer 2 only passes through.
 
 ## Timing
 
