@@ -114,8 +114,10 @@ over the `file:` co-development link; publish order stays bottom-up.
 2. **`siyuan-kb-primitives`** — `docMarkdown(client, docId, opts?)` threads the
    option through (`byId.ts`); widen the `ExportClient` capability
    (`client.ts:52`). Beside it, export the frozen posture constant
-   `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`yfm: false, addTitle: false,
-   refMode: 2, embedMode: 1`, `as const`) as the single home of the four values:
+   `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`Object.freeze({ yfm: false,
+   addTitle: false, refMode: 2, embedMode: 1 } as const)` — the primitives'
+   house pattern for frozen posture constants, runtime freeze plus the literal
+   type, as in its `outline.ts:25`) as the single home of the four values:
    the kernel magic numbers live where their semantics are pinned and
    falsified, not in the tool layer. The posture's refMode 2 over the
    now-exposed 0 is a deliberate dialect choice made at the constant —
@@ -323,10 +325,11 @@ rendering. It is not lost from the KB:
   the constant is what reaches the client, and the integration round-trip case
   pinning the landed shape — together they are the dialect's falsifiers, since
   the primitives' live cases only falsify knob semantics.
-  The Upgrade checklist (Hard constraints) gains one clause: the kernel-upgrade
-  sweep of the request contracts for new request-optional knobs runs against
-  the layer-1 explicit-knob rule — new knobs surface exactly when they appear,
-  which is the only moment the rule needs to be re-read.
+  The Upgrade checklist (Hard constraints) gains only a cross-reference to the
+  layer-1 explicit-knob rule — the kernel-upgrade sweep of the request
+  contracts lives in layer 1's own AGENTS.md, beside the rule it upholds, so
+  it cannot rot whenever gnubrain happens not to be touched; this repo's
+  checklist just points there when its own upgrade pass runs.
 - `siyuan-kernel-api` README: the `exportMarkdown(id)` row (`README.md:57`)
   gains the opts note alongside the AGENTS.md rule.
 - `siyuan-kb-primitives` README: the `docMarkdown` section (`README.md:242`)
