@@ -36,7 +36,7 @@ on the pinned kernel:
 ```
 
 The same omission silently selects how kernel-native constructs translate into
-markdown (`model/export.go:3370-3408`, `model/render.go:455-466`):
+markdown (`model/export.go:3370-3408`, `model/render.go:456-467`):
 
 - **Block refs** (`((id "text"))`): refMode 3 renders the anchor text alone —
   the pointer vanishes without a trace; refMode 4 (workspace default) fabricates
@@ -44,7 +44,7 @@ markdown (`model/export.go:3370-3408`, `model/render.go:455-466`):
   referenced block's content — generated body that round-trips as real content;
   refMode 2 renders `[text](siyuan://blocks/defID)`, preserving the pointer as
   an address; refMode 0 (and identically 1 and 5 — all three marked deprecated
-  upstream, `conf/export.go:20-27`) falls through the kernel's
+  upstream, `conf/export.go:21-27`) falls through the kernel's
   mode switch — `model/export.go:3370-3408` has cases only for 2/3/4, no
   default — and emits the ref node verbatim, `((id "text"))`, the lossless
   source form, live-verified on the pinned kernel to round-trip as a real
@@ -53,7 +53,7 @@ markdown (`model/export.go:3370-3408`, `model/render.go:455-466`):
   path honors raw values with no range validation, which is why the client's
   opts type below still narrows the union instead of taking `number`.)
   Deprecated is not undocumented: upstream's own mode table names 0 "raw
-  text" (`conf/export.go:20-27`), and that documented meaning is exactly what
+  text" (`conf/export.go:21-27`), and that documented meaning is exactly what
   the fall-through realizes — verbatim emission. Mode 1's documented meaning
   ("Blockquote") no longer describes anything the kernel does, and 5's
   (anchor hash) matches nothing a caller wants, so 0 is the single exposed
@@ -101,10 +101,12 @@ over the `file:` co-development link; publish order stays bottom-up.
    pinned by a live falsifier in the primitives (below) and re-checked on
    every kernel upgrade; a future kernel that gives the switch a case for 0
    fires that pin. That falsifier is a live-suite case, env-gated: it fires
-   on the next live/upgrade run, not as a CI tripwire. The type, not policy,
-   keeps the unnamed modes out of layer 1 — the union is a curated set, not
-   the kernel's numeric range, and its doc comment says so (0 rides the
-   deprecated-but-documented fall-through above). The opts type carries a
+   on the next live/upgrade run, not as a CI tripwire. Keeping the unnamed
+   modes out of layer 1 is surface curation — the same curation layer 1
+   already applies to endpoints and deprecated surface — not the kernel's
+   numeric range, and the doc comment says so, including that 0 stands for
+   *any* non-2/3/4 value (all fall through to verbatim), so a caller does
+   not read 0 as special relative to the excluded 1/5. The opts type carries a
    JSDoc naming the explicit-knob rule at the method — layer 1's house style
    puts kernel-fallback caveats at the call site (`listInvalidBlockRefs`,
    `client.ts:300-322`) — so a caller reads the caveat where it bites, not
@@ -142,12 +144,12 @@ over the `file:` co-development link; publish order stays bottom-up.
    integrity grounds, not rendering preference: the
    kernel's refs index counts block refs but never block links
    (`refsFromTree` reads `IsBlockRef`/`IsFileAnnotationRef`/
-   `IsEmbedBlockRef` only, `kernel/sql/database.go:548-551`; a
+   `IsEmbedBlockRef` only, `kernel/sql/database.go:545-574`; a
    `siyuan://blocks/<id>` link parses as `IsBlockLink`,
-   `treenode/node.go:148`), so a link-form rendering would silently drop the
+   `treenode/node.go:144`), so a link-form rendering would silently drop the
    refs/backlink edge on every read-modify-write of a ref-bearing doc, while
    the verbatim `((id "text"))` form re-imports as a real ref
-   (`SetBlockRef(true)`, `kernel/util/lute.go:56`) and keeps the edge.
+   (`SetBlockRef(true)`, `kernel/util/lute.go:63`) and keeps the edge.
    Honest framing: refMode 0 is a **bridge** — it reproduces the stored
    `((id "text"))` source form through an export-mode side channel (the
    no-case fall-through), while the parked source-form read produces the
@@ -160,7 +162,13 @@ over the `file:` co-development link; publish order stays bottom-up.
    the dialect without changing it. The name is consumer-agnostic on
    purpose: layer 2's doctrine is deterministic primitives, no posture —
    adopting the dialect on the tool path is layer-3 policy, pinned in
-   gnubrain (below).
+   gnubrain (below). Both exports join the read barrel: the constant must be
+   reachable from `siyuan-kb-primitives`'s root (`index.ts`), and
+   `ExportMarkdownOpts` joins the barrel's curated layer-1 type re-exports
+   so a consumer can name the options type it is asked to pass. The
+   barrel-completeness sweep in `index.test.ts` derives root-module exports
+   and fails on anything unreachable, so a missed re-export breaks CI —
+   the plan names the edit anyway so it is not discovered at test time.
 3. **`gnubrain`** — `runRead` (`tools.ts`) passes the primitives'
    `SOURCE_PRESERVING_EXPORT_OPTS`: body-only; refs render verbatim as
    `((id "text"))` (the id inside is directly `kb_read`-able — pointers,
@@ -219,13 +227,13 @@ the description never does):
 
 - refMode 0 renders a ref in its stored `((id "text"))` source form.
   Pasting that into a write re-imports as a real block ref
-  (`SetBlockRef(true)`, `kernel/util/lute.go:56`), so the pointer and the
+  (`SetBlockRef(true)`, `kernel/util/lute.go:63`), so the pointer and the
   refs/backlink edge survive the round trip.
 - The dialect choice is integrity, not rendering preference: the kernel's
   refs index counts block refs but never block links (`refsFromTree` reads
   `IsBlockRef`/`IsFileAnnotationRef`/`IsEmbedBlockRef` only,
-  `kernel/sql/database.go:548-551`; a `siyuan://blocks/<id>` link parses as
-  `IsBlockLink`, `treenode/node.go:148`), so a link-form dialect would
+  `kernel/sql/database.go:545-574`; a `siyuan://blocks/<id>` link parses as
+  `IsBlockLink`, `treenode/node.go:144`), so a link-form dialect would
   silently drop the refs/backlink edge on every read-modify-write of a
   ref-bearing doc — the same silent-corruption class this plan closes.
 - The materialization caveats ride `SetKramdownIAL(false)`,
@@ -314,12 +322,16 @@ rendering. It is not lost from the KB:
   drive.
 - **Primitives unit**: `docMarkdown` forwards opts (stub client asserting call
   args); `SOURCE_PRESERVING_EXPORT_OPTS` is frozen and carries the four
-  documented values.
+  documented values, reachable from the read barrel (the `index.test.ts`
+  sweep enforces the re-export mechanically).
 - **Primitives live (the falsifier for the knob semantics)**: export a doc whose
   title contains `&`, `<`, `>` and whose body opens with its own H1 and a `---`
-  thematic break; assert the body-only export carries no frontmatter, no title
-  H1, no IAL, and the body present via `toContain(originalBody)` rather than
-  byte equality — the export re-renders through lute (`SetSanitize(true)` and
+  thematic break; assert the body-only export carries no frontmatter, no
+  title H1, no IAL, and the body present via `toContain(originalBody)` rather
+  than byte equality. The predicates, named: `!content.startsWith("---")`
+  (no frontmatter), the doc title appearing nowhere as a leading `# ` line,
+  the body's own H1 appearing exactly once, no `{: ...}` IAL tail, plus the
+  `toContain(originalBody)` presence assert — the export re-renders through lute (`SetSanitize(true)` and
   friends), so byte identity is stronger than the fix needs and would flake on
   fixtures; the repo's existing live style is `toContain`
   (`readPins.live.test.ts:452`). Nothing is timestamped in body-only output,
@@ -346,7 +358,12 @@ rendering. It is not lost from the KB:
   passes the same constant (client stubs via the `deps` seam — the recording
   stubs in `writeHarness.ts`, `tools.test.ts`, and the primitives'
   `readStub`/`writeStub` record the opts alongside `id`);
-  `READ_DESCRIPTION`/`QUERY_DESCRIPTION` wording pins updated. The integration counting wrapper
+  `READ_DESCRIPTION`/`QUERY_DESCRIPTION` wording pins updated — the four
+  contract sentences join the existing markers case
+  (`tools.test.ts:453-460`): rendering-not-a-serialization, refs render
+  verbatim and round-trip, the unconditional embed-snapshot warning, and
+  the no-fresh-source / not-a-byte-exact-backup sentence; `QUERY_DESCRIPTION`
+  gains the `blocks.markdown` column name with its index-lag caveat. The integration counting wrapper
   (`encryptedNotebook.live.test.ts:54-73`) forwards the new second parameter:
   its `Object.assign(Object.create(client))` cast would otherwise keep
   compiling while silently dropping the opts, so the wrapped `kb_read` serves
@@ -356,7 +373,11 @@ rendering. It is not lost from the KB:
 - **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
   inline paste) → `kb_read` the new doc → zero frontmatter lines, no
   fabricated title H1 (the body's own headings appear exactly once), body
-  verbatim.
+  present via `toContain` with absence asserts for frontmatter and the
+  duplicate H1 — the same containment/absence standard as the primitives'
+  live cases, for the same reason (the write path re-parses markdown
+  through lute, so byte identity would flake on the same fixtures). One
+  assertion standard across both suites.
 - **Gnubrain integration, ref re-import (the dialect's load-bearing claim,
   which no other planned case falsifies)**: `kb_read` a doc whose body
   carries a block ref → `kb_write create` with that body → assert the refs
@@ -415,8 +436,8 @@ rendering. It is not lost from the KB:
   also carries the mechanism the tool description no longer states: the refs
   index counts block refs but never block links (`refsFromTree` reads
   `IsBlockRef`/`IsFileAnnotationRef`/`IsEmbedBlockRef` only,
-  `kernel/sql/database.go:548-551`; a `siyuan://blocks/<id>` link parses as
-  `IsBlockLink`, `treenode/node.go:148`), so the verbatim dialect keeps the
+  `kernel/sql/database.go:545-574`; a `siyuan://blocks/<id>` link parses as
+  `IsBlockLink`, `treenode/node.go:144`), so the verbatim dialect keeps the
   refs/backlink edge where a link-form dialect would silently drop it;
   "config-independent" is claimed only for the four pinned knobs — the
   remaining conf-seeded rendering knobs (see the layer-1 rule above) stay
@@ -462,7 +483,7 @@ arm leaves `[^1]` markers plus referenced-block content as body paragraphs,
 so the second arm is
 `SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%[^1]%'`
 (authored literal `[^1]` is indistinguishable — the write path never parses
-footnotes, `SetFootnotes(false)`, `kernel/util/lute.go:80` — so a nonzero
+footnotes, `SetFootnotes(false)`, `kernel/util/lute.go:82` — so a nonzero
 count is a hypothesis, not a verdict). Re-run both in any other workspace
 before declaring the class closed. The same evidence gate governs the parked
 source-form read: a refs-table count plus an embed scan (`markdown LIKE
