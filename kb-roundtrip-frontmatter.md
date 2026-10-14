@@ -332,8 +332,15 @@ rendering. It is not lost from the KB:
   checklist just points there when its own upgrade pass runs.
 - `siyuan-kernel-api` README: the `exportMarkdown(id)` row (`README.md:57`)
   gains the opts note alongside the AGENTS.md rule.
-- `siyuan-kb-primitives` README: the `docMarkdown` section (`README.md:242`)
-  gains the opts threading and the exported `READ_EXPORT_POSTURE` constant.
+- `siyuan-kb-primitives` README: no edit. `docMarkdown` has no README usage
+  section to update (the README's usage sections cover the other read
+  primitives; the only `exportMarkdown` mention, in the `moveDocVerified`
+  example, is about its `hPath` being the move judgment's synchronous ground
+  truth, unrelated to `docMarkdown` reads). The opts threading and the
+  `READ_EXPORT_POSTURE` constant are documented at their definition site
+  (`byId.ts` JSDoc) and in the `AGENTS.md` `byId.ts` entry below — the single
+  greppable home for both the signature and the posture, which the README
+  would only duplicate and let drift.
 - `siyuan-kb-primitives` AGENTS.md: update the `byId.ts`/`docMarkdown` entry for
   the opts threading (four knobs, pass-through, no posture), the exported
   `READ_EXPORT_POSTURE` constant (the four values, frozen, beside
