@@ -157,9 +157,9 @@ over the `file:` co-development link; publish order stays bottom-up.
    below is the tripwire that says the bridge broke, and its exit is the
    source-form read (*Parked*), not a mode change. Doc comment:
    source-preserving export options — body-only, refs verbatim, embeds as
-   quote blocks — an export-semantics choice any consumer may adopt;
-   faithful pass-through of whatever the caller requests, the constant names
-   the dialect without changing it. The name is consumer-agnostic on
+   quote blocks — an export-semantics choice any consumer may adopt.
+   `docMarkdown` passes through whatever the caller requests; the constant
+   names the dialect, it does not change the pass-through. The name is consumer-agnostic on
    purpose: layer 2's doctrine is deterministic primitives, no posture —
    adopting the dialect on the tool path is layer-3 policy, pinned in
    gnubrain (below). Both exports join the read barrel: the constant must be
@@ -181,7 +181,7 @@ over the `file:` co-development link; publish order stays bottom-up.
    among the queryable columns — the stored source of each block, refs and
    embeds verbatim, written by the same renderer the export pipeline uses,
    but index-lagged like the rest of the SQL surface (the walk's fresh
-   source read stays parked below; this line is the caveat-carrying escape
+   source read stays parked below; this line is a caveat-carrying escape
    hatch, not a served read form). No kernel numbers appear in this repo: the posture is a named fact consumed
    from the read barrel, so the values and their falsifiers share one home
    down-repo. Baselines and the fresh-content judgment are untouched by the
@@ -284,12 +284,12 @@ block IAL, which the read posture deliberately omits
 and it is per-block rather than per-walk. Prefer the walk field unless a
 per-block need appears.
 
-Deliberately not in this pass by default: threading the field alone touches
-no agent-facing surface, and inventing the read form here would out-design
-the need before the posture fix has landed — the Timing section's prevalence
-gate is the one thing that can pull move 1 forward into the pass. Record
-both moves when this plan ships so the next session finds them instead of
-re-deriving them.
+Deliberately not in this pass by default: inventing the read form here
+would out-design the need before the posture fix has landed, and the field
+alone would be surface with no consumer — the two exits above (prevalence,
+or the refMode-0 pin firing) are the only things that pull the pair
+forward. Record both moves when this plan ships so the next session finds
+them instead of re-deriving them.
 
 ## Metadata disposition
 
@@ -490,4 +490,5 @@ source-form read: a refs-table count plus an embed scan (`markdown LIKE
 '%{{SELECT%'` on body blocks) decides by prevalence whether the source-form
 read pass (moves 1+2) is worth running at all — pull it forward if
 ref/embed-bearing docs are common in target KBs, keep it parked if they are
-dormant; move 1 never ships alone (see *Parked*).
+dormant, or land it whenever the refMode-0 live pin fires (the export-side
+bridge broke; see *Parked*); move 1 never ships alone.
