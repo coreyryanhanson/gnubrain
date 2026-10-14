@@ -10,15 +10,17 @@ same paste hazard applies to `edit`/`append`/`replace-section`; the read-side fi
 below covers every content mode at once. And the client's omission defaults reach
 further than the frontmatter: the same export endpoint selects how block refs and
 query embeds translate into markdown from workspace config when the request omits
-them — the fix below pins the whole knob set explicitly, not just the frontmatter.
+them — the fix below pins the config-dependent knobs explicitly, not just the
+frontmatter.
 
 ## Root cause
 
 `siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-334`).
 The endpoint takes seven knobs **from the request** when the client sends them
 (`kernel/api/export.go:388-404`); four have config-dependent fallbacks and are
-this plan's subject — `fillCSSVar`/`adjustHeadingLevel`/`imgTag` default to a
-fixed `false` and stay out of scope: `yfm` (hardcoded `true` when absent — no
+this plan's subject (the other three — `fillCSSVar`/`adjustHeadingLevel`/
+`imgTag` — default to a fixed `false` and stay out of scope): `yfm` (hardcoded
+`true` when absent — no
 workspace toggle can suppress it, so an explicit `yfm:false` is the only fix),
 and `addTitle`/`refMode`/`embedMode`, each falling back to workspace config
 (`addTitle` ← `Conf.Export.AddTitle`, default `true`; `refMode` ←
@@ -94,10 +96,8 @@ over the `file:` co-development link; publish order stays bottom-up.
    Mode 0 is exposed deliberately — the lossless verbatim form established in
    the root cause above — symmetric with `embedMode: 0` (raw inline), which
    was already a real mode; 1 and 5 stay out, per the root-cause reasoning.
-   refMode 0 is documented upstream — deprecated "raw text",
-   `conf/export.go:20-27` —
-   but its realization is the mode switch's fall-through (cases only for
-   2/3/4, no default, `model/export.go:3370-3408`), so its emitted form is
+   Its realization is the mode switch's fall-through (cases only for 2/3/4,
+   no default), so its emitted form is
    pinned by a live falsifier in the primitives (below) and re-checked on
    every kernel upgrade; a future kernel that gives the switch a case for 0
    fires that pin. That falsifier is a live-suite case, env-gated: it fires
@@ -136,8 +136,8 @@ over the `file:` co-development link; publish order stays bottom-up.
    stays assignable to the mutable-props parameter) as the
    single home of the four values:
    the kernel magic numbers live where their semantics are pinned and
-   falsified, not in the tool layer. The posture's refMode 0 is the
-   round-trip-safe dialect, and not on rendering-preference grounds: the
+   falsified, not in the tool layer. The posture's refMode 0 is chosen on
+   integrity grounds, not rendering preference: the
    kernel's refs index counts block refs but never block links
    (`refsFromTree` reads `IsBlockRef`/`IsFileAnnotationRef`/
    `IsEmbedBlockRef` only, `kernel/sql/database.go:548-551`; a
@@ -188,9 +188,6 @@ overstating what the kernel can do:
   `IsBlockLink`, `treenode/node.go:148`), so a link-form dialect would
   silently drop the refs/backlink edge on every read-modify-write of a
   ref-bearing doc — the same silent-corruption class this plan closes.
-  No export mode preserves embeds, so a doc-level lossless export remains
-  impossible at any refMode; embed source rides the walk/`getBlockKramdown`
-  path (see *Parked* below), not this endpoint.
 - A pasted embed freezes the query's resolved result as authored quote text —
   a stale snapshot indistinguishable from real content, in every mode. This
   warning is unconditional.
@@ -245,10 +242,12 @@ block IAL, which the read posture deliberately omits
 and it is per-block rather than per-walk. Prefer the walk field unless a
 per-block need appears.
 
-Deliberately not in this pass: threading the field alone touches no
-agent-facing surface, and inventing the read form here would out-design
-the need before the posture fix has landed. Record both moves when this
-plan ships so the next session finds them instead of re-deriving them.
+Deliberately not in this pass by default: threading the field alone touches
+no agent-facing surface, and inventing the read form here would out-design
+the need before the posture fix has landed — the Timing section's prevalence
+gate is the one thing that can pull move 1 forward into the pass. Record
+both moves when this plan ships so the next session finds them instead of
+re-deriving them.
 
 ## Metadata disposition
 
