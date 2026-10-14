@@ -60,6 +60,10 @@ function kernelStub() {
 			calls.push({ method: "exportMarkdown", args: id });
 			return { hPath: "/doc", content: "# doc\nbody" };
 		},
+		async getHPathByID(id) {
+			calls.push({ method: "getHPathByID", args: id });
+			return "/doc";
+		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
 			return [

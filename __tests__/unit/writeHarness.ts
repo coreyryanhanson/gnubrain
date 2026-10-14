@@ -85,6 +85,10 @@ export interface StubConfig {
 	/** Arm for exportMarkdown — the vanished-candidate race mid-guard-stop
 	 * (the spill read fails after the guard query matched). */
 	armExportError?: (arm: (err: Error) => void) => void;
+	/** Arm for getHPathByID — the doc-move landed judgment's live-tree
+	 * evidence read failing after the move acked (the post-write network
+	 * drop). */
+	armHPathError?: (arm: (err: Error) => void) => void;
 	/** Arm for getVersion — the retry-probe transport failure (a network
 	 * drop on the probe itself refuses the write with zero further calls). */
 	armVersionError?: (arm: (err: Error) => void) => void;
@@ -134,6 +138,10 @@ export function writeKernelStub(config: StubConfig = {}) {
 	let exportError: Error | undefined;
 	config.armExportError?.((err) => {
 		exportError = err;
+	});
+	let hPathError: Error | undefined;
+	config.armHPathError?.((err) => {
+		hPathError = err;
 	});
 	let versionError: Error | undefined;
 	config.armVersionError?.((err) => {
@@ -233,12 +241,21 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async exportMarkdown(id) {
 			calls.push({ method: "exportMarkdown", args: id });
 			if (exportError) throw exportError;
-			// Doc roots echo their own hpath (the live-tree ground truth the
-			// verified doc move's judgment rides); anything else is "/doc".
+			// Doc roots echo their own hpath; anything else is "/doc". The
+			// doc-move judgment no longer rides this — only the create flow's
+			// spill read and kb_read do.
 			return {
 				hPath: docRoots[id]?.hpath ?? "/doc",
 				content: `# markdown of ${id}\nbody`,
 			};
+		},
+		async getHPathByID(id) {
+			calls.push({ method: "getHPathByID", args: id });
+			if (hPathError) throw hPathError;
+			// The live-tree hpath the doc-move landed judgment compares
+			// against — derived from the same docRoots table exportMarkdown
+			// serves.
+			return docRoots[id]?.hpath ?? "/doc";
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });

@@ -279,7 +279,7 @@ describe("block-level move", () => {
 		// The doc-level echo's hpath rides the verdict's own evidence — the
 		// live-tree read the landed judgment ran on (the kernel rebuilds the
 		// blocks.hpath column asynchronously after moveDocsByID, so the SQL
-		// column is never the source). The stub routes exportMarkdown through
+		// column is never the source). The stub routes getHPathByID through
 		// the docRoots table.
 		expect(result.hpath).toBe("/Docker Networking");
 		expect(result.anchor).toBeUndefined();
@@ -337,10 +337,10 @@ describe("block-level move", () => {
 		expect(r.message).toContain("/Docker Networking");
 	});
 
-	it("doc-level: evidence-read drop (exportMarkdown) after moveDocsByID → verificationFailed, not a false ok", async () => {
+	it("doc-level: evidence-read drop (getHPathByID) after moveDocsByID → verificationFailed, not a false ok", async () => {
 		let arm: ((err: Error) => void) | undefined;
 		const harness = moveHarness(undefined, {
-			armExportError: (set) => {
+			armHPathError: (set) => {
 				arm = set;
 			},
 			onMove: () => arm?.(new SiYuanNetworkError()),

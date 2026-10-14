@@ -348,7 +348,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 
 				// A block ref into the heading from a referrer doc — the heading ID
 				// must survive the replace with the ref resolving.
-				await mintDoc(
+				const referrerId = await mintDoc(
 					client,
 					boxId,
 					"/Replace Referrer",
@@ -386,13 +386,14 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 						? rootSection.section.members[0]!.content
 						: "no section",
 				).toBe("replacement body");
-				// The heading's block ref still resolves — zero invalid refs (the
-				// invalid-ref report lags the replace's index rebuild; poll it out).
-				await pollUntil(
-					"invalid refs clearing after the replace",
-					async () =>
-						(await client.listInvalidBlockRefs())?.blocks?.length === 0,
-				);
+				// The heading's block ref still resolves — scoped to this
+				// referrer: the global report also carries user-workspace rot
+				// this case doesn't own. (The report lags the replace; poll it
+				// out.)
+				await pollUntil("invalid refs clearing after the replace", async () => {
+					const rows = (await client.listInvalidBlockRefs())?.blocks ?? [];
+					return !rows.some((b) => b.rootID === referrerId);
+				});
 				// Outline ordering re-asserted from the write result and a fresh
 				// walk — identical heading IDs in document order.
 				expect(outlineIds(result.outline)).toEqual([rootSec.id, next.id]);
