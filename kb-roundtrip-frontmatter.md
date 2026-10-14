@@ -14,7 +14,7 @@ them — the fix below pins the whole knob set explicitly, not just the frontmat
 
 ## Root cause
 
-`siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-335`).
+`siyuan-kernel-api`'s `exportMarkdown(id)` sends only `{id}` (`client.ts:329-334`).
 The endpoint takes four knobs **from the request** when the client sends them
 (`kernel/api/export.go:388-404`): `yfm` (hardcoded `true` when absent — no
 workspace toggle can suppress it, so an explicit `yfm:false` is the only fix),
@@ -32,7 +32,7 @@ on the pinned kernel:
 ```
 
 The same omission silently selects how kernel-native constructs translate into
-markdown (`model/export.go:3370-3391`, `model/render.go:455-466`):
+markdown (`model/export.go:3370-3408`, `model/render.go:455-466`):
 
 - **Block refs** (`((id "text"))`): refMode 3 renders the anchor text alone —
   the pointer vanishes without a trace; refMode 4 (workspace default) fabricates
@@ -85,18 +85,14 @@ over the `file:` co-development link; publish order stays bottom-up.
    range validation (`apicontract/export.go:90` — `Validate` returns
    `OptionsError`, which the typed decode fills on a type mismatch, so a
    non-numeric `refMode` still fails; only the numeric range is unchecked).
-   Mode 0 is exposed deliberately: the switch in `model/export.go:3370-3408`
-   has cases only for 2/3/4 and no default, so 0 falls through and emits
-   block refs verbatim — live-verified on the pinned kernel, the lossless
-   form, and symmetric with `embedMode: 0` (raw inline), which was already a
-   real mode. Modes 1 and 5 stay out: their live behavior is identical to 0's
-   while their documented semantics ("raw text", "Blockquote") match nothing
-   the kernel does — one named verbatim mode is enough. Because 0's behavior
-   is an upstream fall-through rather than a documented case, its semantics
-   are pinned by a live falsifier in the primitives (below) and re-checked on
-   every kernel upgrade; a future kernel that gives the switch a case for 0
-   fires that pin. The type, not policy, keeps the unnamed modes out of
-   layer 1. Layer 1 chooses no
+   Mode 0 is exposed deliberately — the lossless verbatim form established in
+   the root cause above — symmetric with `embedMode: 0` (raw inline), which
+   was already a real mode; 1 and 5 stay out, per the root-cause reasoning.
+   Because 0's behavior is an upstream fall-through rather than a documented
+   case, its semantics are pinned by a live falsifier in the primitives
+   (below) and re-checked on every kernel upgrade; a future kernel that gives
+   the switch a case for 0 fires that pin. The type, not policy, keeps the
+   unnamed modes out of layer 1. Layer 1 chooses no
    posture — it only guarantees the knobs are *settable* (the explicit-knob rule
    codified in its AGENTS.md, see below); the values are the caller's. Test
    edits, both shaped by what each pin actually verifies: `client.test.ts`
@@ -116,8 +112,8 @@ over the `file:` co-development link; publish order stays bottom-up.
    (`client.ts:52`). Beside it, export the frozen posture constant
    `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`Object.freeze({ yfm: false,
    addTitle: false, refMode: 2, embedMode: 1 } as const)` — the primitives'
-   house pattern for frozen posture constants, runtime freeze plus the literal
-   type, as in its `outline.ts:25`) as the single home of the four values:
+   house freeze pattern (`outline.ts:25`) with the literal type added) as the
+   single home of the four values:
    the kernel magic numbers live where their semantics are pinned and
    falsified, not in the tool layer. The posture's refMode 2 over the
    now-exposed 0 is a deliberate dialect choice made at the constant —
@@ -259,9 +255,10 @@ rendering. It is not lost from the KB:
   fixtures; the repo's existing live style is `toContain`
   (`readPins.live.test.ts:452`). Nothing is timestamped in body-only output,
   so no wildcarding. Place it next to the existing `docMarkdown` live
-  case. Both live cases call `docMarkdown` with `READ_EXPORT_POSTURE` — never
-  hand-rolled literals — so the constant itself joins the falsified surface
-  and cannot drift from its evidence.
+  case. The two posture live cases call `docMarkdown` with
+  `READ_EXPORT_POSTURE` — never hand-rolled literals (the refMode-0 case
+  below is the deliberate exception) — so the constant itself joins the
+  falsified surface and cannot drift from its evidence.
 - **Primitives live, second case (the ref/embed falsifier)**: export a
   ref-bearing doc — a block ref to another doc's block plus a query embed;
   assert structure, not byte identity (refs are translated, not serialized):
@@ -285,8 +282,9 @@ rendering. It is not lost from the KB:
   constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
   updated.
 - **Gnubrain integration**: `kb_read` a doc → `kb_write create` (fresh topic,
-  inline paste) → `kb_read` the new doc → exactly one title H1, zero frontmatter
-  lines, body verbatim.
+  inline paste) → `kb_read` the new doc → zero frontmatter lines, no
+  fabricated title H1 (the body's own headings appear exactly once), body
+  verbatim.
 - **`readPins.live.test.ts`**: the "export carries the kernel's YAML frontmatter
   + title heading" line (`readPins.live.test.ts:449-452`) is an unasserted
   comment explaining why that case asserts `toContain(bigBody)` rather than
