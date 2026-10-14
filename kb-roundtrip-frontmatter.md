@@ -177,12 +177,10 @@ over the `file:` co-development link; publish order stays bottom-up.
    text. The duplicate-stop excerpt (`writeCreate.ts:108`) passes the same
    constant, so every agent-served markdown speaks one dialect — the only
    write-side change; the write modes' verdict paths and schemas are untouched.
-   `QUERY_DESCRIPTION` (`tools.ts`) additionally names `blocks.markdown`
-   among the queryable columns — the stored source of each block, refs and
-   embeds verbatim, written by the same renderer the export pipeline uses,
-   but index-lagged like the rest of the SQL surface (the walk's fresh
-   source read stays parked below; this line is a caveat-carrying escape
-   hatch, not a served read form). No kernel numbers appear in this repo: the posture is a named fact consumed
+   `QUERY_DESCRIPTION` gains no `blocks.markdown` disclosure in this pass —
+   it would advertise a stale, index-lagged source surface for no v1 need;
+   that disclosure lands with the source-form read (*Parked*), not before.
+   No kernel numbers appear in this repo: the posture is a named fact consumed
    from the read barrel, so the values and their falsifiers share one home
    down-repo. Baselines and the fresh-content judgment are untouched by the
    posture change: `runRead` seeds no baseline from the exported rendering
@@ -255,11 +253,14 @@ not existence — the column is written by the same renderer
 (`treenode.ExportNodeStdMd`) that produces the per-child `markdown` field,
 refs and embeds verbatim, but it rides the async SQL index, so it is a stale
 source surface agents can reach through `kb_query` today. The walk field is
-the *fresh* source read. Exit condition for the parked work: land it when
-the prevalence gate (Timing, below) says refs/embed-bearing docs are common
-— as moves 1+2 together, never move 1 alone: threading the field with no
-agent-facing consumer is speculative surface — **or** when the refMode-0
-live pin fires (the export-side bridge broke; see the posture section).
+the *fresh* source read. Exit condition for the parked work: as moves 1+2
+together, never move 1 alone — threading the field with no agent-facing
+consumer is speculative surface. No prevalence scan decides this: the live
+workspace's ref/embed counts cannot speak for a target KB, so the
+bridge-vs-source-read sequencing is a conscious decision, recorded here as
+deferred. Land the pair when the refMode-0 live pin fires (the export-side
+bridge broke; see the posture section), or when a real deployment's needs
+pull it forward deliberately.
 
 1. **Primitives**: thread `markdown` through `WalkedBlock` — one field,
    zero new kernel calls. The fresh-content judgment and baselines are
@@ -286,8 +287,8 @@ per-block need appears.
 
 Deliberately not in this pass by default: inventing the read form here
 would out-design the need before the posture fix has landed, and the field
-alone would be surface with no consumer — the two exits above (prevalence,
-or the refMode-0 pin firing) are the only things that pull the pair
+alone would be surface with no consumer — the refMode-0 pin firing, or a
+deliberate pull-forward decision, are the only things that bring the pair
 forward. Record both moves when this plan ships so the next session finds
 them instead of re-deriving them.
 
@@ -362,8 +363,8 @@ rendering. It is not lost from the KB:
   contract sentences join the existing markers case
   (`tools.test.ts:453-460`): rendering-not-a-serialization, refs render
   verbatim and round-trip, the unconditional embed-snapshot warning, and
-  the no-fresh-source / not-a-byte-exact-backup sentence; `QUERY_DESCRIPTION`
-  gains the `blocks.markdown` column name with its index-lag caveat. The integration counting wrapper
+  the no-fresh-source / not-a-byte-exact-backup sentence — `QUERY_DESCRIPTION`
+  is untouched (no `blocks.markdown` disclosure; see the fix list). The integration counting wrapper
   (`encryptedNotebook.live.test.ts:54-73`) forwards the new second parameter:
   its `Object.assign(Object.create(client))` cast would otherwise keep
   compiling while silently dropping the opts, so the wrapped `kb_read` serves
@@ -476,19 +477,17 @@ rendering. It is not lost from the KB:
 
 ## Timing
 
-Fix before v1 — preventive, not corrective: the sweep
-`SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%lastmod:%'` returns
-0 in the live workspace — that is the YFM/title-H1 arm only. The refMode-4
-arm leaves `[^1]` markers plus referenced-block content as body paragraphs,
-so the second arm is
-`SELECT COUNT(*) FROM blocks WHERE type='p' AND content LIKE '%[^1]%'`
-(authored literal `[^1]` is indistinguishable — the write path never parses
-footnotes, `SetFootnotes(false)`, `kernel/util/lute.go:82` — so a nonzero
-count is a hypothesis, not a verdict). Re-run both in any other workspace
-before declaring the class closed. The same evidence gate governs the parked
-source-form read: a refs-table count plus an embed scan (`markdown LIKE
-'%{{SELECT%'` on body blocks) decides by prevalence whether the source-form
-read pass (moves 1+2) is worth running at all — pull it forward if
-ref/embed-bearing docs are common in target KBs, keep it parked if they are
-dormant, or land it whenever the refMode-0 live pin fires (the export-side
-bridge broke; see *Parked*); move 1 never ships alone.
+Fix before v1 — preventive, not corrective. No prevalence count gates
+anything here: the live workspace's artifact-arm sweeps both return 0
+(`lastmod:` in body paragraphs; `[^1]` markers — the latter only ever a
+hypothesis, since authored literal `[^1]` is indistinguishable and the
+write path never parses footnotes, `SetFootnotes(false)`,
+`kernel/util/lute.go:82`), but a 5-doc workspace cannot speak for a target
+KB, so a 0 neither justifies the bridge over the source read nor declares
+the artifact class closed. The bridge-vs-source-read sequencing — whether
+v1 ships the export-mode bridge alone or together with the parked
+source-form read — is a conscious decision, recorded as deferred: v1 ships
+the bridge, and the parked pair is pulled forward by the refMode-0 live
+pin firing (the export-side bridge broke) or by a deliberate team decision
+informed by a real deployment's needs — never by a scan (see *Parked*;
+move 1 never ships alone).
