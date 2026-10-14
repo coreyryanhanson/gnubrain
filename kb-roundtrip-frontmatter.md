@@ -111,19 +111,26 @@ over the `file:` co-development link; publish order stays bottom-up.
    option through (`byId.ts`); widen the `ExportClient` capability
    (`client.ts:52`). Beside it, export the frozen posture constant
    `READ_EXPORT_POSTURE: ExportMarkdownOpts` (`Object.freeze({ yfm: false,
-   addTitle: false, refMode: 2, embedMode: 1 } as const)` — the primitives'
+   addTitle: false, refMode: 0, embedMode: 1 } as const)` — the primitives'
    house freeze pattern (`outline.ts:25`) with the literal type added) as the
    single home of the four values:
    the kernel magic numbers live where their semantics are pinned and
-   falsified, not in the tool layer. The posture's refMode 2 over the
-   now-exposed 0 is a deliberate dialect choice made at the constant —
-   readable, id-addressable links on the read surface, with 0 left to the
-   parked source-form read. Doc comment: body-only posture on the tool
+   falsified, not in the tool layer. The posture's refMode 0 is the
+   round-trip-safe dialect, and not on rendering-preference grounds: the
+   kernel's refs index counts block refs but never block links
+   (`refsFromTree` reads `IsBlockRef`/`IsFileAnnotationRef`/
+   `IsEmbedBlockRef` only, `kernel/sql/database.go:548-551`; a
+   `siyuan://blocks/<id>` link parses as `IsBlockLink`,
+   `treenode/node.go:148`), so a link-form rendering would silently drop the
+   refs/backlink edge on every read-modify-write of a ref-bearing doc, while
+   the verbatim `((id "text"))` form re-imports as a real ref
+   (`SetBlockRef(true)`, `kernel/util/lute.go:56`) and keeps the edge. Doc
+   comment: body-only posture on the tool
    path, faithful pass-through of whatever the caller requests — the constant
    names the tool-path dialect without changing the pass-through behavior.
 3. **`gnubrain`** — `runRead` (`tools.ts`) passes the primitives'
-   `READ_EXPORT_POSTURE`: body-only; refs render as
-   `siyuan://blocks/<id>` links (the id is directly `kb_read`-able — pointers,
+   `READ_EXPORT_POSTURE`: body-only; refs render verbatim as
+   `((id "text"))` (the id inside is directly `kb_read`-able — pointers,
    not stale copies, matching the stack's id-addressed notation); embeds
    materialize with the quote-block seam distinguishing embedded from authored
    text. The duplicate-stop excerpt (`writeCreate.ts:108`) passes the same
@@ -140,50 +147,56 @@ Plus wording lines in `READ_DESCRIPTION` (pinned in `tools.test.ts`): kb_read
 output is a **rendering, not a serialization** — it is the body alone (no
 frontmatter, no title H1; the title rides the `hpath` echo), block IAL is not
 exported (`SetKramdownIAL(false)`), tab titles can materialize as content
-(`MaterializeTabTitles`), block refs render as `siyuan://blocks/<id>` links,
-and query embeds materialize as quoted content (the embed script itself is not
-preserved in any mode). **Ref/embed round-trip is out of scope for v1**, and
-the wording says so plainly — without overstating what the kernel can do:
+(`MaterializeTabTitles`), block refs render in their stored `((id "text"))`
+source form, and query embeds materialize as quoted content (the embed script
+itself is not preserved in any mode). **Embed round-trip is out of scope for
+v1** — no export mode preserves the query script — while refs round-trip
+losslessly under the verbatim dialect; the wording says so plainly, without
+overstating what the kernel can do:
 
-- The tool posture (refMode 2) renders a ref as a `siyuan://blocks/<id>`
-  link. Pasting that into a write degrades acceptably: the link imports as a
-  real block link (`treenode/node.go:148`) and keeps the pointer, but it is
-  a link, not the stored `((id "text"))` ref form.
-- The lossless ref form exists at the knob level: `refMode: 0` emits the
-  verbatim `((id "text"))` source — live-verified to round-trip as a real
-  ref. It is deliberately not the read rendering's dialect — and it is not
-  the future source-form read either: no export mode preserves embeds, so a
-  doc-level lossless export is impossible at any refMode. The source form
-  rides the walk/`getBlockKramdown` path (see *Parked* below), not this
-  endpoint.
+- The tool posture (refMode 0) renders a ref in its stored `((id "text"))`
+  source form. Pasting that into a write re-imports as a real block ref
+  (`SetBlockRef(true)`, `kernel/util/lute.go:56`), so the pointer and the
+  refs/backlink edge survive the round trip.
+- The dialect choice is integrity, not rendering preference: the kernel's
+  refs index counts block refs but never block links (`refsFromTree` reads
+  `IsBlockRef`/`IsFileAnnotationRef`/`IsEmbedBlockRef` only,
+  `kernel/sql/database.go:548-551`; a `siyuan://blocks/<id>` link parses as
+  `IsBlockLink`, `treenode/node.go:148`), so a link-form dialect would
+  silently drop the refs/backlink edge on every read-modify-write of a
+  ref-bearing doc — the same silent-corruption class this plan closes.
+  No export mode preserves embeds, so a doc-level lossless export remains
+  impossible at any refMode; embed source rides the walk/`getBlockKramdown`
+  path (see *Parked* below), not this endpoint.
 - A pasted embed freezes the query's resolved result as authored quote text —
   a stale snapshot indistinguishable from real content, in every mode. This
   warning is unconditional.
-- The same degradation reaches `edit`/`replace-section`, whose body is taken
-  verbatim: rewriting a ref-bearing block from the rendering lands the link
-  form over the stored `((id "text"))` source, and nothing refuses it — the
-  flows seed the fresh precondition from the live row when the session has
-  no baseline (`writeEdit.ts`; `unseen` → adopt), so the corruption is
-  silent, visible only in the echo.
+- Refs survive the write path in every mode: `edit`/`append`/
+  `replace-section` take the body verbatim, and a body carrying the verbatim
+  `((id "text"))` form re-imports as a real ref, so the refs/backlink edge
+  is kept without any flow-side guard. The remaining silent rewrite is
+  embeds only (the bullet above).
 - There is no "source from the walk instead" escape hatch, deliberately: the
   walk and the outline carry the kernel's ref-stripped `content` —
   `WalkedBlock` keeps `content` and discards the per-child `markdown` field
   the kernel already returns (`walk.ts`), and the outline serves headings
   only — so routing ref-bearing bodies through them would silently drop the
-  pointer. No current tool surface carries the stored ref/embed source; the
-  root-cause fix is a read-side source form, specified in *Parked: the
-  source-form read* below — not a write-side rehydrator. Until it exists
-  the wording says plainly that `kb_read` output is a body source for plain
-  content only, not a byte-exact backup.
+  pointer. No current tool surface carries the stored embed source (refs
+  now ride the read rendering verbatim); the root-cause fix is a read-side
+  source form, specified in *Parked: the source-form read* below — not a
+  write-side rehydrator. Until it exists the wording says plainly that
+  `kb_read` output is a body source for plain content and refs — embeds are
+  materialized snapshots — not a byte-exact backup.
 
 ## Parked: the source-form read (the walk path's root-cause fix)
 
-The wording above stops the bleeding for v1; it does not close the walk
-path's gap. The root cause there: the kernel already returns a per-child
-`markdown` field on every `getChildBlocks` call — the stored source, refs
-(`((id "text"))`) and embeds (`{{SELECT ...}}`) verbatim — and the
-primitives' `WalkedBlock` (`walk.ts`) keeps only the ref-stripped `content`
-and discards it. The stack's lossless surface is one discarded field away.
+The verbatim dialect above closes the ref half of the round-trip gap; embeds
+remain a capability limit in every export mode, and the walk path's lossless
+surface is still one discarded field away. The root cause there: the kernel
+already returns a per-child `markdown` field on every `getChildBlocks` call —
+the stored source, refs (`((id "text"))`) and embeds (`{{SELECT ...}}`)
+verbatim — and the primitives' `WalkedBlock` (`walk.ts`) keeps only the
+ref-stripped `content` and discards it.
 The parked fix is read-side, two moves:
 
 1. **Primitives**: thread `markdown` through `WalkedBlock` — one field,
@@ -198,8 +211,8 @@ The parked fix is read-side, two moves:
    agent can touch — the walk is internal (outlines serve headings;
    judgments consume `content`), so the tool-side form is where the
    notation decision lives. After it ships, replace the `READ_DESCRIPTION`
-   sentence "no current tool surface carries the stored ref/embed source"
-   with a pointer to that form — "source ref-bearing bodies from the
+   sentence "no current tool surface carries the stored embed source"
+   with a pointer to that form — "source embed-bearing bodies from the
    source read" becomes a true sentence then, and only then.
 
 The per-block alternative — a `getBlockKramdown`-backed read primitive —
@@ -256,27 +269,22 @@ rendering. It is not lost from the KB:
   (`readPins.live.test.ts:452`). Nothing is timestamped in body-only output,
   so no wildcarding. Place it next to the existing `docMarkdown` live
   case. The two posture live cases call `docMarkdown` with
-  `READ_EXPORT_POSTURE` — never hand-rolled literals (the refMode-0 case
-  below is the deliberate exception) — so the constant itself joins the
-  falsified surface and cannot drift from its evidence.
-- **Primitives live, second case (the ref/embed falsifier)**: export a
-  ref-bearing doc — a block ref to another doc's block plus a query embed;
-  assert structure, not byte identity (refs are translated, not serialized):
-  refs render as `[text](siyuan://blocks/…)`, there are no `[^1]` markers and
-  no footnotes section, and the embed's content appears as a quote block. Like
-  the ref-free fixture above, this case asserts containment and absence,
-  never byte identity. Both primitives live cases falsify what the knobs do;
-  the shipped dialect is pinned tool-side by the gnubrain unit and
-  integration cases below — layer 2 only passes through, so it cannot be the
-  dialect's falsifier.
-- **Primitives live, third case (the refMode-0 fall-through falsifier)**: the
-  exposed `0` is the plan's one bet on undocumented upstream behavior, so pin
-  it directly: export a ref-bearing doc at `refMode: 0` — a hand-rolled
-  literal, deliberately not `READ_EXPORT_POSTURE`, since the posture does not
-  use this mode — and assert the verbatim `((id "text"))` source appears and
-  no footnotes section is appended. If a future kernel gives the switch a
-  case for 0, this pin fires and forces a re-read of the whole ref story
-  before any release rides on the fall-through.
+  `READ_EXPORT_POSTURE` — never hand-rolled literals — so the constant
+  itself joins the falsified surface and cannot drift from its evidence.
+- **Primitives live, second case (the ref/embed falsifier, and the
+  refMode-0 fall-through falsifier)**: export a ref-bearing doc — a block
+  ref to another doc's block plus a query embed; assert structure, not byte
+  identity: refs render verbatim as `((id "text"))`, there are no `[^1]`
+  markers and no footnotes section, and the embed's content appears as a
+  quote block. Because the posture itself rides refMode 0, the verbatim
+  assertion doubles as the fall-through falsifier: if a future kernel gives
+  the switch a case for 0, this pin fires and forces a re-read of the ref
+  story before any release rides on the fall-through. Like the ref-free
+  fixture above, this case asserts containment and absence, never byte
+  identity. Both primitives live cases falsify what the knobs do; the
+  shipped dialect is pinned tool-side by the gnubrain unit and integration
+  cases below — layer 2 only passes through, so it cannot be the dialect's
+  falsifier.
 - **Gnubrain unit**: `runRead` passes `READ_EXPORT_POSTURE` (imported from the
   read barrel) and the writeCreate duplicate-stop excerpt passes the same
   constant (client stubs via the `deps` seam); `READ_DESCRIPTION` wording pin
@@ -343,12 +351,11 @@ rendering. It is not lost from the KB:
   the opts threading (four knobs, pass-through, no posture), the exported
   `READ_EXPORT_POSTURE` constant (the four values, frozen, beside
   `docMarkdown`), and the knob semantics its live cases falsify (body-only,
-  ref-rendering, refMode-0 verbatim fall-through) — the posture cases
-  constructed from the constant, so the fact and its falsifier share one
-  home; the shipped dialect itself is pinned tool-side in gnubrain, since
-  layer 2 only passes through. The refMode-0 case is the standing exception
-  to "constructed from the constant": it pins a knob the posture does not
-  use, precisely because the fall-through is undocumented upstream.
+  verbatim ref rendering — which doubles as the refMode-0 fall-through
+  falsifier since the posture rides refMode 0, embed quote materialization)
+  — the posture cases constructed from the constant, so the fact and its
+  falsifier share one home; the shipped dialect itself is pinned tool-side
+  in gnubrain, since layer 2 only passes through.
 
 ## Timing
 
