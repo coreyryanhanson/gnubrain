@@ -93,17 +93,18 @@ describe("guard-stop staging", () => {
 		);
 	});
 
-	it("candidate deleted between the walk and the spill read: exportMarkdown degrades to an empty excerpt, the outline survives", async () => {
-		// The walk arm reaches the outline leg only — the exportMarkdown catch
-		// (the guard query matched, the spill read lost the race) needs its
-		// own arm.
+	it("candidate deleted between the walk and the excerpt read: the child-blocks body read degrades to an empty excerpt, the outline survives", async () => {
+		// The candidate walk and the excerpt read (docBody) share the
+		// getChildBlocks route, so the vanished-candidate race arms by call
+		// ordinal: call 1 is the candidate walk (a flat doc — one call),
+		// call 2 is the excerpt read.
 		const { execute, calls } = setup({
 			config: {
 				...duplicateConfig,
 				// The single candidate's walk must serve a real tree for the
 				// outline leg — unseeded ids are childless by default.
 				fallbackChildren: DEFAULT_CHILDREN,
-				armExportError: (arm) => arm(new SiYuanApiError(404)),
+				armChildErrorFrom: (arm) => arm(2, new SiYuanApiError(404)),
 			},
 		});
 		const r = await execute({ ...base, markdown: "the draft body" });
@@ -111,10 +112,10 @@ describe("guard-stop staging", () => {
 		const rows = r.rows as Record<string, unknown>[];
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.docId).toBe("d1");
-		// The walk (and the outline it seeds) succeeded — only the spill read
-		// degraded to an empty body.
+		// The walk (and the outline it seeds) succeeded — only the excerpt
+		// read degraded to an empty body.
 		expect(rows[0]!.outline).not.toBe("");
-		expect(calls.filter((c) => c.method === "exportMarkdown")).toHaveLength(1);
+		expect(calls.filter((c) => c.method === "getChildBlocks")).toHaveLength(2);
 	});
 
 	/** Single-row duplicate stop over a doc with a heading and a paragraph —

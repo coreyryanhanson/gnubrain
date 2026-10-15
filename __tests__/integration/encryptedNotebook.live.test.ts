@@ -34,14 +34,12 @@ const ENCRYPTED_PASSWORD = process.env.SIYUAN_ENCRYPTED_PASSWORD ?? "";
 interface KernelCounts {
 	query: number;
 	search: number;
-	exportMarkdown: number;
 	getChildBlocks: number;
 }
 
 const zeroCounts = (): KernelCounts => ({
 	query: 0,
 	search: 0,
-	exportMarkdown: 0,
 	getChildBlocks: 0,
 });
 
@@ -61,10 +59,6 @@ function countingKernel(
 		) => {
 			counts.search += 1;
 			return client.fullTextSearch(p);
-		},
-		exportMarkdown: async (id: string) => {
-			counts.exportMarkdown += 1;
-			return client.exportMarkdown(id);
 		},
 		getChildBlocks: async (id: string) => {
 			counts.getChildBlocks += 1;

@@ -17,6 +17,7 @@ const INTEGRATION_ORDER = [
 	"harness.live.test.ts", // self-check + cheapest falsifier first
 	"headlessKb.live.test.ts", // pi -p child process, needs the kernel
 	"readPins.live.test.ts",
+	"roundTrip.live.test.ts", // kb_read body → kb_write → re-read
 	"writePlacement.live.test.ts",
 	"writePins.live.test.ts",
 	"gate.live.test.ts", // pi children (masking/scope), in-process

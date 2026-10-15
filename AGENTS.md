@@ -275,6 +275,12 @@ primitives.
   (`runRead`, `tools.ts`, via the primitives' `ownership` read: a block id
   there exports its containing doc); the missing-docId refusal is
   wording-only and names the same fact.
+- **Omitted-empty body blocks** — the walk field rides omitempty on
+  `getChildBlocks` rows, so a genuinely empty block's bytes vanish from
+  the body while its row keeps its place; the count is the policy's
+  never-silent half → `docBody`/`readDoc` (`body.ts`, computed beside
+  the joiner). This repo keeps only the envelope surfacing
+  (`omittedEmpty` on the `kb_read` ok envelope, `runRead`).
 - **Insert shape** — one `doOperations` entry per markdown insert, whole
   body in its `data` → `insertVerified` (primitives `write.ts`).
 - **`lsNotebooks` encrypted flag** — `encrypted` is always present
@@ -426,7 +432,9 @@ the live kernel on an upgrade pass.
 ## Roadmap (parked)
 
 - RAG / vector sidecar (v2 primary): a third consumer of the primitives read
-  barrel — fed by the barrel's `docMarkdown` read/`query/sql`, never a
+  barrel — fed by the barrel's `docBody` body read composed with `hPathByID`
+  (the title rides the hpath echo, not the body — `docBody` returns body
+  bytes only) and `query/sql`, never a
   second writer; it
   must never import `siyuan-kb-primitives/write`, and composes the same
   auth-lock dodge the breaker does, from the barrel's `authLockDodge`. Store

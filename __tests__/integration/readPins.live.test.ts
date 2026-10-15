@@ -446,8 +446,11 @@ third body`,
 				confirmNew: true,
 			});
 			expect(retry.status).toBe("ok");
-			// The export carries the kernel's YAML frontmatter + title heading;
-			// the staged body itself must round-trip verbatim.
+			// The layer-1 export round-trip call stays legal (the endpoint
+			// remains on the identity surface) but no longer describes the
+			// tool's read route — kb_read serves the walk-field body, which
+			// carries neither frontmatter nor a title H1. The staged body
+			// must still round-trip verbatim through the kernel.
 			const back = await client.exportMarkdown(String(retry.docId));
 			expect(back.content).toContain(bigBody);
 		},

@@ -25,9 +25,10 @@ import {
 	resolveBox,
 } from "./kbScope.js";
 import {
-	docMarkdown,
-	ownership,
+	hPathByID,
 	keywordSearchBoxes,
+	ownership,
+	readDoc,
 	type KernelReadClient,
 } from "siyuan-kb-primitives";
 import { RESULT_LIMIT } from "./limits.js";
@@ -45,7 +46,7 @@ import {
 	reparse,
 	verifyRebuilt,
 } from "./sqlScope.js";
-import { serveOutline } from "./outline.js";
+import { serveOutlineFromWalk } from "./outline.js";
 import type { SessionValidation } from "./validation.js";
 
 // ---------------------------------------------------------------------------
@@ -265,10 +266,10 @@ export async function runSearchFanOut(
 }
 
 // ---------------------------------------------------------------------------
-// kb_read — the barrel's docMarkdown export read (+ the outline ride-along)
+// kb_read — the barrel's body read (the walk-served stored body) + outline
 // ---------------------------------------------------------------------------
 
-const READ_DESCRIPTION = `Fetch a GNUbrain doc as GFM markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a docId echoed by kb_search or a root_id from kb_query's raw SQL rows, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). Use the outline's block IDs to target kb_write edits; grep the spilled full result for content when the body is large. Spill keys: the inline \`outline\` gains \`fullOutlinePath\` (full heading rows, JSONL) and the inline \`content\` gains \`fullResultPath\` (the full markdown) whenever the payload exceeds the inline budget. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
+const READ_DESCRIPTION = `Fetch a GNUbrain doc: its stored body as markdown plus a heading→block-ID outline. Pass kb (one KB name) and docId — a docId echoed by kb_search or a root_id from kb_query's raw SQL rows, never an invented ID. The ownership check doubles as the scope check: a docId from another KB returns no rows. Call with kb: "kbs" to list active KBs (no docId, no kernel call). The body is body-only — no YAML frontmatter, no doc-title H1 (the title is the last segment of the hpath echo); doc tags and dates stay queryable via the root row (tag, created, updated) in kb_query. The body is the body source for kb_write: every byte served is a body byte, so feeding it back to a write mode is the supported round-trip, not a corruption path. Refs render in their stored ((id "text")) form — the id inside is readable; pass it to kb_read's by-id form to resolve the target's containing doc and content. Query embeds render as their verbatim script and stay live. Block-level IAL ({: name="…"} attributes on whole blocks) is never carried — faithful whole-doc serialization is kernel-native territory (.sy export), not this surface's job. Over the inline budget \`content\` is an incomplete body prefix with no in-band marker: write back the complete body from \`fullResultPath\` (via kb_write's \`markdownFile\`), never the preview itself; the pointer sentence rides \`message\`. Spill keys: the inline \`outline\` gains \`fullOutlinePath\` (full heading rows, JSONL) and \`fullResultPath\` carries the full body whenever the payload exceeds the inline budget. An empty body is named in \`message\`. Outline notation: heading level as \`#\`…\`######\`, prefixed by the enclosing container outermost-first (\`>\` quote, \`-\` list item, \`c\` callout, \`s\` superblock, \`t\` tab), glued to the level marks and ending in \`→ <blockID>\`; the first space divides placement notation from the title; a bracketed token (\`[tabs]\`, \`[unnamed]\`, or the wire type itself) is the notation for a container with no defined glyph, and containers the kernel refuses as a write target are additionally marked \`(not targetable)\`.`;
 
 /**
  * The `kbs` discovery form: `kb_read` with `kb: "kbs"` returns
@@ -394,46 +395,51 @@ export async function runRead(
 	baselines: ContentBaselines,
 ): Promise<Envelope> {
 	const boxId = resolveBox(name, validation);
-	// GFM only, never getDoc — the id-free export shape is the primitives'
-	// docMarkdown pin. The kernel route takes a bare stmt (no bind
-	// params), so trusted ids ride escaped literals (the primitives'
-	// ownership read).
+	// The kernel route takes a bare stmt (no bind params), so trusted ids
+	// ride escaped literals (the primitives' ownership read).
 	const rootId = await ownership(kernel, boxId, docId);
 	if (rootId === undefined) {
 		return noSuchDocEnvelope(name, docId);
 	}
-	const doc = await docMarkdown(kernel, rootId);
+	// One getChildBlocks call serves the body and the walk's depth-1 rows
+	// from one tree snapshot; the walk's deeper frames are later reads.
+	// The root call runs strict (a vanished root propagates
+	// as the kernel-refused error), the recursive branches tolerate exactly
+	// as the read outline always has — the deep outline's incompleteness
+	// marker rides the walk facts. The hpath echo rides the live-tree read
+	// (hPathByID), never the SQL index whose blocks.hpath lags a move.
+	const doc = await readDoc(kernel, rootId);
+	const hpath = await hPathByID(kernel, rootId);
 	const envelope: Envelope = {
 		status: "ok",
-		message: `${doc.content.length} chars from ${doc.hPath}`,
+		message:
+			doc.children.length === 0
+				? `empty body from ${hpath} — the same empty shape serves a genuinely empty doc, a childless block id, and an in-store tree that failed to load; confirm the target via kb_search/kb_query before acting on it`
+				: `${doc.body.length} chars from ${hpath}`,
 		kb: name,
 		docId: rootId,
-		hpath: doc.hPath,
+		hpath,
 	};
+	if (doc.omittedEmpty > 0) envelope.omittedEmpty = doc.omittedEmpty;
 
-	const outline = await serveOutline(
-		kernel,
-		sessionId,
-		"kb_read",
-		rootId,
-		baselines,
-	);
+	const outline = serveOutlineFromWalk(sessionId, "kb_read", doc, baselines);
 	Object.assign(envelope, outline);
 
 	// read budget: the spill mechanism is the only limit — large docs spill
 	// in full while the inline result keeps the newline-boundary preview.
+	// content stays pure body bytes in both arms; the pointer sentence rides
+	// message beside fullResultPath, never content — a paste-back of what
+	// the agent sees must be body bytes at any doc size.
 	const { inline, spillPath } = inlineOrSpill(
 		sessionId,
 		"kb_read",
-		doc.content,
+		doc.body,
 		"md",
 	);
-	envelope.content =
-		spillPath === undefined
-			? inline
-			: `${inline}\n${spillPointer(doc.content.length - inline.length, spillPath)}`;
+	envelope.content = inline;
 	if (spillPath !== undefined) {
 		envelope.fullResultPath = spillPath;
+		envelope.message += `; ${spillPointer(doc.body.length - inline.length, spillPath)}`;
 	}
 	return envelope;
 }

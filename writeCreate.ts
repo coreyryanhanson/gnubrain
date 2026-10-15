@@ -6,7 +6,7 @@ import {
 	GUARD_EXACT_CAP,
 	GUARD_NEAR_CAP,
 	causeOf,
-	docMarkdown,
+	docBody,
 	findTitleMatches,
 	firstChildContent,
 	walkBlockTree,
@@ -40,7 +40,7 @@ interface CreateFlowInput extends WriteFlowBase {
 }
 
 /** Truncated (cap+1) guard-row sets render only the cap — each candidate
- * costs kernel reads (walk + markdown export in the exact tier, a
+ * costs kernel reads (walk + body read in the exact tier, a
  * first-child read in the near tier), so overflow rows are sliced off
  * before any read. The flag rides the primitives' TitleMatchResult; never
  * re-derive it from row-count arithmetic here. */
@@ -105,7 +105,7 @@ async function duplicateStop(
 			input.baselines,
 		);
 		const markdown = await swallowVanished(
-			async () => (await docMarkdown(kernel, docId)).content,
+			async () => (await docBody(kernel, docId)).body,
 			"",
 		);
 		const markdownPath = spillFile(

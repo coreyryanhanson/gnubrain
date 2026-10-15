@@ -9,9 +9,10 @@
   (default-enabled) and `gnubrain.write` (default-enabled, requires
   `gnubrain.read`):
 
-  - `kb_read` — export a document as GFM markdown, or walk its outline
-    (`getChildBlocks`); `kb: "kbs"` lists the active knowledge bases without
-    touching the kernel.
+  - `kb_read` — serve a document's stored body (round-trip-safe markdown —
+    no frontmatter, no doc-title H1; the title rides the hpath echo) plus
+    its heading→block-ID outline (`getChildBlocks`); `kb: "kbs"` lists the
+    active knowledge bases without touching the kernel.
   - `kb_search` — full-text search fanned out across the active KBs, merged in
     per-KB kernel order.
   - `kb_query` — read-only SQL over the kernel's SQLite index, parser-certified

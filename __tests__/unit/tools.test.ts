@@ -56,10 +56,6 @@ function kernelStub() {
 				matchedBlockCount: 1,
 			};
 		},
-		async exportMarkdown(id) {
-			calls.push({ method: "exportMarkdown", args: id });
-			return { hPath: "/doc", content: "# doc\nbody" };
-		},
 		async getHPathByID(id) {
 			calls.push({ method: "getHPathByID", args: id });
 			return "/doc";
@@ -72,6 +68,7 @@ function kernelStub() {
 					type: "h",
 					subType: "h1",
 					content: "Heading",
+					markdown: "# Heading",
 				},
 			];
 		},
@@ -378,7 +375,80 @@ describe("read tool", () => {
 		expect(lines[0]).toBe("## Heading 0 → h0");
 	});
 
-	it("an oversized doc body spills in full: newline-boundary preview + pointer inline, bytes in the file", async () => {
+	it("the default read serves the walk-field body: body-only bytes, hpath echo, no per-child rows", async () => {
+		// There is no read-schema flag: the single form IS the body read —
+		// the later view flag would join as pure addition beside it.
+		const { client, calls } = kernelStub();
+		const result = await runRead(
+			"sess-1",
+			client,
+			validation(),
+			"recipes",
+			"d1",
+			ContentBaselines.create(),
+		);
+		expect(result.status).toBe("ok");
+		// Body-only: the served content is the child's walk-field markdown
+		// verbatim — no frontmatter, no doc-title H1.
+		expect(result.content).toBe("# Heading");
+		// The hpath echo rides the live-tree read, never an export return.
+		expect(result.hpath).toBe("/doc");
+		expect(calls.filter((c) => c.method === "getHPathByID")).toHaveLength(1);
+		// The structured return survives shaping: the envelope re-serializes
+		// no per-child rows, and zero omissions leave the count absent.
+		expect(result.children).toBeUndefined();
+		expect(result.omittedEmpty).toBeUndefined();
+		expect(String(result.message)).toBe("9 chars from /doc");
+	});
+
+	it("a child whose markdown is absent is counted (omittedEmpty), never silent", async () => {
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async getChildBlocks() {
+				return [
+					{ id: "p1", type: "p", subType: "", content: "x", markdown: "x" },
+					// omitempty: a genuinely empty export omits the field.
+					{ id: "p2", type: "p", subType: "", content: "" },
+				];
+			},
+		};
+		const result = await runRead(
+			"sess-1",
+			client,
+			validation(),
+			"recipes",
+			"d1",
+			ContentBaselines.create(),
+		);
+		// The body omits the empty child; the row stays in the evidence and
+		// the count surfaces the top-level gap.
+		expect(result.content).toBe("x");
+		expect(result.omittedEmpty).toBe(1);
+	});
+
+	it("an empty body is named in message, never served silently", async () => {
+		const client: KernelReadClient = {
+			...kernelStub().client,
+			async getChildBlocks() {
+				return [];
+			},
+		};
+		const result = await runRead(
+			"sess-1",
+			client,
+			validation(),
+			"recipes",
+			"d1",
+			ContentBaselines.create(),
+		);
+		expect(result.content).toBe("");
+		const message = String(result.message);
+		expect(message).toContain("empty body");
+		expect(message).toContain("childless block id");
+		expect(message).toContain("failed to load");
+	});
+
+	it("an oversized doc body spills in full: pure body preview inline, pointer sentence on message, bytes in the file", async () => {
 		// Long enough to spill, with a newline well past the cut so the
 		// preview lands on a real line boundary below PREVIEW_CHARS.
 		const body = Array.from(
@@ -387,8 +457,18 @@ describe("read tool", () => {
 		).join("\n");
 		const client: KernelReadClient = {
 			...kernelStub().client,
-			async exportMarkdown() {
-				return { hPath: "/doc", content: body };
+			async getChildBlocks(id) {
+				return id === "d1"
+					? [
+							{
+								id: "p1",
+								type: "p",
+								subType: "",
+								content: body,
+								markdown: body,
+							},
+						]
+					: [];
 			},
 		};
 		const result = await runRead(
@@ -401,15 +481,19 @@ describe("read tool", () => {
 		);
 		expect(body.length).toBeGreaterThan(PREVIEW_CHARS);
 		const content = String(result.content);
-		expect(content.length).toBeLessThanOrEqual(PREVIEW_CHARS + 100);
-		// content = newline-boundary preview of the body + "\n" + pointer.
-		const m = /^([\s\S]*)\n… (\d+) more — full result in (.+)$/.exec(content);
+		// Content purity: content is a pure body prefix — no pointer bytes,
+		// so a paste-back of what the agent sees is body bytes at any size.
+		expect(content.length).toBeLessThanOrEqual(PREVIEW_CHARS);
+		expect(content).not.toContain("full result in");
+		expect(body.startsWith(content)).toBe(true);
+		// The pointer sentence rides message beside fullResultPath.
+		const m = /… (\d+) more — full result in (.+)$/.exec(
+			String(result.message),
+		);
 		expect(m).not.toBeNull();
-		const inline = m?.[1] ?? "";
-		const path = m?.[3] ?? "";
+		const path = m?.[2] ?? "";
 		expect(path).toBe(String(result.fullResultPath));
-		expect(Number(m?.[2])).toBe(body.length - inline.length);
-		expect(body.startsWith(inline)).toBe(true);
+		expect(Number(m?.[1])).toBe(body.length - content.length);
 		expect(readFileSync(path, "utf8")).toBe(body);
 	});
 });
@@ -461,6 +545,24 @@ describe("read toolset + descriptions", () => {
 		expect(description).toContain("→ <blockID>");
 		expect(description).toContain("(not targetable)");
 		expect(description).toContain("[unnamed]");
+	});
+
+	it("the read tool description carries the body-read contract", () => {
+		const { tool: read } = registeredReadTool();
+		const description = read.description as string;
+		// body-only + title provenance
+		expect(description).toContain("body-only");
+		expect(description).toContain("hpath echo");
+		// the paste-safe round-trip claim
+		expect(description).toContain("body source for kb_write");
+		// the over-budget guidance: fullResultPath via markdownFile, never
+		// the preview; pointer sentence on message
+		expect(description).toContain("never the preview itself");
+		expect(description).toContain("markdownFile");
+		expect(description).toContain("rides `message`");
+		// the refs deref skill + the block-IAL standing rule
+		expect(description).toContain('((id "text"))');
+		expect(description).toContain("kernel-native territory");
 	});
 });
 

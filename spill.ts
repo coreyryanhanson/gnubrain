@@ -60,7 +60,9 @@ function previewAtNewline(content: string, budget: number): string {
 	return content.slice(0, cut);
 }
 
-/** The pointer line appended to inline previews. */
+/** The pointer sentence for a spilled result — rides the envelope's
+ * `message` tail beside `fullResultPath`, never inside the payload
+ * preview: the payload bytes stay pure content (the paste-back stream). */
 export function spillPointer(moreChars: number, path: string): string {
 	return `… ${moreChars} more — full result in ${path}`;
 }

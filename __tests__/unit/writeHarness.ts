@@ -82,9 +82,12 @@ export interface StubConfig {
 	/** Arm for deleteBlock — a mid-sweep transport failure (network drop
 	 * on the Nth delete), distinct from the SQL-arm (verification reads). */
 	armDeleteError?: (arm: (err: Error) => void) => void;
-	/** Arm for exportMarkdown — the vanished-candidate race mid-guard-stop
-	 * (the spill read fails after the guard query matched). */
-	armExportError?: (arm: (err: Error) => void) => void;
+	/** Arm for the duplicate-stop's excerpt read — the vanished-candidate
+	 * race mid-guard-stop over the child-block route: the candidate walk
+	 * and the excerpt read (docBody) share the getChildBlocks route, so the
+	 * arm keys on the call ordinal — calls 1..from-1 succeed, the
+	 * `from`-th and later throw. */
+	armChildErrorFrom?: (arm: (from: number, err: Error) => void) => void;
 	/** Arm for getHPathByID — the doc-move landed judgment's live-tree
 	 * evidence read failing after the move acked (the post-write network
 	 * drop). */
@@ -135,9 +138,12 @@ export function writeKernelStub(config: StubConfig = {}) {
 	config.armDeleteError?.((err) => {
 		deleteError = err;
 	});
-	let exportError: Error | undefined;
-	config.armExportError?.((err) => {
-		exportError = err;
+	let childErrorFrom: number | undefined;
+	let childError: Error | undefined;
+	let childCalls = 0;
+	config.armChildErrorFrom?.((from, err) => {
+		childErrorFrom = from;
+		childError = err;
 	});
 	let hPathError: Error | undefined;
 	config.armHPathError?.((err) => {
@@ -238,28 +244,21 @@ export function writeKernelStub(config: StubConfig = {}) {
 		async fullTextSearch() {
 			throw new Error("write flow never searches");
 		},
-		async exportMarkdown(id) {
-			calls.push({ method: "exportMarkdown", args: id });
-			if (exportError) throw exportError;
-			// Doc roots echo their own hpath; anything else is "/doc". The
-			// doc-move judgment no longer rides this — only the create flow's
-			// spill read and kb_read do.
-			return {
-				hPath: docRoots[id]?.hpath ?? "/doc",
-				content: `# markdown of ${id}\nbody`,
-			};
-		},
 		async getHPathByID(id) {
 			calls.push({ method: "getHPathByID", args: id });
 			if (hPathError) throw hPathError;
 			// The live-tree hpath the doc-move landed judgment compares
-			// against — derived from the same docRoots table exportMarkdown
-			// serves.
+			// against — derived from the same docRoots table the ownership
+			// and echo routes serve.
 			return docRoots[id]?.hpath ?? "/doc";
 		},
 		async getChildBlocks(id) {
 			calls.push({ method: "getChildBlocks", args: id });
 			if (walkError) throw walkError;
+			childCalls += 1;
+			if (childErrorFrom !== undefined && childCalls >= childErrorFrom) {
+				throw childError;
+			}
 			return (childrenFor[id] ?? fallbackChildren) as Record<string, unknown>[];
 		},
 		async createDocWithMarkdown(params) {

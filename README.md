@@ -57,6 +57,17 @@ History lookup has something to search for.
 2. Run [SiYuan](https://siyuan.b3log.org) and enable its API.
    GNUbrain requires SiYuan **3.8.6 exactly** — a different kernel version
    refuses every write and warns on reads.
+
+   Note on markdown syntax settings: SiYuan's editor settings
+   (Settings → Editor → Markdown) govern how inline syntax (`*em*`,
+   `==mark==`, `~sub~`, `$math$`, `#tag#`, …) is recognized when body
+   content is parsed, and therefore what form `kb_read` serves for blocks
+   written under them. Round-trips are stable under any fixed settings;
+   changing these settings mid-life can flip literal↔markup in served
+   bytes on the next read — the tree is re-parsed under the settings
+   current at each load, so stored content is untouched — and a kernel
+   upgrade may change the defaults. Leave them at their defaults on a KB
+   kernel.
 3. Add your connection and notebooks to `~/.pi/agent/settings.json`:
 
    ```json

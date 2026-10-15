@@ -121,10 +121,7 @@ function deps(): GnubrainDeps {
 					],
 					matchedBlockCount: 1,
 				}),
-				exportMarkdown: async () => ({
-					hPath: "/doc",
-					content: "# doc\nbody",
-				}),
+				getHPathByID: async () => "/doc",
 				getChildBlocks: async () => [],
 			}) as never,
 	};
