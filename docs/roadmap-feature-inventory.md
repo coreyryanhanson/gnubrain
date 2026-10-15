@@ -95,6 +95,10 @@ L2 describes *now*; L3 is the *door*. A model-call feature is judged against the
 
 ## Substrate facts GNUbrain inherits (verified in SiYuan 3.8.6 source)
 
+> **Version note.** Verified against 3.8.6 source only; the pin is now **3.8.7** and these
+> facts are **not yet re-verified** against it — re-verify before landing the RAG issues
+> (AGENTS.md upgrade checklist).
+
 - `blocks` carries `ial`, **`alias`**, `name`, `memo`, `tag`, `subtype`.
 - **`attributes`** table (`id, name, value, type, block_id, root_id, box, path`) plus
   `getBlockAttrs` / `batchGetBlockAttrs` / `setBlockAttrs` — per-block typed metadata.

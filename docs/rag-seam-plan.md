@@ -4,6 +4,11 @@ Paste-ready issue drafts for the seam described in [`rag-integration.md`](./rag-
 Nothing here has been created on GitHub; `gh` is not installed in the development VM, so
 these are drafts to create when convenient.
 
+> **Version note.** Drafts cite SiYuan **3.8.6** source facts (`semanticSearchBlock`,
+> `embeddingStat`, `block_embeddings` schema). The pin is now **3.8.7** and these are
+> **not yet re-verified** against it — re-verify before landing issue 1 (AGENTS.md
+> upgrade checklist).
+
 Each draft has a title, target repository, suggested labels, dependencies, scope,
 acceptance criteria, tests, and the files it touches.
 

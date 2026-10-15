@@ -3,6 +3,12 @@
 Status: decided, not implemented. v1 ships without RAG; the seam lands in the first
 post-v1 release.
 
+> **Version note.** Kernel facts below were read from SiYuan **3.8.6** source. The pin
+> is now **3.8.7** (`siyuan-kb-primitives/version.ts`); these substrate facts —
+> `kernel/api/search.go`, `kernel/model/embedding.go`, `kernel/conf/ai.go` — have **not**
+> been re-verified against 3.8.7. Re-verify (AGENTS.md upgrade checklist) before issue 1
+> lands.
+
 Scope: how retrieval-augmented search enters the GNUbrain stack (`gnubrain` →
 `siyuan-kb-primitives` → `siyuan-kernel-api`), what it costs, and what would justify
 building an external vector store later.
