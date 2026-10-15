@@ -132,9 +132,16 @@ describe("title guard", () => {
 		});
 		const r = await execute({ ...base });
 		expect(r.status).toBe("duplicate");
-		const blocks = r.blockIds as { id: string; content: string }[];
-		expect(blocks[0]?.id).toBe("h1");
+		const blocks = r.blockIds as { blockId: string; content: string }[];
+		expect(blocks[0]?.blockId).toBe("h1");
 		expect(blocks[0]?.content).toBe("Heading");
+		// The row vocabulary is the frozen agent-facing one (blockId, not the
+		// kernel's raw id) — same promise the search-row contract pins.
+		expect(Object.keys(blocks[0] ?? {})).toEqual([
+			"blockId",
+			"type",
+			"content",
+		]);
 	});
 
 	it("near-match stop: excerpt-only candidates, no candidate spill, cap + marker", async () => {

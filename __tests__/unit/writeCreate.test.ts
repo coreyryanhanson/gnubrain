@@ -147,8 +147,8 @@ describe("guard-stop staging", () => {
 		const harness = storedContentHarness({ p1: "served body" });
 		const r = await harness.execute({ ...base, markdown: "the draft body" });
 		expect(r.status).toBe("duplicate");
-		const blockIds = r.blockIds as { id: string }[];
-		expect(blockIds.map((b) => b.id)).toContain("p1");
+		const blockIds = r.blockIds as { blockId: string }[];
+		expect(blockIds.map((b) => b.blockId)).toContain("p1");
 		// The serve-time snapshot exists — the follow-up edit verifies against
 		// what the agent saw, not against content read at edit time.
 		expect(harness.baselines.servedHash("h1")).toBeDefined();

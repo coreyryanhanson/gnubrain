@@ -139,13 +139,15 @@ async function duplicateStop(
 	// Single row: block IDs with content so the agent can go straight to
 	// `edit` by blockId — reuses the outline walk already in hand.
 	const blocks = walks[0]!.blocks.map((b) => ({
-		id: b.id,
+		blockId: b.id,
 		type: b.type,
 		content: b.content,
 	}));
 	// Same serve-time seeding as the outline above — blockIds is the
-	// payload the agent is invited to edit by id.
-	rememberServedRows(input.baselines, blocks);
+	// payload the agent is invited to edit by id. Seeding rides the walk
+	// rows (the snapshot being served), not the payload, whose rows are
+	// keyed blockId for the agent-facing vocabulary.
+	rememberServedRows(input.baselines, walks[0]!.blocks);
 	return stagedEnvelope(
 		withRowPayload(envelope, sessionId, "kb_write-blocks", "blockIds", blocks),
 		input,

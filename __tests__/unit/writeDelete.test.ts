@@ -42,8 +42,10 @@ describe("delete", () => {
 			truncated: false,
 		});
 		// The receipt rides the judged arm's content (the primitive's
-		// membership read): id + content verbatim.
-		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "doomed" }]);
+		// membership read): blockId + content verbatim.
+		expect(result.deletedBlocks).toEqual([
+			{ blockId: "p1", content: "doomed" },
+		]);
 		expect(
 			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
 		).toEqual(["p1"]);
@@ -318,7 +320,7 @@ describe("delete", () => {
 			truncated: false,
 		});
 		// The receipt rides the pre-delete walk set — the doc is gone.
-		expect(result.deletedBlocks).toEqual([{ id: "p1", content: "body" }]);
+		expect(result.deletedBlocks).toEqual([{ blockId: "p1", content: "body" }]);
 	});
 
 	it("a delete receipt over the preview budget spills: the pointer rides, the inline field goes", async () => {
@@ -337,7 +339,7 @@ describe("delete", () => {
 		});
 		expect(result.status).toBe("ok");
 		expect(result.deletedBlocks).toBeUndefined();
-		expect(result.deletedBlocksPreview).toContain('"id":"p1"');
+		expect(result.deletedBlocksPreview).toContain('"blockId":"p1"');
 		expect(result.deletedBlocksPath).toMatch(
 			/kb_write-deleted-blocks-[0-9a-f]{16}\.jsonl$/,
 		);

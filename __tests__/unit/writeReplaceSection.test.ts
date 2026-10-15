@@ -358,8 +358,8 @@ describe("replace-section", () => {
 		// The receipt: the section's closure (members + descendants, the
 		// heading survives) with the walk content verbatim.
 		expect(result.deletedBlocks).toEqual([
-			{ id: "p1", content: "old one" },
-			{ id: "p2", content: "old two" },
+			{ blockId: "p1", content: "old one" },
+			{ blockId: "p2", content: "old two" },
 		]);
 	});
 

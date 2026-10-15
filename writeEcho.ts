@@ -111,7 +111,7 @@ export function deletedBlocksTail(
 	sessionId: string,
 	blocks: { id: string; content: string | null }[],
 ): Record<string, unknown> {
-	const rows = blocks.map((b) => ({ id: b.id, content: b.content }));
+	const rows = blocks.map((b) => ({ blockId: b.id, content: b.content }));
 	const { inline, spillPath } = inlineOrSpill(
 		sessionId,
 		"kb_write-deleted-blocks",

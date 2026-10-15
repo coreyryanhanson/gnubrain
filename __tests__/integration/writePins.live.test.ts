@@ -430,8 +430,8 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				// The receipt: the swept closure's ids + walk content — the
 				// visibility the pre-write grant dialog does not carry.
 				expect(result.deletedBlocks).toEqual([
-					{ id: expect.any(String), content: "body one" },
-					{ id: expect.any(String), content: "trailing para" },
+					{ blockId: expect.any(String), content: "body one" },
+					{ blockId: expect.any(String), content: "trailing para" },
 				]);
 				const after = (await walkBlockTree(client, docId)).blocks;
 				expect(after.some((b) => b.content === "trailing para")).toBe(false);
