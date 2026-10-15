@@ -55,7 +55,7 @@ History lookup has something to search for.
    ```
 
 2. Run [SiYuan](https://siyuan.b3log.org) and enable its API.
-   GNUbrain requires SiYuan **3.8.6 exactly** — a different kernel version
+   GNUbrain requires SiYuan **3.8.7 exactly** — a different kernel version
    refuses every write and warns on reads.
 
    Note on markdown syntax settings: SiYuan's editor settings
@@ -117,7 +117,7 @@ enabled, and `/kb tools write` cascades read on since write requires read.
 | `writeConfirmTimeout` | `60` | Seconds the per-KB approval dialog waits before dismissing (`0` = wait forever); a dismissal denies that KB for the interaction |
 
 > [!NOTE]
-> Requires SiYuan 3.8.6 exactly. Any other kernel version refuses writes and
+> Requires SiYuan 3.8.7 exactly. Any other kernel version refuses writes and
 > warns on reads (the refusal message names both versions).
 
 ## Architecture
@@ -144,7 +144,7 @@ npm run typecheck
 npm run lint
 ```
 
-The live integration suite (opt-in, runs against a real SiYuan 3.8.6 kernel,
+The live integration suite (opt-in, runs against a real SiYuan 3.8.7 kernel,
 never in CI):
 
 ```sh

@@ -226,7 +226,7 @@ temp HOME for the headless child).
 
 ## Version coupling
 
-The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.6"`), the drift probe
+The SiYuan version pin (`PINNED_SIYUAN_VERSION`, `"3.8.7"`), the drift probe
 (`probeKernel` → `KernelProbeResult`), and the pinned lock schedule
 (`authLockSeconds`) live in `siyuan-kb-primitives`' `version.ts`. This repo
 consumes them through the read barrel: writes fail closed on a `drift` verdict
@@ -424,7 +424,7 @@ the live kernel on an upgrade pass.
   asserts kernel landing shape (`writePlacement.live` does, via the
   primitives' own predicates), the fact it exercises is falsified
   down-repo, never solely here.
-- The integration suite needs a live SiYuan 3.8.6 kernel and self-skips
+- The integration suite needs a live SiYuan 3.8.7 kernel and self-skips
   (`describe.skipIf`) unless `SIYUAN_INTEGRATION=1`. It mints two disposable
   notebooks per run and asserts teardown leaves no strays — point it at a
   kernel you can safely mutate, never CI.

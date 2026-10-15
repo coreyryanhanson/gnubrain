@@ -17,7 +17,7 @@ class ProbeShapeKernel {
 		return Promise.resolve({});
 	}
 	getVersion(): Promise<{ display_version: string }> {
-		return Promise.resolve({ display_version: "3.8.6" });
+		return Promise.resolve({ display_version: "3.8.7" });
 	}
 }
 
@@ -43,7 +43,7 @@ describe("trackKernel — structural contact trap", () => {
 		// method name is exempt here.
 		const t = tracked();
 		const version = await t.wrapped.getVersion();
-		expect(version.display_version).toBe("3.8.6");
+		expect(version.display_version).toBe("3.8.7");
 		expect(t.marks()).toBe(1);
 	});
 
@@ -55,7 +55,7 @@ describe("trackKernel — structural contact trap", () => {
 		class SelfRouting extends ProbeShapeKernel {
 			override async getVersion() {
 				await this.request("/api/version", {});
-				return { display_version: "3.8.6" };
+				return { display_version: "3.8.7" };
 			}
 		}
 		const wrapped = trackKernel(new SelfRouting(), () => {
@@ -74,7 +74,7 @@ describe("trackKernel — structural contact trap", () => {
 		class SelfRouting extends ProbeShapeKernel {
 			override async getVersion() {
 				await this.request("/api/version", {});
-				return { display_version: "3.8.6" };
+				return { display_version: "3.8.7" };
 			}
 		}
 		const wrapped = trackKernel(new SelfRouting(), () => {
