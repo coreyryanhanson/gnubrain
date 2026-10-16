@@ -72,6 +72,16 @@ item.
 
 ## Suggested kernel improvements
 
+> **Status.** Item 1 is decided and split into two plan docs: `delete-section`
+> (first, the safety fix — [`docs/delete-section-plan.md`](docs/delete-section-plan.md))
+> and `move-section` (deferred — [`docs/move-section-plan.md`](docs/move-section-plan.md)).
+> Corrections to this doc, now folded into the plans: the corruption is
+> outline/section ownership, not a tree-parent change, and the delete path is
+> fold-blind (`node.Unlink()`, no `IsSelfFolded` — unlike move); item 1's
+> "removes the last data-corruption path" claim holds only with the item-2 report
+> shipped in the same change; "atomic" is unachievable (one id per delete
+> request) — the honest claim is "one call, verified, partial-apply receipt".
+
 1. **`delete-section` mode** (heading + descendants, atomic). The delete
    half is the highest-value remaining fix: it removes the last
    data-corruption-by-default path (§1 — heading delete still silently
