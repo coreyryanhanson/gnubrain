@@ -1,10 +1,10 @@
 // The move flow: block-level moves ride the primitives' moveBlockVerified
 // (mutation, post-move walks, landed judgment — one call, one snapshot;
-// the pre-mutation refusals — foreign blockId, self-anchor no-op,
-// own-subtree ancestor — are verdict arms of that call, framed here from
-// writeVerdicts' wording fragments); doc-level moves ride moveDocVerified
-// (mutation, live-tree hpath judgment — the moved doc's echo hpath IS the
-// verdict's evidence). Doc-target resolution stays tool-side.
+// the pre-mutation refusals are all verdict arms of that call, framed
+// here from writeVerdicts' wording fragments); doc-level moves ride
+// moveDocVerified (mutation, live-tree hpath judgment — the moved doc's
+// echo hpath IS the verdict's evidence). Doc-target resolution stays
+// tool-side.
 
 import {
 	errorEnvelope,
@@ -41,14 +41,14 @@ import {
 	mutationFailureEnvelope,
 } from "./writeVerdicts.js";
 
-/** The verified block move's pre-mutation refusal frame — the placement
- * arms judged on the caller-held pre-move walk, the not-in-source scoping
- * arm (the kernel mutates by raw block id with no doc scoping of its own;
- * the judgment rides moveBlockVerified), and the walk-truncated refusal
- * (incomplete pre-move evidence). The primitives own the
- * kernel facts — the no-op self-anchor class and the own-subtree ancestor
- * class the kernel mishandles — and refuse before the mutation, zero
- * kernel calls; every arm words here. */
+/** The verified block move's pre-mutation refusal frame — the wording
+ * home for moveBlockVerified's pre-mutation refusal arms (the primitives
+ * judge the kernel facts; this repo words them): the placement pair
+ * already-at-destination / own-subtree, the two fold-blind heading arms
+ * (target and move anchor), the not-in-source scoping arm (the kernel
+ * mutates by raw block id with no doc scoping of its own), and
+ * walk-truncated (incomplete pre-move walk). All refuse before the
+ * mutation. */
 function movePlacementRefusalEnvelope(
 	outcome: Extract<
 		MoveBlockOutcome,
@@ -57,6 +57,8 @@ function movePlacementRefusalEnvelope(
 				| "already-at-destination"
 				| "own-subtree"
 				| "not-in-source"
+				| "heading-with-section"
+				| "heading-anchor-with-section"
 				| "walk-truncated";
 		}
 	>,
@@ -65,6 +67,10 @@ function movePlacementRefusalEnvelope(
 	switch (outcome.kind) {
 		case "walk-truncated":
 			return refusedEnvelope(moveWalkTruncatedMessage);
+		case "heading-anchor-with-section":
+			return refusedEnvelope(
+				`cannot move to anchor '${outcome.anchorId}' — the anchor is a heading with a section body, and the kernel can land the move after that anchor's whole section instead of directly after it (the redirect depends on the anchor's fold state), so the anchor is refused instead of resolved from hidden state. The destination changed between the anchor's derivation and the move — re-issue the move to re-derive the anchor, or use append for section-start placement`,
+			);
 		case "already-at-destination":
 			return refusedEnvelope(
 				`block '${outcome.blockId}' already sits at the destination position — nothing to move`,
@@ -76,6 +82,10 @@ function movePlacementRefusalEnvelope(
 		case "not-in-source":
 			return refusedEnvelope(
 				`blockId '${outcome.blockId}' is not a block of source doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`,
+			);
+		case "heading-with-section":
+			return refusedEnvelope(
+				`cannot move block '${outcome.blockId}' — it is a heading with a section body (${outcome.memberIds.length} block(s) under it); the kernel's move scope for such a heading depends on its fold state (folded, the whole section travels with it; unfolded, the heading moves alone and the body is left behind), so the move is refused instead of resolved from hidden state. Move the body blocks individually against a derived section-end anchor, or use append for section-start placement`,
 			);
 	}
 	outcome satisfies never;
@@ -255,8 +265,10 @@ export async function runMoveMode(
 		destRootId: dest.rootId,
 		// The walk in hand is the pre-move tree — same-doc it doubles as the
 		// source walk and feeds the placement refusals; cross-doc the flow
-		// holds no pre-walk (the docs are disjoint, the refusals cannot
-		// fire) and the primitive fetches the source walk itself.
+		// holds no pre-walk and the primitive fetches its own walks (the
+		// source for scoping/target, the destination for a move anchor's
+		// anchor-arm read — the placement refusals still cannot fire
+		// cross-doc).
 		...(sameDoc
 			? { sameDoc: true, preDestWalk: destWalk }
 			: { sameDoc: false }),
@@ -265,6 +277,8 @@ export async function runMoveMode(
 		outcome.kind === "already-at-destination" ||
 		outcome.kind === "own-subtree" ||
 		outcome.kind === "not-in-source" ||
+		outcome.kind === "heading-with-section" ||
+		outcome.kind === "heading-anchor-with-section" ||
 		outcome.kind === "walk-truncated"
 	) {
 		return movePlacementRefusalEnvelope(outcome, doc);

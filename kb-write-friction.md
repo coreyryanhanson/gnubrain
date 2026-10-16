@@ -23,10 +23,20 @@ blocks).
 location and re-parent to the preceding heading, exactly as in delete. Verified by moving
 a section heading to another section and querying the body block's `parent_id`.
 
-- A section move is therefore: move the heading, then move each top-level body block —
-  and order matters. Moving the heading back lands it *after* the orphaned body
-  ("end of section" anchors to the re-parented body as the last child), so the body must
-  be moved under the heading as a second step.
+- A section move used to be expressible as: move the heading, then move each
+  top-level body block — with an ordering trap (moving the heading back lands it
+  *after* the orphaned body, since "end of section" anchors to the re-parented
+  body as the last child). As of the fold-blind move refusals, the tool no
+  longer permits the heading-first step at all: `moveBlockVerified` refuses
+  section-bearing heading targets fold-blind and pre-mutation
+  (`heading-with-section`, plus the matching anchor-arm refusal
+  `heading-anchor-with-section`) — the kernel's move scope for such headings
+  is fold-dependent hidden state (folded, the section travels along;
+  unfolded, the body is orphaned exactly as described above). The workaround
+  the refusal wording itself advises: move the body blocks individually
+  against a derived section-end anchor, or use `append` for section-start
+  placement. The sanctioned single-call replacement is `move-section`
+  (below).
 
 ## 3. Section-level anchoring can refuse a legitimate-looking move
 
@@ -62,10 +72,14 @@ item.
 
 ## Suggested kernel improvements
 
-1. **`delete-section` / `move-section` modes** (heading + descendants, atomic). The
+1. **`delete-section` mode** (heading + descendants, atomic). The delete
+   half is the highest-value remaining fix: it removes the last
+   data-corruption-by-default path (§1 — heading delete still silently
+   re-parents the section body). A `move-section` mode is also worth adding
+   for expressiveness — the corruption half of move is already closed by the
+   fold-blind refusals, so it is a convenience, not a safety fix. The
    primitives exist but the safe composition (heading op + per-block sweep, in the right
-   order, with verification between) is undiscoverable and silent-failure-prone. This is
-   the highest-value fix: it removes a data-corruption-by-default path.
+   order, with verification between) is undiscoverable and silent-failure-prone.
 2. Cheaper alternative: make heading delete/move responses report re-parented child
    blocks explicitly (e.g. "N child blocks re-parented to <heading>") instead of only
    counting cross-doc ref orphans.

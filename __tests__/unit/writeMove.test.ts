@@ -263,6 +263,57 @@ describe("block-level move", () => {
 		);
 	});
 
+	// The heading-with-section target refusal: a section-bearing heading
+	// is an under-specified mutation (the kernel drags the section when
+	// the heading is self-folded, moves alone and orphans the body when it
+	// is not) — the primitive refuses fold-blind. (The arm is falsified
+	// down-repo; this pins the refusal wording.) MOVE_DOC's h1 carries the
+	// section [p1, p2].
+	it("a section-bearing heading target is refused — the fold-blind heading-with-section arm, wording self-contained", async () => {
+		const harness = moveHarness(undefined, {
+			blockRows: [{ id: "h1", content: "A" }],
+		});
+		const result = await harness.execute({
+			kb: "recipes",
+			mode: "move",
+			docId: "d-doc",
+			blockId: "h1",
+			toDocId: "d-doc",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("heading with a section body");
+		expect(result.message).toContain("2 block(s) under it");
+		expect(result.message).toContain("section-end anchor");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
+	// The heading-anchor-with-section anchor refusal, reachable only
+	// through the cross-doc race: the flow derives its anchor from one
+	// destination fetch, the primitive judges it on its own later fetch,
+	// and a concurrent edit between the two makes the anchor's heading
+	// section-bearing. (The arm is falsified down-repo; this pins the
+	// refusal wording.) The stub models the edit with a counting getter.
+	it("a cross-doc move anchor landing on a section-bearing heading is refused — the heading-anchor-with-section arm, wording self-contained", async () => {
+		const harness = moveHarness();
+		const seeds = harness.childrenFor["d-other"] ?? [];
+		let destFetches = 0;
+		Object.defineProperty(harness.childrenFor, "d-other", {
+			get: () =>
+				++destFetches === 1
+					? seeds
+					: [...seeds, walkBlock("stow", "p", "", "stowaway")],
+		});
+		const result = await harness.execute({ ...moveParams });
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain("anchor is a heading with a section body");
+		expect(result.message).toContain("re-issue the move");
+		expect(harness.calls.filter((c) => c.method === "moveBlock")).toHaveLength(
+			0,
+		);
+	});
+
 	it("doc-level: moveDocsByID with the notebook id on un-nest; pinned result shape", async () => {
 		const harness = moveHarness();
 		const result = await harness.execute({
