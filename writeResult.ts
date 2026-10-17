@@ -6,12 +6,13 @@
 import { causeOf } from "siyuan-kb-primitives";
 import {
 	errorEnvelope,
-	takePartialReplace,
+	takePartialApply,
 	PARTIAL_APPLY_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
 import {
 	postWriteAssemblyFailedMessage,
+	partialApplyRender,
 	verificationReadsFailedMessage,
 } from "./writeVerdicts.js";
 
@@ -48,13 +49,15 @@ export async function finishWrite(
 		) {
 			throw err;
 		}
-		const partial = takePartialReplace(err);
+		const partial = takePartialApply(err);
+		const render =
+			partial !== undefined ? partialApplyRender(partial) : undefined;
 		const detail = err instanceof Error ? err.message : String(err);
 		let message: string;
-		if (partial !== undefined) {
+		if (render !== undefined) {
 			message =
-				`the write is partially applied — a mid-write step failed: ` +
-				`${detail} — the earlier steps have landed; ${PARTIAL_APPLY_GUIDANCE}`;
+				`the write is ${render.status} — a mid-write step failed: ` +
+				`${detail} — ${render.tail}; ${PARTIAL_APPLY_GUIDANCE}`;
 		} else if (cause === undefined) {
 			message = postWriteAssemblyFailedMessage(detail);
 		} else {
@@ -73,14 +76,10 @@ export async function finishWrite(
 					message = postWriteAssemblyFailedMessage(detail);
 			}
 		}
-		// A mid-sequence failure (replace-section's delete sweep) attaches
-		// its partial-apply state to the error before it lands here — the
-		// envelope must carry it, or the re-run-invites-duplication hazard
-		// the sweep's own catch guards against re-enters one error class
-		// over.
 		return errorEnvelope(message, {
 			...extra,
 			...partial,
+			...render?.marker,
 			kb,
 			verificationFailed: true,
 		});

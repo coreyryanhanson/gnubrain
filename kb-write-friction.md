@@ -6,9 +6,8 @@ All findings verified against the live kernel, not assumed from docs.
 ## 1. Heading delete does not cascade to section body
 
 `mode: delete` with a heading's `blockId` removes **only the heading block**. The section
-body survives and silently re-parents to the nearest preceding heading — with no warning
-in the response ("0 orphaned refs" refers to cross-document refs, not orphaned content
-blocks).
+body survives and re-parents to the nearest preceding heading — with no warning in the
+response ("0 orphaned refs" refers to cross-document refs, not orphaned content blocks).
 
 - Failure looks like success. Contaminated content lands in an unrelated section where it
   can sit unnoticed until someone reads the doc closely.
@@ -70,28 +69,17 @@ without including the `- ` marker converts it to a paragraph; sibling list items
 collapsed with it. Keep the list marker in replacement markdown when the target is a list
 item.
 
-## Suggested kernel improvements
+## Status
 
-> **Status.** Item 1 is decided and split into two plan docs: `delete-section`
-> (first, the safety fix — [`docs/delete-section-plan.md`](docs/delete-section-plan.md))
-> and `move-section` (deferred — [`docs/move-section-plan.md`](docs/move-section-plan.md)).
-> Corrections to this doc, now folded into the plans: the corruption is
-> outline/section ownership, not a tree-parent change, and the delete path is
-> fold-blind (`node.Unlink()`, no `IsSelfFolded` — unlike move); item 1's
-> "removes the last data-corruption path" claim holds only with the item-2 report
-> shipped in the same change; "atomic" is unachievable (one id per delete
-> request) — the honest claim is "one call, verified, partial-apply receipt".
-
-1. **`delete-section` mode** (heading + descendants, atomic). The delete
-   half is the highest-value remaining fix: it removes the last
-   data-corruption-by-default path (§1 — heading delete still silently
-   re-parents the section body). A `move-section` mode is also worth adding
-   for expressiveness — the corruption half of move is already closed by the
-   fold-blind refusals, so it is a convenience, not a safety fix. The
-   primitives exist but the safe composition (heading op + per-block sweep, in the right
-   order, with verification between) is undiscoverable and silent-failure-prone.
-2. Cheaper alternative: make heading delete/move responses report re-parented child
-   blocks explicitly (e.g. "N child blocks re-parented to <heading>") instead of only
-   counting cross-doc ref orphans.
-3. Document the heading-level-demotion idiom for nesting, and the "end of section" anchor
-   semantics, in the `kb_write` tool description.
+All three suggestions have landed: the `delete-section` mode (one verified
+section-removal call with a partial-apply receipt — not atomic; the honest
+claim is "one call, verified, partial-apply receipt"), the heading-delete
+report (a heading-scoped `mode: delete` names the member blocks left in
+place), and the heading-demotion idiom + "end of section" anchor semantics
+in the `kb_write` tool description. The kernel-fact corrections folded out
+of the original suggestions — the corruption is outline/section ownership,
+not a tree-parent change, and the delete path is fold-blind (`node.Unlink()`,
+no `IsSelfFolded` — unlike move) — now live in the primitives'
+`deleteSection.ts` module doc and the AGENTS.md fact lists. The remaining
+open item is `move-section`
+([`docs/move-section-plan.md`](docs/move-section-plan.md), deferred).

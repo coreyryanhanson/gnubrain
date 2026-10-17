@@ -23,7 +23,7 @@ The extension registers four tools with pi:
 | `kb_read` | Read a document (markdown + heading outline) from an active KB |
 | `kb_search` | Full-text search across active KBs |
 | `kb_query` | Read-only SQL against the KB index (scoped and safety-checked) |
-| `kb_write` | Create, edit, append, replace-section, move, or delete — approved once per KB per interaction |
+| `kb_write` | Create, edit, append, replace-section, delete, delete-section, or move — approved once per KB per interaction |
 
 `kb_read` also accepts `kb: "kbs"` in place of a docId to list the active
 KBs — a discovery call that touches no kernel endpoint.

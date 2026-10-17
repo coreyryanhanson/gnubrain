@@ -2,8 +2,8 @@
 // shape, doc-target ownership resolution, the heading-target judgment's
 // wording map, and the truncation refusals — what the per-mode flow files
 // (writeCreate/writeEdit/writeAppend/writeReplaceSection/writeDelete/
-// writeMove) build on before any mutation. The fresh-content pre-mutation
-// precondition lives in writeFresh.ts.
+// writeDeleteSection/writeMove) build on before any mutation. The
+// fresh-content pre-mutation precondition lives in writeFresh.ts.
 
 import {
 	errorEnvelope,
@@ -70,8 +70,8 @@ export async function resolveDocTarget(
 	return { rootId: root.docId, title: root.title };
 }
 
-/** The stale-heading refusal — shared by headingInWalk and replace-section's
- * section-membership fallback, which both reject the same target. */
+/** The stale-heading refusal — the heading-target arms inside this module
+ * (anchorRefusal) and the move target guard all reject the same target. */
 export function staleHeadingMessage(headingId: string, doc: DocTarget): string {
 	return `headingId '${headingId}' is not a heading of doc '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
 }
@@ -87,11 +87,13 @@ function walkTruncatedMessage(doc: DocTarget): string {
 }
 
 /** The shared anchor-narrowing refusal — the two fail-closed arms every
- * flow's anchor/section projection shares, worded once. The narrowing is
- * fail-closed: headingInWalk already refused an absent id on this same
- * walk, so heading-absent here is a caller/derivation mismatch, not a
- * fresh fact about the doc. Walk-truncated takes the flow's depth-bound
- * sentence (writeVerdicts), heading-absent the stale-heading refusal.
+ * flow's anchor/section projection shares, worded once. For the
+ * headingInWalk-first consumers (append, replace-section) heading-absent
+ * is a caller/derivation mismatch, not a fresh fact about the doc;
+ * delete-section resolves through sectionOf alone (see its docstring),
+ * so there the arm is a fresh, reachable refusal. Walk-truncated takes
+ * the flow's depth-bound sentence (writeVerdicts), heading-absent the
+ * stale-heading refusal.
  * Passing the narrowed kind keeps the inline narrowing discipline: a new
  * primitives arm fails typecheck at the call site's landed path, not
  * through a cast. */

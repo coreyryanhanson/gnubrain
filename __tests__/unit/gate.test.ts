@@ -12,7 +12,7 @@ import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
 import {
 	errorEnvelope,
-	markPartialReplace,
+	markPartialApply,
 	type Envelope,
 } from "../../envelope.js";
 import {
@@ -493,10 +493,8 @@ describe("runKbCall error classification", () => {
 	// instead of a bare "SiYuan unreachable" that invites a blind retry.
 	it("a transport error carrying partial-apply state renders the receipt, not a bare unreachable", async () => {
 		const err = new SiYuanNetworkError();
-		markPartialReplace(err, {
-			partialReplace: true,
+		markPartialApply(err, {
 			newBlockId: "20240101120000-abcdefg",
-			deletedBlockIds: ["20240101120000-h"],
 			remainingBlockIds: ["20240101120000-i"],
 		});
 		const envelope = await runKbCall(
@@ -516,10 +514,34 @@ describe("runKbCall error classification", () => {
 		expect(envelope.message).toContain("partially applied");
 		expect(envelope.message).toContain("do NOT re-run");
 		expect(envelope).toMatchObject({
-			partialReplace: true,
+			partialApply: true,
 			newBlockId: "20240101120000-abcdefg",
-			deletedBlockIds: ["20240101120000-h"],
 			remainingBlockIds: ["20240101120000-i"],
+		});
+	});
+
+	it("a marked error with an empty pending set renders the appliedUnverified marker, not the partial label", async () => {
+		const err = new SiYuanNetworkError();
+		markPartialApply(err, {
+			remainingBlockIds: [],
+		});
+		const envelope = await runKbCall(
+			{
+				validation: validation(),
+				breaker: new CircuitBreaker(),
+				kb: "recipes",
+				arity: "single",
+				now: NOW,
+			},
+			async () => {
+				throw err;
+			},
+		);
+		expect(envelope.message).toContain("applied but unverified");
+		expect(envelope.message).not.toContain("partially applied");
+		expect(envelope).toMatchObject({
+			appliedUnverified: true,
+			remainingBlockIds: [],
 		});
 	});
 });

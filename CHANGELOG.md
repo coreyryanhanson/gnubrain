@@ -18,7 +18,8 @@
   - `kb_query` — read-only SQL over the kernel's SQLite index, parser-certified
     (DML, multi-statement, and non-allowlisted `FROM` tables rejected), with
     per-KB scoping spliced into the AST and a LIMIT 64 injected when absent.
-  - `kb_write` — create / edit / append / replace-section / delete / move, all
+  - `kb_write` — create / edit / append / replace-section / delete /
+    delete-section / move, all
     behind the per-KB write grant and all verified: every mutation's landing is
     judged against the post-write block tree, so a silently rolled-back insert,
     a no-op delete, or a lost move reads as a refusal, never as ok; minted and
@@ -29,7 +30,12 @@
     exempt by design — the receipt is the contract); and delete-bearing
     writes echo `invalidRefs` plus a
     receipt of the removed blocks (ids + content; overflow spills to a file
-    pointer).
+    pointer). `delete-section` removes a whole section under a heading in one
+    verified call — the heading plus every member block until the first
+    same-or-shallower heading, deeper subheadings and their bodies included —
+    with a partial-apply receipt when the sweep dies mid-way; and a
+    heading-scoped plain `delete` reports the body blocks its orphaned members
+    left behind, since the kernel removes only the heading itself.
 
 - **`/kb` command** for session-scoped control:
 

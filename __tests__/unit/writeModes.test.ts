@@ -226,7 +226,7 @@ describe("transport failure on the mutation call itself", () => {
 			expectUnverified(r);
 			expect(calls.filter((c) => methods.includes(c.method))).toHaveLength(1);
 			if (noSweep) {
-				expect(r.partialReplace).toBeUndefined();
+				expect(r.partialApply).toBeUndefined();
 				expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 			}
 		},

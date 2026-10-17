@@ -891,5 +891,94 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 			},
 			LIVE_TIMEOUT,
 		);
+
+		// -------------------------------------------------------------------
+		// delete-section — envelope shape + the heading-delete report on
+		// the live path
+		// -------------------------------------------------------------------
+
+		it(
+			"delete-section: ok envelope shape on a live section-bearing heading — members first, heading last, receipt itemizes the closure",
+			async () => {
+				const docId = await mintDoc(
+					client,
+					boxId,
+					"/Delete Section Mode",
+					"# Delete Section Mode\n\nbody one\n\n## Nested\n\nnested body\n\n# Next\n\nnext body\n",
+				);
+				const tree = await walkBlockTree(client, docId);
+				const target = heading(tree.blocks, "Delete Section Mode").id;
+				const section = sectionOf(tree, target);
+				expect(section.kind).toBe("section");
+				const memberIds =
+					section.kind === "section"
+						? section.section.members.map((b) => b.id)
+						: [];
+				expect(memberIds).toHaveLength(3); // body one, Nested, nested body
+
+				const w = writeSetup();
+				const result = await w.run({
+					kb: "fixture-a",
+					mode: "delete-section",
+					docId,
+					headingId: target,
+				});
+				expect(result.status).toBe("ok");
+				expect(result.headingId).toBe(target);
+				// The receipt itemizes the whole removal — members (with the
+				// deeper heading among them) plus the heading itself, members
+				// first in document order.
+				expect(result.deletedBlocks).toHaveLength(4);
+				expect(
+					(result.deletedBlocks as { blockId: string }[]).map((b) => b.blockId),
+				).toEqual([...memberIds, target]);
+				// The echo tail reflects the post-delete tree: only "# Next" and
+				// its body remain.
+				expect(result.outline).toBeDefined();
+				expect(outlineIds(result.outline)).toEqual(
+					(await walkHeadingIds(docId)).filter((id) => id !== target),
+				);
+			},
+			LIVE_TIMEOUT,
+		);
+
+		it(
+			"delete (heading) on a live section-bearing heading: the ok receipt carries the heading-delete report with the member ids",
+			async () => {
+				const docId = await mintDoc(
+					client,
+					boxId,
+					"/Heading Delete Report",
+					"# Heading Delete Report\n\nbody one\n\n## Nested\n\nnested body\n\n# Next\n\nnext body\n",
+				);
+				const tree = await walkBlockTree(client, docId);
+				const target = heading(tree.blocks, "Heading Delete Report").id;
+				const section = sectionOf(tree, target);
+				expect(section.kind).toBe("section");
+				const memberIds =
+					section.kind === "section"
+						? section.section.members.map((b) => b.id)
+						: [];
+
+				const w = writeSetup();
+				const result = await w.run({
+					kb: "fixture-a",
+					mode: "delete",
+					docId,
+					blockId: target,
+				});
+				// The fold-blind fact's tool-side consequence: the delete acks ok,
+				// and the receipt names exactly what stayed behind.
+				expect(result.status).toBe("ok");
+				expect(String(result.message)).toContain("left in place");
+				expect(result.orphanedMembers).toEqual(memberIds);
+				// The members really did survive the heading delete.
+				const after = await walkBlockTree(client, docId);
+				for (const id of memberIds) {
+					expect(after.blocks.some((b) => b.id === id)).toBe(true);
+				}
+			},
+			LIVE_TIMEOUT,
+		);
 	},
 );

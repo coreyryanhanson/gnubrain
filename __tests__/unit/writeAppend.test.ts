@@ -217,7 +217,7 @@ describe("append", () => {
 			walkBlock("h2", "h", "h2", "In footnote", "fn1", ""),
 		];
 		const result = headingInWalk(
-			{ blocks: walk, truncated: false, incomplete: false },
+			{ blocks: walk, rootId: "d-doc", truncated: false, incomplete: false },
 			{ title: "Doc", rootId: "d-doc" },
 			"h2",
 		);

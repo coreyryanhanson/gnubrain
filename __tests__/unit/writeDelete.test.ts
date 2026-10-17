@@ -8,7 +8,13 @@ import {
 	SiYuanNetworkError,
 	SiYuanRateLimitError,
 } from "siyuan-kb-primitives";
-import { expectUnverified, setup, walkBlock } from "./writeHarness.js";
+import {
+	expectUnverified,
+	nestChain,
+	setup,
+	walkBlock,
+	DELETE_DOC as DOC,
+} from "./writeHarness.js";
 
 // ---------------------------------------------------------------------------
 // delete — walk-set evidence + the doc-level pinned shape
@@ -49,6 +55,10 @@ describe("delete", () => {
 		expect(
 			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
 		).toEqual(["p1"]);
+		// A plain block is not a heading — the heading-delete report stays out of a
+		// block-level receipt (the suppression pin rides the ok case).
+		expect(result.message).not.toContain("left in place");
+		expect(result.orphanedMembers).toBeUndefined();
 	});
 
 	it("concurrent change → stale_content refusal before any kernel write", async () => {
@@ -343,5 +353,134 @@ describe("delete", () => {
 		expect(result.deletedBlocksPath).toMatch(
 			/kb_write-deleted-blocks-[0-9a-f]{16}\.jsonl$/,
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The heading-delete report — the heading-only delete's orphan judgment
+// ---------------------------------------------------------------------------
+
+describe("delete — the heading-delete report", () => {
+	// The section-bearing doc the report reads (AGENTS.md's Heading-delete
+	// scope; pinned here so doc and mode cannot drift): the section rule is
+	// document-order, so h2/p2 are tree siblings that belong to h1's
+	// section.
+
+	it("a section-bearing heading's ok receipt reports the members left in place, ids included", async () => {
+		// cascadeDelete: the kernel's heading delete is fold-blind — it
+		// removes ONLY the heading (its tree descendants; members are tree
+		// siblings), so p1/h2/p2 survive in the post-write walk.
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "h1", content: "Goals" }],
+				childrenFor: DOC,
+				cascadeDelete: true,
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "h1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.message).toContain(
+			"3 body block(s) left in place; they no longer belong to this heading: p1, h2, p2",
+		);
+		expect(result.orphanedMembers).toEqual(["p1", "h2", "p2"]);
+	});
+
+	it("a section-less heading (present, empty member set) suppresses the report", async () => {
+		// h1 is followed immediately by a same-level heading: a present
+		// heading whose member set is empty — the ids arm's silent return.
+		// (That the empty set is ids: [] and not a refusal arm is the
+		// projection's own fact, pinned in the primitives.)
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "h1", content: "Goals" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "Goals"),
+						walkBlock("h2", "h", "h1", "Next"),
+					],
+				},
+				cascadeDelete: true,
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "h1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.message).not.toContain("left in place");
+		expect(result.orphanedMembers).toBeUndefined();
+	});
+
+	it("a plain block's ok receipt carries no report and no degrade — nothing to report", async () => {
+		// A paragraph orphan nothing: the projection's not-a-heading arm
+		// suppresses silently — the degraded line (which mentions section
+		// members) would be a false alarm on a non-heading delete.
+		const { execute } = setup({
+			config: {
+				blockRows: [{ id: "p1", content: "Body" }],
+				childrenFor: {
+					"d-doc": [walkBlock("p1", "p", "", "Body")],
+				},
+				cascadeDelete: true,
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "p1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.message).not.toContain("left in place");
+		expect(result.message).not.toContain("may go unreported");
+		expect(result.orphanedMembers).toBeUndefined();
+	});
+
+	it("an incomplete pre-walk degrades the report to a confirmation line, never silence", async () => {
+		// The section nests past the walk depth bound, so the fresh
+		// pre-walk cannot bound it; the delete itself shallows the doc
+		// (the chain collapses concurrently in the stub), so the post-write
+		// walk is complete and the delete judges ok — the report weakens
+		// to the degraded line instead of vanishing.
+		const { execute, childrenFor } = setup({
+			config: {
+				blockRows: [{ id: "h1", content: "Goals" }],
+				childrenFor: {
+					"d-doc": [
+						walkBlock("h1", "h", "h1", "Goals"),
+						walkBlock("c9", "", "", "container"),
+					],
+					c9: [],
+				},
+				cascadeDelete: true,
+				onDelete: () => {
+					// The chain collapses before the post-write walk — the stub
+					// stand-in for the concurrent change that shallowed the doc.
+					for (const key of Object.keys(childrenFor)) {
+						if (key.startsWith("n")) delete childrenFor[key];
+					}
+					childrenFor["c9"] = [];
+				},
+			},
+		});
+		// A chain of nested unnamed containers under c9 (built after setup,
+		// before the call): the pre-walk recurses into it and truncates.
+		nestChain(childrenFor, "c9", 33);
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "h1",
+		});
+		expect(result.status).toBe("ok");
+		expect(result.message).toContain("members left in place may go unreported");
+		expect(result.orphanedMembers).toBeUndefined();
 	});
 });

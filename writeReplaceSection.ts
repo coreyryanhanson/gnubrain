@@ -7,7 +7,7 @@
 import {
 	appendAnchorOf,
 	backlinkCheck,
-	causeOf,
+	partitionByAbsence,
 	sectionOf,
 	walkBlockTree,
 } from "siyuan-kb-primitives";
@@ -17,15 +17,18 @@ import {
 } from "siyuan-kb-primitives/write";
 import {
 	errorEnvelope,
-	markPartialReplace,
-	refusedEnvelope,
+	partialApplyMarker,
 	type Envelope,
 } from "./envelope.js";
-import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
+import {
+	deletedBlocksTail,
+	echoTail,
+	mutationFailure,
+	rethrowClassified,
+} from "./writeEcho.js";
 import {
 	anchorRefusal,
 	headingInWalk,
-	staleHeadingMessage,
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
@@ -35,6 +38,8 @@ import {
 	appendAnchorEcho,
 	insertLandedRefusal,
 	replaceSectionWalkTruncatedMessage,
+	sweepMembersSurvivedFields,
+	sweepMembersSurvivedMessage,
 } from "./writeVerdicts.js";
 
 /** The delete-sweep refusal frame — the sweep outcome arms the flow does
@@ -70,15 +75,17 @@ function sweepRefusalEnvelope(
 			return errorEnvelope(
 				`replace partially applied: the new section is in place (block '${ctx.newBlockId}') but the delete of '${outcome.failedId}' failed (${outcome.message})` +
 					(deleted > 0
-						? `, and ${deleted} earlier block(s) were deleted`
+						? `, and the deletes of ${deleted} earlier block(s) acked unverified (no verification walk ran)`
 						: "") +
 					` — do NOT re-run; delete the remaining old-section block(s) to finish: ${outcome.remainingBlockIds.join(", ")}`,
 				{
 					kb: ctx.kb,
 					anchor: ctx.anchor,
 					newBlockId: ctx.newBlockId,
-					partialReplace: true,
-					deletedBlockIds: outcome.deletedBlockIds,
+					...partialApplyMarker({
+						remainingBlockIds: outcome.remainingBlockIds,
+					}),
+					unconfirmedBlockIds: outcome.deletedBlockIds,
 					remainingBlockIds: outcome.remainingBlockIds,
 				},
 			);
@@ -90,27 +97,35 @@ function sweepRefusalEnvelope(
 					kb: ctx.kb,
 					anchor: ctx.anchor,
 					newBlockId: ctx.newBlockId,
-					partialReplace: true,
+					// Terminal cascade-consumed marker, spread directly:
+					// fully applied, judged, and lost — never rethrown, so
+					// no shared render frame sees it.
+					appliedConsumed: true,
 					deletedBlockIds: ctx.memberIds,
 					remainingBlockIds: [],
 					...ctx.tail,
 				},
 			);
-		case "members-survived":
+		case "members-survived": {
+			// Presence-derived complement of the survivors, split by the shared
+			// primitives projection — the sentence and payload fields are the
+			// shared sweep fragment (writeVerdicts), same arm, same wording as
+			// delete-section's sweep.
+			const split = partitionByAbsence(ctx.memberIds, outcome.postWalk);
 			return errorEnvelope(
-				`verified-sweep failed: the delete of '${outcome.survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id`,
+				sweepMembersSurvivedMessage(
+					outcome.survivedIds,
+					split.kind === "unconfirmed",
+				),
 				{
 					kb: ctx.kb,
 					anchor: ctx.anchor,
 					newBlockId: ctx.newBlockId,
-					partialReplace: true,
-					deletedBlockIds: ctx.memberIds.filter(
-						(id) => !outcome.survivedIds.includes(id),
-					),
-					remainingBlockIds: outcome.survivedIds,
+					...sweepMembersSurvivedFields(split),
 					...ctx.tail,
 				},
 			);
+		}
 	}
 	outcome satisfies never;
 	return errorEnvelope("internal: unhandled sweep verdict");
@@ -151,7 +166,7 @@ export async function runReplaceSectionMode(
 	// SQL index and checks against the live tree in one pass (a change
 	// landing since the walk is caught as stale_content, never moved into
 	// a baseline — anti-laundering invariant: baselines.ts).
-	const stale = await freshContentRefusal(
+	const { refusal } = await freshContentRefusal(
 		kernel,
 		baselines,
 		section.closure.map((b) => ({
@@ -160,7 +175,7 @@ export async function runReplaceSectionMode(
 		})),
 		{ sessionId, docId: doc.rootId },
 	);
-	if (stale !== null) return stale;
+	if (refusal !== null) return refusal;
 	// The anchor echo — projected from the section this flow already
 	// enumerated, the same projection the sequence derives internally for
 	// the mutation (the heading-absent tripwire below pins that
@@ -184,19 +199,17 @@ export async function runReplaceSectionMode(
 	) {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
-	if (outcome.kind === "walk-truncated") {
-		// The sequence refuses a truncated pre-mutation walk before any
-		// kernel call — the enumeration, anchor, and pre-write id set would
-		// derive from incomplete evidence.
-		return refusedEnvelope(replaceSectionWalkTruncatedMessage, {
-			kb: name,
-			anchor: echo,
-		});
-	}
-	if (outcome.kind === "heading-absent") {
-		// Unreachable — the sequence re-derives the same section from the
+	if (outcome.kind === "walk-truncated" || outcome.kind === "heading-absent") {
+		// Unreachable — the sequence refuses a truncated pre-mutation walk
+		// before any kernel call, and re-derives the same section from the
 		// same walk this flow just resolved. Fail-closed tripwire.
-		return refusedEnvelope(staleHeadingMessage(headingId, doc));
+		return anchorRefusal(
+			outcome.kind,
+			doc,
+			headingId,
+			name,
+			replaceSectionWalkTruncatedMessage,
+		);
 	}
 	// Everything from here on is post-mutation — a drop anywhere in the
 	// delete sweep or the echo must never read as "unreachable" while the
@@ -226,33 +239,27 @@ export async function runReplaceSectionMode(
 				// old section may be swept, so the partial state rides the
 				// error for the catch sites to merge into whatever envelope the
 				// classifier produces. Non-kernel error classes rethrow
-				// unmarked.
-				if (causeOf(outcome.error) !== undefined) {
-					markPartialReplace(outcome.error, {
-						partialReplace: true,
-						newBlockId: outcome.insertedId,
-						deletedBlockIds: outcome.deletedBlockIds,
-						remainingBlockIds: outcome.remainingBlockIds,
-					});
-				}
-				throw outcome.error;
+				// unmarked. The acked deletes ride unconfirmedBlockIds — no
+				// walk verified them.
+				return rethrowClassified(outcome.error, {
+					newBlockId: outcome.insertedId,
+					remainingBlockIds: outcome.remainingBlockIds,
+					unconfirmedBlockIds: outcome.deletedBlockIds,
+				});
 			case "sweep-walk-failed":
 				// Every member delete acked but the verification walk itself
 				// failed — the sweep is complete but unjudged, so this must
 				// never surface as a raw transport error ("SiYuan unreachable")
 				// while the whole write is applied. Rethrow inside the
 				// finish-write wrapper with the partial state attached: the
-				// fully-swept delete set rides as the receipt, nothing remains
-				// pending, and the classifier renders verificationFailed.
-				if (causeOf(outcome.error) !== undefined) {
-					markPartialReplace(outcome.error, {
-						partialReplace: true,
-						newBlockId: outcome.insertedId,
-						deletedBlockIds: outcome.deletedBlockIds,
-						remainingBlockIds: [],
-					});
-				}
-				throw outcome.error;
+				// acked set rides unconfirmedBlockIds (no walk verified it),
+				// nothing remains pending, and the classifier renders
+				// verificationFailed.
+				return rethrowClassified(outcome.error, {
+					newBlockId: outcome.insertedId,
+					remainingBlockIds: [],
+					unconfirmedBlockIds: outcome.deletedBlockIds,
+				});
 			case "sweep-refused": {
 				// Any refusal arm carrying a certified post-sweep walk serves
 				// it as the inline outline — the recovery evidence — and seeds
@@ -276,18 +283,24 @@ export async function runReplaceSectionMode(
 					tail: await echoTail(input, doc, certifiedWalk),
 				});
 			}
-			case "sweep-truncated":
+			case "sweep-truncated": {
 				// The deletes acked but the post-sweep walk hit the depth
-				// bound: the swept judgment's absence facts are unconfirmed.
-				// Applied-but-unverified — never ok, never a rollback.
+				// bound: the swept judgment's absence facts are unconfirmed, so
+				// the acked set cannot read as deleted — it rides
+				// unconfirmedBlockIds from the sweep's own record (the members
+				// the core acked, single-sourced). Applied-but-unverified —
+				// never ok, never a rollback.
 				return errorEnvelope(
-					`replace applied but unverified: the replacement (block '${outcome.insertedId}') is in place and every member delete acked, but the verification walk hit the document's depth bound — whether the old section is fully gone could not be confirmed. Do NOT re-run; re-fetch the outline (kb_read) and check the old section's blocks by id before any cleanup`,
+					`replace applied but unverified: the replacement (block '${outcome.insertedId}') is in place and every member delete acked, but the verification walk hit the document's depth bound — whether the old section is fully gone could not be confirmed. Do NOT re-run; re-fetch the outline (kb_read) and check the acked ids (unconfirmedBlockIds) before any cleanup`,
 					{
 						kb: name,
 						anchor: echo,
 						newBlockId: outcome.insertedId,
+						...partialApplyMarker({ remainingBlockIds: [] }),
+						unconfirmedBlockIds: outcome.deletedBlockIds,
 					},
 				);
+			}
 			case "swept": {
 				// invalidRefs: post-write echo over the section's closure —
 				// what actually got orphaned, verified.

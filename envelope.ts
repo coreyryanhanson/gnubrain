@@ -31,46 +31,83 @@ export function refusedEnvelope(
 /** Payload fields a partially-applied write must carry even when the
  * triggering error propagates for classification (429 → cooldown, auth →
  * breaker) or lands in finishWrite (network/timeout → verificationFailed).
- * Mid-sequence flows (replace-section's delete sweep) attach the state to
- * the error; the catch sites merge it into their classified envelope. */
-interface PartialReplaceState {
-	partialReplace: true;
-	newBlockId: string;
-	deletedBlockIds: string[];
+ * Mid/post-mutation flows (replace-section's delete sweep, and the flows
+ * built on the same sweep plumbing) attach the state to the error; the
+ * catch sites merge it into their classified envelope. The agent-visible
+ * marker is not stored here — it is derived from the pending set at render
+ * time (partialApplyMarker), so a fully applied write can never wear a
+ * partial label. */
+export interface PartialApplyState {
+	/** The replacement block the flow's insert leg landed — absent for
+	 * flows with no replacement (delete-section's sweep). */
+	newBlockId?: string;
 	remainingBlockIds: string[];
+	/** Ids the receipt claims as deleted — individually acked by the
+	 * kernel, or cascade-inferred (gone with a deleted container) —
+	 * whose absence no complete post-write walk verified. The unverified
+	 * half of a delete receipt; reconcile from the outline before
+	 * treating them as gone. */
+	unconfirmedBlockIds?: string[];
 }
 
-export function markPartialReplace(
-	err: unknown,
-	state: PartialReplaceState,
-): void {
+export function markPartialApply(err: unknown, state: PartialApplyState): void {
 	if (typeof err === "object" && err !== null) {
-		(err as Record<string, unknown>).partialReplaceState = state;
+		(err as Record<string, unknown>).partialApplyState = state;
 	}
 }
 
-export function takePartialReplace(
-	err: unknown,
-): PartialReplaceState | undefined {
+export function takePartialApply(err: unknown): PartialApplyState | undefined {
 	if (typeof err !== "object" || err === null) return undefined;
-	return (err as { partialReplaceState?: PartialReplaceState })
-		.partialReplaceState;
+	return (err as { partialApplyState?: PartialApplyState }).partialApplyState;
+}
+
+/** The agent-visible marker a partial-apply state renders under:
+ * `partialApply: true` marks a non-empty pending set — everything from
+ * one step short of landed to nothing landed (a silent no-op rides it
+ * too, with every id still pending); the all-landed-but-unverified case
+ * (empty remaining, e.g. a walk-failed sweep) renders
+ * `appliedUnverified: true` instead, because wording that says
+ * "partially applied" over a fully applied write invites the retry the
+ * guidance forbids. The terminal cascade-consumed state is not part of
+ * this union: `appliedConsumed` is spread directly by the one flow that
+ * reaches it (replace-section's judged-consumed arm) and never rendered
+ * through the shared frame — so the two-arm render in
+ * partialApplyRender is total over this union by type, not by comment. */
+export type PartialApplyMarker =
+	| { partialApply: true }
+	| { appliedUnverified: true };
+
+/** The render-time marker derivation shared by every render site (the
+ * flow verdict arms, finishWrite's mid-write frame, the gate's
+ * withPartialState NOTE) so the marker and the "partially applied" vs
+ * "applied but unverified" split cannot diverge between them. The empty
+ * pending set renders `appliedUnverified` — the acks landed but
+ * verification did not run (the catch sites' default: the state they
+ * merge came off a rethrown error). The terminal cascade-consumed
+ * envelope never derives through here (see PartialApplyMarker). The
+ * prose for the sentence-frame sites lives in partialApplyRender
+ * (writeVerdicts.ts). */
+export function partialApplyMarker(state: {
+	remainingBlockIds: string[];
+}): PartialApplyMarker {
+	if (state.remainingBlockIds.length > 0) return { partialApply: true };
+	return { appliedUnverified: true };
 }
 
 /** The mid-write partial-apply guidance — one wording home for both render
  * sites (the gate's classified-envelope merge and finishWrite's
  * verification catch), so the same half-applied write cannot render two
  * different do-not-re-run sentences. The payloads
- * (deletedBlockIds/remainingBlockIds) ride the envelope beside it. */
+ * (remainingBlockIds/unconfirmedBlockIds) ride the envelope beside it. */
 export const PARTIAL_APPLY_GUIDANCE =
-	"do NOT re-run the write; re-fetch the outline (kb_read) and reconcile from the payload (deletedBlockIds/remainingBlockIds)";
+	"do NOT re-run the write; re-fetch the outline (kb_read) and reconcile from the payload (remainingBlockIds/unconfirmedBlockIds)";
 
 /** The envelope marker carrying a verification-phase auth/lock event (401
  * or the kernel's per-IP 429) out of a write flow. The primitives classify
  * verification-phase auth errors into `verification-failed` instead of
  * rethrowing — the mutation already acked — so the breaker accounting
  * that runKbCall's catch otherwise performs rides the verdict envelope
- * under this key. Same role as `partialReplaceState` above:
+ * under this key. Same role as `partialApplyState` above:
  * structured state attached to a result, read by the gate, never worded
  * here. */
 export type AuthLockEvent = Extract<

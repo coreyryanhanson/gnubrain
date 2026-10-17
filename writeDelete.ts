@@ -6,7 +6,11 @@
 // sentences (the same pair the edit flow's pre-guard uses); the
 // remaining non-judged arms ride the shared mutationFailureEnvelope.
 
-import { backlinkCheck } from "siyuan-kb-primitives";
+import {
+	backlinkCheck,
+	orphanedMembersOf,
+	type OrphanedMembers,
+} from "siyuan-kb-primitives";
 import {
 	deleteBlockVerified,
 	deleteDocVerified,
@@ -17,6 +21,48 @@ import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
 import { freshContentRefusal } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import { blockInDocRefusalKind } from "./writeVerdicts.js";
+
+// The heading-delete report's degraded line — shared by every arm that
+// cannot state a trustworthy member set. It presumes nothing about the
+// deleted block's shape: a not-in-pre-walk or unbounded block may or may
+// not have been a heading with members left in place.
+const DEGRADED_REPORT =
+	"the walk could not bound the deleted block's section, so members left in place may go unreported — re-fetch the outline (kb_read) and check the block's section members by id";
+
+/** The heading-delete report's wording over the projection's closed
+ * union — the flow words arms only; the arm semantics live in the
+ * primitives. Suppression keys on the empty member set: an empty
+ * member report disappears rather than wearing a placeholder. The
+ * report only runs on the judged-gone arm, whose post-walk is always
+ * complete (a truncated one refuses as absence-unconfirmed before any
+ * report), so the projection's unconfirmed-survivor half is empty here
+ * and the presences are the whole story. */
+function wordOrphanReport(orphans: OrphanedMembers): {
+	line?: string;
+	ids?: string[];
+} {
+	switch (orphans.kind) {
+		case "ids":
+			if (orphans.ids.length === 0) {
+				// A section-less heading: present, empty member set — nothing
+				// to report.
+				return {};
+			}
+			return {
+				ids: orphans.ids,
+				line: `${orphans.ids.length} body block(s) left in place; they no longer belong to this heading: ${orphans.ids.join(", ")}`,
+			};
+		case "not-a-heading":
+			// A plain block holds no section members — nothing to report.
+			return {};
+		case "not-in-pre-walk":
+		case "bound-unconfirmed":
+			// No trustworthy member set: degrade, never silence.
+			return { line: DEGRADED_REPORT };
+	}
+	orphans satisfies never;
+	return {};
+}
 
 export async function runDeleteMode(
 	input: WriteFlowInput,
@@ -58,13 +104,16 @@ export async function runDeleteMode(
 	// No flow-side membership read: the delete primitive judges scoping
 	// itself, and a block outside this doc or already absent reads as
 	// `vanished` here and refuses at the primitive's scoping arms instead.
-	const stale = await freshContentRefusal(
+	// The judged walk rides out with the refusal pair: the heading-delete
+	// report below derives from exactly the snapshot the precondition
+	// certified — zero extra kernel reads.
+	const { refusal, walk } = await freshContentRefusal(
 		kernel,
 		baselines,
 		[{ blockId, baselineHash: baselines.servedHash(blockId) }],
 		{ sessionId, docId: doc.rootId },
 	);
-	if (stale !== null) return stale;
+	if (refusal !== null) return refusal;
 	const outcome = await deleteBlockVerified(kernel, input.probe, {
 		blockId,
 		rootId: doc.rootId,
@@ -99,12 +148,36 @@ export async function runDeleteMode(
 		}
 		// The deleted block's stored content rides the judged arm (the
 		// primitive's own membership read) — the receipt is free.
+		// The heading-delete report: the kernel's delete path is
+		// fold-blind, so a heading-scoped delete removes ONLY the heading and
+		// its section members survive it. The projection runs over the
+		// snapshot the fresh-content precondition certified and the
+		// delete's own post-walk evidence — zero extra kernel reads. The
+		// report rides the ok arm only, and it may weaken (the degraded
+		// line), never upgrade into a refusal and never silently disappear.
+		let reportLine: string | undefined;
+		let orphanedIds: string[] | undefined;
+		if (walk === undefined) {
+			// The empty-target short-circuit — unreachable for a delete (it
+			// always names a target). Fail-closed: degrade to the
+			// confirmation line rather than assert.
+			reportLine = DEGRADED_REPORT;
+		} else {
+			const report = wordOrphanReport(
+				orphanedMembersOf(walk, blockId, outcome.postWalk),
+			);
+			reportLine = report.line;
+			orphanedIds = report.ids;
+		}
 		return {
 			status: "ok",
-			message: `deleted block ${blockId} in '${doc.title}' (KB ${name}) — target absent from the post-write tree; ${invalidRefs.count} doc(s) with orphaned refs`,
+			message:
+				`deleted block ${blockId} in '${doc.title}' (KB ${name}) — target absent from the post-write tree; ${invalidRefs.count} doc(s) with orphaned refs` +
+				(reportLine === undefined ? "" : `; ${reportLine}`),
 			kb: name,
 			blockId,
 			invalidRefs,
+			...(orphanedIds !== undefined ? { orphanedMembers: orphanedIds } : {}),
 			...deletedBlocksTail(input.sessionId, [
 				{ id: blockId, content: outcome.content },
 			]),

@@ -20,6 +20,7 @@ import { runEditMode } from "./writeEdit.js";
 import { runAppendMode } from "./writeAppend.js";
 import { runReplaceSectionMode } from "./writeReplaceSection.js";
 import { runDeleteMode } from "./writeDelete.js";
+import { runDeleteSectionMode } from "./writeDeleteSection.js";
 import { runMoveMode } from "./writeMove.js";
 import { resolveDocTarget, type WriteFlowBase } from "./writeTarget.js";
 import {
@@ -168,6 +169,8 @@ export async function prepareWrite(
 			return runReplaceSectionMode({ ...flowBase, params: p }, target);
 		case "delete":
 			return runDeleteMode({ ...flowBase, params: p }, target);
+		case "delete-section":
+			return runDeleteSectionMode({ ...flowBase, params: p }, target);
 		case "move":
 			return runMoveMode({ ...flowBase, params: p }, target);
 	}

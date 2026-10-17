@@ -21,6 +21,7 @@ import {
 	type AppendAnchor,
 	type BlockInDocResult,
 	type MoveAnchor,
+	type PartitionByAbsence,
 } from "siyuan-kb-primitives";
 import type {
 	EditLandedOutcome,
@@ -33,8 +34,10 @@ import {
 	errorEnvelope,
 	versionRefusalEnvelope,
 	STALE_TARGET_GUIDANCE,
+	partialApplyMarker,
 	type AuthLockEvent,
 	type Envelope,
+	type PartialApplyMarker,
 } from "./envelope.js";
 
 /** Drift refusal for a primitives verdict — the same wording as the
@@ -106,7 +109,7 @@ export function postWriteAssemblyFailedMessage(detail: string): string {
  * the mutation has already acked — so the wording must keep the
  * may-already-be-applied fact the raw rethrow erased, and add the lock
  * fact: every authed call re-arms the lock, so the wait comes first. The
- * marker type/guard live in envelope.ts beside `partialReplaceState`, the
+ * marker type/guard live in envelope.ts beside `partialApplyState`, the
  * other gate-read result marker. */
 function verificationAuthEventMessage(
 	cause: AuthLockEvent,
@@ -148,16 +151,17 @@ export function verificationFailedEnvelope(
 }
 
 /** The flow's own verdict key — the placement anchor echo, the block
- * delete's blockId, or the doc move's docId — spread verbatim into the
- * envelope, never re-worded. */
+ * delete's blockId, the doc move's docId, or the heading-targeting modes'
+ * headingId — spread verbatim into the envelope, never re-worded. */
 export type VerdictKey =
 	| { anchor: string }
 	| { blockId: string }
-	| { docId: string };
+	| { docId: string }
+	| { headingId: string };
 
 /** The shared failure ladder for the verified mutation flows — the four
  * pre-judgment arms every mutation outcome union carries (edit, append,
- * block move, replace-section, and the block-delete half of
+ * block move, replace-section, delete-section, and the block-delete half of
  * DeleteBlockOutcome — that half IS MutationFailure by type, so the block
  * delete shares this ladder rather than copying it), worded once so a new
  * arm in a primitives release fails typecheck here instead of diverging
@@ -226,6 +230,75 @@ export const moveWalkTruncatedMessage =
 export const replaceSectionWalkTruncatedMessage =
 	"the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead";
 
+export const deleteSectionWalkTruncatedMessage =
+	"the document nests past the walk depth bound, so the section enumeration and its delete-set bound cannot be derived from complete evidence — delete-section refused before any kernel call; restructure the document (or delete the blocks individually by id) instead";
+
+/** The prose half of the partial-apply render — used by exactly two
+ * sentence-frame sites (the gate's withPartialState NOTE and finishWrite's
+ * classifier), which only ever see the unverified arm: a consumed state is
+ * terminal and never rethrown — `appliedConsumed` is spread directly by
+ * its one flow, outside this frame. The marker itself rides envelope.ts
+ * (payload, never worded here); these are the status phrase and the
+ * landing-state clause each site embeds in its own sentence frame. */
+export function partialApplyRender(state: { remainingBlockIds: string[] }): {
+	status: string;
+	tail: string;
+	marker: PartialApplyMarker;
+} {
+	const marker = partialApplyMarker(state);
+	return "partialApply" in marker
+		? {
+				marker,
+				status: "partially applied",
+				tail: "the earlier steps have landed",
+			}
+		: {
+				marker,
+				status: "applied but unverified",
+				tail: "nothing remains to apply",
+			};
+}
+
+/** The delete-sweep `members-survived` sentence and its payload fields —
+ * one home for both sweep consumers (replace-section's sweep,
+ * delete-section's sequence), so the shared arm cannot render two
+ * different stories about the same silent no-op. The arm is the sweep
+ * core's: a delete acked but the block is still present in the post-write
+ * tree. `truncated` is true when the verification walk was depth-truncated
+ * — the payload then carries unconfirmedBlockIds (absence unconfirmed),
+ * and the sentence says so, in both flows. The label names the sweep,
+ * not the per-block delete: the block-delete flow's singular variant
+ * (writeDelete.ts) is a different primitive arm and keeps its own
+ * sentence. */
+export function sweepMembersSurvivedMessage(
+	survivedIds: string[],
+	truncated: boolean,
+): string {
+	return (
+		`verified-sweep failed: the delete of '${survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id` +
+		(truncated
+			? "; the verification walk was depth-truncated, so ids absent from the walk are not claimed as deleted — see unconfirmedBlockIds and reconcile from the outline"
+			: "")
+	);
+}
+
+/** The payload fields derived from the acked-set split — the marker, the
+ * certified/unconfirmed absence half, and the pending set. On a complete
+ * walk the absence half is certified and rides deletedBlockIds; on a
+ * truncated walk it is unconfirmed — but the acked ids still ride the
+ * receipt (as unconfirmedBlockIds), never vanish from it. */
+export function sweepMembersSurvivedFields(
+	split: PartitionByAbsence,
+): Record<string, unknown> {
+	return {
+		...partialApplyMarker({ remainingBlockIds: split.presentIds }),
+		...(split.kind === "unconfirmed"
+			? { unconfirmedBlockIds: split.unconfirmedAbsentIds }
+			: { deletedBlockIds: split.absentIds }),
+		remainingBlockIds: split.presentIds,
+	};
+}
+
 /** Anchor echo wording — the agent-facing rendering of the placement
  * primitives' evidence-only unions (kind + ids + the move `at`). Byte
  * pinning lives in the per-flow suites; the unions' shape contract lives in
@@ -262,9 +335,10 @@ export function moveAnchorEcho(anchor: MoveAnchor): string {
  * word. Split from blockInDocRefusal so consumers holding only the refusal
  * half (the edit verify's concurrent-move inner) get a total `string`, not
  * a type that permits an undefined to interpolate into a sentence. Also
- * the wording home for the delete primitive's own scoping arms (foreign /
- * doc-id refuse inside deleteBlockVerified now) — one sentence pair for
- * the same membership class whichever side refuses. */
+ * the wording home for the delete primitives' own scoping arms (foreign /
+ * doc-id refuse inside deleteBlockVerified and deleteSectionVerified) —
+ * one sentence pair for the same membership class whichever side
+ * refuses. */
 export function blockInDocRefusalKind(
 	outcome: Extract<BlockInDocResult, { kind: "doc-id" | "foreign" }>,
 	blockId: string,

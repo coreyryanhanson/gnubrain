@@ -35,7 +35,7 @@ GNUbrain is a **memory and retrieval substrate** over your own notes:
 - **Read** a document as markdown, with a heading outline you can navigate.
 - **Search** across your knowledge bases.
 - **Query** the note index with read-only SQL.
-- **Write** (create, edit, append, replace a section, move, delete) behind a per-KB approval.
+- **Write** (create, edit, append, replace a section, delete a section, move, delete) behind a per-KB approval.
 - Over time: **structured memory** (typed metadata and attributed claims), **stronger
   retrieval** (semantic search fused with keyword search, and the links between notes), and
   **session context** (a small set of notes your agent is handed when a session starts).

@@ -530,6 +530,38 @@ export const editBase = {
 	markdown: "corrected body",
 };
 
+/** The delete suites' section-bearing doc: a heading (h1) whose members
+ * include a deeper heading and its body (h2/p2 — tree siblings under the
+ * doc; the section rule is document-order, outline ownership), bounded by
+ * a same-level heading (h3). Delete set: members [p1, h2, p2] in document
+ * order, then h1. */
+export const DELETE_DOC = {
+	"d-doc": [
+		walkBlock("h1", "h", "h1", "Goals"),
+		walkBlock("p1", "p", "", "body one"),
+		walkBlock("h2", "h", "h2", "Details"),
+		walkBlock("p2", "p", "", "nested body"),
+		walkBlock("h3", "h", "h1", "Next"),
+	],
+};
+
+/** A chain of `n` nested unnamed containers under `root` — past the walk
+ * depth bound (MAX_WALK_DEPTH = 32) when `n` is deep enough, so a walk
+ * that reaches the chain comes back truncated. */
+export function nestChain(
+	childrenFor: Record<string, unknown[]>,
+	root: string,
+	n: number,
+): void {
+	let parent = root;
+	for (let i = 0; i < n; i++) {
+		const id = `n${i}`;
+		childrenFor[parent] = [{ id, type: "", subType: "", content: "" }];
+		parent = id;
+	}
+	childrenFor[parent] = [];
+}
+
 export const SECTION_DOC = {
 	// A heading's getChildBlocks answer is its section: following siblings
 	// up to the next heading of same-or-higher level. The walk reads the

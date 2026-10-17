@@ -34,13 +34,13 @@ export async function runEditMode(
 		if (baselines.servedHash(blockId) === undefined) {
 			baselines.remember(blockId, row.content);
 		}
-		const stale = await freshContentRefusal(
+		const { refusal } = await freshContentRefusal(
 			kernel,
 			baselines,
 			[{ blockId, baselineHash: baselines.servedHash(blockId) }],
 			{ sessionId, docId: doc.rootId },
 		);
-		if (stale !== null) return stale;
+		if (refusal !== null) return refusal;
 	}
 	// The pre-write stored pair the landed check needs is read inside the
 	// primitive (the representation contract — blocks-index row form,

@@ -25,12 +25,13 @@ import {
 	kernelUnreachable,
 	rateLimitRefusalEnvelope,
 	refusedEnvelope,
-	takePartialReplace,
+	takePartialApply,
 	versionRefusalEnvelope,
 	driftWarning,
 	PARTIAL_APPLY_GUIDANCE,
 	type Envelope,
 } from "./envelope.js";
+import { partialApplyRender } from "./writeVerdicts.js";
 import type { ContentBaselines } from "./baselines.js";
 import type { SessionValidation } from "./validation.js";
 import {
@@ -247,14 +248,16 @@ export async function gateWriteAttempt(input: {
  * message gains the do-not-re-run NOTE and the payload the receipt rides
  * in. */
 function withPartialState(envelope: Envelope, err: unknown): Envelope {
-	const partial = takePartialReplace(err);
+	const partial = takePartialApply(err);
 	if (partial === undefined) return envelope;
+	const render = partialApplyRender(partial);
 	return {
 		...envelope,
 		message:
-			`${envelope.message} NOTE: a kb_write was partially applied before this ` +
+			`${envelope.message} NOTE: a kb_write was ${render.status} before this ` +
 			`error — ${PARTIAL_APPLY_GUIDANCE} once kb calls resume`,
 		...partial,
+		...render.marker,
 	};
 }
 
@@ -325,10 +328,9 @@ export async function runKbCall<K extends object>(
 	// Exception: a verification-phase auth/lock verdict (the primitives
 	// classify those instead of rethrowing — the mutation already acked, so
 	// the marker accounts for the event here). The kernel's per-IP FailCount
-	// advanced behind this
-	// op's transport success, so the event is counted and reset-on-success
-	// is skipped — resetting would let the next write pass a gate the
-	// kernel is actively refusing.
+	// advanced behind this op's transport success, so the event is counted
+	// and reset-on-success is skipped — resetting would let the next write
+	// pass a gate the kernel is actively refusing.
 	const now = input.now ?? Date.now();
 	const authEvent = authLockEventOf(result);
 	if (authEvent?.kind === "auth") {

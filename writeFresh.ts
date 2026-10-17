@@ -1,13 +1,17 @@
 // The fresh-content pre-mutation precondition: the wrapper over the
 // primitives' checkFreshContent judgment that the flows with served
 // baselines run right before any kernel write (edit, replace-section,
-// block delete). A concurrency guard, not a consent mechanism (the grant
-// resolved at the kb_write entry). Session-baseline doctrine lives here
-// beside the baselines it reads; the judgment and both reads live in the
-// primitives.
+// block delete, delete-section). A concurrency guard, not a consent
+// mechanism (the grant resolved at the kb_write entry). Session-baseline
+// doctrine lives here beside the baselines it reads; the judgment and
+// both reads live in the primitives.
 
 import { type Envelope, refusedEnvelope } from "./envelope.js";
-import { checkFreshContent, type FreshOutcome } from "siyuan-kb-primitives";
+import {
+	checkFreshContent,
+	type FreshOutcome,
+	type WalkedTree,
+} from "siyuan-kb-primitives";
 import type { WriteKernelClient } from "siyuan-kb-primitives/write";
 import type { ContentBaselines } from "./baselines.js";
 import { serveOutlineFromWalk } from "./outline.js";
@@ -31,16 +35,20 @@ import { serveOutlineFromWalk } from "./outline.js";
  *   return via undo re-judges as `fresh` if unchanged, `stale` if not)
  * Any stale arm → the `stale_content` refusal carrying every stale target
  * (`staleTargets`, beside the retained scalar first-arm fields) and the
- * outline served from the judged walk; otherwise `null` and the walk is
- * dropped. Read errors propagate raw — the flows' transport classification
- * applies (breaker counting, 429 cooldown). */
+ * outline served from the judged walk; otherwise a null refusal. The
+ * return is the pass-through pair `{ refusal, walk }`: the walk is the
+ * judged snapshot the precondition certified, for callers that derive
+ * further facts from the same evidence (no re-read); it is absent only
+ * on the empty-target early return, where the judgment ran no reads and
+ * certified nothing. Read errors propagate raw — the flows' transport
+ * classification applies (breaker counting, 429 cooldown). */
 export async function freshContentRefusal(
 	kernel: WriteKernelClient,
 	baselines: ContentBaselines,
 	targets: { blockId: string; baselineHash: string | undefined }[],
 	context: { sessionId: string; docId: string },
-): Promise<Envelope | null> {
-	if (targets.length === 0) return null;
+): Promise<{ refusal: Envelope | null; walk?: WalkedTree | undefined }> {
+	if (targets.length === 0) return { refusal: null, walk: undefined };
 	const { walk, arms } = await checkFreshContent(kernel, {
 		docId: context.docId,
 		targets,
@@ -68,27 +76,29 @@ export async function freshContentRefusal(
 		arm satisfies never;
 	}
 	const first = staleArms[0];
-	if (first === undefined) return null;
+	if (first === undefined) return { refusal: null, walk };
 	// The refusal's outline renders from the judged snapshot — seeded like
 	// every other serve site (anti-laundering invariant: baselines.ts). The
-	// walk is already in hand.
-	const fresh = serveOutlineFromWalk(
-		context.sessionId,
-		"kb_write",
+	// walk is in hand on every reachable path (targets is non-empty here,
+	// so the judgment walked); the type-level absence is the empty-target
+	// short-circuit, excluded above — it degrades to an outline-less
+	// refusal rather than assert.
+	return {
+		refusal: refusedEnvelope(
+			`the content of block '${first.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
+			{
+				reason: "stale_content",
+				blockId: first.blockId,
+				currentContent: first.currentContent,
+				staleTargets: staleArms.map((arm) => ({
+					blockId: arm.blockId,
+					currentContent: arm.currentContent,
+				})),
+				...(walk !== undefined
+					? serveOutlineFromWalk(context.sessionId, "kb_write", walk, baselines)
+					: {}),
+			},
+		),
 		walk,
-		baselines,
-	);
-	return refusedEnvelope(
-		`the content of block '${first.blockId}' changed since it was last seen in this session — re-read the current state with kb_read, then re-target (reason: stale_content)`,
-		{
-			reason: "stale_content",
-			blockId: first.blockId,
-			currentContent: first.currentContent,
-			staleTargets: staleArms.map((arm) => ({
-				blockId: arm.blockId,
-				currentContent: arm.currentContent,
-			})),
-			...fresh,
-		},
-	);
+	};
 }

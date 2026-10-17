@@ -28,6 +28,10 @@ const MODE_PARAMS = {
 		bodies: BODY_KEYS,
 	},
 	delete: { targets: ["docId", "blockId", "doc"], bodies: [] },
+	"delete-section": {
+		targets: ["docId", "headingId"],
+		bodies: [],
+	},
 	move: {
 		targets: ["docId", "blockId", "doc", "toDocId", "toHeadingId"],
 		bodies: [],
@@ -127,14 +131,15 @@ export function modeVerdict(p: WriteParams): ModeVerdict {
 			return p.blockId === undefined
 				? modeRefusal("mode 'edit' requires blockId — an echoed block ID")
 				: modeAccepted(mode);
-		case "replace-section":
-			return p.headingId === undefined
-				? modeRefusal(
-						"mode 'replace-section' requires headingId — a heading block ID from the outline",
-					)
-				: modeAccepted(mode);
 		case "append":
 			return modeAccepted(mode); // headingId optional → doc end
+		case "replace-section":
+		case "delete-section":
+			return p.headingId === undefined
+				? modeRefusal(
+						`mode '${mode}' requires headingId — a heading block ID from the outline`,
+					)
+				: modeAccepted(mode);
 		case "delete":
 		case "move":
 			if ((p.blockId !== undefined) === (p.doc === true)) {
@@ -209,7 +214,7 @@ export const writeSchema = Type.Object({
 	headingId: Type.Optional(
 		Type.String({
 			description:
-				'heading block ID from the outline — mode "replace-section" (required); mode "append" (optional, omitted → doc end)',
+				'heading block ID from the outline — mode "replace-section" and mode "delete-section" (required); mode "append" (optional, omitted → doc end)',
 		}),
 	),
 	placement: Type.Optional(

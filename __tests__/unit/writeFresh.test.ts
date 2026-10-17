@@ -11,6 +11,9 @@ import { walkBlock, writeKernelStub } from "./writeHarness.js";
 describe("freshContentRefusal", () => {
 	const ctx = { sessionId: "s1", docId: "d-doc" };
 
+	// The clean-pass contract: a null refusal plus the judged walk — the
+	// pass-through pair, so a caller can derive further facts from the
+	// certified snapshot without re-reading.
 	it("unseen → adopt the live form and proceed (null)", async () => {
 		// No baseline, no SQL row: the session never served the block, so
 		// there is no stored value to launder — the live form becomes the
@@ -25,7 +28,9 @@ describe("freshContentRefusal", () => {
 			[{ blockId: "p1", baselineHash: undefined }],
 			ctx,
 		);
-		expect(verdict).toBeNull();
+		expect(verdict.refusal).toBeNull();
+		// The judged snapshot rides the pass-through.
+		expect(verdict.walk?.blocks.map((b) => b.id)).toEqual(["p1"]);
 		expect(baselines.servedHash("p1")).toBe(contentHash("live body"));
 	});
 
@@ -44,7 +49,7 @@ describe("freshContentRefusal", () => {
 			[{ blockId: "p1", baselineHash: undefined }],
 			ctx,
 		);
-		expect(verdict).toBeNull();
+		expect(verdict.refusal).toBeNull();
 		expect(baselines.servedHash("p1")).toBe(contentHash("index form"));
 	});
 
@@ -64,11 +69,11 @@ describe("freshContentRefusal", () => {
 			[{ blockId: "p1", baselineHash: undefined }],
 			ctx,
 		);
-		expect(verdict).toBeNull();
+		expect(verdict.refusal).toBeNull();
 		expect(baselines.servedHash("p1")).toBeUndefined();
 	});
 
-	it("empty target list → null with zero kernel calls", async () => {
+	it("empty target list → null refusal, no walk, zero kernel calls", async () => {
 		const stub = writeKernelStub({});
 		const verdict = await freshContentRefusal(
 			stub.client,
@@ -76,7 +81,9 @@ describe("freshContentRefusal", () => {
 			[],
 			ctx,
 		);
-		expect(verdict).toBeNull();
+		// The short-circuit judged nothing — the walk stays absent (the
+		// primitives' FreshResult optionality), never a synthetic empty doc.
+		expect(verdict).toEqual({ refusal: null, walk: undefined });
 		expect(stub.calls).toHaveLength(0);
 	});
 });

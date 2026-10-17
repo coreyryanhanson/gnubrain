@@ -12,6 +12,7 @@ import {
 import {
 	REPLACE_DOC,
 	SECTION_DOC,
+	nestChain,
 	replaceParams,
 	setup,
 	storedContentStub,
@@ -92,7 +93,7 @@ describe("replace-section", () => {
 		expect(result.outline).toBeDefined();
 		expect(result.anchor).toBe("nextID=h2 (next heading)");
 		// The insert is the first mutation — no partial state to report.
-		expect(result.partialReplace).toBeUndefined();
+		expect(result.partialApply).toBeUndefined();
 		expect(
 			failing.calls.filter((c) => c.method === "deleteBlock"),
 		).toHaveLength(0);
@@ -123,6 +124,14 @@ describe("replace-section", () => {
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("cascade consumed the replacement");
 		expect(result.message).toContain("do not retry");
+		// Fully applied, judged, and lost — nothing pending, so the derived
+		// marker is appliedConsumed (the verified-consumed arm), never a
+		// partial label nor the unverified one.
+		expect(result.appliedConsumed).toBe(true);
+		expect(result.appliedUnverified).toBeUndefined();
+		expect(result.partialApply).toBeUndefined();
+		expect(result.deletedBlockIds).toEqual(["p1", "p2"]);
+		expect(result.remainingBlockIds).toEqual([]);
 		// The certified post-sweep walk rides the refusal as the inline
 		// outline — recovery evidence without a re-fetch round trip.
 		expect(result.outline).toBeDefined();
@@ -155,9 +164,63 @@ describe("replace-section", () => {
 		// The verdict's postWalk is served inline, not pointed at kb_read.
 		expect(result.message).not.toContain("re-fetch the outline");
 		expect(result.outline).toBeDefined();
-		expect(result.partialReplace).toBe(true);
+		expect(result.partialApply).toBe(true);
 		expect(result.deletedBlockIds).toEqual([]);
 		expect(result.remainingBlockIds).toEqual(["p1", "p2"]);
+	});
+
+	it("members-survived on a truncated post-walk: the acked member's absence is unconfirmed — it rides unconfirmedBlockIds, never vanishes from the receipt", async () => {
+		// First delete no-ops (p1 survives), second deletes p2 for real and
+		// regrows the tree past the walk bound — the sweep's survivors
+		// outrank sweep-truncated, so the members-survived arm renders over a
+		// truncated post-walk where p2's absence cannot be certified.
+		const harness = setup({
+			config: {
+				childrenFor: {
+					...REPLACE_DOC,
+					"d-doc": [
+						...REPLACE_DOC["d-doc"],
+						walkBlock("c9", "", "", "container"),
+					],
+					c9: [],
+				},
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+						walkBlock("c9", "", "", "container"),
+					];
+				},
+				onDelete: (() => {
+					let deletes = 0;
+					return () => {
+						deletes++;
+						if (deletes === 2) {
+							harness.childrenFor["d-doc"] = (
+								harness.childrenFor["d-doc"] ?? []
+							).filter((b) => (b as { id: string }).id !== "p2");
+							nestChain(harness.childrenFor, "c9", 33);
+						}
+					};
+				})(),
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain(
+			"reported success but the block(s) are still present",
+		);
+		// The truncated-walk clause is part of the shared sweep fragment —
+		// the sentence explains the unconfirmedBlockIds payload it publishes.
+		expect(result.message).toContain("depth-truncated");
+		expect(result.partialApply).toBe(true);
+		expect(result.remainingBlockIds).toEqual(["p1"]);
+		// p2 is acked-deleted but the truncated walk cannot certify the
+		// absence — it is unconfirmed, not silently dropped and not claimed
+		// as deletedBlockIds.
+		expect(result.unconfirmedBlockIds).toEqual(["p2"]);
+		expect(result.deletedBlockIds).toBeUndefined();
 	});
 
 	it("a mid-sweep failure's remaining list is an antichain — any delete order finishes the job", async () => {
@@ -183,8 +246,8 @@ describe("replace-section", () => {
 		});
 		const result = await harness.execute(replaceParams);
 		expect(result.status).toBe("error");
-		expect(result.partialReplace).toBe(true);
-		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.partialApply).toBe(true);
+		expect(result.unconfirmedBlockIds).toEqual(["p1"]);
 		// The sweep stopped before its verification walk, so no certified
 		// snapshot exists to serve — the partial arm carries no outline.
 		expect(result.outline).toBeUndefined();
@@ -220,10 +283,10 @@ describe("replace-section", () => {
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("kernel gone mid-sweep");
 		expect(result.message).toContain("do NOT re-run");
-		expect(result.partialReplace).toBe(true);
+		expect(result.partialApply).toBe(true);
 		expect(result.newBlockId).toBe("b-new");
 		expect(result.anchor).toBe("nextID=h2 (next heading)");
-		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.unconfirmedBlockIds).toEqual(["p1"]);
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 
@@ -256,9 +319,9 @@ describe("replace-section", () => {
 		// The sweep failure is a mid-write step, not a verification read — the
 		// envelope must carry the partial-apply state, or a re-run duplicates
 		// the replacement.
-		expect(result.partialReplace).toBe(true);
+		expect(result.partialApply).toBe(true);
 		expect(result.newBlockId).toBe("b-new");
-		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.unconfirmedBlockIds).toEqual(["p1"]);
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 		expect(result.message).toContain("partially applied");
 		expect(result.message).toContain("do NOT re-run");
@@ -293,13 +356,60 @@ describe("replace-section", () => {
 		expect(result.status).toBe("error");
 		expect(result.verificationFailed).toBe(true);
 		// A fully-applied write must never read as "unreachable" — the
-		// receipt rides the envelope, and nothing remains pending.
-		expect(result.partialReplace).toBe(true);
+		// receipt rides the envelope, and nothing remains pending. The
+		// empty pending set renders appliedUnverified, never a partial
+		// label that invites the retry the guidance forbids.
+		expect(result.appliedUnverified).toBe(true);
+		expect(result.partialApply).toBeUndefined();
 		expect(result.newBlockId).toBe("b-new");
-		expect(result.deletedBlockIds).toEqual(["p1", "p2"]);
+		expect(result.unconfirmedBlockIds).toEqual(["p1", "p2"]);
+		expect(result.deletedBlockIds).toBeUndefined();
 		expect(result.remainingBlockIds).toEqual([]);
-		expect(result.message).toContain("partially applied");
+		expect(result.message).toContain("applied but unverified");
+		expect(result.message).not.toContain("partially applied");
 		expect(result.message).not.toContain("SiYuan unreachable");
+	});
+
+	it("sweep-truncated: the post-sweep walk hit the depth bound — applied but unverified, acked ids unconfirmed", async () => {
+		// The section's deletes land (the doc gets shallower), then the tree
+		// regrows past the bound under a surviving sibling container, so the
+		// post-sweep walk truncates while the enumeration did not.
+		const harness = setup({
+			config: {
+				childrenFor: {
+					...REPLACE_DOC,
+					"d-doc": [
+						...REPLACE_DOC["d-doc"],
+						walkBlock("c9", "", "", "container"),
+					],
+					c9: [],
+				},
+				cascadeDelete: true,
+				onInsert: () => {
+					harness.childrenFor["d-doc"] = [
+						...REPLACE_DOC["d-doc"].slice(0, 3),
+						walkBlock("b-new", "p", "", "rewritten section"),
+						...REPLACE_DOC["d-doc"].slice(3),
+						walkBlock("c9", "", "", "container"),
+					];
+				},
+				onDelete: () => {
+					nestChain(harness.childrenFor, "c9", 33);
+				},
+			},
+		});
+		const result = await harness.execute(replaceParams);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("applied but unverified");
+		expect(result.message).toContain("depth bound");
+		expect(result.appliedUnverified).toBe(true);
+		expect(result.partialApply).toBeUndefined();
+		expect(result.newBlockId).toBe("b-new");
+		// Acked is not verified: on a truncated walk the acked member set
+		// rides unconfirmedBlockIds, never deletedBlockIds.
+		expect(result.unconfirmedBlockIds).toEqual(["p1", "p2"]);
+		expect(result.deletedBlockIds).toBeUndefined();
+		expect(result.remainingBlockIds).toBeUndefined();
 	});
 
 	it("429 mid-sweep → cooldown refusal carrying the partial state", async () => {
@@ -327,9 +437,9 @@ describe("replace-section", () => {
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("rate-limit lockout");
 		expect(result.message).toContain("partially applied");
-		expect(result.partialReplace).toBe(true);
+		expect(result.partialApply).toBe(true);
 		expect(result.newBlockId).toBe("b-new");
-		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.unconfirmedBlockIds).toEqual(["p1"]);
 		expect(result.remainingBlockIds).toEqual(["p2"]);
 	});
 

@@ -2,9 +2,14 @@
 // success/error echo reads, and the delete receipt — the payload shaping
 // every doc-targeting write mode's result calls.
 
-import type { Envelope } from "./envelope.js";
+import {
+	markPartialApply,
+	type Envelope,
+	type PartialApplyState,
+} from "./envelope.js";
 import {
 	blockContents,
+	causeOf,
 	rootEcho,
 	walkBlockTree,
 	type WalkedTree,
@@ -98,6 +103,21 @@ export async function echoTail(
 		}
 	}
 	return envelope;
+}
+
+/** Rethrow a post-mutation failure inside the finish-write wrapper with
+ * the partial-apply state attached when the error is kernel-classified —
+ * the catch sites merge it into whatever envelope the classifier
+ * produces. Non-kernel error classes rethrow unmarked: the state would
+ * claim mutation evidence an unclassified error cannot vouch for. One
+ * home for the guarded pair so the next write mode inherits the guard
+ * instead of copying it. */
+export function rethrowClassified(
+	error: unknown,
+	state: PartialApplyState,
+): never {
+	if (causeOf(error) !== undefined) markPartialApply(error, state);
+	throw error;
 }
 
 /** The delete receipt: what a delete-bearing op removed — block ids and

@@ -81,6 +81,10 @@ describe("mode-target shape (schema table)", () => {
 			"mode 'replace-section' requires headingId",
 		],
 		[
+			{ kb: "r", mode: "delete-section", docId: "d" } as WriteParams,
+			"mode 'delete-section' requires headingId",
+		],
+		[
 			{ kb: "r", mode: "delete", docId: "d", blockId: "b", doc: true },
 			"exactly one of blockId or doc: true",
 		],
@@ -99,6 +103,16 @@ describe("mode-target shape (schema table)", () => {
 		[
 			{ kb: "r", mode: "move", docId: "d", blockId: "b", markdown: "x" },
 			"mode 'move' does not take: markdown",
+		],
+		[
+			{
+				kb: "r",
+				mode: "delete-section",
+				docId: "d",
+				headingId: "h",
+				markdown: "x",
+			},
+			"mode 'delete-section' does not take: markdown",
 		],
 		[
 			{ kb: "r", mode: "delete", docId: "d", blockId: "b", markdownFile: "/x" },
@@ -156,6 +170,14 @@ describe("mode-target shape (schema table)", () => {
 				mode: "append",
 				docId: "d",
 				placement: "section-start",
+				headingId: "h",
+			} as WriteParams),
+		).toBeUndefined();
+		expect(
+			refusalOf({
+				kb: "r",
+				mode: "delete-section",
+				docId: "d",
 				headingId: "h",
 			} as WriteParams),
 		).toBeUndefined();

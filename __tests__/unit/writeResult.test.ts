@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { SiYuanRateLimitError } from "siyuan-kb-primitives";
 
-import { markPartialReplace } from "../../envelope.js";
+import { markPartialApply } from "../../envelope.js";
 import { finishWrite } from "../../writeResult.js";
 
 describe("finishWrite", () => {
@@ -23,21 +23,35 @@ describe("finishWrite", () => {
 
 	it("non-kernel builder failure carrying partial-apply state keeps the partial payload", async () => {
 		const err = new Error("spill failed mid-sweep");
-		markPartialReplace(err, {
-			partialReplace: true,
+		markPartialApply(err, {
 			newBlockId: "n1",
-			deletedBlockIds: ["a", "b"],
 			remainingBlockIds: ["c"],
 		});
 		const result = await finishWrite("kb1", {}, async () => {
 			throw err;
 		});
 		expect(result.verificationFailed).toBe(true);
-		expect(result.partialReplace).toBe(true);
+		expect(result.partialApply).toBe(true);
 		expect(result.newBlockId).toBe("n1");
-		expect(result.deletedBlockIds).toEqual(["a", "b"]);
 		expect(result.remainingBlockIds).toEqual(["c"]);
 		expect(result.message).toContain("partially applied");
+	});
+
+	it("an empty pending set renders appliedUnverified, never the partial label", async () => {
+		const err = new Error("walk failed after every delete acked");
+		markPartialApply(err, {
+			newBlockId: "n1",
+			remainingBlockIds: [],
+		});
+		const result = await finishWrite("kb1", {}, async () => {
+			throw err;
+		});
+		expect(result.verificationFailed).toBe(true);
+		expect(result.appliedUnverified).toBe(true);
+		expect(result.partialApply).toBeUndefined();
+		expect(result.message).toContain("applied but unverified");
+		expect(result.message).not.toContain("partially applied");
+		expect(result.message).toContain("do NOT re-run");
 	});
 
 	it("auth/rate-limit errors rethrow for runKbCall's classification", async () => {

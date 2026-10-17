@@ -165,8 +165,8 @@ temp HOME for the headless child).
   `kb_write`). Write `requires` read — enabling writes cascades reads on.
   `/kb tools read|write|off` toggles them live.
 - **Write flows** (`writePrepare.ts` carries the ordered kernel-free entry
-  ladder and dispatches edit / append / replace-section /
-  delete / move; create is `writeCreate.ts`; `write.ts` is the tool
+  ladder and dispatches edit / append / replace-section / delete /
+  delete-section / move; create is `writeCreate.ts`; `write.ts` is the tool
   surface + registration) are tool-schema orchestration
   laced with session state: baselines seeding, spill receipts, move outlines,
   envelope wording. The kernel-coupled cores they compose —
@@ -178,8 +178,13 @@ temp HOME for the headless child).
   (the heading-target judgment; `headingInWalk` here maps its arms to
   wording), the verified block/doc moves (`moveBlockVerified` /
   `moveDocVerified`), the verified deletes (`deleteBlockVerified` /
-  `deleteDocVerified`), and the placement module (the section rule and
-  the anchors derived from it)
+  `deleteDocVerified`), `deleteSectionVerified` (the delete-section
+  sequence: enumeration → members-first heading-last sweep → absence
+  judgment, composed on the sweep core — the tool layer never sequences
+  kernel mutations), `orphanedMembersOf` (the heading-delete report's
+  walk projection), `partitionByAbsence` (the members-survived acked-set
+  split — both ride the read barrel), and the placement module (the
+  section rule and the anchors derived from it)
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
   (the fresh-content refusal wording lives in `freshContentRefusal`,
@@ -188,7 +193,10 @@ temp HOME for the headless child).
   release fails typecheck until its sentence is written, wherever that
   sentence lives. Shared fragments live in `writeVerdicts.ts` — transport/verification/drift
   sentences, the anchor echoes (`appendAnchorEcho` / `moveAnchorEcho`),
-  the `blockInDocRefusal*` pair, and the one frame shared across flows, the
+  the `blockInDocRefusal*` pair, the sweep `members-survived` sentence
+  and its split-derived payload fields (one home for both sweep
+  consumers — replace-section and delete-section), and the one frame
+  shared across flows, the
   pre-judgment failure ladder (`mutationFailureEnvelope`, the one async
   piece: it awaits the flow-supplied echo tail, `writeEcho.mutationFailure`).
   Each mode's own verdict sentences co-locate with that mode's flow, which
@@ -290,20 +298,49 @@ primitives.
   warn-and-drop policy (`validation.ts`); tool path pinned locally
   (`encryptedNotebook.live`).
 - **Delete scoping** — the kernel mutates by raw block id with no doc
-  scoping of its own, so membership is judged by the shared `blockInDoc`
-  read → `deleteBlockVerified` (primitives `delete.ts`). This repo words the
-  refusal arms through the edit flow's pre-guard sentence pair
-  (`blockInDocRefusalKind`, `writeVerdicts.ts`).
+  scoping of its own, so membership is judged flow-side per path: single
+  block deletes by the shared `blockInDoc` read → `deleteBlockVerified`
+  (primitives `delete.ts`); delete-section by its enumeration walk —
+  the delete set derives from the walk, never from caller-supplied ids
+  — plus `deleteSectionVerified`'s pre-mutation caller-provenance check
+  (`walk.rootId !== rootId`, zero kernel calls — the walk carries its own
+  root, `WalkedTree.rootId`) → `deleteSectionVerified` (primitives
+  `deleteSection.ts`). This repo words the refusal arms through the edit
+  flow's pre-guard sentence pair (`blockInDocRefusalKind`,
+  `writeVerdicts.ts`).
 - **Delete generation** — 3.8.3 success no-op vs 3.8.4 "tree not found" →
   `deleteBlockVerified` / `deleteDocVerified` (primitives `delete.ts`). This
   repo keeps the flow-side wording: kernel error verbatim with the fresh
   outline; a still-present verdict is an error, never an ok receipt.
+- **Heading-delete scope** — `deleteBlock` on a heading removes only the
+  heading; the members survive it and their section ownership moves to the
+  preceding heading (the delete path is fold-blind, unlike move) →
+  `deleteSectionVerified` (primitives `deleteSection.ts`) as the
+  load-bearing consumer — the delete set assumes the heading delete is
+  per-block and non-cascading — and `orphanedMembersOf` (primitives
+  `placement.ts`) as the report-side consequence. This repo keeps only
+  wording and the ok-arm/degradation policy: the heading-delete report on a
+  heading-scoped `mode: delete` names the members left in place — sound
+  presences, complete by construction (the report only runs on the
+  judged-gone arm, whose post-walk is never truncated: a truncated one
+  refuses as `absence-unconfirmed` first) — and degrades to a
+  confirmation line on an incomplete pre-walk (`writeDelete.ts`);
+  falsifiers: the live pin in the
+  primitives' `delete.live` for the fold-blind fact, plus the local
+  wording pins
+  (`writeDelete.test.ts`, `writeDeleteSection.test.ts`, live
+  `writePins.live`).
 - **Delete-freshness split** (policy, not fact — this repo owns it) — the
   block-delete path rides the same fresh-content precondition as edit and
   replace-section (`writeDelete.ts`, before `deleteBlockVerified`; no
   flow-side membership read — a block outside the doc or already absent
-  reads as `vanished` there and refuses at the primitive's scoping arms),
-  but the doc-delete path is deliberately unguarded: the intent is
+  reads as `vanished` there and refuses at the primitive's scoping arms);
+  the delete-section path guards the same way, over the WHOLE delete set
+  (closure + heading — `writeDeleteSection.ts`, the replace-section
+  precedent: the cascade makes descendants part of what is at stake;
+  the agent's intent is the section's content, and the members are
+  enumerated by the walk, never named by the agent), but the doc-delete
+  path is deliberately unguarded: the intent is
   container-level destruction a member's content change cannot redirect, the
   receipt itemizes every lost block, and the primitive's walk-then-mutate
   sequence leaves no interposable refusal point without duplicating its walk.
@@ -329,7 +366,9 @@ primitives.
   resolve/echo/spill around the per-box fan-out.
 - **Delete cascade** — the kernel's cascade removes a container member's
   descendants with it, so the sweep deletes only the enumerated members →
-  `sweepSectionMembers` (primitives `sweep.ts`). The replace-section
+  `sweepCore` (primitives `sweep.ts`), the shared enumerated sweep with
+  two consumers (`sweepSectionMembers` = replace-section,
+  `deleteSectionVerified` = delete-section). The replace-section
   sequence itself (`replaceSectionVerified`: insert-before-sweep ordering,
   enumeration timing) lives in the primitives; this repo keeps the sweep's
   partial-apply envelope wording (byte-identical receipt, do-not-retry
