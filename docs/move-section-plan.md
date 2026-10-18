@@ -33,14 +33,45 @@ content), is why this is approved rather than deferred.
   (`kernel/model/transaction.go` `doMove` → `InsertAfter`), which is LIFO.
   Issuing the members in reverse document order onto the existing
   section-end anchor (`deriveMoveAnchor`, a leaf position by contract)
-  yields `[anchor, mN … m1]`; the emptied heading then lands directly after
-  the anchor and before `mN` → `[anchor, H, m1 … mN]`: correct section
-semantics with the anchor the move path already has. There is **no new
-anchor arm**. A start-of-section landing is out of scope (§5): inserting a
-  same-or-shallower heading at a section's *start* re-bounds the destination
+  yields `[anchor, m1 … mN]`; the emptied heading then lands directly after
+  the anchor and before `m1` → `[anchor, H, m1 … mN]`: correct section
+  semantics with the anchor the move path already has. There is **no new
+  anchor arm** — but the anchor the move path already has must be a
+  **stable** one (next bullet). A start-of-section landing is out of scope
+  (§5): inserting a same-or-shallower heading at a section's *start*
+  re-bounds the destination
   heading's section — the destination's body would become the moved
   section's body — and the prepend arm it would need is live-pinned
   unreachable.
+
+- **Anchor stability: the derived anchor must be a non-heading block.** A
+  heading anchor does not denote a position — "after this heading" means
+  "after the heading" unfolded, "after the heading's whole section"
+  self-folded (`transaction.go`'s redirect branch), and fold is hidden
+  state this package never reads. The kernel's own contract (`MoveAnchor`'s
+  precondition) is that a heading anchor is fold-stable **iff its section
+  is empty** — and such an anchor is **single-use**: the group's first
+  landing makes it section-bearing, so every later leg addresses a
+  silently flipped position (a collapsed destination section lands the
+  group inverted — body above its heading, re-parented — behind
+  unconditional HTTP success per leg). Reverse order is forced by the
+  moved-node side and a fixed anchor is forced by the LIFO landing, so a
+  multi-leg sequence needs an anchor that survives N+1 uses: the
+  destination section must be non-empty and the derived anchor a
+  non-heading leaf. This is held **by construction**, not judged after the
+  fact — no post-move judgment can repair a flipped address.
+
+- **The anchor-stability law is stated once, in the primitives.**
+  `deriveMoveAnchor` classifies its result through one predicate in
+  `placement.ts` — `stable` (non-heading leaf) / `single-use`
+  (empty-section heading: the per-id path's existing semantics, judged
+  before its next leg) / `unstable` (section-bearing heading, refused
+  everywhere) — and every anchor consumer switches on the class: the
+  per-id move keeps accepting `single-use`, this group mode refuses
+  anything but `stable`, and a future sequence inherits the check by
+  construction instead of by review. The existing
+  `heading-anchor-with-section` refusal and this mode's refusal become two
+  consumers of one predicate rather than two handwritten guards.
 
 - **The moved set.** `sectionOf(sourceHeading).members` in **reverse
   document order**, then the heading. Reverse order is load-bearing, not an
@@ -50,19 +81,39 @@ anchor arm**. A start-of-section landing is out of scope (§5): inserting a
   (closure) are never issued — they ride their container. State and pin
   this; an implementer who "simplifies" the order orphans subsection bodies.
 
-- **The landed-order judgment.** One post-sequence walk per touched doc,
-  replacing per-leg verification: (a) every enumerated member id present in
-  the destination doc, in expected order, consecutive from the anchor;
-  (b) the moved heading's destination section is exactly the enumerated
-  member sequence; (c) the source is free of the enumerated members. The
-  per-id legs do **not** each run the full `moveBlockVerified` judgment —
-  one group judgment is cheaper than N+1 per-leg walks, and it is the only
-  judgment that catches a fold/skip-class redirect mid-sequence. This
-  judgment is the mode's safety net.
+- **The judged sequence: mutate → judge → mutate → judge.** The heading
+  leg is safe only if the member legs *actually landed* — a silent per-leg
+  no-op (skip-class rejections ack with unconditional HTTP success) would
+  leave `H` section-bearing when its leg runs, and a folded `H` would drag
+  its remaining children. Trusting acks is not how this package moves
+  blocks; and a judgment placed after the last fold-sensitive mutation is
+  a post-mortem, not a safety net. So the sequence is two judged phases —
+  the `replaceSectionVerified` shape, not one post-sequence walk:
+  1. **Member phase.** The reverse-order legs onto the stable anchor, then
+     one complete walk per touched doc and the member judgment: the
+     enumerated members present in the destination in expected order (the
+     run immediately after the anchor is `m1 … mN`) *and* absent from the
+     source. Absence is sound only on a complete walk (the `WalkedTree`
+     truncation invariant), so the judgment carries an explicit truncated
+     arm. Abort here on any miss: `H` is untouched.
+  2. **Heading leg.** The emptied heading onto the same stable anchor,
+     then the final walk and the destination judgment:
+     `sectionOf(destWalk, H).members` **starts with** the enumerated
+     member sequence — a prefix, never equality: a shallower moved heading
+     legitimately claims following sections (the outline side effect
+     below).
+  Same-doc, one walk serves both roles at each judgment point; cross-doc,
+  each judgment takes its own doc's walk. Two judgments instead of N+1
+  per-leg verdicts — the one-call economy survives; what is discarded is
+  the single post-sequence judgment. This mode joins a rule the primitives
+  already obey twice (replace-section, delete-section) and should state in
+  their AGENTS.md: **every precondition in a multi-leg sequence is either
+  held by construction or re-judged after the legs that could break it.**
 
 - **Partial-state semantics.** Mid-sequence failure leaves members moved and
   the heading (and any un-moved members) behind — the receipt must say
-  exactly what moved, in what order, and where the remainder sits. The
+  exactly what moved, in what order, and where the remainder sits, rendered
+  from the member phase's judgment walk (never from an ack prefix). The
   honest sentence is that **the section is split between two places**; the
   receipt must never read as loss and must not reuse delete's vocabulary
   ("gone"). Reuse the generalized partial plumbing's *mechanism* (the
@@ -103,20 +154,32 @@ Before writing the implementation plan:
    needs a move and a move-order judgment; parameterizing the loop or
    duplicating it is decided at this plan's implementation time.
 2. **A live probe, before any product code.** A raw-client probe (no
-   product code) on a fixture with a nested subsection heading, a container
-   member, and an empty-section heading: issue the members in reverse order
-   onto the derived section-end anchor, then the emptied heading, and read
-   `sectionOf(postWalk, movedHeadingId).members`. This settles the
-   `InsertAfter`/LIFO ordering reading of `transaction.go` against the real
-   kernel — the one claim in this design that is source-verified but not yet
-   live-confirmed — and its transcript is the implementation plan.
+   product code) on a fixture with a nested subsection heading and a
+   container member, over both destination shapes:
+   - a **populated** destination section — the supported path: issue the
+     members in reverse order onto the derived non-heading anchor, then
+     the emptied heading, and read
+     `sectionOf(postWalk, movedHeadingId).members`. This settles the
+     `InsertAfter`/LIFO ordering reading of `transaction.go` against the
+     real kernel;
+   - an **empty** destination section with `fold=1` set on the destination
+     heading (per-block IAL, settable): issue the member legs onto the
+     derived *heading* anchor and read the landing positions — legs after
+     the first should redirect to the anchor's last child and invert the
+     group, recording the hazard the stable-anchor refusal exists for.
+   Both readings are source-verified but not yet live-confirmed; the
+   transcript is the implementation plan.
 
 (A previously drafted precondition — designing and live-pinning a
 start-of-section *move* anchor arm — is **dropped**: with end-of-section
-landing there is no new anchor arm and no fold-safety proof to make. A
-non-heading anchor can never satisfy the kernel's heading-anchor redirect
-branch (`ast.NodeHeading == targetNode.Type`, `transaction.go`), so there
-is nothing to pin.)
+landing there is no new anchor arm. Corrected during review: the claim
+that the derived anchor therefore never meets the kernel's redirect branch
+was false — a non-heading anchor indeed never satisfies it
+(`ast.NodeHeading == targetNode.Type`, `transaction.go`), but
+`deriveMoveAnchor` legitimately returns a heading whenever the destination
+section is empty, and that anchor *is* redirectable once the sequence's
+own first leg makes it section-bearing. The stable-anchor requirement (§2)
+and the probe's folded-empty-destination case exist because of this.)
 
 ## 4. Refusals the mode must add
 
@@ -129,6 +192,13 @@ checks would otherwise only surface mid-sequence, after the tear:
   destination section is one the moved section contains.
 - The group is **already at the destination** — one refusal, never a
   partial receipt with an empty moved set.
+- The destination section is **empty** — the derived anchor is the
+  destination heading itself (`single-use` class), which the group's first
+  landing makes section-bearing and fold-unstable. Refused pre-mutation,
+  zero kernel calls, without reading `fold` — the same posture as the
+  existing fold-blind refusals — and worded with the route out: append a
+  body block into the destination section first, or move the members
+  per-id (where `heading-anchor-with-section` fires loudly).
 
 ## 5. Non-goals (until revisited)
 
