@@ -384,4 +384,19 @@ describe("delete-section", () => {
 		]);
 		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
+
+	it("walk-count pin: the fresh-content judgment rides the enumeration walk (2 walks, not 3)", async () => {
+		// The internal guard's falsifier at flow level: enumeration walk +
+		// sweep verification walk — the judgment rides the caller-held walk
+		// and takes no walk of its own. A regression that re-walks inside
+		// the guard adds a third 'd-doc' call here.
+		const { execute, calls } = setup({
+			config: { childrenFor: DOC, cascadeDelete: true },
+		});
+		const result = await execute(params);
+		expect(result.status).toBe("ok");
+		expect(
+			calls.filter((c) => c.method === "getChildBlocks").map((c) => c.args),
+		).toEqual(["d-doc", "d-doc"]);
+	});
 });

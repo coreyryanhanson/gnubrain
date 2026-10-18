@@ -3,17 +3,16 @@
 // trip), never trusted from the HTTP success alone. The mutation and the
 // landed judgment are one primitive call (editVerified).
 
-import { blockInDoc } from "siyuan-kb-primitives";
 import { editVerified } from "siyuan-kb-primitives/write";
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { echoTail, mutationFailure } from "./writeEcho.js";
 import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
-import { freshContentRefusal } from "./writeFresh.js";
+import { freshRefusalEnvelope } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	editVerifyFailureReason,
-	blockInDocRefusal,
 	blockInDocRefusalKind,
+	editWalkTruncatedMessage,
 } from "./writeVerdicts.js";
 
 export async function runEditMode(
@@ -22,45 +21,41 @@ export async function runEditMode(
 ): Promise<Envelope> {
 	const { kernel, sessionId, name, baselines, params } = input;
 	const blockId = params.blockId as string;
-	const row = await blockInDoc(kernel, doc.rootId, blockId);
-	const refusal = blockInDocRefusal(row, blockId, doc);
-	if (refusal !== undefined) return refusedEnvelope(refusal);
-	if (row.kind === "in-doc") {
-		// Fresh-content precondition (writeFresh.ts). Read reuse, not a
-		// seeding step: the blockInDoc row is already in hand, so
-		// supplying its hash spares the judgment's own seed read — the
-		// primitive reaches the same arms either way (diverged row → stale,
-		// matching or absent row → the walk content is adopted).
-		if (baselines.servedHash(blockId) === undefined) {
-			baselines.remember(blockId, row.content);
-		}
-		const { refusal } = await freshContentRefusal(
-			kernel,
-			baselines,
-			[{ blockId, baselineHash: baselines.servedHash(blockId) }],
-			{ sessionId, docId: doc.rootId },
-		);
-		if (refusal !== null) return refusal;
-	}
-	// The pre-write stored pair the landed check needs is read inside the
-	// primitive (the representation contract — blocks-index row form,
-	// never walk-rendered content — is its concern, not ours). An absent
-	// target is never refused here — updateBlock's synchronous
-	// not-found error surfaces verbatim through the kernel-refused arm.
+	// No flow-side membership read: the primitive judges scoping itself,
+	// and a foreign or doc-id target refuses at its pre-mutation scoping
+	// arms (below) instead of a duplicate read here.
+	// The fresh precondition is the primitive's: edit supplies the one
+	// target's verdict — the single-target form, not the lookup (see
+	// editVerified's `baseline`; the seed-path rule: baselines.ts) — and
+	// the refusal builder is shared: writeFresh.ts.
+	const baseline = baselines.servedBaseline(blockId);
 	// The verified edit: one primitive call — the shared transport
-	// contract lives in writeResult.ts's header.
+	// contract lives in writeResult.ts's header. The judgment runs inside
+	// the primitive, after its own scoping read and before the mutation.
+	// An absent target is never refused here: the judgment runs on it too
+	// (walk-absent → vanished → proceed), and updateBlock's synchronous
+	// not-found error surfaces verbatim through the kernel-refused arm.
 	const outcome = await editVerified(kernel, input.probe, {
 		blockId,
 		body: input.body,
 		rootId: doc.rootId,
+		baseline,
 	});
 	if (outcome.kind !== "judged") {
+		if (outcome.kind === "fresh-refused") {
+			// The internal guard's refusal — nothing landed.
+			return freshRefusalEnvelope(baselines, sessionId, name, outcome);
+		}
+		if (outcome.kind === "walk-truncated") {
+			// The guard's walk cannot see the target: an unconfirmed absence
+			// never mutates, and content it could not compare is not a fresh
+			// target.
+			return refusedEnvelope(editWalkTruncatedMessage, { kb: name });
+		}
 		if (outcome.kind === "foreign" || outcome.kind === "doc-id") {
-			// Defense-in-depth: the flow's own target read already refuses
-			// this membership class above; the primitive's pre-write read is
-			// the second copy of the same judgment. Same wording home as the
-			// delete primitive's scoping arms — one sentence pair whichever
-			// side refuses.
+			// Pre-mutation scoping refusal — the primitive's own blockInDoc
+			// read; the same wording home as the delete primitives' scoping
+			// arms, one sentence pair for the membership class.
 			return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
 		}
 		return mutationFailure(outcome, input, doc, { blockId });

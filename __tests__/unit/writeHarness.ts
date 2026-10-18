@@ -501,6 +501,18 @@ export function setup(
 	};
 }
 
+/** The served baseline's hash for `blockId`, or undefined when the
+ * baseline is absent or never-served — the compact assertion form for
+ * suites pinning seeding; assert the full verdict shape only where the
+ * kind itself is the claim. */
+export function servedHash(
+	baselines: ContentBaselines,
+	blockId: string,
+): string | undefined {
+	const verdict = baselines.servedBaseline(blockId);
+	return verdict.kind === "served" ? verdict.hash : undefined;
+}
+
 // The mode list derives from the authority's own unsupported-mode
 // message, so neither side of an invariant can go stale independently.
 export function modeList(): string[] {

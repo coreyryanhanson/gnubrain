@@ -12,7 +12,8 @@
 // the flow's echo tail, doc, and verdict keys). Worded elsewhere:
 // headingInWalk (writeTarget), mintTitleMessage (writeGuard, shared by
 // the tool-surface pre-flight and the primitives' `mint-title` arm), and
-// the fresh-content refusal envelope (freshContentRefusal, writeFresh).
+// the fresh-content refusal envelope (writeFresh, over the internal
+// guards' carried evidence).
 // Tool-side policy refusals (grant, breaker, 429 cooldown) never cross
 // the boundary and keep their existing homes.
 
@@ -215,23 +216,59 @@ export async function mutationFailureEnvelope(
 	return errorEnvelope("internal: unhandled mutation failure");
 }
 
-/** The flows' pre-write depth-bound refusals — each worded once and shared
- * by the flow's two truncation arms (the anchor/section projection refusal
- * and the primitives' walk-truncated verdict): the sentences differ per
- * operation shape, not per arm. The target judgment's own truncation arm
- * words in writeTarget (walkTruncatedMessage, beside headingInWalk's other
- * arms). */
-export const appendWalkTruncatedMessage =
-	"the pre-write walk hit the document's depth bound, so the append anchor could not be derived from complete evidence — append refused before any kernel call; restructure the document (or edit in place) instead";
+/** The flows' pre-write depth-bound refusals — one shared frame, built
+ * here; the sentences differ per operation shape, not per arm: the stake
+ * names what could not be derived, and each mode keeps its own advice
+ * tail (an in-place edit for append/move/replace-section, a shallower
+ * target for edit, the per-block alternative named-and-refused for the
+ * delete modes). Every mode refuses before any mutation — the walks
+ * whose bound tripped are kernel calls, and the primitives' scoping
+ * reads and stake walks have already run when the delete-family bounds
+ * trip. The target judgment's own truncation arm words in writeTarget
+ * (walkTruncatedMessage, beside headingInWalk's other arms). */
+function walkTruncatedFrame(
+	mode: string,
+	stake: string,
+	advice: string,
+): string {
+	return `the document nests past the walk depth bound, so ${stake} cannot be derived from complete evidence — ${mode} refused before any mutation; ${advice}`;
+}
 
-export const moveWalkTruncatedMessage =
-	"the pre-move walk hit the document's depth bound, so the placement and scoping judgments would read incomplete evidence — move refused before any kernel call; restructure the document (or edit in place) instead";
+export const editWalkTruncatedMessage = walkTruncatedFrame(
+	"edit",
+	"the edit target's presence and content",
+	"restructure the document (or target a shallower block) instead",
+);
 
-export const replaceSectionWalkTruncatedMessage =
-	"the document nests past the walk depth bound, so the section enumeration and the insert anchor cannot be derived from complete evidence — replace-section refused before any kernel call; restructure the document (or edit the target block directly) instead";
+export const appendWalkTruncatedMessage = walkTruncatedFrame(
+	"append",
+	"the append anchor",
+	"restructure the document (or edit in place) instead",
+);
 
-export const deleteSectionWalkTruncatedMessage =
-	"the document nests past the walk depth bound, so the section enumeration and its delete-set bound cannot be derived from complete evidence — delete-section refused before any kernel call; restructure the document (or delete the blocks individually by id) instead";
+export const moveWalkTruncatedMessage = walkTruncatedFrame(
+	"move",
+	"the placement and scoping judgments",
+	"restructure the document (or edit in place) instead",
+);
+
+export const replaceSectionWalkTruncatedMessage = walkTruncatedFrame(
+	"replace-section",
+	"the section enumeration and the insert anchor",
+	"restructure the document (or edit the target block directly) instead",
+);
+
+export const deleteSectionWalkTruncatedMessage = walkTruncatedFrame(
+	"delete-section",
+	"the section enumeration and its delete-set bound",
+	"restructure the document instead — the depth bound is document-wide, so deleting the blocks individually refuses on the same walk",
+);
+
+export const deleteBlockWalkTruncatedMessage = walkTruncatedFrame(
+	"delete",
+	"the delete's cascade stake",
+	"restructure the document instead — the depth bound is document-wide, so deleting the blocks individually refuses on the same walk",
+);
 
 /** The prose half of the partial-apply render — used by exactly two
  * sentence-frame sites (the gate's withPartialState NOTE and finishWrite's
@@ -332,13 +369,10 @@ export function moveAnchorEcho(anchor: MoveAnchor): string {
 }
 
 /** The refusal half of blockInDoc's union — the two kinds that always
- * word. Split from blockInDocRefusal so consumers holding only the refusal
- * half (the edit verify's concurrent-move inner) get a total `string`, not
- * a type that permits an undefined to interpolate into a sentence. Also
- * the wording home for the delete primitives' own scoping arms (foreign /
- * doc-id refuse inside deleteBlockVerified and deleteSectionVerified) —
- * one sentence pair for the same membership class whichever side
- * refuses. */
+ * word. The delete primitives' own scoping arms (foreign / doc-id refuse
+ * inside deleteBlockVerified and deleteSectionVerified) and the edit
+ * primitive's pre-mutation scoping arms word through this — one sentence
+ * pair for the same membership class whichever side refuses. */
 export function blockInDocRefusalKind(
 	outcome: Extract<BlockInDocResult, { kind: "doc-id" | "foreign" }>,
 	blockId: string,
@@ -349,26 +383,6 @@ export function blockInDocRefusalKind(
 			return `'${blockId}' is a document id, not a block — use a doc-level op or re-target a block from the outline (kb_read)`;
 		case "foreign":
 			return `block '${blockId}' belongs to another doc (root ${outcome.rootId}), not '${doc.title}' (${doc.rootId}) — ${STALE_TARGET_GUIDANCE}`;
-	}
-	outcome satisfies never;
-}
-
-export function blockInDocRefusal(
-	outcome: BlockInDocResult,
-	blockId: string,
-	doc: { title: string; rootId: string },
-): string | undefined {
-	// Exhaustive over all four arms: a new BlockInDocResult kind added
-	// upstream must fail typecheck here — the flows early-return on
-	// undefined, so an implicit fallthrough would read it as in-doc and
-	// proceed past the precondition.
-	switch (outcome.kind) {
-		case "doc-id":
-		case "foreign":
-			return blockInDocRefusalKind(outcome, blockId, doc);
-		case "in-doc":
-		case "absent":
-			return undefined;
 	}
 	outcome satisfies never;
 }

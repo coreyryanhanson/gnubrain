@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError, contentHash } from "siyuan-kb-primitives";
 import { statementKind, withVerifyWindow } from "siyuan-kb-primitives/testing";
-import { setup, walkBlock, editBase } from "./writeHarness.js";
+import { setup, walkBlock, editBase, nestChain } from "./writeHarness.js";
 
 // ---------------------------------------------------------------------------
 // edit — fresh-content precondition
@@ -29,6 +29,50 @@ describe("edit", () => {
 		).toEqual([{ id: "b-1", data: "corrected body" }]);
 	});
 
+	it("a target past the walk's depth bound refuses the edit before any mutation — walk-truncated", async () => {
+		// The guard's walk cannot see the target: an unconfirmed absence
+		// never mutates, and content it could not compare is not a fresh
+		// target.
+		const { execute, calls, childrenFor } = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "deep body" }],
+			},
+		});
+		// The target sits at the end of a chain deeper than the walk's depth
+		// bound — the walk truncates before reaching it.
+		nestChain(childrenFor, "d-doc", 33);
+		childrenFor["n32"] = [walkBlock("b-1", "p", "", "deep body")];
+		const result = await execute(editBase);
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain(
+			"the edit target's presence and content cannot be derived",
+		);
+		expect(result.message).toContain("edit refused before any mutation");
+		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
+	});
+
+	it("a served baseline diverging from the walk takes the session-sentence lead — the split keys on the flow's own input", async () => {
+		// The session served the block (an older form), the tree moved on:
+		// the served verdict's hash comparison is the comparison path, so the
+		// lead is the session sentence — the index-divergence sentence would
+		// be false here (the index agrees with the walk).
+		const harness = setup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				childrenFor: {
+					"d-doc": [walkBlock("b-1", "p", "", "concurrently rewritten")],
+				},
+			},
+		});
+		harness.baselines.remember("b-1", "older form");
+		const result = await harness.execute(editBase);
+		expect(result.status).toBe("refused");
+		expect(result.reason).toBe("stale_content");
+		expect(result.message).toContain(
+			"changed since this session last checked it",
+		);
+	});
+
 	it("a block id passed as docId reads as no doc — rootEcho's type-'d' discrimination, zero kernel write calls", async () => {
 		// b-1 exists as a block row but is not a doc root; the write path
 		// refuses it instead of normalizing it to its containing doc.
@@ -44,13 +88,16 @@ describe("edit", () => {
 	});
 
 	it("concurrent change → stale_content refusal with current content + fresh outline, zero kernel write calls", async () => {
-		// The dialog served "stale paragraph" (the blocks index, baseline
-		// seeded from it at check time); the live tree already holds the
-		// kernel-side rewrite — exactly the index-lag case the tree-riding
-		// precondition exists to catch.
+		// The session never served the block (no row seed — the guard's input
+		// mints from session state alone), so the target judges on the seed
+		// path: the index still holds the pre-change form while the live tree
+		// already holds the kernel-side rewrite — exactly the walk-vs-index
+		// divergence the seed path fails closed on. The refusal lead words
+		// that truthfully (the session sentence would be false here).
 		const { execute, calls } = setup({
 			config: {
 				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				baselineRows: [{ id: "b-1", content: "stale paragraph" }],
 				childrenFor: {
 					"d-doc": [walkBlock("b-1", "p", "", "concurrently rewritten")],
 				},
@@ -59,6 +106,9 @@ describe("edit", () => {
 		const result = await execute(editBase);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
+		expect(result.message).toContain(
+			"the live tree and the blocks index disagree about block 'b-1'",
+		);
 		expect(result.currentContent).toBe("concurrently rewritten");
 		expect(result.outline).toBeDefined();
 		expect(calls.filter((c) => c.method === "updateBlock")).toHaveLength(0);
@@ -183,11 +233,10 @@ describe("edit", () => {
 		harness.client.query = async (stmt: string) => {
 			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
-				// Reads 1–2 are the pre-write reads (the flow's own, then the
-				// primitive's); reads 3+ are post-write verification reads,
-				// serving a kernel-normalized stored form distinct from the
-				// submitted markdown.
-				return blockReads <= 2
+				// Read 1 is the primitive's pre-write scoping read; reads 2+ are
+				// post-write verification reads, serving a kernel-normalized
+				// stored form distinct from the submitted markdown.
+				return blockReads <= 1
 					? baseQuery(stmt)
 					: [
 							{
@@ -212,9 +261,10 @@ describe("edit", () => {
 		// The verdict carried the post-write stored (index) form — a
 		// follow-up edit compares against it, not the submitted markdown
 		// and not the pre-write serve.
-		expect(harness.baselines.servedHash("b-1")).toBe(
-			contentHash("correctd body"),
-		);
+		expect(harness.baselines.servedBaseline("b-1")).toEqual({
+			kind: "served",
+			hash: contentHash("correctd body"),
+		});
 	});
 
 	it("an unobserved-baseline landed verdict never seeds a baseline", async () => {
@@ -228,11 +278,10 @@ describe("edit", () => {
 		harness.client.query = async (stmt: string) => {
 			if (statementKind(stmt) === "block-in-doc") {
 				blockReads += 1;
-				// Reads 1–2 are the pre-write reads (the flow's own, then the
-				// primitive's) and both are absent; from read 3 on the index
-				// serves a row — byte-identical to what a late-arriving pre-edit
-				// row would look like.
-				return blockReads <= 2
+				// Read 1 is the primitive's pre-write scoping read and is absent;
+				// from read 2 on the index serves a row — byte-identical to what
+				// a late-arriving pre-edit row would look like.
+				return blockReads <= 1
 					? []
 					: [
 							{
@@ -249,6 +298,8 @@ describe("edit", () => {
 		expect(result.status).toBe("ok");
 		// The block stays baseline-less: the next fresh-check reads it as
 		// `unseen` instead of trusting the possibly-stale row.
-		expect(harness.baselines.servedHash("b-1")).toBeUndefined();
+		expect(harness.baselines.servedBaseline("b-1")).toEqual({
+			kind: "never-served",
+		});
 	});
 });

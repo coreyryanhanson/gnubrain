@@ -59,6 +59,11 @@ describe("delete", () => {
 		// block-level receipt (the suppression pin rides the ok case).
 		expect(result.message).not.toContain("left in place");
 		expect(result.orphanedMembers).toBeUndefined();
+		// Walk-count pin: the fresh-content judgment rides the primitive's own
+		// stake walk — stake walk + post-delete verification walk, no third.
+		expect(
+			calls.filter((c) => c.method === "getChildBlocks").map((c) => c.args),
+		).toEqual(["d-doc", "d-doc"]);
 	});
 
 	it("concurrent change → stale_content refusal before any kernel write", async () => {
@@ -443,13 +448,11 @@ describe("delete — the heading-delete report", () => {
 		expect(result.orphanedMembers).toBeUndefined();
 	});
 
-	it("an incomplete pre-walk degrades the report to a confirmation line, never silence", async () => {
-		// The section nests past the walk depth bound, so the fresh
-		// pre-walk cannot bound it; the delete itself shallows the doc
-		// (the chain collapses concurrently in the stub), so the post-write
-		// walk is complete and the delete judges ok — the report weakens
-		// to the degraded line instead of vanishing.
-		const { execute, childrenFor } = setup({
+	it("an incomplete stake walk refuses the delete before any mutation — walk-truncated", async () => {
+		// The section nests past the walk depth bound, so the guard's stake
+		// walk cannot enumerate the cascade stake from complete evidence —
+		// the delete refuses pre-mutation (the guard's own truncation arm).
+		const { execute, calls, childrenFor } = setup({
 			config: {
 				blockRows: [{ id: "h1", content: "Goals" }],
 				childrenFor: {
@@ -459,19 +462,13 @@ describe("delete — the heading-delete report", () => {
 					],
 					c9: [],
 				},
-				cascadeDelete: true,
 				onDelete: () => {
-					// The chain collapses before the post-write walk — the stub
-					// stand-in for the concurrent change that shallowed the doc.
-					for (const key of Object.keys(childrenFor)) {
-						if (key.startsWith("n")) delete childrenFor[key];
-					}
-					childrenFor["c9"] = [];
+					throw new Error("the delete must never fire on a truncated stake");
 				},
 			},
 		});
 		// A chain of nested unnamed containers under c9 (built after setup,
-		// before the call): the pre-walk recurses into it and truncates.
+		// before the call): the stake walk recurses into it and truncates.
 		nestChain(childrenFor, "c9", 33);
 		const result = await execute({
 			kb: "recipes",
@@ -479,8 +476,47 @@ describe("delete — the heading-delete report", () => {
 			docId: "d-doc",
 			blockId: "h1",
 		});
-		expect(result.status).toBe("ok");
-		expect(result.message).toContain("members left in place may go unreported");
-		expect(result.orphanedMembers).toBeUndefined();
+		expect(result.status).toBe("refused");
+		expect(result.message).toContain(
+			"cascade stake cannot be derived from complete evidence",
+		);
+		expect(result.message).toContain("delete refused before any mutation");
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+	});
+
+	it("a never-served cascade descendant with a diverging seed row refuses the delete — the index-divergence lead", async () => {
+		// The guard's derived stake: the container target's descendants
+		// judge through the session lookup, so a descendant the session
+		// never served but the index still holds refuses fail-closed — the
+		// walk-vs-index divergence, worded as the index disagreement it
+		// is. The baseline-compared descendant arm renders the session
+		// sentence and is pinned through the edit flow (writeEdit.test).
+		const { execute, calls } = setup({
+			config: {
+				blockRows: [{ id: "c1", content: "container", root_id: "d-doc" }],
+				childrenFor: {
+					"d-doc": [walkBlock("c1", "b", "", "container")],
+					c1: [walkBlock("p1", "p", "", "tree form")],
+				},
+				// The seed row the session never served — its divergence from
+				// the walk content is what the fail-closed seed path reads.
+				baselineRows: [{ id: "p1", content: "index form" }],
+			},
+		});
+		const result = await execute({
+			kb: "recipes",
+			mode: "delete",
+			docId: "d-doc",
+			blockId: "c1",
+		});
+		expect(result.status).toBe("refused");
+		expect(result.reason).toBe("stale_content");
+		expect(result.message).toContain(
+			"the live tree and the blocks index disagree about block 'p1'",
+		);
+		expect(result.blockId).toBe("p1");
+		expect(result.currentContent).toBe("tree form");
+		expect(result.outline).toBeDefined();
+		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
 	});
 });

@@ -1,8 +1,9 @@
 // The replace-section flow: enumerate the section from the document-order
-// walk → fresh-content precondition → one verified sequence call (the
-// primitives own the insert-before-sweep ordering and the enumeration
-// timing) → envelope wording. A mid-sequence failure must cost visible
-// duplication, never loss — that invariant lives with the sequence.
+// walk → one verified sequence call (the primitives own the fresh-content
+// guard over the derived judged set, the insert-before-sweep ordering and
+// the enumeration timing) → envelope wording. A mid-sequence failure must
+// cost visible duplication, never loss — that invariant lives with the
+// sequence.
 
 import {
 	appendAnchorOf,
@@ -18,6 +19,7 @@ import {
 import {
 	errorEnvelope,
 	partialApplyMarker,
+	refusedEnvelope,
 	type Envelope,
 } from "./envelope.js";
 import {
@@ -32,10 +34,11 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
-import { freshContentRefusal } from "./writeFresh.js";
+import { freshRefusalEnvelope } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	appendAnchorEcho,
+	blockInDocRefusalKind,
 	insertLandedRefusal,
 	replaceSectionWalkTruncatedMessage,
 	sweepMembersSurvivedFields,
@@ -138,10 +141,9 @@ export async function runReplaceSectionMode(
 	const { kernel, sessionId, name, baselines, params } = input;
 	const headingId = params.headingId as string;
 	// Target resolution rides the document-order walk, never SQL. The
-	// sectionOf call is the closure the fresh-content precondition reads —
-	// session baselines cannot cross into the primitives, so the flow
-	// derives it too; the sequence re-derives the identical section
-	// internally from this same walk.
+	// sectionOf call is the flow's own echo material (the anchor echo
+	// below); the sequence re-derives the identical section internally
+	// from this same walk.
 	const tree = await walkBlockTree(kernel, doc.rootId);
 	const resolved = headingInWalk(tree, doc, headingId);
 	if ("status" in resolved) return resolved;
@@ -161,21 +163,11 @@ export async function runReplaceSectionMode(
 		);
 	}
 	const section = deleteSet.section;
-	// Fresh-content precondition (writeFresh.ts), one wrapper step right
-	// before the kernel call: the judgment seeds missing baselines from the
-	// SQL index and checks against the live tree in one pass (a change
-	// landing since the walk is caught as stale_content, never moved into
-	// a baseline — anti-laundering invariant: baselines.ts).
-	const { refusal } = await freshContentRefusal(
-		kernel,
-		baselines,
-		section.closure.map((b) => ({
-			blockId: b.id,
-			baselineHash: baselines.servedHash(b.id),
-		})),
-		{ sessionId, docId: doc.rootId },
-	);
-	if (refusal !== null) return refusal;
+	// The fresh precondition is the primitive's, over the session lookup
+	// (writeFresh.ts; the judged set derives from the enumeration walk
+	// above — no second walk; see replaceSectionVerified's `baselineFor`).
+	// An empty closure legitimately judges nothing — the sequence skips
+	// the judgment there.
 	// The anchor echo — projected from the section this flow already
 	// enumerated, the same projection the sequence derives internally for
 	// the mutation (the heading-absent tripwire below pins that
@@ -188,6 +180,7 @@ export async function runReplaceSectionMode(
 		walk: tree,
 		headingId,
 		body: input.body,
+		baselineFor: baselines.servedBaseline,
 	});
 	// The insert leg's pre-judgment failure ladder — no mutation has landed,
 	// so these map outside the finish-write wrapper.
@@ -198,6 +191,20 @@ export async function runReplaceSectionMode(
 		outcome.kind === "verification-failed"
 	) {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
+	}
+	if (outcome.kind === "foreign") {
+		// Pre-mutation provenance refusal — the same arm and the same
+		// shared wording home as delete-section's (writeVerdicts doc): the
+		// enumeration walk's root is not the claimed doc. Unreachable from
+		// this flow (rootId and the walk derive from the same doc.rootId);
+		// the arm keeps the sequence's contract self-contained — the
+		// kernel's raw-id mutations could not detect the mismatch post-hoc.
+		return refusedEnvelope(blockInDocRefusalKind(outcome, headingId, doc));
+	}
+	if (outcome.kind === "fresh-refused") {
+		// The internal guard's refusal — nothing landed (the judgment runs
+		// before the insert leg).
+		return freshRefusalEnvelope(baselines, sessionId, name, outcome);
 	}
 	if (outcome.kind === "walk-truncated" || outcome.kind === "heading-absent") {
 		// Unreachable — the sequence refuses a truncated pre-mutation walk

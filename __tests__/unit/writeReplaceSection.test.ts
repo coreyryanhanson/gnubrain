@@ -14,6 +14,7 @@ import {
 	SECTION_DOC,
 	nestChain,
 	replaceParams,
+	servedHash,
 	setup,
 	storedContentStub,
 	walkBlock,
@@ -76,6 +77,14 @@ describe("replace-section", () => {
 		// tree — the swept blocks are gone from it.
 		expect(result.outline).not.toContain("old one");
 		expect(result.outline).not.toContain("old two");
+		// Walk-count pin: the fresh-content judgment rides the caller-held
+		// enumeration walk — enumeration + insert verification + sweep
+		// verification, no fourth.
+		expect(
+			harness.calls
+				.filter((c) => c.method === "getChildBlocks")
+				.map((c) => c.args),
+		).toEqual(["d-doc", "d-doc", "d-doc"]);
 	});
 
 	it("a stale anchor's synchronous insert error is not a partial replace: error with the fresh outline, nothing deleted", async () => {
@@ -508,9 +517,9 @@ describe("replace-section", () => {
 	});
 
 	it("multi-stale delete set → one refusal naming every stale member, each re-baselined from its named content", async () => {
-		// Two concurrently-rewritten members: the wrapper judges every target
+		// Two concurrently-rewritten members: the guard judges every target
 		// (no early stop), so one refusal carries both — each extra round-
-		// trip today's stop-at-first bought nothing the all-arms shape
+		// trip a stop-at-first design would buy nothing the all-arms shape
 		// doesn't give in one turn. The re-baselined hash of each named
 		// member equals contentHash(its named currentContent) — the tool-side
 		// half of the anti-laundering invariant.
@@ -524,8 +533,8 @@ describe("replace-section", () => {
 			{ blockId: "p1", currentContent: "old one" },
 			{ blockId: "p2", currentContent: "old two" },
 		]);
-		expect(harness.baselines.servedHash("p1")).toBe(contentHash("old one"));
-		expect(harness.baselines.servedHash("p2")).toBe(contentHash("old two"));
+		expect(servedHash(harness.baselines, "p1")).toBe(contentHash("old one"));
+		expect(servedHash(harness.baselines, "p2")).toBe(contentHash("old two"));
 		expect(
 			harness.calls.filter(
 				(c) =>
@@ -645,7 +654,9 @@ describe("replace-section", () => {
 		});
 		expect(intervention.status).toBe("ok");
 		// p1 was not in the append's result — its served baseline survives.
-		expect(harness.baselines.servedHash("p1")).toBe(contentHash("served body"));
+		expect(servedHash(harness.baselines, "p1")).toBe(
+			contentHash("served body"),
+		);
 		const edit = await harness.execute({
 			kb: "recipes",
 			mode: "edit",

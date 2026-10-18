@@ -25,9 +25,11 @@
     a no-op delete, or a lost move reads as a refusal, never as ok; minted and
     moved blocks are asserted against that tree; doc moves surface the kernel's
     own synchronous rejection of ancestor moves (identity included) verbatim;
-    edits and block deletes carry a fresh-content precondition
-    (`stale_content` refusal instead of a silent clobber; doc deletes are
-    exempt by design — the receipt is the contract); and delete-bearing
+    edits, block deletes, delete-section, and replace-section carry a
+    fresh-content precondition — judged inside the primitives against the
+    session's served baselines (`stale_content` refusal instead of a silent
+    clobber; doc deletes are exempt by design — the receipt is the
+    contract); and delete-bearing
     writes echo `invalidRefs` plus a
     receipt of the removed blocks (ids + content; overflow spills to a file
     pointer). `delete-section` removes a whole section under a heading in one
@@ -86,9 +88,9 @@
   `writeConfirmTimeout`. See the README for a full example.
 
 - **Kernel coupling lives in `siyuan-kb-primitives`.** Block-tree walks,
-  title-guard reads, placement, the fresh-content judgment, and every write
+  title-guard reads, placement, the fresh-content guard, and every write
   verdict — `createDocVerified`, `editVerified`, `insertVerified`,
   `moveBlockVerified` / `moveDocVerified`, `deleteBlockVerified` /
-  `deleteDocVerified`, `checkFreshContent` — ride
+  `deleteDocVerified` — ride
   that package, whose SiYuan version pin this package consumes — writes fail
   closed on kernel drift, reads warn.

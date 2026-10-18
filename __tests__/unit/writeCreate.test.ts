@@ -17,6 +17,7 @@ import { statementKind } from "siyuan-kb-primitives/testing";
 import { CircuitBreaker } from "../../breaker.js";
 import { validation } from "./fixtures.js";
 import {
+	servedHash,
 	type StubConfig,
 	DEFAULT_CHILDREN,
 	base,
@@ -151,8 +152,8 @@ describe("guard-stop staging", () => {
 		expect(blockIds.map((b) => b.blockId)).toContain("p1");
 		// The serve-time snapshot exists — the follow-up edit verifies against
 		// what the agent saw, not against content read at edit time.
-		expect(harness.baselines.servedHash("h1")).toBeDefined();
-		expect(harness.baselines.servedHash("p1")).toBeDefined();
+		expect(servedHash(harness.baselines, "h1")).toBeDefined();
+		expect(servedHash(harness.baselines, "p1")).toBeDefined();
 	});
 
 	it("concurrent change after the duplicate stop → the follow-up edit refuses stale_content", async () => {

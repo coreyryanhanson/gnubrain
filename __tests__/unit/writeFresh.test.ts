@@ -1,89 +1,114 @@
-// writeFresh tests — the fresh-content precondition wrapper's per-arm
-// session doctrine over the primitives' checkFreshContent judgment,
-// driven directly on the stubbed kernel.
+// writeFresh tests — the fresh-content precondition's session doctrine:
+// the arm policy (`applyFreshArms`, the shared home every fresh-refused
+// verdict's carried arms pass through) driven directly. The judgment
+// lives inside the write primitives; the flows mint their verdict inputs
+// straight from session state and compose the refusal envelope from the
+// verdict's carried arms.
 
 import { describe, expect, it } from "vitest";
 import { contentHash } from "siyuan-kb-primitives";
-import { freshContentRefusal } from "../../writeFresh.js";
+import { applyFreshArms } from "../../writeFresh.js";
 import { ContentBaselines } from "../../baselines.js";
-import { walkBlock, writeKernelStub } from "./writeHarness.js";
+import type { FreshOutcome } from "siyuan-kb-primitives/write";
 
-describe("freshContentRefusal", () => {
-	const ctx = { sessionId: "s1", docId: "d-doc" };
+describe("applyFreshArms", () => {
+	// The arm policy is pure over the judged arms — the session doctrine
+	// without the judgment (which lives in the primitives).
 
-	// The clean-pass contract: a null refusal plus the judged walk — the
-	// pass-through pair, so a caller can derive further facts from the
-	// certified snapshot without re-reading.
-	it("unseen → adopt the live form and proceed (null)", async () => {
-		// No baseline, no SQL row: the session never served the block, so
-		// there is no stored value to launder — the live form becomes the
-		// baseline and the caller proceeds.
-		const stub = writeKernelStub({
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "live body")] },
-		});
+	it("unseen → adopt the live form (remembered), never stale", () => {
+		// The session never served the block, so there is no stored value to
+		// launder — the live form becomes the baseline and the caller
+		// proceeds.
 		const baselines = ContentBaselines.create();
-		const verdict = await freshContentRefusal(
-			stub.client,
-			baselines,
-			[{ blockId: "p1", baselineHash: undefined }],
-			ctx,
-		);
-		expect(verdict.refusal).toBeNull();
-		// The judged snapshot rides the pass-through.
-		expect(verdict.walk?.blocks.map((b) => b.id)).toEqual(["p1"]);
-		expect(baselines.servedHash("p1")).toBe(contentHash("live body"));
+		const arms: FreshOutcome[] = [
+			{ kind: "unseen", blockId: "p1", currentContent: "live body" },
+		];
+		applyFreshArms(baselines, arms);
+		expect(baselines.servedBaseline("p1")).toEqual({
+			kind: "served",
+			hash: contentHash("live body"),
+		});
 	});
 
-	it("seed-and-check fresh → remember (the baseline is seeded even when every arm is fresh)", async () => {
-		// No baseline, but the SQL row matches the walk — the establish
-		// side effect survives the promotion: the residual paths' later
-		// checks compare like-for-like.
-		const stub = writeKernelStub({
-			childrenFor: { "d-doc": [walkBlock("p1", "p", "", "index form")] },
-			baselineRows: [{ id: "p1", content: "index form" }],
-		});
+	it("fresh → remember (a hash-equal arm still lands in the store)", () => {
+		// A fresh arm's remember stores the judged content; since the hash
+		// already matches the walk, this is the establish side effect the
+		// residual paths' later checks rely on to compare like-for-like.
 		const baselines = ContentBaselines.create();
-		const verdict = await freshContentRefusal(
-			stub.client,
-			baselines,
-			[{ blockId: "p1", baselineHash: undefined }],
-			ctx,
-		);
-		expect(verdict.refusal).toBeNull();
-		expect(baselines.servedHash("p1")).toBe(contentHash("index form"));
+		const arms: FreshOutcome[] = [
+			{ kind: "fresh", blockId: "p1", currentContent: "index form" },
+		];
+		applyFreshArms(baselines, arms);
+		expect(baselines.servedBaseline("p1")).toEqual({
+			kind: "served",
+			hash: contentHash("index form"),
+		});
 	});
 
-	it("vanished → skipped (delete no-op class), no baseline remembered", async () => {
-		// The classification (walk-absence before any SQL read, even with a
-		// lingering blocks.content row inside the convergence window) is
-		// falsified down-repo in the primitives' fresh.test.ts; this asserts
-		// the wrapper's half — a `vanished` arm must not remember, so a
-		// misclassification as `unseen` would fail the servedHash assertion.
-		const stub = writeKernelStub({
-			baselineRows: [{ id: "p1", content: "lingering index row" }],
-		});
+	it("vanished → skipped (delete no-op class), no baseline remembered", () => {
+		// A misclassification as `unseen` would fail the servedBaseline
+		// assertion — the baseline is retained, so a return via undo
+		// re-judges as `fresh` if unchanged, `stale` if not.
 		const baselines = ContentBaselines.create();
-		const verdict = await freshContentRefusal(
-			stub.client,
-			baselines,
-			[{ blockId: "p1", baselineHash: undefined }],
-			ctx,
-		);
-		expect(verdict.refusal).toBeNull();
-		expect(baselines.servedHash("p1")).toBeUndefined();
+		baselines.remember("p1", "older form");
+		const arms: FreshOutcome[] = [{ kind: "vanished", blockId: "p1" }];
+		applyFreshArms(baselines, arms);
+		expect(baselines.servedBaseline("p1")).toEqual({
+			kind: "served",
+			hash: contentHash("older form"),
+		});
 	});
 
-	it("empty target list → null refusal, no walk, zero kernel calls", async () => {
-		const stub = writeKernelStub({});
-		const verdict = await freshContentRefusal(
-			stub.client,
-			ContentBaselines.create(),
-			[],
-			ctx,
-		);
-		// The short-circuit judged nothing — the walk stays absent (the
-		// primitives' FreshResult optionality), never a synthetic empty doc.
-		expect(verdict).toEqual({ refusal: null, walk: undefined });
-		expect(stub.calls).toHaveLength(0);
+	it("absence-unconfirmed → skipped like vanished (the baseline is retained)", () => {
+		// Absence from an incomplete walk is unconfirmed — the target may
+		// sit past the depth bound or behind a swallowed branch.
+		const baselines = ContentBaselines.create();
+		baselines.remember("p1", "older form");
+		const arms: FreshOutcome[] = [
+			{ kind: "absence-unconfirmed", blockId: "p1" },
+		];
+		applyFreshArms(baselines, arms);
+		expect(baselines.servedBaseline("p1")).toEqual({
+			kind: "served",
+			hash: contentHash("older form"),
+		});
+	});
+
+	it("stale → re-baselined; the judged-order stale subset rides the verdict's own tuple", () => {
+		// The content moves only because it is visible in the same envelope
+		// (the anti-laundering invariant: baselines.ts), so the retry
+		// proceeds against informed consent instead of refuse-looping. The
+		// ordering claim lives with the tuple the judgment renders
+		// (primitives fresh.ts); the flow-level staleTargets order is pinned
+		// in writeReplaceSection.test.ts.
+		const baselines = ContentBaselines.create();
+		const arms: FreshOutcome[] = [
+			{
+				kind: "stale",
+				blockId: "b1",
+				currentContent: "now",
+				compared: "baseline",
+			},
+			{ kind: "fresh", blockId: "b2", currentContent: "same" },
+			{
+				kind: "stale",
+				blockId: "b3",
+				currentContent: "also now",
+				compared: "baseline",
+			},
+		];
+		applyFreshArms(baselines, arms);
+		expect(baselines.servedBaseline("b1")).toEqual({
+			kind: "served",
+			hash: contentHash("now"),
+		});
+		expect(baselines.servedBaseline("b2")).toEqual({
+			kind: "served",
+			hash: contentHash("same"),
+		});
+		expect(baselines.servedBaseline("b3")).toEqual({
+			kind: "served",
+			hash: contentHash("also now"),
+		});
 	});
 });

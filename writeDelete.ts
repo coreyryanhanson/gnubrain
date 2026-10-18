@@ -1,7 +1,8 @@
 // The delete flow: block-level deleteBlock or doc-level removeDocByID.
 // The mutation, its scoping precondition and its evidence are one
 // primitive call (deleteBlockVerified / deleteDocVerified — see the
-// primitives' delete.ts for the scoping and generation-coupled facts).
+// primitives' delete.ts for the scoping and generation-coupled facts,
+// and for the internal fresh-content guard the block path judges under).
 // The refusal arms word through writeVerdicts' shared blockInDoc
 // sentences (the same pair the edit flow's pre-guard uses); the
 // remaining non-judged arms ride the shared mutationFailureEnvelope.
@@ -18,14 +19,16 @@ import {
 import { errorEnvelope, refusedEnvelope, type Envelope } from "./envelope.js";
 import { deletedBlocksTail, echoTail, mutationFailure } from "./writeEcho.js";
 import { type DocTarget, type WriteFlowInput } from "./writeTarget.js";
-import { freshContentRefusal } from "./writeFresh.js";
+import { freshRefusalEnvelope } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
-import { blockInDocRefusalKind } from "./writeVerdicts.js";
+import {
+	blockInDocRefusalKind,
+	deleteBlockWalkTruncatedMessage,
+} from "./writeVerdicts.js";
 
-// The heading-delete report's degraded line — shared by every arm that
-// cannot state a trustworthy member set. It presumes nothing about the
-// deleted block's shape: a not-in-pre-walk or unbounded block may or may
-// not have been a heading with members left in place.
+// The degraded line — one sentence for every arm that cannot state a
+// trustworthy member set; the arms are unreachable here (the guard's
+// stake walk is complete) but the switch stays exhaustive.
 const DEGRADED_REPORT =
 	"the walk could not bound the deleted block's section, so members left in place may go unreported — re-fetch the outline (kb_read) and check the block's section members by id";
 
@@ -97,27 +100,24 @@ export async function runDeleteMode(
 		});
 	}
 	const blockId = params.blockId as string;
-	// Fresh-content precondition: the same concurrency guard the edit flow
-	// applies — a delete's intent is formed on last-served content, and the
-	// act is the least recoverable one. Doc deletes are exempt:
+	// The fresh precondition is the primitive's, over the session lookup
+	// (writeFresh.ts; the judged stake derives inside the primitive — see
+	// deleteBlockVerified's `baselineFor`). Doc deletes are exempt:
 	// container-level destruction whose receipt itemizes every lost block.
-	// No flow-side membership read: the delete primitive judges scoping
-	// itself, and a block outside this doc or already absent reads as
-	// `vanished` here and refuses at the primitive's scoping arms instead.
-	// The judged walk rides out with the refusal pair: the heading-delete
-	// report below derives from exactly the snapshot the precondition
-	// certified — zero extra kernel reads.
-	const { refusal, walk } = await freshContentRefusal(
-		kernel,
-		baselines,
-		[{ blockId, baselineHash: baselines.servedHash(blockId) }],
-		{ sessionId, docId: doc.rootId },
-	);
-	if (refusal !== null) return refusal;
 	const outcome = await deleteBlockVerified(kernel, input.probe, {
 		blockId,
 		rootId: doc.rootId,
+		baselineFor: baselines.servedBaseline,
 	});
+	if (outcome.kind === "fresh-refused") {
+		return freshRefusalEnvelope(baselines, sessionId, name, outcome);
+	}
+	if (outcome.kind === "walk-truncated") {
+		// The primitive's stake walk hit the depth bound — the cascade
+		// stake cannot be enumerated from complete evidence. Refused before
+		// any mutation, so the outline is re-readable on demand.
+		return refusedEnvelope(deleteBlockWalkTruncatedMessage, { kb: name });
+	}
 	if (outcome.kind === "foreign" || outcome.kind === "doc-id") {
 		return refusedEnvelope(blockInDocRefusalKind(outcome, blockId, doc));
 	}
@@ -151,33 +151,23 @@ export async function runDeleteMode(
 		// The heading-delete report: the kernel's delete path is
 		// fold-blind, so a heading-scoped delete removes ONLY the heading and
 		// its section members survive it. The projection runs over the
-		// snapshot the fresh-content precondition certified and the
-		// delete's own post-walk evidence — zero extra kernel reads. The
+		// snapshot the fresh-content guard certified (the primitive's
+		// judgedWalk — complete by the guard's own truncation refusal) and
+		// the delete's own post-walk evidence — zero extra kernel reads. The
 		// report rides the ok arm only, and it may weaken (the degraded
 		// line), never upgrade into a refusal and never silently disappear.
-		let reportLine: string | undefined;
-		let orphanedIds: string[] | undefined;
-		if (walk === undefined) {
-			// The empty-target short-circuit — unreachable for a delete (it
-			// always names a target). Fail-closed: degrade to the
-			// confirmation line rather than assert.
-			reportLine = DEGRADED_REPORT;
-		} else {
-			const report = wordOrphanReport(
-				orphanedMembersOf(walk, blockId, outcome.postWalk),
-			);
-			reportLine = report.line;
-			orphanedIds = report.ids;
-		}
+		const report = wordOrphanReport(
+			orphanedMembersOf(outcome.judgedWalk, blockId, outcome.postWalk),
+		);
 		return {
 			status: "ok",
 			message:
 				`deleted block ${blockId} in '${doc.title}' (KB ${name}) — target absent from the post-write tree; ${invalidRefs.count} doc(s) with orphaned refs` +
-				(reportLine === undefined ? "" : `; ${reportLine}`),
+				(report.line === undefined ? "" : `; ${report.line}`),
 			kb: name,
 			blockId,
 			invalidRefs,
-			...(orphanedIds !== undefined ? { orphanedMembers: orphanedIds } : {}),
+			...(report.ids !== undefined ? { orphanedMembers: report.ids } : {}),
 			...deletedBlocksTail(input.sessionId, [
 				{ id: blockId, content: outcome.content },
 			]),

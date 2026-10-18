@@ -1,9 +1,9 @@
 // The delete-section flow: enumerate the section from the document-order
-// walk → fresh-content precondition over the whole delete set → one
-// verified sequence call (the primitives own the per-id delete ordering
-// and the first-mutation phase rule) → envelope wording. A mid-sequence
-// failure must cost visible, itemized loss — the receipt names the acked
-// set (unverified) and what remains, never an ok.
+// walk → one verified sequence call (the primitives own the fresh-content
+// guard over the derived judged set, the per-id delete ordering and the
+// first-mutation phase rule) → envelope wording. A mid-sequence failure
+// must cost visible, itemized loss — the receipt names the acked set
+// (unverified) and what remains, never an ok.
 
 import {
 	backlinkCheck,
@@ -29,7 +29,7 @@ import {
 	type DocTarget,
 	type WriteFlowInput,
 } from "./writeTarget.js";
-import { freshContentRefusal } from "./writeFresh.js";
+import { freshRefusalEnvelope } from "./writeFresh.js";
 import { finishWrite } from "./writeResult.js";
 import {
 	blockInDocRefusalKind,
@@ -60,32 +60,14 @@ export async function runDeleteSectionMode(
 			deleteSectionWalkTruncatedMessage,
 		);
 	}
-	// Fresh-content precondition over the WHOLE delete set — the closure
-	// plus the heading (the replace-section precedent: the cascade makes
-	// the descendants part of what is at stake), while the issued deletes
-	// stay members + the heading (the cascade fact). Guarded like the
-	// block-delete path, deliberately: the agent's intent is the section's
-	// content, and the members are enumerated by the walk, never named by
-	// the agent. Baselines seed from heading rows only, so a member
-	// refuses only within the SQL-index divergence window or when the
-	// session explicitly holds a member baseline — an out-of-window
-	// member edit rides `unseen` adoption, never a refusal.
-	const { refusal } = await freshContentRefusal(
-		kernel,
-		baselines,
-		[
-			{
-				blockId: section.section.heading.id,
-				baselineHash: baselines.servedHash(section.section.heading.id),
-			},
-			...section.section.closure.map((b) => ({
-				blockId: b.id,
-				baselineHash: baselines.servedHash(b.id),
-			})),
-		],
-		{ sessionId, docId: doc.rootId },
-	);
-	if (refusal !== null) return refusal;
+	// The fresh precondition is the primitive's, over the session lookup
+	// (writeFresh.ts; the judged set derives from the enumeration walk
+	// above — no second walk; see deleteSectionVerified's `baselineFor`).
+	// Guarded like the block-delete path, deliberately: the agent's intent
+	// is the section's content, and the members are enumerated by the
+	// walk, never named by the agent. Baselines seed from heading rows
+	// only, so a member refuses only within the SQL-index divergence
+	// window or when the session explicitly holds a member baseline.
 	// The whole removal — what the receipt itemizes (the members the sweep
 	// deletes explicitly, the descendants their cascade takes, and the
 	// heading itself), in the delete set's own order: members first, the
@@ -95,6 +77,7 @@ export async function runDeleteSectionMode(
 		rootId: doc.rootId,
 		walk: tree,
 		headingId,
+		baselineFor: baselines.servedBaseline,
 	});
 	// The pre-mutation failure ladder — the first-mutation phase rule
 	// guarantees these arms mean nothing IS KNOWN to have landed, so they
@@ -113,6 +96,10 @@ export async function runDeleteSectionMode(
 		// the enumeration walk's root is not the claimed doc. (`doc-id` is
 		// unreachable here — sectionOf requires a heading row.)
 		return refusedEnvelope(blockInDocRefusalKind(outcome, headingId, doc));
+	}
+	if (outcome.kind === "fresh-refused") {
+		// The internal guard's refusal — nothing landed.
+		return freshRefusalEnvelope(baselines, sessionId, name, outcome);
 	}
 	if (outcome.kind === "walk-truncated" || outcome.kind === "heading-absent") {
 		// Unreachable — the sequence re-derives the same section from the

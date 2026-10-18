@@ -7,6 +7,7 @@ import { headingInWalk } from "../../writeTarget.js";
 import { SiYuanApiError, contentHash } from "siyuan-kb-primitives";
 import { statementKind } from "siyuan-kb-primitives/testing";
 import {
+	servedHash,
 	setup,
 	storedContentStub,
 	walkBlock,
@@ -113,9 +114,9 @@ describe("append", () => {
 		expect(requestedIds).toEqual([["b-new"]]);
 		// The served heading's baseline is the walk form it was shown, not
 		// the index-lag row.
-		expect(harness.baselines.servedHash("h1")).toBe(contentHash("Goals"));
+		expect(servedHash(harness.baselines, "h1")).toBe(contentHash("Goals"));
 		// The write's own block baselines from stored form.
-		expect(harness.baselines.servedHash("b-new")).toBe(
+		expect(servedHash(harness.baselines, "b-new")).toBe(
 			contentHash("stored new fact"),
 		);
 	});

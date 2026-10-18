@@ -58,8 +58,10 @@ SIYUAN_INTEGRATION=1 SIYUAN_API_TOKEN=<token> SIYUAN_BASE_URL=<origin> \
   verified deletes, and replace-section's internal delete sweep
   (mutation + landing judgment as one primitive call, returning a closed
   union with the evidence the verdict was rendered from). Every write
-  mode's mutation is issued there; the flows keep only target resolution,
-  preconditions, and envelope wording.
+  mode's mutation is issued there, and the fresh-content precondition rides
+  inside it too (served-baseline verdicts in, `fresh-refused` out); the
+  flows keep only target resolution, judgment-input minting, and envelope
+  wording.
   No source file in this repo
   names `siyuan-kernel-api` — take the client constructor, error classes,
   and kernel types from the read barrel (one requirer = one layer-1 copy in
@@ -173,8 +175,8 @@ temp HOME for the headless child).
   `findTitleMatches`, `createDocVerified`, `editVerified`, `insertVerified`,
   `replaceSectionVerified` (the replace-section sequence: enumeration,
   anchor, insert-before-sweep ordering — the tool layer never sequences
-  kernel mutations), `blockInDoc`, `rootEcho`, `ownership`, the
-  fresh-content judgment (`checkFreshContent`), `resolveHeadingTarget`
+  kernel mutations), `blockInDoc`, `rootEcho`, `ownership`,
+  `resolveHeadingTarget`
   (the heading-target judgment; `headingInWalk` here maps its arms to
   wording), the verified block/doc moves (`moveBlockVerified` /
   `moveDocVerified`), the verified deletes (`deleteBlockVerified` /
@@ -187,13 +189,14 @@ temp HOME for the headless child).
   section rule and the anchors derived from it)
   — live in `siyuan-kb-primitives` and return closed `{ kind, …detail }`
   unions whose shapes and evidence the primitives' AGENTS.md documents
-  (the fresh-content refusal wording lives in `freshContentRefusal`,
-  `writeFresh.ts`); the wording over those unions is exhaustive switches
+  (the fresh-content refusal wording lives in `writeFresh.ts` —
+  `applyFreshArms` + `freshRefusalEnvelope`); the wording over those
+  unions is exhaustive switches
   (no default) with `satisfies never`, so a new kind in a primitives
   release fails typecheck until its sentence is written, wherever that
   sentence lives. Shared fragments live in `writeVerdicts.ts` — transport/verification/drift
   sentences, the anchor echoes (`appendAnchorEcho` / `moveAnchorEcho`),
-  the `blockInDocRefusal*` pair, the sweep `members-survived` sentence
+  the `blockInDocRefusalKind` sentence, the sweep `members-survived` sentence
   and its split-derived payload fields (one home for both sweep
   consumers — replace-section and delete-section), and the one frame
   shared across flows, the
@@ -260,17 +263,38 @@ primitives.
 - **Fresh-content judgment** — the precondition rides the live tree, never
   the SQL index (`blocks.content` converges asynchronously), and walk-form ≡
   SQL-form baselines hash identically (the kernel builds both via
-  `nodeStaticContent`) → `checkFreshContent` (primitives read barrel). This
-  repo keeps the seed-site policy: serve seeds ride the walk everywhere
-  except exactly two SQL-form seed sites — `runEditMode`'s pre-write seed
-  from `blockInDoc` (`writeEdit.ts`) and `kb_query`'s served rows
-  (`tools.ts`, via `rememberServedRows`) — and the write echo tail seeds
-  from the walk it serves, never overwritten by a later read, SQL-reading
-  only the write's own block IDs. Fail-closed on any split: a diverging seed
-  reads as `stale`, named, never silently matched. The equivalence claims in
-  `rememberServedRows` (`baselines.ts`) and `serveOutlineFromWalk`
-  (`outline.ts`) are prose-only; the executable-dependence sites are the two
-  SQL-form seeds just named.
+  `nodeStaticContent`) → the judgment is structural: the four
+  destroy-shaped write primitives (`editVerified`, `deleteBlockVerified`,
+  `replaceSectionVerified`, `deleteSectionVerified`) run it internally,
+  immediately before mutating, taking the session's served-baseline
+  verdicts (`ServedBaseline` — `served` with the stored hash, or
+  `never-served`) as a required input. The three set-derived guards
+  (`deleteBlockVerified`, `replaceSectionVerified`,
+  `deleteSectionVerified`) take the session's lookup
+  (`baselines.servedBaseline`) and consult it only for the ids their own
+  derivation derives, so the judged set never crosses the input surface;
+  `editVerified` instead takes the single target's verdict — its judged
+  set is the caller-named block id by design. Currency:
+  `editVerified`/`deleteBlockVerified` judge on a walk taken
+  immediately before mutating; `replaceSectionVerified`/
+  `deleteSectionVerified` judge over the enumeration walk their
+  sequences already hold — currency "as of the enumeration", so a change
+  landing after that walk is caught only via the seed read's
+  walk-vs-index divergence (the seed-path `stale` arm). The judgment
+  refuses `fresh-refused` — carrying every judged arm plus the judged
+  walk, so the flow re-baselines and serves the refusal outline from
+  exactly the snapshot the judgment certified (`applyFreshArms` +
+  `freshRefusalEnvelope` — one refusal construction per flow, the arm
+  policy inside it, `writeFresh.ts`; the stale arm carries its own comparison path
+  (`compared`), so the lead keys on the arm — no consumer-side memo). This repo keeps the
+  seed-site policy: serve seeds ride the walk everywhere except exactly
+  one SQL-form seed site — `kb_query`'s served rows (`tools.ts`, via
+  `rememberServedRows`) — and the write echo tail seeds from the walk it
+  serves, never overwritten by a later read, SQL-reading only the write's
+  own block IDs. Fail-closed on any split: a diverging seed reads as
+  `stale`, named, never silently matched. The equivalence claim in
+  `rememberServedRows` (`baselines.ts`) is prose-only; the
+  executable-dependence site is the one SQL-form seed just named.
 - **Child order** — `getChildBlocks` returns document order; the first
   element is the doc's first block → `firstChildContent` (primitives
   `byId.ts`). This repo keeps only the near-match swallow policy
@@ -298,16 +322,18 @@ primitives.
   warn-and-drop policy (`validation.ts`); tool path pinned locally
   (`encryptedNotebook.live`).
 - **Delete scoping** — the kernel mutates by raw block id with no doc
-  scoping of its own, so membership is judged flow-side per path: single
-  block deletes by the shared `blockInDoc` read → `deleteBlockVerified`
-  (primitives `delete.ts`); delete-section by its enumeration walk —
-  the delete set derives from the walk, never from caller-supplied ids
-  — plus `deleteSectionVerified`'s pre-mutation caller-provenance check
-  (`walk.rootId !== rootId`, zero kernel calls — the walk carries its own
-  root, `WalkedTree.rootId`) → `deleteSectionVerified` (primitives
-  `deleteSection.ts`). This repo words the refusal arms through the edit
-  flow's pre-guard sentence pair (`blockInDocRefusalKind`,
-  `writeVerdicts.ts`).
+  scoping of its own, so membership is judged per path inside the
+  primitives: single block deletes by the shared `blockInDoc` read →
+  `deleteBlockVerified` (primitives `delete.ts`); delete-section and
+  replace-section by caller-provenance — the delete/replace set derives
+  from the enumeration walk, never from caller-supplied ids, and
+  `deleteSectionVerified`/`replaceSectionVerified` check the walk's own
+  root against the claimed doc (`walk.rootId !== rootId`, zero kernel
+  calls — the walk carries its own root, `WalkedTree.rootId`) →
+  `deleteSectionVerified` (primitives `deleteSection.ts`) and
+  `replaceSectionVerified` (primitives `replace.ts`). This repo words
+  the refusal arms through the shared sentence pair
+  (`blockInDocRefusalKind`, `writeVerdicts.ts`).
 - **Delete generation** — 3.8.3 success no-op vs 3.8.4 "tree not found" →
   `deleteBlockVerified` / `deleteDocVerified` (primitives `delete.ts`). This
   repo keeps the flow-side wording: kernel error verbatim with the fresh
@@ -319,12 +345,14 @@ primitives.
   load-bearing consumer — the delete set assumes the heading delete is
   per-block and non-cascading — and `orphanedMembersOf` (primitives
   `placement.ts`) as the report-side consequence. This repo keeps only
-  wording and the ok-arm/degradation policy: the heading-delete report on a
+  wording and the ok-arm policy: the heading-delete report on a
   heading-scoped `mode: delete` names the members left in place — sound
   presences, complete by construction (the report only runs on the
   judged-gone arm, whose post-walk is never truncated: a truncated one
-  refuses as `absence-unconfirmed` first) — and degrades to a
-  confirmation line on an incomplete pre-walk (`writeDelete.ts`);
+  refuses as `absence-unconfirmed` first, and the guard's own stake-walk
+  truncation refuses before the mutation — the projection's degrade arms
+  are exhaustive-switch tail only, unreachable in this flow
+  (`writeDelete.ts`);
   falsifiers: the live pin in the
   primitives' `delete.live` for the fold-blind fact, plus the local
   wording pins
@@ -332,15 +360,17 @@ primitives.
   `writePins.live`).
 - **Delete-freshness split** (policy, not fact — this repo owns it) — the
   block-delete path rides the same fresh-content precondition as edit and
-  replace-section (`writeDelete.ts`, before `deleteBlockVerified`; no
-  flow-side membership read — a block outside the doc or already absent
-  reads as `vanished` there and refuses at the primitive's scoping arms);
-  the delete-section path guards the same way, over the WHOLE delete set
-  (closure + heading — `writeDeleteSection.ts`, the replace-section
-  precedent: the cascade makes descendants part of what is at stake;
-  the agent's intent is the section's content, and the members are
-  enumerated by the walk, never named by the agent), but the doc-delete
-  path is deliberately unguarded: the intent is
+  replace-section, judged inside `deleteBlockVerified` (the flow supplies
+  only the target's verdict; the cascade stake beyond the target derives
+  inside the primitive and judges on the seed path — a stale descendant
+  refuses a delete that once proceeded; no flow-side membership read — a
+  block outside the doc or already absent reads as `vanished` there and
+  refuses at the primitive's scoping arms); the delete-section path
+  guards the same way, over the WHOLE delete set (closure + heading —
+  the replace-section precedent: the cascade makes descendants part of
+  what is at stake; the agent's intent is the section's content, and the
+  members are enumerated by the walk, never named by the agent), but the
+  doc-delete path is deliberately unguarded: the intent is
   container-level destruction a member's content change cannot redirect, the
   receipt itemizes every lost block, and the primitive's walk-then-mutate
   sequence leaves no interposable refusal point without duplicating its walk.
@@ -382,7 +412,7 @@ primitives.
   agent-facing wording over the placement module's notation: the `(not
   targetable)` marker and the `[unnamed]` fallback name the kernel's
   write-parent set (`TARGETABLE_CONTAINER_TYPES`, keyed on by the
-  heading-target judgment (`walk.ts`) and the notation's glyph table
+  heading-target judgment (`heading.ts`) and the notation's glyph table
   (`outline.ts`)). Wording pinned locally (`tools.test.ts`).
 - **DML through the query endpoint** — since 3.8.4 DML via the query
   endpoint is a silent no-op in every mode (code 0, row untouched): not a

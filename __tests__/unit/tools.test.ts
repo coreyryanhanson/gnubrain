@@ -4,6 +4,7 @@ import { createFakePi as fakePi } from "../helpers/fakePi.js";
 import { contentHash, type KernelReadClient } from "siyuan-kb-primitives";
 import { CircuitBreaker } from "../../breaker.js";
 import { ContentBaselines } from "../../baselines.js";
+import { servedHash } from "./writeHarness.js";
 import { EMPTY_SCOPE_MESSAGE, RATE_LIMIT_SKIP_MESSAGE } from "../../kbScope.js";
 import { READ_TOOLSET_ID } from "../../toolsetIds.js";
 import { RESULT_LIMIT } from "../../limits.js";
@@ -677,10 +678,9 @@ describe("read tools seed served-content baselines", () => {
 			),
 		);
 		expect(envelope.status).toBe("ok");
-		// The walk's heading (id h1, content "Heading") was served → hashed.
-		expect(baselines.servedHash("h1")).toBeDefined();
-		// Same representation the re-check hashes: blocks.content.
-		expect(baselines.servedHash("h1")).toBe(contentHash("Heading"));
+		// The walk's heading (id h1, content "Heading") was served → hashed,
+		// with the same representation the re-check hashes: blocks.content.
+		expect(servedHash(baselines, "h1")).toBe(contentHash("Heading"));
 	});
 
 	it("kb_query records baselines for rows that selected id + content", async () => {
@@ -707,8 +707,8 @@ describe("read tools seed served-content baselines", () => {
 			),
 		);
 		expect(envelope.status).toBe("ok");
-		expect(baselines.servedHash("p1")).toBeDefined();
-		expect(baselines.servedHash("r1")).toBeUndefined();
+		expect(baselines.servedBaseline("p1")).toMatchObject({ kind: "served" });
+		expect(baselines.servedBaseline("r1")).toEqual({ kind: "never-served" });
 	});
 });
 

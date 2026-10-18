@@ -12,7 +12,12 @@ import {
 	createFakeCtx as fakeCtx,
 	createFakePi as fakePi,
 } from "../helpers/fakePi.js";
-import { base as createBase, setup as writeSetup } from "./writeHarness.js";
+import {
+	base as createBase,
+	editBase,
+	setup as writeSetup,
+	walkBlock,
+} from "./writeHarness.js";
 
 // --- frozen contract -------------------------------------------------------
 
@@ -67,6 +72,20 @@ const CONTRACT_ENVELOPES: Record<string, string[]> = {
 		"title",
 	],
 	"kb_write refused": ["message", "status"],
+	// The fresh-content stale refusal (the edit arm is representative —
+	// every internally-judging flow composes the same builder). The
+	// carried-evidence fields (blockId/currentContent/staleTargets/outline)
+	// are the contract: flows and agents key on them.
+	"kb_write refused · stale": [
+		"blockId",
+		"currentContent",
+		"kb",
+		"message",
+		"outline",
+		"reason",
+		"staleTargets",
+		"status",
+	],
 };
 
 // kb_search rows carry the frozen docId/blockId vocabulary (never the raw
@@ -219,6 +238,21 @@ describe("additive-only contract", () => {
 				kb: createBase.kb,
 				mode: "bogus",
 			}),
+		);
+		// The stale arm: a served baseline diverging from the live walk —
+		// the fresh-content precondition's refusal, with its carried
+		// evidence and the kb echo.
+		const stale = writeSetup({
+			config: {
+				blockRows: [{ id: "b-1", content: "stale paragraph" }],
+				childrenFor: {
+					"d-doc": [walkBlock("b-1", "p", "", "concurrently rewritten")],
+				},
+			},
+		});
+		stale.baselines.remember("b-1", "older form");
+		seen["kb_write refused · stale"] = keysOf(
+			await stale.execute({ ...editBase }),
 		);
 		for (const [arm, actual] of Object.entries(seen)) {
 			expect(actual, arm).toEqual(CONTRACT_ENVELOPES[arm]);

@@ -19,6 +19,7 @@
 // hash-match the laundered content and apply unseen.
 
 import { contentHash } from "siyuan-kb-primitives";
+import type { BaselineLookup } from "siyuan-kb-primitives/write";
 
 export class ContentBaselines {
 	private hashes = new Map<string, string>();
@@ -29,9 +30,19 @@ export class ContentBaselines {
 		this.hashes.set(blockId, contentHash(content));
 	}
 
-	servedHash(blockId: string): string | undefined {
-		return this.hashes.get(blockId);
-	}
+	/** The session's baseline verdict for the block, in the judgment's own
+	 * vocabulary: a served hash rides as the `served` verdict, its absence
+	 * as the chosen `never-served` value — the named choice, not a falsy
+	 * default (the write primitives' required-input contract). This IS the
+	 * `BaselineLookup` the guard contract takes — every write flow passes
+	 * it straight through, so wording and judgment cannot drift apart: the
+	 * verdict IS the comparison path. */
+	servedBaseline: BaselineLookup = (blockId) => {
+		const hash = this.hashes.get(blockId);
+		return hash === undefined
+			? { kind: "never-served" }
+			: { kind: "served", hash };
+	};
 
 	clear(): void {
 		this.hashes.clear();
