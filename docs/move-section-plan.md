@@ -181,8 +181,6 @@ first leg makes it section-bearing — hence the stable-anchor requirement
 Group-level, pre-mutation, zero kernel calls — conditions that per-leg
 checks would otherwise only surface mid-sequence, after the tear:
 
-- The destination anchor sits **inside the moved section's own subtree** —
-  the `own-subtree` judgment hoisted from per-leg to group scope.
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section is one the moved section contains.
 - The group is **already at the destination** — one refusal, never a
