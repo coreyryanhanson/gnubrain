@@ -87,8 +87,8 @@ content), is why this is approved rather than deferred.
   leave `H` section-bearing when its leg runs, and a folded `H` would drag
   its remaining children. Trusting acks is not how this package moves
   blocks; and a judgment placed after the last fold-sensitive mutation is
-  a post-mortem, not a safety net. So the sequence is two judged phases —
-  the `replaceSectionVerified` shape, not one post-sequence walk:
+  a post-mortem, not a safety net. So the sequence is two judged phases, the
+  `replaceSectionVerified` shape:
   1. **Member phase.** The reverse-order legs onto the stable anchor, then
      one complete walk per touched doc and the member judgment: the
      enumerated members present in the destination in expected order (the
@@ -104,8 +104,7 @@ content), is why this is approved rather than deferred.
      below).
   Same-doc, one walk serves both roles at each judgment point; cross-doc,
   each judgment takes its own doc's walk. Two judgments instead of N+1
-  per-leg verdicts — the one-call economy survives; what is discarded is
-  the single post-sequence judgment. This mode joins a rule the primitives
+  per-leg verdicts — the one-call economy survives. This mode joins a rule the primitives
   already obey twice (replace-section, delete-section) and should state in
   their AGENTS.md: **every precondition in a multi-leg sequence is either
   held by construction or re-judged after the legs that could break it.**
@@ -170,16 +169,12 @@ Before writing the implementation plan:
    Both readings are source-verified but not yet live-confirmed; the
    transcript is the implementation plan.
 
-(A previously drafted precondition — designing and live-pinning a
-start-of-section *move* anchor arm — is **dropped**: with end-of-section
-landing there is no new anchor arm. Corrected during review: the claim
-that the derived anchor therefore never meets the kernel's redirect branch
-was false — a non-heading anchor indeed never satisfies it
-(`ast.NodeHeading == targetNode.Type`, `transaction.go`), but
-`deriveMoveAnchor` legitimately returns a heading whenever the destination
-section is empty, and that anchor *is* redirectable once the sequence's
-own first leg makes it section-bearing. The stable-anchor requirement (§2)
-and the probe's folded-empty-destination case exist because of this.)
+(A non-heading anchor never satisfies the kernel's heading-anchor redirect
+branch (`ast.NodeHeading == targetNode.Type`, `transaction.go`);
+`deriveMoveAnchor` does, however, return a heading whenever the destination
+section is empty, and that anchor is redirectable once the sequence's own
+first leg makes it section-bearing — hence the stable-anchor requirement
+(§2) and the probe's folded-empty-destination case.)
 
 ## 4. Refusals the mode must add
 
