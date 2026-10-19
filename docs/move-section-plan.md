@@ -69,9 +69,12 @@ implementation.
   no `nextID` address; there the codec switches to the **leaf-anchored
   chain** (§4): the members chain `previousID` in document order from
   the destination section's last non-heading member at the section's
-  sibling-run level — leaf or container; the anchor is a sibling
-  position, never a block inside a container's tail (that would
-  re-nest the members into the container, against container-locality)
+  sibling-run level — leaf or container (spike CT1–CT4: the container
+  anchor lands the run after it as siblings, heading tail included);
+  the anchor is a sibling position, never a block inside a container's
+  tail — anchoring on the tail heading lands the run inside the
+  container around that heading's section (spike CT3), against
+  container-locality
   — and the heading issues **last**, anchored on that same block,
   landing between it and the first member — the same end-of-section
   semantics (spike K1:
@@ -80,9 +83,9 @@ implementation.
   LIFO across ops, which is why the leaf-anchored heading leg must
   issue last). A doc-end destination whose section offers no derivable
   last non-heading sibling block is refused (§4). **The anchors are container-local sibling positions.**
-  The boundary (and the doc-end leaf) lives inside the destination
-  section's own container, so a destination section that is itself
-  container-nested — a heading inside a quote, callout, or list —
+  The boundary (and the doc-end chain anchor) lives inside the
+  destination section's own container, so a destination section that is
+  itself container-nested — a heading inside a quote, callout, or list —
   re-nests the moved members **into that container**: spike M1 landed
   the whole run as the destination quote's children, member order
   preserved, heading immediately before the first member, the boundary
@@ -119,8 +122,8 @@ implementation.
   member leg, the first landed member for the heading leg — so no
   anchor is ever re-addressed after the state it names changes. The
   doc-end arm's chain (§4) is the characterized exception: its
-  `previousID` anchors are stable per leg, and the leaf — the one
-  anchor addressed twice, by the first member leg and again by the
+  `previousID` anchors are stable per leg, and the chain anchor — the
+  one anchor addressed twice, by the first member leg and again by the
   heading leg — is re-addressed deliberately, to land the heading in
   the gap the member legs opened (K2 is the LIFO proof the heading leg
   must issue last); a member leg anchoring on a landed heading member
@@ -232,13 +235,16 @@ Before writing the implementation plan:
    permits rolls back whole behind code 0, the ground the §4 closure
    refusal's backstop claim stands on), the destination-container
    re-nest (M1) and the crossed-container heading leg (M3, the codec's
-   landing edge) — both across container types (the spike probed
-   blockquote only, and the kernel's insertion path diverges per
-   container; superblocks are special-cased in `doMove`) and with the
+   landing edge) — both across container types (the spike holds
+   blockquote re-nests M1/M3 and quote/list chain anchors CT1–CT4;
+   callout and superblock re-nests remain unprobed, the kernel's
+   insertion path diverges per container, and superblocks are
+   special-cased in `doMove`) and with the
    destination section's boundary outside the destination's container,
    or the single-container limitation recorded in the fact list — plus
    the container-tail chain form (the doc-end chain anchored on a
-   non-heading container, §4's corrected anchor derivation), and the
+   non-heading container — spike-executed, case CT; superblock chain
+   anchors unprobed there, §4's anchor derivation), and the
    source-tree-anchor rollback (M2, the ground
    the §6 cross-doc backstop note stands on) — and the ≥32-op batch
    with a completion-latency
@@ -298,15 +304,18 @@ otherwise only surface mid-sequence, after the tear. (The named
   `previousID` in document order from the destination section's last
   non-heading member at the section's sibling-run level (the chain's
   anchor — a sibling position, leaf or container, never inside a
-  container's tail), and the heading issues **last**, anchored on that
-  same block, landing between it and the first member (K1: exact
-  landing in all three fold variants — unfolded, folded source heading,
-  folded nested subsection; the heading leg runs last over an emptied
-  section, no drag, and the leaf anchor never redirects). The chain
+  container's tail: anchoring on a tail heading lands the run inside
+  the container around that heading's section, spike CT3), and the
+  heading issues **last**, anchored on that same block, landing between
+  it and the first member (K1: exact landing in all three fold
+  variants — unfolded, folded source heading, folded nested subsection;
+  the heading leg runs last over an emptied section, no drag, and the
+  chain anchor never redirects). The chain anchor works for a container
+  tail too — the container anchor lands the run after it as siblings,
+  container untouched, heading tail included (spike CT1–CT4). The chain
   needs a non-heading sibling anchor, and that is the refusal's whole
   content: when the destination section's last sibling block is a
-  heading — or a container whose tail is a heading, which offers no
-  derivable anchor either — the only candidate anchors are
+  heading, the only candidate anchors are
   section-bearing headings, and a heading-anchored
   doc-end form lands in a fold-**dependent order** (F4a/F4b: unfolded
   reverses, folded redirects into order), while chaining the heading
@@ -355,11 +364,10 @@ codec decisions they build on are recorded in §2.
   "a multi-doc consumer" — this mode is that consumer. The extension
   lands in the primitives unpublished, `file:`-linked, its shape
   perfected side by side before either repo releases. Both walks are
-  caller-held — the flow walks the destination doc before the primitive
-  call (the pre-mutation refusals stay zero-kernel-call past the gate,
-  and the destination serve seeds baselines per the seed-site rule),
-  the source walk per the per-id move's own derivation — so the
-  primitive takes walks, never doc ids to walk itself. Both walks ride the
+  caller-held — the flow walks both docs before the primitive call
+  (the pre-mutation refusals stay zero-kernel-call past the gate, and
+  the destination serve seeds baselines per the seed-site rule) — so
+  the primitive takes walks, never doc ids to walk itself. Both walks ride the
   caller-provenance gate delete-section models (`sectionSubjectOf`:
   `foreign` / `walk-truncated`, per walk): the moved set derives from
   the source walk and the anchor from the destination walk, and the
@@ -522,8 +530,8 @@ codec decisions they build on are recorded in §2.
     the partial walks).
   - *Judgment*: `landed` (predicate and owner certification passed —
     carries the landed run's ids in document order, the owner's id and
-    level, the anchor echo — boundary id or doc-end leaf — and both
-    post-write walks, same-doc one walk serving both);
+    level, the anchor echo — boundary id or doc-end chain anchor — and
+    both post-write walks, same-doc one walk serving both);
     `landed-divergent` (the run broke — carries the divergent position,
     the unjudged presences, and the walks); `nothing-moved` (the
     cause-free silent-rollback arm — detected as the enumerated
@@ -567,8 +575,9 @@ codec decisions they build on are recorded in §2.
     only when a second consumer exists.
 - **Pins and suite placement.** Every §3 reading lands in a named case
   or it stays unpinned: the fold-combination matrix (cases B/B2/F5),
-  the doc-end fold-dependence (F4a/F4b) and the doc-end chain's fold
-  variants (K1), the containment matrix (L1–L3, M1–M3), the cross-doc
+  the doc-end fold-dependence (F4a/F4b), the doc-end chain's fold
+  variants (K1) and its container-anchor spread (CT1–CT4), the
+  containment matrix (L1–L3, M1–M3), the cross-doc
   residue round trip and the cross-box rollback (H1 — cross-doc is v1,
   so they pin with the mode), and the ≥32-op batch with its
   completion-latency assertion live as a batched-move pin in the

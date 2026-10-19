@@ -3,10 +3,13 @@
 Status: **executed 2026-10-19** against the live SiYuan 3.8.7 kernel
 (`SIYUAN_BASE_URL=http://192.168.100.1:6806`). Scripts: `/tmp/spike-move-nextid.mjs`
 (codec matrix, cases A–E), `/tmp/spike-move-owed.mjs` (the owed legs, cases
-F–J), and `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
-review follow-up) — raw clients, zero deps, disposable notebooks created and
+F–J), `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
+review follow-up), and `/tmp/spike-move-conttail.mjs` (case CT, the
+container-tail chain anchor, review follow-up) — raw clients, zero deps,
+disposable notebooks created and
 torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
-`/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`. The containment
+`/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`,
+`/tmp/spike-move-conttail.log`. The containment
 legs (cases L, M below) ran as one-off vitest live files over the
 primitives — real `sectionOf`/`walkBlockTree`, no replicas, removed after
 the run; transcripts: `/tmp/containment-probe-77257.log`,
@@ -245,6 +248,57 @@ leaf (K1). The heading-anchored doc-end forms stay refused (F4a/F4b, the
 fold-dependent order); F3's heading-last chain is the corrupted layout, not a
 form. F1's precondition stands unchanged: an omitted/empty `nextID` is not a
 doc-end address, it is a rollback.
+
+### CT — the container-tail chain anchor (review follow-up)
+
+The doc-end chain's anchor generalized from the leaf to a non-heading
+container — including the disputed shape where the container's tail is a
+heading (the plan's §4 briefly refused it as "no derivable anchor") — plus
+the naive-descend contrast that grounds the derivation rule. Script:
+`/tmp/spike-move-conttail.mjs`; transcript: `/tmp/spike-move-conttail.log`.
+Same source fixture, five legs, one disposable notebook; all five verdicts
+passed. Each destination doc ends `## E / e1 / <tail>` (the doc's last
+section); the chain anchors `previousID = <the container>` unless noted.
+
+- **CT1 — quote, plain tail.** `E / e1 / quote(p1)`, anchor = the quote:
+  lands `D2, d2, E, e1, quote(p1), H, m1, m2, H2, sub1, m3` — the run as
+  doc-level siblings after the container, H immediately after it, the
+  quote's children untouched, source clean.
+- **CT2 — quote, heading tail (the disputed shape).**
+  `E / e1 / quote(s1 / ## SH / sh1)`, anchor = the quote: identical clean
+  landing behind `code=0`. The §4 clause this case falsifies claimed the
+  shape "offers no derivable anchor".
+- **CT2h — CT2 with the source heading folded.** Same landing; the drag
+  rode the heading leg as in K1h.
+- **CT3 — naive descend (the hazard, characterized).** Same destination,
+  anchor = the tail heading `SH` *inside* the quote: the whole run lands
+  **inside the container**, between `SH` and its body — `s1, SH, H, m1,
+  m2, H2, sub1, m3, sh1` behind `code=0`. The order is even correct (the
+  chain's LIFO geometry survives an unfolded heading anchor), but the
+  position is corrupt: `sh1` severed from `SH`'s section end, the run
+  re-nested into the destination's container. This is the live ground for
+  the derivation rule "the anchor is a sibling position, never a block
+  inside a container's tail" (§2) — the hazard is a derivation hazard,
+  not an anchor-type hazard.
+- **CT4 — list tail.** `E / e1 / list(l1, l2)`, anchor = the list: the
+  same clean landing (run after the list as siblings, list untouched).
+
+**Implication for the plan:** the doc-end chain anchor is any non-heading
+member at the destination section's sibling-run level — leaf or container,
+any tail — and §4's refusal narrows to its F4-grounded core (the last
+sibling block is a heading). The redirect fires only on heading anchors
+(`transaction.go:772-776`), and the sibling insert is anchor-type-blind
+(`:792-800`); the superblock/task-list special-casing lives in `doMove`'s
+parent branch only (`:850-872`), so **superblock chain anchors remain
+unprobed** (the code predicts clean; CT did not cover them) — a fact-list
+note, not a refusal. Container-type coverage now holds for blockquote
+(both tail shapes) and list as chain anchors; the M1/M3 re-nest and
+heading-leg readings remain blockquote-only, and the boundary-outside-
+container variant is still unprobed (§3's owed list).
+
+*Probe-note:* containers were resolved from the live `getChildBlocks` walk
+(type `b`/`l` rows), not the SQL index — `blocks` indexing lags ~2 s behind
+`createDocWithMd`, while the walk is current.
 
 ### G — legality-check rollback (`TxErrCodeReloadUI`)
 
