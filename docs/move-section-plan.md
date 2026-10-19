@@ -22,7 +22,12 @@ Status: **Held — re-derivation onto the batched route pending**
 > residue, ack-time commit-wait, the ≥32-op cliff, queue ordering). The surviving
 > §2 content — the anchor-stability law (with the leaf→heading-ness discriminator
 > fix), the reverse-order member derivation, the fold-blind posture, the
-> fresh-guard scoping — carries over.
+> fresh-guard scoping — carries over. Post-review decisions are recorded where
+> the surviving shape lives (§2, §6): the landed arm certifies the moved
+> heading's new owner; cross-doc is in v1 scope (this mode is the multi-doc
+> consumer `batch.ts`'s `walk-failed` arm defers to); and the anchor-stability
+> classifier lands as a pure predicate in the primitives first — unpublished,
+> `file:`-linked — never as a dispatch.
 
 Origin: friction §2/§3 in [`../kb-write-friction.md`](../kb-write-friction.md).
 The **corruption half of heading-move is already closed** — `moveBlockVerified`
@@ -88,17 +93,24 @@ content), is why this is approved rather than deferred.
   non-heading leaf. This is held **by construction**, not judged after the
   fact — no post-move judgment can repair a flipped address.
 
-- **The anchor-stability law is stated once, in the primitives.**
-  `deriveMoveAnchor` classifies its result through one predicate in
-  `placement.ts` — `stable` (non-heading leaf) / `single-use`
-  (empty-section heading: the per-id path's existing semantics, judged
-  before its next leg) / `unstable` (section-bearing heading, refused
-  everywhere) — and every anchor consumer switches on the class: the
-  per-id move keeps accepting `single-use`, this group mode refuses
-  anything but `stable`, and a future sequence inherits the check by
-  construction instead of by review. The existing
-  `heading-anchor-with-section` refusal and this mode's refusal become two
-  consumers of one predicate rather than two handwritten guards.
+- **The anchor-stability law is classified once, in the primitives — as
+  a pure predicate, not a dispatch.** `placement.ts` grows one exported
+  predicate classifying an anchor `stable` (non-heading leaf) /
+  `single-use` (empty-section heading — `deriveMoveAnchor`'s only
+  heading output) / `unstable` (section-bearing heading), with a
+  placement-corpus test per class; it retires the prose-only
+  `MoveAnchor` precondition whether or not this mode ever ships.
+  Refusal sites stay deliberate policy sites that call the predicate:
+  the per-id move keeps accepting `single-use` (its existing semantics,
+  judged before its next leg), and this group mode refuses any heading
+  anchor (its derived anchor must be a non-heading leaf — the `stable`
+  class). A *derived* anchor can never be `unstable` — that class
+  exists only for caller-supplied `previousID` (the
+  `heading-anchor-with-section` provenance) — so the earlier framing
+  here, "every anchor consumer switches on the class", is dropped:
+  unify the classification, not the policy. The predicate lands in the
+  primitives first, unpublished (this repo's `file:` link stays) so the
+  shape can be perfected side by side before either repo releases.
 
 - **The moved set.** `sectionOf(sourceHeading).members` in **reverse
   document order**, then the heading. Reverse order is load-bearing, not an
@@ -161,12 +173,24 @@ content), is why this is approved rather than deferred.
   Record the rationale in the tool-side fact list at implementation time so
   the absence reads as a decision, not an omission.
 
-- **Outline side effect at the destination.** Landing a shallower moved
-  heading at the end of the destination section can claim following deeper
-  sections into the moved section (the nearest preceding shallower heading
-  changes). This is the honest consequence of "end of H's section" landing;
-  it is documented behavior, stated in the tool description, not something
-  to bound.
+- **Landing is level-blind; the judgment certifies the owner, not just
+  the order.** A moved heading *shallower than or equal to* the
+  destination heading lands as a following sibling and can claim
+  following deeper sections into the moved section (the nearest
+  preceding shallower heading changes) — the honest consequence of "end
+  of H's section" landing, documented behavior stated in the tool
+  description. The mirror case is a moved heading *deeper than* the
+  destination heading: it can never be contained by the destination's
+  section — it lands after that section and reattaches to the
+  destination heading's own parent — yet the prefix judgment alone
+  passes in both cases. Decided post-review: the landed arm certifies
+  the moved heading's **new owner** (the nearest preceding shallower
+  heading in the destination walk) alongside the order, so both
+  divergences surface in the envelope and the receipt says where the
+  section actually attached. This is reporting, not a level rewrite —
+  the mode still never rewrites levels (§5); the projection is a read
+  off the walk the verdict already holds, not new verification
+  machinery.
 
 - **Cross-doc scope.** Each leg is a same-kernel `moveBlock`; a cross-doc
   destination is in scope and rides the existing per-leg membership-only
@@ -261,6 +285,19 @@ re-derived.
   Move's batch always takes the kernel's per-op execution path (the ≥32 bulk
   path requires an all-delete batch), so the cliff is not this mode's
   interaction.
+- **Cross-doc is in v1 scope — decided post-review.** The judgment is
+  per-touched-doc post-write walks, so this mode extends `batch.ts`'s
+  `walk-failed` arm to carry the partial walks its docstring defers to
+  "a multi-doc consumer" — this mode is that consumer. The extension
+  lands in the primitives under the same posture as the anchor
+  classifier (§2): unpublished, `file:`-linked, shape perfected side by
+  side before either repo releases. The destination side composes the
+  caller-provenance gate delete-section models (`foreign` /
+  `walk-truncated`): the anchor derives from a caller-held destination
+  walk, and the kernel mutates by raw block id with no doc scoping of
+  its own. Single-doc v1 was declined: refusing cross-doc would make
+  the automated route narrower than the per-id path it replaces, and a
+  later cross-doc release would pay a second wording/probe/pin ship.
 - **The cause-free all-or-nothing arm covers move's batch.** Every skip arm
   reachable from move ops lives in the move paths, and skip-class rejections
   plus `TxErrCodeReloadUI` become silent rollbacks under the batch — the
@@ -279,7 +316,12 @@ re-derived.
   walk per touched doc, landed-order judgment read off the walk; `transact` is
   one call, so the only throw is post-issue pre-ack — no walk can certify
   state, and the transport-unverified frame carries the whole judged set as
-  its unconfirmed payload.
+  its unconfirmed payload. Decided post-review: the landed judgment
+  certifies the moved heading's **new owner** beside the landed order
+  (§2), so the deeper-than-destination case — a section that lands
+  outside the destination's section — surfaces in the envelope instead
+  of passing the prefix test silently; the ownership projection is
+  reporting off the walk, never a level rewrite.
 - **The reverse-order member derivation carries over, not dissolved.** The
   batched route issues raw ops, so the per-leg `heading-with-section` refusal
   that guards a forward-ordered derivation is not in the loop; keep reverse
