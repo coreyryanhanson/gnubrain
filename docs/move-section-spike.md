@@ -1,9 +1,11 @@
 # Move-section spike — the `nextID` (insert-before) arm, live-confirmed
 
 Status: **executed 2026-10-19** against the live SiYuan 3.8.7 kernel
-(`SIYUAN_BASE_URL=http://192.168.100.1:6806`). Script: `/tmp/spike-move-nextid.mjs`
-(raw client, zero deps, disposable notebook created and torn down — no strays).
-Raw transcript: `/tmp/spike-move-nextid.log`.
+(`SIYUAN_BASE_URL=http://192.168.100.1:6806`). Scripts: `/tmp/spike-move-nextid.mjs`
+(codec matrix, cases A–E) and `/tmp/spike-move-owed.mjs` (the owed legs, cases
+F–J) — raw clients, zero deps, disposable notebooks created and torn down
+(no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
+`/tmp/spike-move-owed.log`.
 
 This spike settles review finding **A1** on `docs/move-section-plan.md`: §2's
 "There is no new anchor arm" was asserted without testing the batched route's
@@ -114,7 +116,7 @@ Every case landed **exactly at the expected layout** — flat destination
    - **Doc-end destination** — `nextID` is empty there, and the empty-`nextID`
      op falls through to `previousID`/`parentID` semantics (the append/prepend
      arm, review finding B1). Untested; the landed predicate must cover it or
-     refuse it.
+     refuse it. *(Now executed — see "Owed legs" below, cases F1–F5.)*
    - **Partial coverage under drag** — B's self-cancellation relied on every
      dragged member being re-moved. A member appended to the source section
      after enumeration (review finding B3, currency) would be dragged by the
@@ -125,9 +127,10 @@ Every case landed **exactly at the expected layout** — flat destination
      still under a folded `H` is dragged on that leg and lands unjudged —
      the plan's currency bullet carries the detection duty.
    - **Cross-crypto-boundary batch** (`IsSameCryptoBoundary` → `SkipTx`) —
-     same silent-rollback class as E; not probed.
+     same silent-rollback class as E; not probed. *(Now executed — case H1.)*
    - **Legality-check rejections** (`TxErrCodeReloadUI`) — E probed the skip
-     class; the legality class is still owed (§3.2's bullet 3).
+     class; the legality class is still owed (§3.2's bullet 3). *(Now
+     executed — case G.)*
 5. **Recommended §2 decision, pending the owed probes:** the batched mode
    issues **members in document order, each `nextID = <destination section
    boundary>`** (or the doc-end arm once characterized), then **the heading
@@ -138,10 +141,154 @@ Every case landed **exactly at the expected layout** — flat destination
    (the destination section must have a following boundary heading, or the
    doc-end arm applies).
 
+## Owed legs — executed 2026-10-19 (second script)
+
+Script: `/tmp/spike-move-owed.mjs`; transcript: `/tmp/spike-move-owed.log`.
+Same fixture (`S / s0 / H / m1 / m2 / H2 / sub1 / m3 / T / t1`), same disposable-
+notebook discipline. All 14 verdicts passed; the characterizations below are
+the record. Walks read flat (root-level only) — `getChildBlocks` on a heading
+returns its whole section, so recursive walks double-report (same caveat as
+above).
+
+### F — the doc-end destination arm (review finding B1)
+
+The destination section is the doc's **last** section: no following boundary
+heading exists, `nextID` has nothing to name, and the codec must fall to the
+other arms. Three readings:
+
+- **F1 — all anchors empty.** A bare `move` op (`nextID`/`previousID`/`parentID`
+  all empty) falls through `doMove`'s sibling branch into `loadTree("")` →
+  `TxErrCodeBlockNotFound` → **whole-batch rollback behind HTTP code 0**. The
+  naive "nextID is empty, so just omit it" codec form is not merely wrong —
+  it silently no-ops. The class is not HTTP-visible (consistent with §6's
+  no-channel finding).
+- **F2 — `parentID: <docId>`.** The parent arm **prepends**: `PrependChild` on
+  the document node lands every op at the doc's **start**, in reversed order
+  (`H, m3, sub1, H2, m2, m1` before `d2, E, e1`). Unusable for end-of-section
+  semantics — this is the prepend arm the plan already declared out of scope
+  (§5), now live-confirmed reachable only in this wrong-position form.
+- **F3 — chained `previousID` in document order.** Each op anchors on the
+  previously landed block (first op on the destination section's last leaf,
+  `e1`): the section lands at the doc end in **correct document order**
+  (`e1, m1, m2, H2, sub1, m3, H`), source reduced clean. The doc-end arm is
+  reachable — but only through the previousID algebra the codec just abandoned,
+  and with two fold hazards the next two readings expose.
+- **F4 — heading-anchored doc-end (empty last section, the doc's last block is
+  the heading `E`), every member `previousID: E`:**
+  - **unfolded** (`F4a`): no redirect — each member `InsertAfter(E)` → LIFO
+    reversal, and because the heading leg was issued last, `H` lands
+    *immediately after `E`* with the members reversed after it:
+    `E, H, m3, sub1, H2, m2, m1`. Wrong order, silent, behind code 0.
+  - **folded** (`F4b`): the redirect branch fires on every op —
+    `HeadingChildren(E)` grows as each member lands, so the anchor
+    effectively becomes "after the section's current last child" and the
+    members accumulate in **correct** document order:
+    `E, m1, m2, H2, sub1, m3, H`.
+  The landing position is correct in both folds (doc end), but the **order**
+  is fold-dependent: the doc-end heading anchor is exactly the fold-hidden
+  hazard class the plan refuses, in a new costume. A doc-end codec form must
+  either chain on non-heading leaves (F3) or refuse the heading anchor.
+- **F5 — chained `previousID` with the nested subsection heading `H2` folded.**
+  The drag rides `H2`'s own op (H2 + its section move together after `m2`),
+  and `sub1`'s chained op then redirects into H2's landed section and
+  self-inserts harmlessly; the chain completes with the correct layout
+  (`e1, m1, m2, H2, sub1, m3, H`; source clean). The drag and the redirect
+  interact **benignly** under the chained codec for this shape — but the
+  interaction is exactly the fold-dependent machinery the mode refuses to
+  reason about; F5 characterizes it, it does not license it.
+
+**Implication for the plan (§4):** the doc-end refusal survives, but its
+justification changes. The arm is *characterizable*, not unknowable: the
+refusal should key on the anchor class, not on mystery — the doc-end codec
+form is legal **iff the destination section's last block is a non-heading
+leaf** (chained `previousID`, F3); a heading-anchored doc-end form is
+fold-dependent in order (F4a/F4b) and is refused with the same
+fold-blind posture as the per-id path's heading-anchor refusals. F1 adds a
+precondition: the boundary must exist — an omitted/empty `nextID` is not a
+doc-end address, it is a rollback.
+
+### G — legality-check rollback (`TxErrCodeReloadUI`)
+
+A batch of one legal move (`m1 nextID=Z`) plus one legality-op — a list item
+moved with `parentID: <docId>`, making it a direct child of the document
+(`CanContainBlock` violation → `ValidateBlockPlacement` → `TxErrCodeReloadUI`
+at finalize, `transaction.go:2648`). **Live-confirmed: the whole batch rolled
+back** (source intact, destination untouched) **behind HTTP code 0**. The
+legality class is the same silent shape as the skip class (E); §6's
+cause-free all-or-nothing arm covers both, and its premise now has live
+evidence for each class.
+
+### H — cross-box arms (`IsSameCryptoBoundary`)
+
+- **H1 — encrypted → plain.** A batch of one legal same-box move plus one
+  encrypted→plain move (`transaction.go:746-748` ��� `TxErrCodeSkipTx`) rolled
+  back **whole**, behind code 0. The cross-box skip arm is live-confirmed and
+  is the same silent-rollback class as E. (Encrypted notebook created via
+  `/api/notebook/createEncryptedNotebook` with the workspace master password;
+  workspace encryption is enabled in this deployment.)
+- **H2 — plain → plain across two notebooks.** `IsSameCryptoBoundary` allows
+  plain↔plain unconditionally (`crypto.go:2103-2108`), and the codec's
+  block ids are kernel-global — the batch landed whole in document order in
+  the other notebook's doc (`b1, H, m1 … m3` before `Z`), source clean.
+  **Cross-KB moves work natively** on this route; the mode's KB-scoping
+  decision (destination within a granted KB, cross-box refused pre-mutation)
+  is policy, not kernel necessity — the kernel would silently accept
+  plain↔plain cross-KB and silently roll back cross-boundary.
+
+### I — cross-doc rollback residue round trip (§6's doctrine, end to end)
+
+Batch: legal cross-doc move (`m1 nextID=Z`) + skip-class op → whole-batch
+rollback behind code 0. Then, on the moved id `m1`:
+
+- **Resolver split, live-confirmed.** `getBlockInfo` (blocktree-routed:
+  `LoadTreeByBlockIDWithReindexInBox` → the stale row's dest tree → node nil)
+  returns **code -1, "Content block not found"** — unresolvable behind the
+  success ack, exactly the wrong-root reading. The raw SQL row (`blocks`:
+  `root_id` = the *source* doc) still carries the **true pre-move layout** —
+  the rolled-back tx never updated the SQL index — so SQL-routed readers keep
+  the truth while blocktree-routed readers fail closed (not-found, **never a
+  wrong block**). A healthy control id resolved through the same reader
+  throughout, so the -1 is the residue, not route breakage.
+- **A committed write to the DESTINATION doc healed nothing** (still -1
+  after `updateBlock` on the destination doc) — the destination tree does not
+  contain the node, so its write never re-upserts the moved id's row.
+- **A committed write to the SOURCE doc restored resolvability**
+  (`getBlockInfo` → code 0) — the doctrine's heal path, live-confirmed
+  (`UpsertBlockTree`'s path/box mismatch detection re-upserts the stale row
+  from the source tree).
+- **Heal first, then retry works:** the clean codec batch re-issued after the
+  heal landed whole in document order, both walks judged — which also
+  discharges §3's cross-doc success-landing leg.
+
+### J — ≥32-op move batch (per-op path, cost)
+
+A 36-op cross-doc batch (35-member section + heading, members-first nextID
+codec) took the **per-op execution path** as claimed (the ≥32 bulk path
+requires an all-delete batch, `processLargeDelete`/`processLargeInsert`) and
+**landed whole in document order** — `b1, H, j01 … j35` before `Z`, source
+reduced clean. Wall time: **341 ms** for 36 cross-doc ops — each op does two
+full-tree `UpsertBlockTree` walks inside the global tx lock (review finding
+B4), and 36 ops cost a third of a second; a 200-member section would be
+~2 s, tolerable but worth a latency assertion rather than silence in the
+live pin.
+
+### Net effect on the plan
+
+Every §3 leg that was source-verified is now live-confirmed. The residue/heal
+doctrine (§6's last bullet) held end to end without modification. The two
+readings that *change* plan text: the doc-end arm (§4's refusal re-justified
+as anchor-class, with the leaf-chain route-out), and cross-KB (H2: the kernel
+accepts plain↔plain cross-notebook moves natively, so the granted-KB
+restriction and the cross-box pre-mutation refusal are policy decisions the
+plan must state, not kernel facts to discover).
+
 ## Caveats
 
 - Single small fixture, one notebook, same box; results are 3.8.7-pinned and
-  version-coupled like everything else in the primitives.
+  version-coupled like everything else in the primitives. Each reading is a
+  single-shape sample — one fold combination per case, one latency sample
+  for J — so the live pins must rehearse them (the plan's §3 pin duty),
+  not inherit them from this transcript.
 - The fold was set by API (`setBlockAttrs`), the way the frontend does it; the
   kernel's fold state is otherwise invisible to clients, which is the point of
   the fold-blind posture.

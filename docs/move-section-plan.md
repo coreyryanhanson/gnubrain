@@ -213,39 +213,31 @@ Before writing the implementation plan:
    delete-section rides the batched route; the batched move composes the
    same foundation with its own judgment sequence (the no-shared-core rule: each
    batched mode owns its judgment; the walk helper is the only shared code).
-2. **A live probe, before any product code.** The codec-deciding readings
-   are executed — [`move-section-spike.md`](move-section-spike.md) ran the
-   raw-client matrix (previousID baseline; nextID heading-first and
+2. **A live probe, before any product code.** All legs are executed —
+   [`move-section-spike.md`](move-section-spike.md) holds the full record:
+   the codec matrix (previousID baseline; nextID heading-first and
    members-first; folded source under both; empty destination; skip-class
-   rollback) and every case landed at the expected layout. Owed:
-   - the **doc-end destination arm** — `nextID` is empty there and the op
-     falls through to `previousID`/`parentID` semantics: characterize the
-     landing and its predicate arm, or refuse it;
-   - a batch carrying a legality-check op → confirm the rejection
-     (`TxErrCodeReloadUI`, `validateStructureChanges`,
-     `transaction.go:2648` — only insert/append/move paths register
-     structure-check nodes) rolls the whole batch back while the HTTP
-     response reads as success. Unreachable for delete-section; the
-     spike exercised the skip class only, so this class is owed.
-   - the **cross-box** skip arm (`IsSameCryptoBoundary` → `SkipTx`
-     silent rollback behind a success ack) — the same rollback class as
-     the spike's case E, unprobed.
-   - the cross-doc **move-residue round trip**: force a batched cross-doc move
-     to roll back, then confirm by-id resolvability of a moved id
-     (unresolvable behind a success ack — the wrong-root row, §6), then the
-     heal attempted from the **source** doc restoring resolution, and a write
-     to the destination doc confirmed to heal nothing;
-   - a **≥32-op move batch**: confirm the per-op execution path still
-     applies (the ≥32 bulk path requires an all-delete batch) and the
-     batch lands whole — pinning §6's cliff claim against a realistic
-     30-member section;
-   - the cross-doc **success landing**: a clean batched cross-doc move
-     judged over both walks — landing position, the member prefix, and
-     source absence. The rollback leg rehearses the residue; only this
-     leg rehearses the judgment.
-   The spike's readings are live; the legs above are still
-   source-verified but not yet live-confirmed, and their transcript is
-   the implementation plan.
+   rollback) and the owed legs — the **doc-end destination arm** (all-empty
+   anchors roll back; `parentID` prepends at doc start; chained
+   `previousID` on a non-heading leaf lands correctly; a heading anchor at
+   doc end is fold-**dependent in order**, F4a/b), the **legality-check
+   rollback** (`TxErrCodeReloadUI`, whole-batch behind code 0), the
+   **cross-box skip arm** (encrypted→plain whole-batch rollback) and the
+   plain↔plain cross-notebook **success landing**, the **cross-doc residue
+   round trip** (wrong-root row → `getBlockInfo` not-found; destination
+   write heals nothing; source write restores; heal-then-retry lands
+   whole), and the **≥32-op batch** (per-op path, 36 ops / 341 ms, lands
+   whole). Their transcript is the implementation plan.
+
+   The spike readings are transcript evidence, not pins. The live suite
+   must rehearse what the mode rides so an upgrade pass falsifies them
+   in place rather than trusting a transcript that dies with the next
+   kernel upgrade: the folded-source readings under the decided codec —
+   every fold combination of the source heading and its nested
+   subsection headings (the drag and its redirect interaction, cases
+   B/B2/F5) — the doc-end fold-dependence (F4a/F4b, the ground the §4
+   refusal stands on), and the ≥32-op batch with a completion-latency
+   assertion, not landing alone (36 ops / 341 ms is one sample).
 
 ## 4. Refusals the mode must add
 
@@ -263,11 +255,18 @@ checks would otherwise only surface mid-sequence, after the tear:
   the alternative is the kernel's own skip arms (`TxErrCodeSkipTx`),
   which roll the whole batch back behind a success ack (spike case E).
 - There is **no following boundary** — the destination section is the
-  last section of its doc, `nextID` is empty, and the op falls through
-  to `previousID`/`parentID` semantics whose landing is uncharacterized
-  (owed probe, §3). Refused pre-mutation, zero kernel calls, until that
-  arm is characterized and pinned; the route-out is a destination
-  section that has a following boundary, or the per-id path.
+  last section of its doc and the codec's `nextID` arm has no address
+  there. The arm is characterized (spike F): an all-empty-anchors op
+  rolls the batch back (`TxErrCodeBlockNotFound`, invisible),
+  `parentID: <docId>` prepends at the doc's start, and the only correct
+  doc-end form is **chained `previousID` from a non-heading leaf** — a
+  heading-anchored doc-end form lands in a fold-**dependent order**
+  (F4a/F4b: unfolded reverses, folded redirects into order). Refused
+  pre-mutation, zero kernel calls, whenever the destination section's
+  last block is a heading — same fold-blind posture as the per-id
+  path's heading-anchor refusals; the route-out is a destination
+  section whose last block is a non-heading leaf (the chain form)
+  or the per-id path.
 
 ## 5. Non-goals (until revisited)
 
@@ -304,7 +303,12 @@ re-derived.
   caller-provenance gate delete-section models (`foreign` /
   `walk-truncated`): the anchor derives from a caller-held destination
   walk, and the kernel mutates by raw block id with no doc scoping of
-  its own. Single-doc v1 would make the automated route narrower than the per-id
+  its own. Cross-**box** is policy, not kernel behavior: the kernel
+  accepts plain↔plain cross-notebook moves natively (spike H2) and
+  silently rolls back cross-crypto-boundary batches (`IsSameCryptoBoundary`
+  → `SkipTx`, spike H1) — the mode scopes the destination doc to a
+  granted KB and refuses cross-box pre-mutation, zero kernel calls.
+  Single-doc v1 would make the automated route narrower than the per-id
   path it replaces, and a later cross-doc release would pay a second
   wording/probe/pin ship.
 - **The cause-free all-or-nothing arm covers move's batch.** Every skip arm
