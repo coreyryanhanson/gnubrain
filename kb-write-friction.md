@@ -82,6 +82,7 @@ not a tree-parent change, and the delete path is fold-blind (`node.Unlink()`,
 no `IsSelfFolded` — unlike move) — now live in the primitives'
 `deleteSection.ts` module doc and the AGENTS.md fact lists. The remaining
 open item is `move-section`
-([`docs/move-section-plan.md`](docs/move-section-plan.md), design approved —
-post-merge; it packages the already-expressible move-then-heading sequence
-into one verified call, trading ~2N+1 tool calls for one).
+([`docs/move-section-plan.md`](docs/move-section-plan.md), design held —
+re-derivation onto the batched route pending, post-merge; it packages the
+already-expressible move-then-heading sequence into one verified call,
+trading ~2N+1 tool calls for one).

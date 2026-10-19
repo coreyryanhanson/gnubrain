@@ -39,7 +39,7 @@ section children only when `treenode.IsSelfFolded(srcNode)`,
 `kernel/model/transaction.go`). So this mode is an **efficiency and
 expressiveness fix, not a safety fix**.
 
-## 1. Why approved
+## 1. Why this mode is pursued
 
 *(§1 predates the batched-route foundation; the framing below — including its
 reference to delete-section's then-planned sweep shape in §3.1 — is the per-leg
@@ -56,7 +56,9 @@ doing it in **one call** — order enforced and verified by construction, one
 group receipt, partial-state reporting — instead of ~2N+1 `kb_write` round
 trips. That efficiency for agent-driven workflows, plus closing the
 silent-corruption trap in the manual sequence (wrong ordering strands
-content), is why this is approved rather than deferred.
+content), is why this mode is pursued rather than deferred — the pursuit
+is decided, and the design itself awaits re-derivation onto the batched
+route (§6) before any of it is built.
 
 ## 2. What the mode must solve
 
@@ -253,13 +255,23 @@ checks would otherwise only surface mid-sequence, after the tear:
   destination section is one the moved section contains.
 - The group is **already at the destination** — one refusal, never a
   partial receipt with an empty moved set.
-- The destination section is **empty** — the derived anchor is the
-  destination heading itself (`single-use` class), which the group's first
-  landing makes section-bearing and fold-unstable. Refused pre-mutation,
-  zero kernel calls, without reading `fold` — the same posture as the
-  existing fold-blind refusals — and worded with the route out: append a
-  body block into the destination section first, or move the members
-  per-id (where `heading-anchor-with-section` fires loudly).
+- The derived anchor is a **heading** — the refusal keys on
+  heading-ness, not on its causes. The empty destination is the obvious
+  shape (the derived anchor is the destination heading itself,
+  `single-use`), but two more are reachable from a non-empty
+  destination: a section whose last member is a trailing empty
+  subsection heading (`deriveMoveAnchor` recurses into it), and the
+  omitted-`toHeadingId` doc-end form when the doc's last root-level
+  block is a heading. Any heading anchor is single-use under the group —
+  its first landing makes it section-bearing and fold-unstable — so the
+  refusal tracks the anchor the sequence must address N+1 times: §2's
+  stable-anchor law is what §4 enforces, not a paraphrase of one cause
+  of its violation. Refused pre-mutation, zero kernel calls, without
+  reading `fold` — the same posture as the existing fold-blind refusals
+  — and worded with the route out: append a body block into the
+  destination section first (the derived anchor becomes a non-heading
+  leaf), or move the members per-id (where
+  `heading-anchor-with-section` fires loudly).
 
 ## 5. Non-goals (until revisited)
 
@@ -313,15 +325,28 @@ re-derived.
 - **What must not survive the re-derivation (acceptance criterion):** the
   two-phase judged sequence (§2's "mutate → judge → mutate → judge") and the
   "split between two places" pending-set receipt. One call, one post-write
-  walk per touched doc, landed-order judgment read off the walk; `transact` is
+  walk per touched doc; `transact` is
   one call, so the only throw is post-issue pre-ack — no walk can certify
   state, and the transport-unverified frame carries the whole judged set as
-  its unconfirmed payload. Decided post-review: the landed judgment
-  certifies the moved heading's **new owner** beside the landed order
-  (§2), so the deeper-than-destination case — a section that lands
-  outside the destination's section — surfaces in the envelope instead
-  of passing the prefix test silently; the ownership projection is
-  reporting off the walk, never a level rewrite.
+  its unconfirmed payload. The landed judgment is a stated predicate over
+  the destination walk, not a phrase — an unstated formula invites a
+  membership-only check, which reads a fold-inverted group (body above
+  its heading) as landed. The predicate, restated here because its only
+  precise home (§2's two-phase bullet) is declared stale: the moved
+  heading sits immediately after the anchor; `sectionOf(destWalk, H)
+  .members` **starts with** the enumerated member run — a prefix, never
+  equality, because a shallower moved heading legitimately claims
+  following sections into itself (the outline side effect, §2), a
+  tolerance bounded by the owner certification: order may under-report
+  what follows the moved section, never where the section attached. The
+  members are **absent from the source walk**; a truncated walk refuses
+  (`walk-truncated`) rather than asserting absence. Beside the order,
+  the judgment certifies the moved heading's **new owner** (the nearest
+  preceding shallower heading in the destination walk), so the
+  deeper-than-destination case — a section that lands outside the
+  destination's section — surfaces in the envelope instead of passing
+  the prefix test silently; the ownership projection is reporting off
+  the walk, never a level rewrite.
 - **The reverse-order member derivation carries over, not dissolved.** The
   batched route issues raw ops, so the per-leg `heading-with-section` refusal
   that guards a forward-ordered derivation is not in the loop; keep reverse
