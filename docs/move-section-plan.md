@@ -167,8 +167,9 @@ built.
   the live post-move walk (above). Guarding the group while the per-id legs
   stay unguarded would judge identical content differently by path, so the
   line is drawn at the primitives level: **no move mode carries the guard**.
-  Record the rationale in the tool-side fact list at implementation time so
-  the absence reads as a decision, not an omission.
+  The rationale is recorded in the tool-side fact list when the
+  re-derivation lands (§6), so the absence reads as a decision, not an
+  omission.
 
 - **Landing is level-blind; the judgment certifies the owner, not just
   the order.** A moved heading *shallower than or equal to* the
@@ -228,8 +229,16 @@ Before writing the implementation plan:
      to roll back, then confirm by-id resolvability of a moved id
      (unresolvable behind a success ack — the wrong-root row, §6), then the
      heal attempted from the **source** doc restoring resolution, and a write
-     to the destination doc confirmed to heal nothing.
-   All four readings are source-verified but not yet live-confirmed; the
+     to the destination doc confirmed to heal nothing;
+   - a **≥32-op move batch**: confirm the per-op execution path still
+     applies (the ≥32 bulk path requires an all-delete batch) and the
+     batch lands whole — pinning §6's cliff claim against a realistic
+     30-member section;
+   - the cross-doc **success landing**: a clean batched cross-doc move
+     judged over both walks — landing position, the member prefix, and
+     source absence. The rollback leg rehearses the residue; only this
+     leg rehearses the judgment.
+   All six readings are source-verified but not yet live-confirmed; the
    transcript is the implementation plan.
 
 (A non-heading anchor never satisfies the kernel's heading-anchor redirect
@@ -246,8 +255,14 @@ checks would otherwise only surface mid-sequence, after the tear:
 
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section is one the moved section contains.
-- The group is **already at the destination** — one refusal, never a
-  partial receipt with an empty moved set.
+- The group is **already at the destination** — derived as: the anchor
+  lies inside the moved set (`deriveMoveAnchor`'s result ∈
+  `sectionOf(sourceHeading).members ∪ {H}`; e.g. with `# A / a1 / ## B /
+  b1`, moving B's section onto the end of A's section derives `b1` — a
+  member — as the anchor). One refusal, never a partial receipt with an
+  empty moved set; on the batched route the alternative is the kernel's
+  own `id == targetSiblingID` skip (`TxErrCodeSkipTx`), which rolls the
+  whole batch back behind a success ack.
 - The derived anchor is a **heading** — the refusal keys on
   heading-ness, not on its causes. The empty destination is the obvious
   shape (the derived anchor is the destination heading itself,
@@ -305,7 +320,11 @@ re-derived.
   reachable from move ops lives in the move paths, and skip-class rejections
   plus `TxErrCodeReloadUI` become silent rollbacks under the batch — the
   least informative envelope landing on the mode with the richest failure
-  semantics. That is the accepted trade. If the
+  semantics. That is the accepted trade, and a deliberate departure from
+  `docs/replace-section-followup.md` §2, which keeps a prevention leg in
+  its own transaction: all move legs are the same op class, and every
+  skip arm reachable from them rolls the batch back whole, so
+  detection-after-the-fact is the honest posture here. If the
   re-derivation surfaces a move failure class the cause-free arm cannot serve
   honestly, the route re-opens. No HTTP-visible batch failure channel exists
   (the kernel publishes reasons only on the editor websocket's `txerr` push,
@@ -341,16 +360,28 @@ re-derived.
   batched route issues raw ops, so the per-leg `heading-with-section` refusal
   that guards a forward-ordered derivation is not in the loop; keep reverse
   order and pin it with its own probe.
+- **The tool-side seams land with the primitive.** The new mode joins
+  `writeSchema.ts`'s mode/param table, `writePrepare.ts`'s ordered
+  dispatch and its exhaustive tail, the pinned mode/param list in
+  `__tests__/unit/contract.test.ts`, and the `kb_write` tool description
+  (`write.ts`); the tool-side fact-list entry recording the fresh-guard
+  rationale for moves (§2) rides the same pass. A re-derivation that
+  plans only the kernel side leaves these to be discovered later.
 - **Move's rollback residue and heal are characterized, not assumed from the
   delete case.** Every executed move writes both trees' index rows in-tx
-  (`finishMove` → `writeTree` on source and target), so a rolled-back move
-  batch leaves *wrong-root* rows — the post-move layout behind the pre-move
-  tree. There is no clean case; wrong-root rows resolve to not-found (still
-  never a wrong block). A cross-doc rollback makes the moved ids unresolvable
-  behind success acks, and the heal is a committed write to the **source**
-  doc — the tree that actually contains the node — never the destination (a
-  destination write never walks the moved node's row). Move therefore keeps
-  the conservative arm: **do not re-issue; heal first, then retry** — a
-  re-issued move batch trips its own skip arms and rolls back again, looping
-  until an out-of-band committed write to the source doc restores
-  resolvability. The probe legs are in §3.2.
+  (`finishMove` → `writeTree` on source and target). A same-doc rollback
+  is the mild case: the root never changes, so ids stay resolvable and
+  only `parent_id`/`updated` rest stale — self-converging on the doc's
+  next committed write. The cross-doc rollback is the wrong-root case:
+  the moved ids' rows carry the post-move layout behind the pre-move
+  source tree and resolve as not-found (still never a wrong block)
+  behind success acks; the heal is a committed write to the **source**
+  doc — the tree that actually contains the node — never the destination
+  (a destination write never walks the moved node's row). Move therefore
+  keeps the conservative arm: **do not re-issue; heal first, then
+  retry** — a re-issued move batch trips its own skip arms and rolls
+  back again, looping until an out-of-band committed write to the source
+  doc restores resolvability. The recovery wording is move's own, not
+  delete-section's: the delete-section repair sentence (committed write,
+  then one re-issue) re-issued here would re-trip the skip arms and
+  strand the agent healing the wrong doc. The probe legs are in §3.2.
