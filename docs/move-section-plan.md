@@ -86,7 +86,20 @@ implementation.
   nested subsection folded; K2: `InsertAfter` at a shared anchor is
   LIFO across ops, which is why the leaf-anchored heading leg must
   issue last). A doc-end destination whose last block is a heading is
-  refused (§4). The
+  refused (§4). **The anchors are container-local sibling positions.**
+  The boundary (and the doc-end leaf) lives inside the destination
+  section's own container, so a destination section that is itself
+  container-nested — a heading inside a quote, callout, or list —
+  re-nests the moved members **into that container**: spike M1 landed
+  the whole run as the destination quote's children, member order
+  preserved, heading immediately before the first member, the boundary
+  still bounding after it. This is the section rule's locality, the
+  same rule `append` obeys — documented behavior the tool description
+  must state, and the owner report is what surfaces it. The heading
+  leg's anchor may likewise be a container member that has already
+  crossed mid-batch: the landing is the heading immediately before it
+  (spike M3 — the `nextID` branch takes no fold redirect, and the
+  emptied heading drags nothing). The
   `previousID`/LIFO alternative — reverse document order onto a
   non-heading anchor — was the only shape the per-leg route could reach;
   it is live-confirmed as a baseline (spike case C) and rejected: with
@@ -209,8 +222,12 @@ implementation.
     under the destination heading (owner: the destination heading, or a
     deeper heading within the destination section that precedes it).
   The prefix judgment alone passes in every case, so the landed arm
-  certifies the moved heading's **new owner** (the nearest preceding
-  shallower heading in the destination walk) alongside the order, and
+  certifies the moved heading's **new owner** — the heading whose
+  `sectionOf`-derived section contains the landed heading, read
+  container-locally off the walk, never a document-order backward level
+  scan (in spike M1's landed state the true owner sits inside the
+  destination's quote, and a backward scan names a heading outside it) —
+  alongside the order, and
   the receipt says where the section actually attached — including the
   swallow case, where the destination's boundary changed hands. This is
   reporting, not a level rewrite — the mode still never rewrites levels
@@ -246,7 +263,9 @@ Before writing the implementation plan:
    plain↔plain cross-notebook **success landing**, the **cross-doc residue
    round trip** (wrong-root row → `getBlockInfo` not-found; destination
    write heals nothing; source write restores; heal-then-retry lands
-   whole), and the **≥32-op batch** (per-op path, 36 ops / 341 ms, lands
+   whole), the **containment matrix** (L0–L3, M1–M3: the closure
+   refusal's ground, the container-local landings, the guard backstop),
+   and the **≥32-op batch** (per-op path, 36 ops / 341 ms, lands
    whole). Their transcript is the implementation plan.
 
    The spike readings are transcript evidence, not pins. The live suite
@@ -257,8 +276,14 @@ Before writing the implementation plan:
    subsection headings (the drag and its redirect interaction, cases
    B/B2/F5) — the doc-end fold-dependence (F4a/F4b, the ground the §4
    refusal stands on) and the doc-end chain's fold variants (K1, the
-   ground the §4 chain form stands on) — and the ≥32-op batch with a
-   completion-latency
+   ground the §4 chain form stands on) — the containment-rollback
+   matrix (L1–L3: every naive derivation the nested-destination shape
+   permits rolls back whole behind code 0, the ground the §4 closure
+   refusal's backstop claim stands on), the destination-container
+   re-nest (M1) and the crossed-container heading leg (M3, the codec's
+   landing edge), and the source-tree-anchor rollback (M2, the ground
+   the §6 cross-doc backstop note stands on) — and the ≥32-op batch
+   with a completion-latency
    assertion, not landing alone (36 ops / 341 ms is one sample).
 
 ## 4. Refusals the mode must add
@@ -267,12 +292,32 @@ Group-level, pre-mutation, zero kernel calls — conditions that per-leg
 checks would otherwise only surface mid-sequence, after the tear:
 
 - `toHeadingId` names the moved heading itself (identity), or the
-  destination section is one the moved section contains.
+  destination section lies inside what the move transports — judged over
+  the moved section's **closure** (`sectionOf(sourceHeading).closure`),
+  never the sibling-id set: a destination heading nested inside a
+  container member's subtree is transported with the move yet invisible
+  to `members ∪ {H}` (spike L0: the sibling-id forms of the
+  identity/containment and already-at-destination arms miss it; the
+  closure test catches). Same-doc, the kernel backstops a miss — every
+  naive derivation the shape permits (the doc-end leaf chain onto the
+  destination's leaf, append-into-container, a `nextID` anchored at a
+  boundary inside the moved container) rolls the batch back **whole**
+  behind code 0 (spike L1–L3), so the refusal's value is
+  diagnosability: a precise pre-mutation message instead of the silent
+  `nothing-moved` landing. Cross-doc the shape cannot arise (the moved
+  set lives in the source tree, the destination resolution in the
+  destination tree), and an anchor that cohabits a tree with the moved
+  container — a gate miss anchoring into the source doc — still trips
+  the kernel's own self-anchoring guards (`isMovingParentIntoChild`
+  walks the anchor's real ancestry in whatever tree it resolved into;
+  `id == targetParentID`), rolling back whole (spike M2). One closure
+  test serves both docs' resolutions.
 - The group is **already at the destination** — derived two ways: the
-  destination section's boundary lies inside the moved set (the boundary
-  heading ∈ `sectionOf(sourceHeading).members ∪ {H}`; e.g. with `# A /
-  a1 / ## B / b1`, moving B's section onto the end of A's section makes
-  `B` — the moved heading — the destination's boundary), or the moved
+  destination section's boundary lies inside what the move transports
+  (the boundary heading ∈ the moved section's `closure` — the sibling
+  set plus every transported descendant; e.g. with `## B / b1 / ## H /
+  m1`, moving H's section onto the end of B's section makes `H` — the
+  moved heading — the destination's boundary), or the moved
   section is the destination section's **trailing run** — the moved
   heading lies inside the destination section and no member of the
   destination section follows the moved section's last block (e.g. with
@@ -346,7 +391,16 @@ codec decisions they build on are recorded in §2.
   caller-provenance gate delete-section models (`foreign` /
   `walk-truncated`): the anchor derives from a caller-held destination
   walk, and the kernel mutates by raw block id with no doc scoping of
-  its own. Cross-**box** is policy, not kernel behavior: the kernel
+  its own. The kernel guards are the backstop, and their cross-doc
+  reach is characterized (spike M1–M3): the containment shape cannot
+  arise cross-doc (the moved set lives in the source tree, the
+  destination resolution in the destination tree), and an anchor that
+  cohabits a tree with a moved container — a gate miss anchoring into
+  the source doc — still trips `isMovingParentIntoChild` (it walks the
+  anchor's real ancestry in whatever tree the anchor resolved into) or
+  the `id == targetParentID` arm, rolling the batch back whole behind
+  code 0 (spike M2); the gates are diagnosability, the kernel the
+  backstop. Cross-**box** is policy, not kernel behavior: the kernel
   accepts plain↔plain cross-notebook moves natively (spike H2) and
   silently rolls back cross-crypto-boundary batches (`IsSameCryptoBoundary`
   → `SkipTx`, spike H1) — the mode scopes the destination doc to a
@@ -392,7 +446,10 @@ codec decisions they build on are recorded in §2.
   anchor), as the caller-held walk holds it — a memberless moved section
   lands `H` alone immediately before the boundary, an empty destination
   section contributes no block between its heading and the boundary, and
-  both degenerate shapes reduce to the same clause. The doc-end arm has
+  both degenerate shapes reduce to the same clause. The predicate reads
+  `sectionOf`, so it is container-local by construction: a destination
+  re-nest into a quote or callout (spike M1) keeps its reading. The
+  doc-end arm has
   no boundary; there the run occupies the position immediately after the
   destination section's last pre-existing block (the leaf-anchored
   chain's landing, spike K1). `sectionOf(destWalk, H)
@@ -404,8 +461,9 @@ codec decisions they build on are recorded in §2.
   moved section, never where the section attached. The
   members are **absent from the source walk**; a truncated walk refuses
   (`walk-truncated`) rather than asserting absence. Beside the order,
-  the judgment certifies the moved heading's **new owner** (the nearest
-  preceding shallower heading in the destination walk), so both
+  the judgment certifies the moved heading's **new owner** (the heading
+  whose `sectionOf`-derived section contains the landed heading, read
+  container-locally — §2's owner bullet), so both
   divergences — the strictly-shallower swallow (the section takes the
   destination's boundary heading and the sections after it with it) and
   the deeper landing (the section nests inside the destination's) —
@@ -458,6 +516,10 @@ codec decisions they build on are recorded in §2.
     delete-section's `nothing-deleted` precedent) and move's own
     residue/heal recovery wording — the same flow module, never
     delete-section's repair sentence (the residue bullet below);
+  - the tool description's container-local landing statement (a
+    destination section inside a quote, callout, or list re-nests the
+    moved members into that container — the section rule's locality,
+    spike M1) — the `kb_write` tool description (`write.ts`);
   - shared fragments stay in `writeVerdicts.ts`; a new one lands there
     only when a second consumer exists.
 - **Pins and suite placement.** Every §3 reading lands in a named case

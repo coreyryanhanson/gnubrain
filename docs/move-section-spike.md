@@ -6,7 +6,12 @@ Status: **executed 2026-10-19** against the live SiYuan 3.8.7 kernel
 F–J), and `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
 review follow-up) — raw clients, zero deps, disposable notebooks created and
 torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
-`/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`.
+`/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`. The containment
+legs (cases L, M below) ran as one-off vitest live files over the
+primitives — real `sectionOf`/`walkBlockTree`, no replicas, removed after
+the run; transcripts: `/tmp/containment-probe-77257.log`,
+`/tmp/containment-probe2-77375.log`, `/tmp/crossdoc-probe-77409.log`,
+`/tmp/crossdoc-probe-green-77617.log`.
 
 This spike settles review finding **A1** on `docs/move-section-plan.md`: §2's
 "There is no new anchor arm" was asserted without testing the batched route's
@@ -318,6 +323,68 @@ accepts plain↔plain cross-notebook moves natively, so the granted-KB
 restriction and the cross-box pre-mutation refusal are policy decisions the
 plan must state, not kernel facts to discover).
 
+## Containment and container crossings — executed 2026-10-19 (third and fourth runs)
+
+The nested-destination probe: the planned containment refusal tests the
+moved set over sibling ids (`members ∪ {H}`); a destination heading nested
+inside a **container member's subtree** is inside what the move transports
+yet invisible to that set. Does the kernel save a miss, and where does the
+codec land when the destination section is container-nested? Same-doc
+fixture:
+
+```text
+# Probe / a1 / ## H / m1 / blockquote(## Q / q1 [/ ## R / r1]) / m2 / ## Z / z1
+```
+
+`sectionOf(H).members = [m1, quote, m2]`; `Q` is **not** in
+`members ∪ {H}` but **is** in `sectionOf(H).closure` — the sibling-id
+forms of both refusal families miss, the closure test catches (case L0,
+no mutation).
+
+| Case | Shape | Ops | Result |
+|---|---|---|---|
+| L1 | dest Q in quote, boundary null; naive doc-end **leaf chain** | m1, quote, m2, H each `previousID=q1` (q1 inside the quote) | whole-batch rollback behind code 0, layout byte-identical |
+| L2 | same shape; naive **append-into-container** | all ops `parentID=<quote>` (incl. quote→quote) | whole rollback behind code 0 |
+| L3 | dest Q in quote with boundary R **inside the same quote**; nextID codec | members `nextID=R`, heading `nextID=m1` | whole rollback behind code 0 |
+| M1 | destination section container-nested **in the destination doc** (Q in a quote, boundary R in the same quote); nextID codec, cross-doc | members `nextID=R`, heading `nextID=m1` | **clean landing, code 0** — the whole run re-nested as the destination quote's children, member order, heading immediately before the first member, R/r1 still bounding after; source emptied of the run |
+| M2 | adversarial provenance-gate miss: anchors resolve into the **source** tree (member ops `nextID=q2` inside the source quote; the quote itself a moved member), cross-doc | as the codec, source-side anchors | the guard fires anyway (`isMovingParentIntoChild`: the anchor and the container cohabit the source tree) → whole rollback, both layouts byte-identical |
+| M3 | first moved member is a container; heading leg anchors on it after it has already crossed mid-batch | members `nextID=Z`, heading `nextID=<quote id>` | **clean landing** — `b1, H, quote, m2, Z`; the `nextID` branch takes no fold redirect, the emptied heading drags nothing |
+
+Guard provenance (source-read): the self-anchoring container op trips
+`isMovingParentIntoChild` (`transaction.go:1028-1035`) or the
+`id == targetParentID` SkipTx arm (`transaction.go:821`), and the op
+loop's action-generic rollback (`transaction.go:549-551`) undoes
+everything — including ops that had already landed (L1's first member
+entered the quote before the rollback restored it). The raw response in
+every rollback case is code 0 with the ops echoed as executed
+`doOperations` and no failure marker — the silent-rollback shape case E
+established, now confirmed for a second op class.
+
+### Implications for the plan
+
+1. **The containment refusal is judged over the moved section's closure**
+   — `sectionOf(sourceHeading).closure`, never `members ∪ {H}` (§4's
+   bullet reworded). Same-doc the kernel backstops a miss (L1–L3 all roll
+   back whole), so the refusal is diagnosability — a precise pre-mutation
+   message instead of the silent `nothing-moved` landing.
+2. **Cross-doc, the containment shape cannot arise** (the moved set lives
+   in the source tree, the destination resolution in the destination
+   tree), and the guard's cross-doc blind spot is harmless: the blind
+   combination (source node vs destination anchor) is exactly the case
+   where nothing is inside anything. M2 shows the cohabiting case still
+   trips the guard — the provenance gates are diagnosability, the kernel
+   the backstop.
+3. **"End of the destination's section" is container-local** (M1): a
+   destination heading inside a quote/callout moves the whole section
+   INTO that container. Consistent with `append`'s rule; the tool
+   description and the owner report must state it.
+4. **The owner certification must be container-local** (M1's landed
+   state): a document-order backward level scan would name a heading
+   outside the quote as the landed heading's owner; only `sectionOf`'s
+   container-local membership gets it right.
+5. **The heading leg anchoring on a crossed container member is safe**
+   (M3), extending A2's first-member anchor to the container case.
+
 ## Caveats
 
 - Single small fixture, one notebook, same box; results are 3.8.7-pinned and
@@ -334,3 +401,8 @@ plan must state, not kernel facts to discover).
   encodes the correct treatment; the spike's flat top-level read is what the
   layouts above are taken from.
 - No throttle/lock effects encountered; the notebook teardown verified clean.
+- The containment runs (L, M) left fold state unset — the fold variants of
+  the nested-destination shapes are unprobed; the refusal fires
+  pre-mutation regardless of fold, and the §3 rehearsal list covers the
+  decided codec's fold matrix. The M runs are also single-shape samples
+  (one container type — blockquote — per landing shape).
