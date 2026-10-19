@@ -1,6 +1,6 @@
 # Move-section — design
 
-Status: **Held — codec decided (§2, spike-confirmed); §6 re-derivation duties outstanding**
+Status: **Held — codec decided (§2, spike-confirmed); §6 duties recorded, implementation pending**
 
 > **Foundation landed; §1–§4 predate it.** §5's non-goal "No kernel-side section API"
 > is **false** for the pinned 3.8.7 — `POST /api/block/moveOutlineHeading` moves a
@@ -292,7 +292,11 @@ re-derived.
   (`transactThenWalk`).
   Move's batch always takes the kernel's per-op execution path (the ≥32 bulk
   path requires an all-delete batch), so the cliff is not this mode's
-  interaction.
+  interaction. The drift posture is the batched precedent's: the batched
+  route has no drift arm of its own — the primitive owns the probe and the
+  `drift` arm, refusing before issuing (delete-section's shape, recorded in
+  its union docstring); the gate's cached-verdict refusal stays as
+  defence-in-depth.
 - **Cross-doc is in v1 scope.** The judgment is
   per-touched-doc post-write walks, so this mode extends `batch.ts`'s
   `walk-failed` arm to carry the partial walks its docstring defers to
@@ -310,7 +314,14 @@ re-derived.
   granted KB and refuses cross-box pre-mutation, zero kernel calls.
   Single-doc v1 would make the automated route narrower than the per-id
   path it replaces, and a later cross-doc release would pay a second
-  wording/probe/pin ship.
+  wording/probe/pin ship. Two `batch.ts` duties ride the same extension:
+  the docstring's "consumers keep the batch single-doc" sentence is
+  amended to its real scope — the ≥32 bulk path is all-delete, so the
+  single-doc habit was delete-route hygiene, not a batch constraint —
+  otherwise it reads as forbidding this mode's consumer; and the
+  `walk-failed` arm's partial-walk payload ripples into
+  `delete-section`'s exhaustively-switched arms and wording, which must
+  compile and read correctly against the widened union.
 - **The cause-free all-or-nothing arm covers move's batch.** Every skip arm
   reachable from move ops lives in the move paths, and skip-class rejections
   plus `TxErrCodeReloadUI` become silent rollbacks under the batch — the
@@ -380,12 +391,41 @@ re-derived.
   `deleteSection.ts`'s "as of the enumeration" wording; the drag reading
   is spike case B.
 - **The tool-side seams land with the primitive.** The new mode joins
-  `writeSchema.ts`'s mode/param table, `writePrepare.ts`'s ordered
-  dispatch and its exhaustive tail, the pinned mode/param list in
-  `__tests__/unit/contract.test.ts`, and the `kb_write` tool description
-  (`write.ts`); the tool-side fact-list entry recording the fresh-guard
-  rationale for moves (§2) rides the same pass. A re-derivation that
-  plans only the kernel side leaves these to be discovered later.
+  `writeSchema.ts`'s mode/param table as `move-section` — `docId` +
+  `headingId` name the moved section, `toDocId` + `toHeadingId` the
+  destination (`move` already carries `toDocId`, so this is the per-id
+  shape with `blockId` widened to the section's heading) — plus
+  `writePrepare.ts`'s ordered dispatch and its exhaustive tail, the
+  pinned mode/param list in `__tests__/unit/contract.test.ts`, and the
+  `kb_write` tool description (`write.ts`); the tool-side fact-list
+  entry recording the fresh-guard rationale for moves (§2) rides the
+  same pass. A re-derivation that plans only the kernel side leaves
+  these to be discovered later.
+- **Wording homes are named.** The primitives return the closed verdict
+  unions; this repo words them, and every sentence has a home:
+  - the §4 refusals (identity/containment, already-at-destination,
+    no-following-boundary) — refusal-envelope wording in the new flow
+    module (`writeMoveSection.ts`), exhaustive over the primitives'
+    refusal union;
+  - the landed arm's owner report and the landed-divergent /
+    unjudged-presence sentences (the currency bullet below) — the same
+    flow module, over the landed union;
+  - the silent-rollback sentence (a `nothing-moved` arm, on
+    delete-section's `nothing-deleted` precedent) and move's own
+    residue/heal recovery wording — the same flow module, never
+    delete-section's repair sentence (the residue bullet below);
+  - shared fragments stay in `writeVerdicts.ts`; a new one lands there
+    only when a second consumer exists.
+- **Pins and suite placement.** Every §3 reading lands in a named case
+  or it stays unpinned: the fold-combination matrix (cases B/B2/F5),
+  the doc-end fold-dependence (F4a/F4b), and the ≥32-op batch with its
+  completion-latency assertion live as a batched-move pin in the
+  primitives' live suite, beside `move.live`; tool-surface wording pins
+  here (`writePins.live`), the mode/param list in
+  `__tests__/unit/contract.test.ts`, and the integration project's
+  `INTEGRATION_ORDER` gains the new flow. The upgrade checklist's
+  re-run-the-suites pass then falsifies these facts in place, not
+  against a transcript.
 - **Move's rollback residue and heal are characterized, not assumed from the
   delete case.** Every executed move writes both trees' index rows in-tx
   (`finishMove` → `writeTree` on source and target). A same-doc rollback
