@@ -17,7 +17,7 @@ This spike settles review finding **A1** on `docs/move-section-plan.md`: §2's
 "There is no new anchor arm" was asserted without testing the batched route's
 `nextID` arm. Both reviewers independently identified the `moveBefore` branch of
 `doMove` (`kernel/model/transaction.go:695-700`; the fold redirect is guarded by
-`!moveBefore`, `:773-780`) as an unexamined, fold-blind addressing mode. The
+`!moveBefore`, `:762-768`) as an unexamined, fold-blind addressing mode. The
 experiment decides whether the plan's entire `previousID`/LIFO apparatus is a
 kernel law or an artifact of an unmade choice.
 
@@ -251,7 +251,7 @@ doc-end address, it is a rollback.
 A batch of one legal move (`m1 nextID=Z`) plus one legality-op — a list item
 moved with `parentID: <docId>`, making it a direct child of the document
 (`CanContainBlock` violation → `ValidateBlockPlacement` → `TxErrCodeReloadUI`
-at finalize, `transaction.go:2648`). **Live-confirmed: the whole batch rolled
+at finalize, `transaction.go:2657`). **Live-confirmed: the whole batch rolled
 back** (source intact, destination untouched) **behind HTTP code 0**. The
 legality class is the same silent shape as the skip class (E); §6's
 cause-free all-or-nothing arm covers both, and its premise now has live
@@ -352,7 +352,7 @@ no mutation).
 
 Guard provenance (source-read): the self-anchoring container op trips
 `isMovingParentIntoChild` (`transaction.go:1028-1035`) or the
-`id == targetParentID` SkipTx arm (`transaction.go:821`), and the op
+`id == targetParentID` SkipTx arm (`transaction.go:812-813`), and the op
 loop's action-generic rollback (`transaction.go:549-551`) undoes
 everything — including ops that had already landed (L1's first member
 entered the quote before the rollback restored it). The raw response in

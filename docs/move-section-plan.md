@@ -55,7 +55,7 @@ implementation.
   `doMove` reads `operation.NextID` first (`transaction.go:695-700`):
   `nextID` inserts the moved node *immediately before* the anchor — the
   `moveBefore` branch, which the fold redirect cannot reach (`!moveBefore`
-  guards it, `transaction.go:773-780`), so any anchor is a literal
+  guards it, `transaction.go:762-768`), so any anchor is a literal
   position, fold-blind. The codec: **every member of the source section's
   run in document order, each `nextID = <the destination section's
   boundary>`** (the next heading at level ≤ the destination heading's, in
@@ -68,14 +68,18 @@ implementation.
   section with **no following boundary** — the doc's last section — has
   no `nextID` address; there the codec switches to the **leaf-anchored
   chain** (§4): the members chain `previousID` in document order from
-  the destination section's last non-heading leaf, and the heading
-  issues **last**, anchored on that same leaf, landing between the leaf
-  and the first member — the same end-of-section semantics (spike K1:
+  the destination section's last non-heading member at the section's
+  sibling-run level — leaf or container; the anchor is a sibling
+  position, never a block inside a container's tail (that would
+  re-nest the members into the container, against container-locality)
+  — and the heading issues **last**, anchored on that same block,
+  landing between it and the first member — the same end-of-section
+  semantics (spike K1:
   exact landing unfolded, with the source heading folded, and with the
   nested subsection folded; K2: `InsertAfter` at a shared anchor is
   LIFO across ops, which is why the leaf-anchored heading leg must
-  issue last). A doc-end destination whose last block is a heading is
-  refused (§4). **The anchors are container-local sibling positions.**
+  issue last). A doc-end destination whose section offers no derivable
+  last non-heading sibling block is refused (§4). **The anchors are container-local sibling positions.**
   The boundary (and the doc-end leaf) lives inside the destination
   section's own container, so a destination section that is itself
   container-nested — a heading inside a quote, callout, or list —
@@ -101,7 +105,7 @@ implementation.
   unreachable.
 
 - **Anchor stability: dissolved by the arm choice; the per-id path keeps
-  its own refusals.** The fold redirect (`transaction.go:773-780`) fires
+  its own refusals.** The fold redirect (`transaction.go:762-768`) fires
   only when the anchor side is `previousID` (`!moveBefore`) *and* the
   anchor is a heading: "after this heading" then means "after the
   heading's whole section" self-folded — hidden state this package never
@@ -228,7 +232,14 @@ Before writing the implementation plan:
    permits rolls back whole behind code 0, the ground the §4 closure
    refusal's backstop claim stands on), the destination-container
    re-nest (M1) and the crossed-container heading leg (M3, the codec's
-   landing edge), and the source-tree-anchor rollback (M2, the ground
+   landing edge) — both across container types (the spike probed
+   blockquote only, and the kernel's insertion path diverges per
+   container; superblocks are special-cased in `doMove`) and with the
+   destination section's boundary outside the destination's container,
+   or the single-container limitation recorded in the fact list — plus
+   the container-tail chain form (the doc-end chain anchored on a
+   non-heading container, §4's corrected anchor derivation), and the
+   source-tree-anchor rollback (M2, the ground
    the §6 cross-doc backstop note stands on) — and the ≥32-op batch
    with a completion-latency
    assertion, not landing alone (36 ops / 341 ms is one sample).
@@ -236,7 +247,9 @@ Before writing the implementation plan:
 ## 4. Refusals the mode must add
 
 Group-level, pre-mutation, zero kernel calls — conditions that would
-otherwise only surface mid-sequence, after the tear:
+otherwise only surface mid-sequence, after the tear. (The named
+`headingId`/`toHeadingId` must resolve to heading rows in their walks —
+`heading-absent` otherwise, a precondition rather than a §4 refusal.)
 
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section lies inside what the move transports — judged over
@@ -275,21 +288,26 @@ otherwise only surface mid-sequence, after the tear:
   never a partial receipt with an empty moved set; on the batched route
   the alternative is the kernel's own skip arms (`TxErrCodeSkipTx`),
   which roll the whole batch back behind a success ack (spike case E).
-- A doc-end destination whose section ends on a **heading** is refused.
+- A doc-end destination whose section offers no derivable last
+  non-heading sibling block is refused.
   A destination section with no following boundary — the doc's last
   section — has no `nextID` address; an op with all anchors empty rolls
   the batch back (`TxErrCodeBlockNotFound`, invisible) and
   `parentID: <docId>` prepends at the doc's start, so the workable
   doc-end arm is the **leaf-anchored chain** (§2): members chain
   `previousID` in document order from the destination section's last
-  non-heading leaf, and the heading issues **last**, anchored on that
-  same leaf, landing between the leaf and the first member (K1: exact
+  non-heading member at the section's sibling-run level (the chain's
+  anchor — a sibling position, leaf or container, never inside a
+  container's tail), and the heading issues **last**, anchored on that
+  same block, landing between it and the first member (K1: exact
   landing in all three fold variants — unfolded, folded source heading,
   folded nested subsection; the heading leg runs last over an emptied
   section, no drag, and the leaf anchor never redirects). The chain
-  needs a non-heading anchor, and that is the refusal's whole content:
-  when the destination section's last block is a heading, the only
-  candidate anchors are section-bearing headings, and a heading-anchored
+  needs a non-heading sibling anchor, and that is the refusal's whole
+  content: when the destination section's last sibling block is a
+  heading — or a container whose tail is a heading, which offers no
+  derivable anchor either — the only candidate anchors are
+  section-bearing headings, and a heading-anchored
   doc-end form lands in a fold-**dependent order** (F4a/F4b: unfolded
   reverses, folded redirects into order), while chaining the heading
   after the last member (F3's order) detaches the moved body from its
@@ -297,8 +315,8 @@ otherwise only surface mid-sequence, after the tear:
   ops, so the leaf-anchored heading leg must issue last). Refused
   pre-mutation, zero kernel calls. Same fold-blind posture as the
   per-id path's heading-anchor refusals; the route-out is a destination
-  section whose last block is a non-heading leaf (the chain form) or
-  the per-id path.
+  section with a derivable last non-heading sibling block (the chain
+  form) or the per-id path.
 
 ## 5. Non-goals (until revisited)
 
@@ -306,8 +324,8 @@ otherwise only surface mid-sequence, after the tear:
   demotion idiom is documented in the `kb_write` tool description).
 - No start-of-section landing and no heading-level rewriting —
   end-of-section only (§2).
-- No kernel-side section API. *(False for the pinned 3.8.7 — `moveOutlineHeading`
-  exists and is rejected on the record; see the header note above.)*
+- No *new* kernel-side section API — the existing `moveOutlineHeading`
+  is rejected on the record (header note above).
 - No new refusals on the existing move path beyond the fold-blind refusals
   already in place.
 
@@ -336,7 +354,12 @@ codec decisions they build on are recorded in §2.
   `walk-failed` arm to carry the partial walks its docstring defers to
   "a multi-doc consumer" — this mode is that consumer. The extension
   lands in the primitives unpublished, `file:`-linked, its shape
-  perfected side by side before either repo releases. Both walks ride the
+  perfected side by side before either repo releases. Both walks are
+  caller-held — the flow walks the destination doc before the primitive
+  call (the pre-mutation refusals stay zero-kernel-call past the gate,
+  and the destination serve seeds baselines per the seed-site rule),
+  the source walk per the per-id move's own derivation — so the
+  primitive takes walks, never doc ids to walk itself. Both walks ride the
   caller-provenance gate delete-section models (`sectionSubjectOf`:
   `foreign` / `walk-truncated`, per walk): the moved set derives from
   the source walk and the anchor from the destination walk, and the
@@ -420,7 +443,9 @@ codec decisions they build on are recorded in §2.
   walk) rather than asserting absence. Beside the order, the judgment
   certifies the moved heading's **new owner** (the heading whose
   `sectionOf`-derived section contains the landed heading, read
-  container-locally — §2's owner bullet), so both divergences — the
+  container-locally — §2's owner bullet — derived as a heading stack
+  maintained over the walk's pre-order, container boundaries popping
+  it, never a backward scan of any form), so both divergences — the
   strictly-shallower swallow (the section takes the destination's
   boundary heading and the sections after it with it) and the deeper
   landing (the section nests inside the destination's) — surface in the
@@ -438,7 +463,7 @@ codec decisions they build on are recorded in §2.
   transports it into the destination, and the kernel's insertion order
   puts it between `H` and `m1`: the `moveBefore` branch inserts the
   heading and then its remaining children immediately before the anchor
-  (`transaction.go:786-790`), so the appended block — `H`'s last child —
+  (`transaction.go:792-800`), so the appended block — `H`'s last child —
   lands at the **front** of the run, not outside it. The landed
   predicate catches it in its lead (the run is no longer contiguous and
   in order), and the divergence arm names it: every block inside the
@@ -484,8 +509,9 @@ codec decisions they build on are recorded in §2.
   - *Refusal* (pre-mutation, nothing applied — cross-box is refused at
     the grant gate, so no box arm exists here): `drift`; `foreign` and
     `walk-truncated`, per walk (source and destination alike — the
-    `sectionSubjectOf` gate); `heading-absent`, per walk (the named
-    heading is not in its walk); `own-closure` (§4's
+    `sectionSubjectOf` gate); `heading-absent`, per walk (the named id
+    is not in its walk or resolves to a non-heading row — one arm,
+    both shapes); `own-closure` (§4's
     identity/containment refusal, judged over the moved section's
     closure); `already-at-destination` (§4's two derivations);
     `doc-end-heading` (§4's narrow refusal).
@@ -500,9 +526,13 @@ codec decisions they build on are recorded in §2.
     post-write walks, same-doc one walk serving both);
     `landed-divergent` (the run broke — carries the divergent position,
     the unjudged presences, and the walks); `nothing-moved` (the
-    cause-free silent-rollback arm); `post-walk-truncated` (a truncated
-    post-write walk — whatever its complete walks certify, absence
-    never asserted).
+    cause-free silent-rollback arm — detected as the enumerated
+    members still present in the post-write source walk; carries both
+    post-write walks and the judged set, delete-section's
+    `nothing-deleted` shape, so the flow serves and re-baselines from
+    the state the verdict certified); `post-walk-truncated` (a
+    truncated post-write walk — carries the complete walks and the
+    judged set, whatever they certify; absence never asserted).
 - **The ok envelope's payload.** The landed receipt is built from the
   verdict's own evidence, never a re-fetch: the landed run's ids in
   document order as the post-write walk holds them; the owner report
@@ -530,7 +560,9 @@ codec decisions they build on are recorded in §2.
   - the tool description's container-local landing statement (a
     destination section inside a quote, callout, or list re-nests the
     moved members into that container — the section rule's locality,
-    spike M1) — the `kb_write` tool description (`write.ts`);
+    spike M1), leading with the swallow example (a strictly-shallower
+    move takes the destination's boundary heading and the sections
+    after it with it) — the `kb_write` tool description (`write.ts`);
   - shared fragments stay in `writeVerdicts.ts`; a new one lands there
     only when a second consumer exists.
 - **Pins and suite placement.** Every §3 reading lands in a named case
@@ -565,4 +597,7 @@ codec decisions they build on are recorded in §2.
   doc restores resolvability. The recovery wording is move's own, not
   delete-section's: the delete-section repair sentence (committed write,
   then one re-issue) re-issued here would re-trip the skip arms and
-  strand the agent healing the wrong doc. The probe legs are in §3.2.
+  strand the agent healing the wrong doc. The kernel records undo data
+  for these ops (`storeHeadingMoveBlockIDs`); the dead-`undoState`
+  posture the no-channel bullet records covers it. The probe legs are
+  in §3.2.
