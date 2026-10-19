@@ -173,23 +173,30 @@ built.
   omission.
 
 - **Landing is level-blind; the judgment certifies the owner, not just
-  the order.** A moved heading *shallower than or equal to* the
-  destination heading lands as a following sibling and can claim
-  following deeper sections into the moved section (the nearest
-  preceding shallower heading changes) — the honest consequence of "end
-  of H's section" landing, documented behavior stated in the tool
-  description. The mirror case is a moved heading *deeper than* the
-  destination heading: it can never be contained by the destination's
-  section — it lands after that section and reattaches to the
-  destination heading's own parent — yet the prefix judgment alone
-  passes in both cases. The landed arm certifies
-  the moved heading's **new owner** (the nearest preceding shallower
-  heading in the destination walk) alongside the order, so both
-  divergences surface in the envelope and the receipt says where the
-  section actually attached. This is reporting, not a level rewrite —
-  the mode still never rewrites levels (§5); the projection is a read
-  off the walk the verdict already holds, not new verification
-  machinery.
+  the order.** Landing is end-of-section for every level, but the
+  section rule re-bounds the landed heading differently by its level
+  relative to the destination section's **boundary** (the next heading
+  at level ≤ the destination heading's — the codec's own anchor):
+  - A moved heading **strictly shallower than the boundary** is not
+    terminated by it: the moved section swallows the boundary heading
+    and everything after it, up to the next heading at the moved
+    heading's level or shallower. The landed section is larger than
+    what was moved — the outline side effect, documented behavior
+    stated in the tool description.
+  - A moved heading **at the boundary's level or deeper** is terminated
+    by the boundary and claims nothing beyond the moved members: at the
+    destination heading's level it lands as a following sibling;
+    deeper, it lands **inside** the destination's section and nests
+    under the destination heading (owner: the destination heading, or a
+    deeper heading within the destination section that precedes it).
+  The prefix judgment alone passes in every case, so the landed arm
+  certifies the moved heading's **new owner** (the nearest preceding
+  shallower heading in the destination walk) alongside the order, and
+  the receipt says where the section actually attached — including the
+  swallow case, where the destination's boundary changed hands. This is
+  reporting, not a level rewrite — the mode still never rewrites levels
+  (§5); the projection is a read off the walk the verdict already
+  holds, not new verification machinery.
 
 - **Cross-doc scope.** Each leg is a same-kernel `move` op; a cross-doc
   destination is in scope and rides the existing cross-doc move semantics
@@ -331,18 +338,21 @@ re-derived.
   destination section's last pre-move block, as the caller-held walk
   holds it; `sectionOf(destWalk, H)
   .members` **starts with** the enumerated member run — a prefix, never
-  equality, because a shallower moved heading legitimately claims
-  following sections into itself (§2's ownership bullet: the outline side
-  effect), a tolerance bounded by the owner certification: order may under-report
-  what follows the moved section, never where the section attached. The
+  equality, because a moved heading strictly shallower than the
+  boundary legitimately claims following sections into itself (§2's
+  ownership bullet: the outline side effect), a tolerance bounded by
+  the owner certification: order may under-report what follows the
+  moved section, never where the section attached. The
   members are **absent from the source walk**; a truncated walk refuses
   (`walk-truncated`) rather than asserting absence. Beside the order,
   the judgment certifies the moved heading's **new owner** (the nearest
-  preceding shallower heading in the destination walk), so the
-  deeper-than-destination case — a section that lands outside the
-  destination's section — surfaces in the envelope instead of passing
-  the prefix test silently; the ownership projection is reporting off
-  the walk, never a level rewrite.
+  preceding shallower heading in the destination walk), so both
+  divergences — the strictly-shallower swallow (the section takes the
+  destination's boundary heading and the sections after it with it) and
+  the deeper landing (the section nests inside the destination's) —
+  surface in the envelope instead of passing the prefix test silently;
+  the ownership projection is reporting off the walk, never a level
+  rewrite.
 - **The document-order member derivation replaces the reverse-order one.**
   The batched route issues raw ops, so the per-leg `heading-with-section`
   refusal that guarded a forward-ordered derivation is not in the loop;
