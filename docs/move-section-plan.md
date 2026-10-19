@@ -1,6 +1,6 @@
 # Move-section — design
 
-Status: **Held — re-derivation onto the batched route pending**
+Status: **Held — codec decided (§2, spike-confirmed); §6 re-derivation duties outstanding**
 
 > **Foundation landed; §1–§4 predate it.** §5's non-goal "No kernel-side section API"
 > is **false** for the pinned 3.8.7 — `POST /api/block/moveOutlineHeading` moves a
@@ -14,20 +14,22 @@ Status: **Held — re-derivation onto the batched route pending**
 > `moveBlock` calls, and batching dissolves it. The route is **decided: batched
 > `move` ops** (§6 records the decision and the re-derivation duties;
 > `moveOutlineHeading` is rejected on the record: its unconditional level rewrite,
-> same-doc/root-level ceiling, and silent `PushMsg` rejections). The
-> destination-anchor algebra below carries over unchanged; the two-phase judged
+> same-doc/root-level ceiling, and silent `PushMsg` rejections). The codec is
+> **decided: the insert-before (`nextID`) arm** — members in document order onto
+> the destination section's boundary, then the heading anchored before the first
+> landed member — live-confirmed by
+> [`move-section-spike.md`](move-section-spike.md); the two-phase judged
 > sequence and the pending-set receipt do **not** survive the re-derivation (§6).
 > The kernel facts the re-derivation rides live in the primitives' AGENTS.md fact
 > list (the "batched delete route" entries: batch rollback and its `blocktrees`
 > residue, ack-time commit-wait, the ≥32-op cliff, queue ordering). The surviving
-> §2 content — the anchor-stability law (with the leaf→heading-ness discriminator
-> fix), the reverse-order member derivation, the fold-blind posture, the
-> fresh-guard scoping — carries over. Three decisions sit beyond the superseded
+> §2 content — the fold-blind posture and the fresh-guard scoping — carries
+> over; the anchor-stability law and the reverse-order derivation are dissolved
+> by the codec decision (§2). Three decisions sit beyond the superseded
 > sections (§2, §6): the landed arm certifies the moved heading's new
 > owner; cross-doc is in v1 scope (this mode is the multi-doc
-> consumer `batch.ts`'s `walk-failed` arm defers to); and the anchor-stability
-> classifier lands as a pure predicate in the primitives first — unpublished,
-> `file:`-linked — never as a dispatch.
+> consumer `batch.ts`'s `walk-failed` arm defers to); and the codec is the
+> insert-before arm, decided by the spike and recorded in §2.
 
 Origin: friction §2/§3 in [`../kb-write-friction.md`](../kb-write-friction.md).
 The **corruption half of heading-move is already closed** — `moveBlockVerified`
@@ -44,13 +46,14 @@ expressiveness fix, not a safety fix**.
 (The per-leg economics below is superseded by the one-batch economics of §6.)
 
 The foundation this sequence composes is complete — delete-section landed
-the batched-route plumbing and the enumerated loop shape (§3). And the problem this mode solves is **packaging,
-not capability**: the sequence it automates is already expressible today, and
-the refusal wording itself advises it (move the members individually against
-a derived section-end anchor, then the emptied heading). What is missing is
-doing it in **one call** — order enforced and verified by construction, one
-group receipt, partial-state reporting — instead of ~2N+1 `kb_write` round
-trips. That efficiency for agent-driven workflows, plus closing the
+the batched-route plumbing and the enumerated loop shape (§3). And the problem this mode solves is **packaging, plus one
+capability the manual path cannot give**: the sequence it automates is
+already expressible today, and the refusal wording itself advises it (move
+the members individually against a derived section-end anchor, then the
+emptied heading) — but no existing path answers where a moved section
+actually attached (§2's owner certification). What is missing is doing it in
+**one call** — order enforced and verified by construction, one group
+receipt — instead of ~2N+1 `kb_write` round trips. That efficiency for agent-driven workflows, plus closing the
 silent-corruption trap in the manual sequence (wrong ordering strands
 content), is why this mode is pursued rather than deferred — the design itself
 awaits re-derivation onto the batched route (§6) before any of it is
@@ -58,64 +61,62 @@ built.
 
 ## 2. What the mode must solve
 
-- **Landing semantics: end of the destination section.** `moveBlock`'s
-  `previousID` inserts the moved node *immediately after* the anchor
-  (`kernel/model/transaction.go` `doMove` → `InsertAfter`), which is LIFO.
-  Issuing the members in reverse document order onto the existing
-  section-end anchor (`deriveMoveAnchor`, a leaf position by contract)
-  yields `[anchor, m1 … mN]`; the emptied heading then lands directly after
-  the anchor and before `m1` → `[anchor, H, m1 … mN]`: correct section
-  semantics with the anchor the move path already has. There is **no new
-  anchor arm** — but the anchor the move path already has must be a
-  **stable** one (next bullet). A start-of-section landing is out of scope
+- **Landing semantics: end of the destination section, on the
+  insert-before arm.** The batched route issues raw `move` ops, and
+  `doMove` reads `operation.NextID` first (`transaction.go:695-700`):
+  `nextID` inserts the moved node *immediately before* the anchor — the
+  `moveBefore` branch, which the fold redirect cannot reach (`!moveBefore`
+  guards it, `transaction.go:773-780`), so any anchor is a literal
+  position, fold-blind. The codec: **every member of the source section's
+  run in document order, each `nextID = <the destination section's
+  boundary>`** (the next heading at level ≤ the destination heading's, in
+  the caller-held destination walk — `sectionOf`'s boundary), then **the
+  heading `nextID = <the first member's id>`** — the members accumulate
+  in document order before the boundary, and the heading lands between
+  the section's last pre-existing block and the first member:
+  end-of-section semantics, no reverse order. A memberless section issues
+  only the heading leg (`nextID = <the boundary>`). The
+  `previousID`/LIFO alternative — reverse document order onto a
+  non-heading anchor — was the only shape the per-leg route could reach;
+  it is live-confirmed as a baseline (spike case C) and rejected: with
+  the insert-before arm reachable it keeps every hazard the next bullet
+  records and none of the reach. A start-of-section landing is out of scope
   (§5): inserting a same-or-shallower heading at a section's *start*
   re-bounds the destination
   heading's section — the destination's body would become the moved
   section's body — and the prepend arm it would need is live-pinned
   unreachable.
 
-- **Anchor stability: the derived anchor must be a non-heading block.** A
-  heading anchor does not denote a position — "after this heading" means
-  "after the heading" unfolded, "after the heading's whole section"
-  self-folded (`transaction.go`'s redirect branch), and fold is hidden
-  state this package never reads. The kernel's own contract (`MoveAnchor`'s
-  precondition) is that a heading anchor is fold-stable **iff its section
-  is empty** — and such an anchor is **single-use**: the group's first
-  landing makes it section-bearing, so every later leg addresses a
-  silently flipped position (a collapsed destination section lands the
-  group inverted — body above its heading, re-parented — behind
-  unconditional HTTP success per leg). Reverse order is forced by the
-  moved-node side and a fixed anchor is forced by the LIFO landing, so a
-  multi-leg sequence needs an anchor that survives N+1 uses: the
-  destination section must be non-empty and the derived anchor a
-  non-heading leaf. This is held **by construction**, not judged after the
-  fact — no post-move judgment can repair a flipped address.
+- **Anchor stability: dissolved by the arm choice; the per-id path keeps
+  its own refusals.** The fold redirect (`transaction.go:773-780`) fires
+  only when the anchor side is `previousID` (`!moveBefore`) *and* the
+  anchor is a heading: "after this heading" then means "after the
+  heading's whole section" self-folded — hidden state this package never
+  reads — and such an anchor is **single-use** under a multi-op sequence
+  (its first landing makes it section-bearing, so every later leg
+  addresses a silently flipped position behind unconditional HTTP
+  success). That analysis governed the per-leg baseline and still
+  governs the per-id move path, whose fold-blind refusals
+  (`heading-with-section`, `heading-anchor-with-section`) stay exactly as
+  they are. On the batched route both anchors of the decided codec are
+  `nextID` positions — the destination section's boundary for every
+  member leg, the first landed member for the heading leg — so no anchor
+  is ever re-addressed after the state it names changes, and no
+  stability classification is needed: the planned `stable` /
+  `single-use` / `unstable` predicate is dropped from this mode's scope,
+  and the prose-only `MoveAnchor` precondition keeps its prose status
+  until a consumer with a real need retires it.
 
-- **The anchor-stability law is classified once, in the primitives — as
-  a pure predicate, not a dispatch.** `placement.ts` grows one exported
-  predicate classifying an anchor `stable` (non-heading leaf) /
-  `single-use` (empty-section heading — `deriveMoveAnchor`'s only
-  heading output) / `unstable` (section-bearing heading), with a
-  placement-corpus test per class; it retires the prose-only
-  `MoveAnchor` precondition whether or not this mode ever ships.
-  Refusal sites stay deliberate policy sites that call the predicate:
-  the per-id move keeps accepting `single-use` (its existing semantics,
-  judged before its next leg), and this group mode refuses any heading
-  anchor (its derived anchor must be a non-heading leaf — the `stable`
-  class). A *derived* anchor can never be `unstable` — that class
-  exists only for caller-supplied `previousID` (the
-  `heading-anchor-with-section` provenance). Unify the classification,
-  not the policy. The predicate lands in the
-  primitives first, unpublished (this repo's `file:` link stays) so the
-  shape can be perfected side by side before either repo releases.
-
-- **The moved set.** `sectionOf(sourceHeading).members` in **reverse
-  document order**, then the heading. Reverse order is load-bearing, not an
-  implementation detail: a member may itself be a subsection heading, and
-  reverse order empties that member's own section before it is issued, so
-  `heading-with-section` can never fire mid-sequence. Container descendants
-  (closure) are never issued — they ride their container. State and pin
-  this; an implementer who "simplifies" the order orphans subsection bodies.
+- **The moved set.** `sectionOf(sourceHeading).members` in **document
+  order**, then the heading. Every block of the run is issued,
+  sub-members included: the kernel's ride-along is fold-dependent and
+  fold is invisible, so an unfolded subsection heading moved alone
+  strands its body in the source, while a folded one drags it — in
+  document order, and re-issued in the same order each member keeps its
+  place (spike cases B/B2). Only descendants *below* the run's blocks (a
+  list's items) are never issued — they ride their container. State and
+  pin this; an implementer who "simplifies" the set strands subsection
+  bodies in the source.
 
 - **The judged sequence: mutate → judge → mutate → judge.** *(Stale under the
   batched route — §6's acceptance criterion dissolves the two-phase shape; kept
@@ -190,9 +191,11 @@ built.
   off the walk the verdict already holds, not new verification
   machinery.
 
-- **Cross-doc scope.** Each leg is a same-kernel `moveBlock`; a cross-doc
-  destination is in scope and rides the existing per-leg membership-only
-  semantics. Nothing new is invented here — state it, don't discover it.
+- **Cross-doc scope.** Each leg is a same-kernel `move` op; a cross-doc
+  destination is in scope and rides the existing cross-doc move semantics
+  (the per-id path's membership-only checks); the group's landed judgment
+  is §6's predicate. Nothing new is invented here — state it, don't
+  discover it.
 
 ## 3. Preconditions before implementation
 
@@ -203,28 +206,23 @@ Before writing the implementation plan:
    delete-section rides the batched route; the batched move composes the
    same foundation with its own judgment sequence (the no-shared-core rule: each
    batched mode owns its judgment; the walk helper is the only shared code).
-2. **A live probe, before any product code.** A raw-client probe (no
-   product code) on a fixture with a nested subsection heading and a
-   container member, over both destination shapes. *(The first two shapes
-   below are the per-leg baseline; the batched re-derivation restates them
-   against in-tx array order — op 2 addresses state op 1 created — per §6.)*
-   - a **populated** destination section — the supported path: issue the
-     members in reverse order onto the derived non-heading anchor, then
-     the emptied heading, and read
-     `sectionOf(postWalk, movedHeadingId).members`. This settles the
-     `InsertAfter`/LIFO ordering reading of `transaction.go` against the
-     real kernel;
-   - an **empty** destination section with `fold=1` set on the destination
-     heading (per-block IAL, settable): issue the member legs onto the
-     derived *heading* anchor and read the landing positions — legs after
-     the first should redirect to the anchor's last child and invert the
-     group, recording the hazard the stable-anchor refusal exists for.
+2. **A live probe, before any product code.** The codec-deciding readings
+   are executed — [`move-section-spike.md`](move-section-spike.md) ran the
+   raw-client matrix (previousID baseline; nextID heading-first and
+   members-first; folded source under both; empty destination; skip-class
+   rollback) and every case landed at the expected layout. Owed:
+   - the **doc-end destination arm** — `nextID` is empty there and the op
+     falls through to `previousID`/`parentID` semantics: characterize the
+     landing and its predicate arm, or refuse it;
    - a batch carrying a legality-check op → confirm the rejection
      (`TxErrCodeReloadUI`, `validateStructureChanges`,
      `transaction.go:2648` — only insert/append/move paths register
      structure-check nodes) rolls the whole batch back while the HTTP
-     response reads as success. Unreachable for delete-section; owed
-     once this mode's batched `move` ops issue.
+     response reads as success. Unreachable for delete-section; the
+     spike exercised the skip class only, so this class is owed.
+   - the **cross-box** skip arm (`IsSameCryptoBoundary` → `SkipTx`
+     silent rollback behind a success ack) — the same rollback class as
+     the spike's case E, unprobed.
    - the cross-doc **move-residue round trip**: force a batched cross-doc move
      to roll back, then confirm by-id resolvability of a moved id
      (unresolvable behind a success ack — the wrong-root row, §6), then the
@@ -238,15 +236,9 @@ Before writing the implementation plan:
      judged over both walks — landing position, the member prefix, and
      source absence. The rollback leg rehearses the residue; only this
      leg rehearses the judgment.
-   All six readings are source-verified but not yet live-confirmed; the
-   transcript is the implementation plan.
-
-(A non-heading anchor never satisfies the kernel's heading-anchor redirect
-branch (`ast.NodeHeading == targetNode.Type`, `transaction.go`);
-`deriveMoveAnchor` does, however, return a heading whenever the destination
-section is empty, and that anchor is redirectable once the sequence's own
-first leg makes it section-bearing — hence the stable-anchor requirement
-(§2) and the probe's folded-empty-destination case.)
+   The spike's readings are live; the legs above are still
+   source-verified but not yet live-confirmed, and their transcript is
+   the implementation plan.
 
 ## 4. Refusals the mode must add
 
@@ -255,31 +247,20 @@ checks would otherwise only surface mid-sequence, after the tear:
 
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section is one the moved section contains.
-- The group is **already at the destination** — derived as: the anchor
-  lies inside the moved set (`deriveMoveAnchor`'s result ∈
-  `sectionOf(sourceHeading).members ∪ {H}`; e.g. with `# A / a1 / ## B /
-  b1`, moving B's section onto the end of A's section derives `b1` — a
-  member — as the anchor). One refusal, never a partial receipt with an
-  empty moved set; on the batched route the alternative is the kernel's
-  own `id == targetSiblingID` skip (`TxErrCodeSkipTx`), which rolls the
-  whole batch back behind a success ack.
-- The derived anchor is a **heading** — the refusal keys on
-  heading-ness, not on its causes. The empty destination is the obvious
-  shape (the derived anchor is the destination heading itself,
-  `single-use`), but two more are reachable from a non-empty
-  destination: a section whose last member is a trailing empty
-  subsection heading (`deriveMoveAnchor` recurses into it), and the
-  omitted-`toHeadingId` doc-end form when the doc's last root-level
-  block is a heading. Any heading anchor is single-use under the group —
-  its first landing makes it section-bearing and fold-unstable — so the
-  refusal tracks the anchor the sequence must address N+1 times: §2's
-  stable-anchor law is what §4 enforces, not a paraphrase of one cause
-  of its violation. Refused pre-mutation, zero kernel calls, without
-  reading `fold` — the same posture as the existing fold-blind refusals
-  — and worded with the route out: append a body block into the
-  destination section first (the derived anchor becomes a non-heading
-  leaf), or move the members per-id (where
-  `heading-anchor-with-section` fires loudly).
+- The group is **already at the destination** — derived as: the
+  destination section's boundary lies inside the moved set (the boundary
+  heading ∈ `sectionOf(sourceHeading).members ∪ {H}`; e.g. with `# A /
+  a1 / ## B / b1`, moving B's section onto the end of A's section makes
+  `B` — the moved heading — the destination's boundary). One refusal,
+  never a partial receipt with an empty moved set; on the batched route
+  the alternative is the kernel's own skip arms (`TxErrCodeSkipTx`),
+  which roll the whole batch back behind a success ack (spike case E).
+- There is **no following boundary** — the destination section is the
+  last section of its doc, `nextID` is empty, and the op falls through
+  to `previousID`/`parentID` semantics whose landing is uncharacterized
+  (owed probe, §3). Refused pre-mutation, zero kernel calls, until that
+  arm is characterized and pinned; the route-out is a destination
+  section that has a following boundary, or the per-id path.
 
 ## 5. Non-goals (until revisited)
 
@@ -297,9 +278,12 @@ checks would otherwise only surface mid-sequence, after the tear:
 These are the duties the re-derivation must satisfy; they are not yet
 re-derived.
 
-- **The route: one batched `move` transaction.** Members in reverse document
-  order, then the heading, as raw `move` ops in one `/api/transactions` call,
-  judged from the per-touched-doc post-write walks (`transactThenWalk`).
+- **The route: one batched `move` transaction.** Members in document
+  order onto the destination section's boundary (`nextID`), then the
+  heading anchored before the first landed member — the decided codec
+  (§2, spike-confirmed) — as raw `move` ops in one `/api/transactions`
+  call, judged from the per-touched-doc post-write walks
+  (`transactThenWalk`).
   Move's batch always takes the kernel's per-op execution path (the ≥32 bulk
   path requires an all-delete batch), so the cliff is not this mode's
   interaction.
@@ -320,7 +304,8 @@ re-derived.
   reachable from move ops lives in the move paths, and skip-class rejections
   plus `TxErrCodeReloadUI` become silent rollbacks under the batch — the
   least informative envelope landing on the mode with the richest failure
-  semantics. That is the accepted trade, and a deliberate departure from
+  semantics; the skip-class half is live-confirmed (spike case E). That
+  is the accepted trade, and a deliberate departure from
   `docs/replace-section-followup.md` §2, which keeps a prevention leg in
   its own transaction: all move legs are the same op class, and every
   skip arm reachable from them rolls the batch back whole, so
@@ -341,12 +326,14 @@ re-derived.
   its unconfirmed payload. The landed judgment is a stated predicate over
   the destination walk, not a phrase — an unstated formula invites a
   membership-only check, which reads a fold-inverted group (body above
-  its heading) as landed. The landed predicate: the moved heading sits immediately after the
-  anchor; `sectionOf(destWalk, H)
+  its heading) as landed. The landed predicate: the moved heading sits immediately before the
+  first enumerated member — equivalently, immediately after the
+  destination section's last pre-move block, as the caller-held walk
+  holds it; `sectionOf(destWalk, H)
   .members` **starts with** the enumerated member run — a prefix, never
   equality, because a shallower moved heading legitimately claims
-  following sections into itself (the outline side effect, §2), a
-  tolerance bounded by the owner certification: order may under-report
+  following sections into itself (§2's ownership bullet: the outline side
+  effect), a tolerance bounded by the owner certification: order may under-report
   what follows the moved section, never where the section attached. The
   members are **absent from the source walk**; a truncated walk refuses
   (`walk-truncated`) rather than asserting absence. Beside the order,
@@ -356,10 +343,28 @@ re-derived.
   destination's section — surfaces in the envelope instead of passing
   the prefix test silently; the ownership projection is reporting off
   the walk, never a level rewrite.
-- **The reverse-order member derivation carries over, not dissolved.** The
-  batched route issues raw ops, so the per-leg `heading-with-section` refusal
-  that guards a forward-ordered derivation is not in the loop; keep reverse
-  order and pin it with its own probe.
+- **The document-order member derivation replaces the reverse-order one.**
+  The batched route issues raw ops, so the per-leg `heading-with-section`
+  refusal that guarded a forward-ordered derivation is not in the loop;
+  the folded-source readings are spike cases B/B2, and the set rule
+  (every block of the run issued, sub-members included) is §2's.
+- **Currency is as of the enumeration, and the drag makes one divergence
+  silent.** The op array derives from pre-mutation walks. A block
+  appended to the source section after enumeration is not in the moved
+  set — but if the source heading is folded, the heading leg's drag
+  transports it into the destination, and neither judgment arm sees it:
+  the prefix test passes (it sits outside the enumerated run) and source
+  absence passes (the drag removed it). Fold is invisible, so the
+  posture assumes the transport can happen: the landed judgment names
+  every block in the landed run that is in neither the enumerated set
+  nor the pre-move destination walk — an unjudged presence, whatever its
+  provenance (dragged source append or concurrent destination append),
+  never a silent one. The destination-side displacement case — an append
+  into the destination section between the boundary walk and the batch —
+  fails the predicate's lead instead of passing mid-section: a
+  landed-divergent arm names the displaced position. Mirrors
+  `deleteSection.ts`'s "as of the enumeration" wording; the drag reading
+  is spike case B.
 - **The tool-side seams land with the primitive.** The new mode joins
   `writeSchema.ts`'s mode/param table, `writePrepare.ts`'s ordered
   dispatch and its exhaustive tail, the pinned mode/param list in
