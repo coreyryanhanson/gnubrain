@@ -17,7 +17,8 @@ Status: **Held — codec decided (§2, spike-confirmed); §6 duties recorded, im
 > same-doc/root-level ceiling, and silent `PushMsg` rejections). The codec is
 > **decided: the insert-before (`nextID`) arm** — members in document order onto
 > the destination section's boundary, then the heading anchored before the first
-> landed member — live-confirmed by
+> landed member — with the doc-end arm's leaf-anchored chain where no
+> boundary exists (§2, §4) — live-confirmed by
 > [`move-section-spike.md`](move-section-spike.md); the two-phase judged
 > sequence and the pending-set receipt do **not** survive the re-derivation (§6).
 > The kernel facts the re-derivation rides live in the primitives' AGENTS.md fact
@@ -75,7 +76,18 @@ built.
   in document order before the boundary, and the heading lands between
   the section's last pre-existing block and the first member:
   end-of-section semantics, no reverse order. A memberless section issues
-  only the heading leg (`nextID = <the boundary>`). The
+  only the heading leg (`nextID = <the boundary>`). A destination
+  section with **no following boundary** — the doc's last section — has
+  no `nextID` address; there the codec switches to the **leaf-anchored
+  chain** (§4): the members chain `previousID` in document order from
+  the destination section's last non-heading leaf, and the heading
+  issues **last**, anchored on that same leaf, landing between the leaf
+  and the first member — the same end-of-section semantics (spike K1:
+  exact landing unfolded, with the source heading folded, and with the
+  nested subsection folded; K2: `InsertAfter` at a shared anchor is
+  LIFO across ops, which is why the leaf-anchored heading leg must
+  issue last). A doc-end destination whose last block is a heading is
+  refused (§4). The
   `previousID`/LIFO alternative — reverse document order onto a
   non-heading anchor — was the only shape the per-leg route could reach;
   it is live-confirmed as a baseline (spike case C) and rejected: with
@@ -98,11 +110,19 @@ built.
   success). That analysis governed the per-leg baseline and still
   governs the per-id move path, whose fold-blind refusals
   (`heading-with-section`, `heading-anchor-with-section`) stay exactly as
-  they are. On the batched route both anchors of the decided codec are
+  they are. On the batched route the decided codec's anchors are
   `nextID` positions — the destination section's boundary for every
-  member leg, the first landed member for the heading leg — so no anchor
-  is ever re-addressed after the state it names changes, and no
-  stability classification is needed: the planned `stable` /
+  member leg, the first landed member for the heading leg — so no
+  anchor is ever re-addressed after the state it names changes. The
+  doc-end arm's chain (§4) is the characterized exception: its
+  `previousID` anchors are stable per leg, and the leaf — the one
+  anchor addressed twice, by the first member leg and again by the
+  heading leg — is re-addressed deliberately, to land the heading in
+  the gap the member legs opened (K2 is the LIFO proof the heading leg
+  must issue last); a member leg anchoring on a landed heading member
+  can hit the fold redirect, which self-inserts the member into its
+  already-correct place (K1h2). No stability classification is
+  needed: the planned `stable` /
   `single-use` / `unstable` predicate is dropped from this mode's scope,
   and the prose-only `MoveAnchor` precondition keeps its prose status
   until a consumer with a real need retires it.
@@ -218,9 +238,10 @@ Before writing the implementation plan:
    the codec matrix (previousID baseline; nextID heading-first and
    members-first; folded source under both; empty destination; skip-class
    rollback) and the owed legs — the **doc-end destination arm** (all-empty
-   anchors roll back; `parentID` prepends at doc start; chained
-   `previousID` on a non-heading leaf lands correctly; a heading anchor at
-   doc end is fold-**dependent in order**, F4a/b), the **legality-check
+   anchors roll back; `parentID` prepends at doc start; the leaf-anchored
+   chain lands the heading before its members (K1, all three fold
+   variants); a heading anchor at doc end is fold-**dependent in order**,
+   F4a/b), the **legality-check
    rollback** (`TxErrCodeReloadUI`, whole-batch behind code 0), the
    **cross-box skip arm** (encrypted→plain whole-batch rollback) and the
    plain↔plain cross-notebook **success landing**, the **cross-doc residue
@@ -236,7 +257,9 @@ Before writing the implementation plan:
    every fold combination of the source heading and its nested
    subsection headings (the drag and its redirect interaction, cases
    B/B2/F5) — the doc-end fold-dependence (F4a/F4b, the ground the §4
-   refusal stands on), and the ≥32-op batch with a completion-latency
+   refusal stands on) and the doc-end chain's fold variants (K1, the
+   ground the §4 chain form stands on) — and the ≥32-op batch with a
+   completion-latency
    assertion, not landing alone (36 ops / 341 ms is one sample).
 
 ## 4. Refusals the mode must add
@@ -256,17 +279,26 @@ checks would otherwise only surface mid-sequence, after the tear:
   which roll the whole batch back behind a success ack (spike case E).
 - There is **no following boundary** — the destination section is the
   last section of its doc and the codec's `nextID` arm has no address
-  there. The arm is characterized (spike F): an all-empty-anchors op
+  there. The arm is characterized (spike F, K): an all-empty-anchors op
   rolls the batch back (`TxErrCodeBlockNotFound`, invisible),
-  `parentID: <docId>` prepends at the doc's start, and the only correct
-  doc-end form is **chained `previousID` from a non-heading leaf** — a
-  heading-anchored doc-end form lands in a fold-**dependent order**
-  (F4a/F4b: unfolded reverses, folded redirects into order). Refused
+  `parentID: <docId>` prepends at the doc's start, and the workable
+  doc-end arm is the **leaf-anchored chain** (§2) — members chain
+  `previousID` in document order from the destination section's last
+  non-heading leaf, and the heading issues **last**, anchored on that
+  same leaf, landing between the leaf and the first member (K1: exact
+  landing in all three fold variants — unfolded, folded source heading,
+  folded nested subsection; the heading leg runs last over an emptied
+  section, no drag, and the leaf anchor never redirects). Refused
   pre-mutation, zero kernel calls, whenever the destination section's
-  last block is a heading — same fold-blind posture as the per-id
-  path's heading-anchor refusals; the route-out is a destination
-  section whose last block is a non-heading leaf (the chain form)
-  or the per-id path.
+  last block is a heading — heading-anchored doc-end forms land in a
+  fold-**dependent order** (F4a/F4b: unfolded reverses, folded
+  redirects into order), and the heading chained after the last member
+  (F3's order) detaches the moved body from its heading entirely (K2:
+  `InsertAfter` at a shared anchor is LIFO across ops, so the
+  leaf-anchored heading leg must issue last). Same fold-blind posture as
+  the per-id path's heading-anchor refusals; the route-out is a
+  destination section whose last block is a non-heading leaf (the chain
+  form) or the per-id path.
 
 ## 5. Non-goals (until revisited)
 
@@ -287,7 +319,9 @@ re-derived.
 - **The route: one batched `move` transaction.** Members in document
   order onto the destination section's boundary (`nextID`), then the
   heading anchored before the first landed member — the decided codec
-  (§2, spike-confirmed) — as raw `move` ops in one `/api/transactions`
+  (§2, spike-confirmed), with the doc-end arm's leaf-anchored chain
+  where the destination section has no following boundary (§2, §4,
+  spike K1) — as raw `move` ops in one `/api/transactions`
   call, judged from the per-touched-doc post-write walks
   (`transactThenWalk`).
   Move's batch always takes the kernel's per-op execution path (the ≥32 bulk
@@ -351,7 +385,8 @@ re-derived.
   its heading) as landed. The landed predicate: the moved heading sits immediately before the
   first enumerated member — equivalently, immediately after the
   destination section's last pre-move block, as the caller-held walk
-  holds it; `sectionOf(destWalk, H)
+  holds it — both clauses hold under the doc-end chain's landing too
+  (spike K1); `sectionOf(destWalk, H)
   .members` **starts with** the enumerated member run — a prefix, never
   equality, because a moved heading strictly shallower than the
   boundary legitimately claims following sections into itself (§2's
@@ -418,7 +453,8 @@ re-derived.
     only when a second consumer exists.
 - **Pins and suite placement.** Every §3 reading lands in a named case
   or it stays unpinned: the fold-combination matrix (cases B/B2/F5),
-  the doc-end fold-dependence (F4a/F4b), and the ≥32-op batch with its
+  the doc-end fold-dependence (F4a/F4b) and the doc-end chain's fold
+  variants (K1), and the ≥32-op batch with its
   completion-latency assertion live as a batched-move pin in the
   primitives' live suite, beside `move.live`; tool-surface wording pins
   here (`writePins.live`), the mode/param list in

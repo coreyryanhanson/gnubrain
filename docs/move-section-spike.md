@@ -2,10 +2,11 @@
 
 Status: **executed 2026-10-19** against the live SiYuan 3.8.7 kernel
 (`SIYUAN_BASE_URL=http://192.168.100.1:6806`). Scripts: `/tmp/spike-move-nextid.mjs`
-(codec matrix, cases A–E) and `/tmp/spike-move-owed.mjs` (the owed legs, cases
-F–J) — raw clients, zero deps, disposable notebooks created and torn down
-(no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
-`/tmp/spike-move-owed.log`.
+(codec matrix, cases A–E), `/tmp/spike-move-owed.mjs` (the owed legs, cases
+F–J), and `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
+review follow-up) — raw clients, zero deps, disposable notebooks created and
+torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
+`/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`.
 
 This spike settles review finding **A1** on `docs/move-section-plan.md`: §2's
 "There is no new anchor arm" was asserted without testing the batched route's
@@ -169,10 +170,17 @@ other arms. Three readings:
   (§5), now live-confirmed reachable only in this wrong-position form.
 - **F3 — chained `previousID` in document order.** Each op anchors on the
   previously landed block (first op on the destination section's last leaf,
-  `e1`): the section lands at the doc end in **correct document order**
-  (`e1, m1, m2, H2, sub1, m3, H`), source reduced clean. The doc-end arm is
-  reachable — but only through the previousID algebra the codec just abandoned,
-  and with two fold hazards the next two readings expose.
+  `e1`), the heading chained last onto `m3`: the batch lands the whole
+  section at the doc end with the members in document order
+  (`e1, m1, m2, H2, sub1, m3, H`), source reduced clean — but the heading
+  lands **after its members**, which is not the codec's landing semantics
+  (§2: the heading belongs between the destination section's last
+  pre-existing block and the first member; F3's layout detaches the moved
+  body into the destination section and leaves `H` an empty trailing
+  section). The verdict originally labeled this layout "correct"; review
+  caught it and case K below supplies the corrected form. What F3 does
+  establish: the previousID chain survives mechanically at a doc-end
+  destination, including the nested-subsection drag (F5).
 - **F4 — heading-anchored doc-end (empty last section, the doc's last block is
   the heading `E`), every member `previousID: E`:**
   - **unfolded** (`F4a`): no redirect — each member `InsertAfter(E)` → LIFO
@@ -187,7 +195,8 @@ other arms. Three readings:
   The landing position is correct in both folds (doc end), but the **order**
   is fold-dependent: the doc-end heading anchor is exactly the fold-hidden
   hazard class the plan refuses, in a new costume. A doc-end codec form must
-  either chain on non-heading leaves (F3) or refuse the heading anchor.
+  either chain on non-heading leaves (case K's leaf-anchored form) or refuse
+  the heading anchor.
 - **F5 — chained `previousID` with the nested subsection heading `H2` folded.**
   The drag rides `H2`'s own op (H2 + its section move together after `m2`),
   and `sub1`'s chained op then redirects into H2's landed section and
@@ -195,16 +204,41 @@ other arms. Three readings:
   (`e1, m1, m2, H2, sub1, m3, H`; source clean). The drag and the redirect
   interact **benignly** under the chained codec for this shape — but the
   interaction is exactly the fold-dependent machinery the mode refuses to
-  reason about; F5 characterizes it, it does not license it.
+  reason about; F5 characterizes it, it does not license it. (F5 rode F3's
+  heading-last chain order; case K1h2 re-confirms the same benign
+  drag/redirect interaction under the corrected order.)
 
-**Implication for the plan (§4):** the doc-end refusal survives, but its
-justification changes. The arm is *characterizable*, not unknowable: the
-refusal should key on the anchor class, not on mystery — the doc-end codec
-form is legal **iff the destination section's last block is a non-heading
-leaf** (chained `previousID`, F3); a heading-anchored doc-end form is
-fold-dependent in order (F4a/F4b) and is refused with the same
-fold-blind posture as the per-id path's heading-anchor refusals. F1 adds a
-precondition: the boundary must exist — an omitted/empty `nextID` is not a
+### K — the doc-end chain order, corrected (review follow-up)
+
+F3's chain issued the heading leg last anchored on the last member; case K
+re-ran the doc-end arm with the codec's own landing semantics in force — the
+heading must sit between the destination section's last pre-existing block and
+the first member. Script: `/tmp/spike-move-docend.mjs`; transcript:
+`/tmp/spike-move-docend.log`. Five legs, one fixture
+(`S / s0 / H / m1 / m2 / H2 / sub1 / m3 / T / t1` → doc-end destination
+`D2 / d2 / E / e1`), same disposable-notebook discipline. The corrected form
+is the **members-first chain with the heading leg last, anchored
+`previousID = <the leaf>`**:
+
+- **K1 — unfolded, folded `H`, folded `H2` (three legs).** All three landed
+  exactly `D2, d2, E, e1, H, m1, m2, H2, sub1, m3`, source reduced to
+  `S, s0, T, t1`. The heading leg runs last over an already-emptied section
+  (no drag — the same structural guarantee as the codec's heading leg, cases
+  B2/D) and its anchor is the non-heading leaf (no redirect): fold-safe by
+  construction, the doc-end analogue of the decided codec.
+- **K2 — the heading leg issued first, same leaf anchor (both folds).**
+  Landed `e1, m1, m2, H2, sub1, m3, H` in both folds: each `InsertAfter(e1)`
+  pushes the earlier landing down — **LIFO at a shared anchor across ops** —
+  so a leaf-anchored heading leg is displaced by every later member leg
+  unless it issues last. F3's heading-chained-after-the-last-member order is
+  the same corrupted layout reached from the other side.
+
+**Implication for the plan (§4):** the doc-end arm is real and fold-safe —
+members chain `previousID` in document order from the destination section's
+last non-heading leaf, and the heading issues **last** anchored on that same
+leaf (K1). The heading-anchored doc-end forms stay refused (F4a/F4b, the
+fold-dependent order); F3's heading-last chain is the corrupted layout, not a
+form. F1's precondition stands unchanged: an omitted/empty `nextID` is not a
 doc-end address, it is a rollback.
 
 ### G — legality-check rollback (`TxErrCodeReloadUI`)
@@ -277,7 +311,9 @@ live pin.
 Every §3 leg that was source-verified is now live-confirmed. The residue/heal
 doctrine (§6's last bullet) held end to end without modification. The two
 readings that *change* plan text: the doc-end arm (§4's refusal re-justified
-as anchor-class, with the leaf-chain route-out), and cross-KB (H2: the kernel
+as anchor-class; the supported chain form is case K's leaf-anchored,
+heading-leg-last order — F3's heading-chained-last order is the corrupted
+layout), and cross-KB (H2: the kernel
 accepts plain↔plain cross-notebook moves natively, so the granted-KB
 restriction and the cross-box pre-mutation refusal are policy decisions the
 plan must state, not kernel facts to discover).
