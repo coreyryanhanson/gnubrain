@@ -356,8 +356,12 @@ codec decisions they build on are recorded in §2.
   backstop. Cross-**box** is policy, not kernel behavior: the kernel
   accepts plain↔plain cross-notebook moves natively (spike H2) and
   silently rolls back cross-crypto-boundary batches (`IsSameCryptoBoundary`
-  → `SkipTx`, spike H1) — the mode scopes the destination doc to a
-  granted KB and refuses cross-box pre-mutation, zero kernel calls.
+  → `SkipTx`, spike H1) — the cross-box refusal lives at the grant gate,
+  not in the primitive: the gate authorizes the destination doc
+  (`toDocId`) the way it authorizes the op's own `docId`, resolving the
+  destination doc's notebook before the op runs (that resolution is a
+  gate read; the primitive receives no box knowledge, and its union
+  stays box-blind — no cross-box arm exists to invent).
   Single-doc v1 would make the automated route narrower than the per-id
   path it replaces, and a later cross-doc release would pay a second
   wording/probe/pin ship. Two `batch.ts` duties ride the same extension:
@@ -438,10 +442,17 @@ codec decisions they build on are recorded in §2.
   lands at the **front** of the run, not outside it. The landed
   predicate catches it in its lead (the run is no longer contiguous and
   in order), and the divergence arm names it: every block inside the
-  landed run's span that is in neither the enumerated set nor the
-  pre-move destination section (`sectionOf(preDestWalk, toHeadingId)`'s
-  heading and members) is an unjudged presence, whatever its provenance,
-  never a silent one. The section-scoped comparison set is what keeps
+  **enumerated run's span** — the landed heading through the enumerated
+  run's last member, the span the drag inserts into — that is in neither
+  the enumerated set nor the pre-move destination section
+  (`sectionOf(preDestWalk, toHeadingId)`'s heading and members) is an
+  unjudged presence, whatever its provenance, never a silent one. The
+  span is the enumerated run's, never the landed section's: the
+  strictly-shallower swallow (§2's ownership bullet) legitimately
+  places the destination's boundary heading and the sections after it
+  inside the landed section, and swallowed content is the owner
+  certification's subject, never a divergence. The section-scoped
+  comparison set is what keeps
   same-doc honest: the caller holds one walk serving both roles, so a
   walk-wide exemption would sweep the whole document's pre-move content
   into the tolerated set. A concurrent append into the destination
@@ -460,14 +471,18 @@ codec decisions they build on are recorded in §2.
   destination (`move` already carries `toDocId`, so this is the per-id
   shape with `blockId` widened to the section's heading) — plus
   `writePrepare.ts`'s ordered dispatch and its exhaustive tail, the
-  pinned mode/param list in `__tests__/unit/contract.test.ts`, and the
-  `kb_write` tool description (`write.ts`); the tool-side fact-list
+  pinned mode/param list in `__tests__/unit/contract.test.ts`, the grant
+  gate's destination-doc authorization (`writeConfirm.ts` — `toDocId`
+  authorized like `docId`, the cross-box refusal's enforcement site per
+  the cross-doc bullet above), and the `kb_write` tool description
+  (`write.ts`); the tool-side fact-list
   entry recording the fresh-guard rationale for moves (§2) rides the
   same pass. A plan that covers only the kernel side leaves
   these to be discovered later.
 - **The outcome union.** The primitive returns one closed union, and
   every consumer switch is exhaustive over it. Arms:
-  - *Refusal* (pre-mutation, nothing applied): `drift`; `foreign` and
+  - *Refusal* (pre-mutation, nothing applied — cross-box is refused at
+    the grant gate, so no box arm exists here): `drift`; `foreign` and
     `walk-truncated`, per walk (source and destination alike — the
     `sectionSubjectOf` gate); `heading-absent`, per walk (the named
     heading is not in its walk); `own-closure` (§4's
