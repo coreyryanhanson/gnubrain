@@ -1,10 +1,12 @@
 // writeDeleteSection tests — the delete-section mode — executed through
 // the registered kb_write definition on a fake-pi harness with a
-// SQL-routed kernel stub. The kernel-coupled facts the sequence rests on
-// (fold-blind heading delete, cascade scoping, the first-mutation phase
-// rule's arms) are falsified down-repo; these cases pin the tool surface:
-// the delete-set order the receipt rests on, the guard's real mechanisms,
-// and the partial-apply wording per arm.
+// SQL-routed kernel stub. The kernel-coupled facts the batched sequence
+// rests on (commit-wait at ack, the sub-cliff silent no-op, the ≥32
+// bulk path's fail-closed rollback, the rollback residue's repair-first
+// recovery, the batch's op derivation) are falsified down-repo (the
+// primitives' suites and the layer-1 probe suite); these cases pin the
+// tool surface: the arm→payload mapping, the guard's real mechanisms,
+// and the walk-partition wording per arm.
 
 import { describe, expect, it } from "vitest";
 import { SiYuanApiError, SiYuanNetworkError } from "siyuan-kb-primitives";
@@ -24,41 +26,35 @@ const params = {
 };
 
 describe("delete-section", () => {
-	it("ok: members first in document order, the heading last, never a member's descendant — the receipt itemizes the whole removal", async () => {
+	it("ok: the receipt itemizes the whole removal in the verdict's judged order — heading first, then the closure in document order — one batch, never a member's descendant", async () => {
 		// Every fresh target rides `unseen` adoption (no session baseline,
 		// no SQL rows) — this case doubles as the out-of-window member-edit
 		// pin: adoption proceeds, never a refusal.
-		const { execute, calls } = setup({
-			config: {
-				childrenFor: DOC,
-				cascadeDelete: true,
-			},
+		const { execute } = setup({
+			config: { childrenFor: DOC },
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("ok");
-		expect(
-			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
-		).toEqual(["p1", "h2", "p2", "h1"]);
 		expect(result.message).toContain("delete set 4 block(s)");
 		expect(result.message).toContain("0 doc(s) with orphaned refs");
 		expect(result.headingId).toBe("h1");
 		expect(result.deletedBlocks).toEqual([
+			{ blockId: "h1", content: "Goals" },
 			{ blockId: "p1", content: "body one" },
 			{ blockId: "h2", content: "Details" },
 			{ blockId: "p2", content: "nested body" },
-			{ blockId: "h1", content: "Goals" },
 		]);
 		// The echo tail reflects the post-delete tree (h3 survives).
 		expect(result.outline).toBeDefined();
 	});
 
-	it("ok: a member that is itself a container reports the descendants its cascade took — the receipt itemizes the whole removal", async () => {
+	it("ok: a member that is itself a container reports the descendants its cascade took — the batch issues only the enumerated members", async () => {
 		// The delete set is the section's closure (members plus their
-		// subtrees) plus the heading, while the sweep issues only members +
+		// subtrees) plus the heading, while the batch issues only members +
 		// the heading — the kernel's cascade takes the container's
 		// descendants with it. DELETE_DOC holds only siblings, so this is
 		// the one case where the receipt and the issued ids differ.
-		const { execute, calls } = setup({
+		const { execute, childrenFor } = setup({
 			config: {
 				childrenFor: {
 					...DOC,
@@ -69,103 +65,77 @@ describe("delete-section", () => {
 					],
 					c9: [walkBlock("p9", "p", "", "inside container")],
 				},
-				cascadeDelete: true,
 			},
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("ok");
 		expect(result.message).toContain("delete set 6 block(s)");
 		expect(result.deletedBlocks).toEqual([
+			{ blockId: "h1", content: "Goals" },
 			{ blockId: "p1", content: "body one" },
 			{ blockId: "c9", content: "container" },
 			{ blockId: "p9", content: "inside container" },
 			{ blockId: "h2", content: "Details" },
 			{ blockId: "p2", content: "nested body" },
-			{ blockId: "h1", content: "Goals" },
 		]);
-		// The sweep issues exactly members + the heading — never the
-		// descendant the cascade removes with its container.
-		expect(
-			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
-		).toEqual(["p1", "c9", "h2", "p2", "h1"]);
+		// The receipt covers the cascade closure — p9 rides it without being
+		// issued (the cascade takes it with its container).
+		expect(childrenFor["c9"]).toBeUndefined();
 	});
 
-	it("a kernel rejection at index 0 flows to the mutation ladder, never the partial arm", async () => {
-		// The first-mutation phase rule: nothing IS KNOWN to have landed, so
-		// "partially applied" would mis-word an unapplied write.
-		const { execute, calls } = setup({
+	it("a kernel rejection on the batch call flows to the mutation ladder — verbatim message, no receipt (the stub applied nothing; a committed batch can refuse after the commit)", async () => {
+		const { execute, calls, childrenFor } = setup({
 			config: {
 				childrenFor: DOC,
-				onDelete: () => {
-					throw new SiYuanApiError(-1, -1, "tree not found");
-				},
+				transactError: new SiYuanApiError(-1, -1, "tree not found"),
 			},
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("tree not found");
-		// Unique to this arm: no receipt, and exactly one delete — no retry,
-		// no swallow. The not-partial asserts are the transport-drop case's.
+		// The batched-route residual, worded on this flow only: refused-by-
+		// HTTP is not proof of non-application — the note rides beside the
+		// verbatim rejection. (Here the stub refused pre-commit; the note is
+		// the route's wording, not this run's observation.)
+		expect(result.message).toContain("may have committed");
+		// No receipt: the batch is one call — nothing is known to have
+		// landed, and the tree stub confirms nothing was.
 		expect(result.deletedBlockIds).toBeUndefined();
 		expect(result.outline).toBeDefined();
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(1);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(1);
+		expect(childrenFor["d-doc"]).toHaveLength(5);
 	});
 
-	it("a transport drop at index 0 flows to the ladder: outcome-unverified, never partial", async () => {
+	it("a transport drop on the batch call flows to the ladder: outcome-unverified, the whole judged set rides unconfirmedBlockIds", async () => {
+		// No ack: the commit-wait guarantee does not apply — the batch may
+		// still be committing or already committed, so the WHOLE judged set
+		// (not a not-yet-attempted remainder) is what may be gone.
 		const { execute } = setup({
 			config: {
 				childrenFor: DOC,
-				armDeleteError: (arm) => arm(new SiYuanNetworkError()),
+				transactError: new SiYuanNetworkError(),
 			},
 		});
 		const result = await execute(params);
 		expectUnverified(result);
 		expect(result.message).not.toContain("partially applied");
 		expect(result.partialApply).toBeUndefined();
+		expect(result.unconfirmedBlockIds).toEqual(["h1", "p1", "h2", "p2"]);
 	});
 
-	it("a kernel rejection mid-sweep renders the partial receipt with the already-gone-member caveat", async () => {
-		let deletes = 0;
-		const { execute, calls } = setup({
-			config: {
-				childrenFor: DOC,
-				cascadeDelete: true,
-				onDelete: () => {
-					deletes += 1;
-					if (deletes === 2) {
-						throw new SiYuanApiError(-1, -1, "tree not found");
-					}
-				},
-			},
-		});
-		const result = await execute(params);
-		expect(result.status).toBe("error");
-		expect(result.message).toContain("delete-section partially applied");
-		expect(result.message).toContain(
-			"the deletes of 1 earlier block(s) acked unverified",
-		);
-		expect(result.message).toContain("may already have been removed");
-		expect(result.partialApply).toBe(true);
-		expect(result.unconfirmedBlockIds).toEqual(["p1"]);
-		expect(result.remainingBlockIds).toEqual(["h2", "p2", "h1"]);
-		expect(
-			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
-		).toEqual(["p1", "h2"]);
-	});
-
-	it("walk-failed: every delete landed but the verification walk failed — appliedUnverified, never 'partially applied'", async () => {
-		let deletes = 0;
+	it("walk-failed: the batch landed but the post-write walk failed — appliedUnverified, never 'partially applied'", async () => {
+		// The batch commits (the stub prunes), then the post-write walk
+		// throws — armed from the onTransact hook, the only callback that
+		// runs between the ack and the walk.
 		let arm: ((err: Error) => void) | undefined;
-		const { execute, calls } = setup({
+		const { execute } = setup({
 			config: {
 				childrenFor: DOC,
-				cascadeDelete: true,
 				armWalkError: (set) => {
 					arm = set;
 				},
-				onDelete: () => {
-					deletes += 1;
-					if (deletes === 4) arm?.(new SiYuanNetworkError());
+				onTransact: () => {
+					arm?.(new SiYuanNetworkError());
 				},
 			},
 		});
@@ -176,34 +146,120 @@ describe("delete-section", () => {
 		expect(result.partialApply).toBeUndefined();
 		expect(result.message).toContain("applied but unverified");
 		expect(result.message).not.toContain("partially applied");
+		// The whole judged set is what may be gone — and here it IS gone
+		// (the batch landed); the merged state keeps the empty pending set
+		// (the classifier's "nothing remains to apply" tail).
 		expect(result.unconfirmedBlockIds).toHaveLength(4);
 		expect(result.deletedBlockIds).toBeUndefined();
 		expect(result.remainingBlockIds).toEqual([]);
-		expect(
-			calls.filter((c) => c.method === "deleteBlock").map((c) => c.args),
-		).toEqual(["p1", "h2", "p2", "h1"]);
 	});
 
-	it("members-survived: a success-reported sweep that left the section in the tree is an error, never an ok receipt", async () => {
-		// cascadeDelete off: every deleteBlock acks but applies nothing —
-		// the success no-op the judgment refuses on.
+	it("nothing-deleted: a rolled-back batch acks success with every section block still present — cause-free wording, repair-first guidance", async () => {
+		// Every op silently no-ops (the rollback shape: the walk certifies
+		// the "nothing" claim the ack cannot). The kernel reports no batch
+		// failure reason over HTTP — the wording must not pretend otherwise.
 		const { execute, calls } = setup({
-			config: { childrenFor: DOC },
+			config: {
+				childrenFor: DOC,
+				transactPrune: () => false,
+			},
+		});
+		const result = await execute(params);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("nothing was deleted");
+		expect(result.message).toContain("no reason over HTTP");
+		expect(result.message).toContain("re-issue this whole-section delete ONCE");
+		expect(result.message).toContain("by id");
+		// The primitive's judged order — heading first, then the closure.
+		expect(result.judgedBlockIds).toEqual(["h1", "p1", "h2", "p2"]);
+		expect(result.partialApply).toBeUndefined();
+		expect(result.outline).toBeDefined();
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(1);
+	});
+
+	it("nothing-deleted on a truncated post-walk: presence past the depth bound is not claimed as seen", async () => {
+		// The all-or-nothing arm on an INCOMPLETE walk: every issued id is
+		// present (the rollback shape), but the walk never reached the deep
+		// closure — the sentence must carry the truncation caveat instead of
+		// claiming the walk certified the whole judged set's presence.
+		const { execute, childrenFor } = setup({
+			config: {
+				childrenFor: {
+					...DOC,
+					"d-doc": [...DOC["d-doc"]!, walkBlock("c9", "", "", "container")],
+					c9: [],
+				},
+				transactPrune: () => false,
+				onTransact: () => {
+					// Grow the tree past the walk bound after the enumeration:
+					// the pre-batch walk was complete, the post-write one is not.
+					nestChain(childrenFor, "c9", 33);
+				},
+			},
+		});
+		const result = await execute(params);
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("nothing was deleted");
+		expect(result.message).toContain("depth-truncated");
+		expect(result.message).toContain("reconcile from the outline");
+		expect(result.judgedBlockIds).toEqual(["h1", "p1", "h2", "p2"]);
+		expect(result.partialApply).toBeUndefined();
+		expect(result.outline).toBeDefined();
+	});
+
+	it("members-survived: a sub-cliff silent no-op leaves part of the section in the tree — the survivor arm, never an ok receipt", async () => {
+		// p1 prunes (the kernel applied it); h2/p2/h1 silently no-op — the
+		// stale-id shape below the ≥32 cliff: acked behind HTTP success.
+		const { execute, calls } = setup({
+			config: {
+				childrenFor: DOC,
+				transactPrune: (id) => id === "p1",
+			},
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("silent no-op");
 		expect(result.message).toContain("still present");
-		expect(result.partialApply).toBe(true);
-		expect(result.remainingBlockIds).toEqual(["p1", "h2", "p2", "h1"]);
+		expect(result.message).toContain("re-issue this whole-section delete ONCE");
+		expect(result.survivedIds).toEqual(["h2", "p2", "h1"]);
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		// No pending set: the survivors are acked-but-present ids, not a
+		// not-yet-applied remainder.
+		expect(result.remainingBlockIds).toBeUndefined();
+		expect(result.partialApply).toBeUndefined();
 		expect(result.outline).toBeDefined();
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(4);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(1);
 	});
 
-	it("members-survived: a surviving member's tree descendants stay in the remaining set, never misreported as deleted", async () => {
+	it("members-survived with the heading gone: the survivors are orphans — the recovery clause switches to the by-id cleanup", async () => {
+		// The sub-cliff dead end: the heading's op committed while the
+		// members' ops silently no-opped (stale member ids below the ≥32
+		// cliff, members first / heading last). A whole-section re-issue
+		// would refuse heading-absent, so the guidance must switch: after
+		// the repair write the survivors are an ordinary by-id cleanup.
+		const { execute } = setup({
+			config: {
+				childrenFor: DOC,
+				transactPrune: (id) => id === "h1",
+			},
+		});
+		const result = await execute(params);
+		expect(result.status).toBe("error");
+		expect(result.survivedIds).toEqual(["p1", "h2", "p2"]);
+		expect(result.message).toContain("still present");
+		expect(result.message).toContain("heading is gone");
+		expect(result.message).toContain("delete the surviving block(s) by id");
+		// The whole-section re-issue instruction is gone from this branch.
+		expect(result.message).not.toContain(
+			"re-issue this whole-section delete ONCE",
+		);
+	});
+
+	it("members-survived: a surviving container's tree descendants are never misreported as deleted", async () => {
 		// A member that is itself a container (c9, with p9 inside it) — the
-		// core's survivedIds covers only the issued ids (members + heading),
-		// so the partition derives from the certified post-walk instead.
+		// survivors cover only the judged ids (members + heading), so the
+		// absent half derives from the certified post-walk over that same
+		// judged set: p9 is cascade-covered, never judged, never deleted.
 		const { execute } = setup({
 			config: {
 				childrenFor: {
@@ -215,27 +271,21 @@ describe("delete-section", () => {
 					],
 					c9: [walkBlock("p9", "p", "", "inside container")],
 				},
+				transactPrune: (id) => id === "p1",
 			},
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("error");
-		expect(result.deletedBlockIds).toEqual([]);
-		expect(result.remainingBlockIds).toEqual([
-			"p1",
-			"c9",
-			"p9",
-			"h2",
-			"p2",
-			"h1",
-		]);
+		expect(result.deletedBlockIds).toEqual(["p1"]);
+		expect(result.survivedIds).toEqual(["c9", "h2", "p2", "h1"]);
 	});
 
 	it("members-survived on a truncated post-walk: absence past the depth bound is unconfirmed, never claimed as deleted", async () => {
-		// The post-sweep walk can come back INCOMPLETE with survivors (the
-		// core's own precedence: presence stays sound, absence does not).
-		// A surviving member's descendants past the depth bound are absent
-		// from that walk without being deleted — absence there must not be
-		// published as deletedBlockIds.
+		// The post-write walk can come back INCOMPLETE with survivors (the
+		// partition's own precedence: presence stays sound, absence does
+		// not). A surviving member's descendants past the depth bound are
+		// absent from that walk without being deleted — absence there must
+		// not be published as deletedBlockIds.
 		const { execute, childrenFor } = setup({
 			config: {
 				childrenFor: {
@@ -247,33 +297,34 @@ describe("delete-section", () => {
 					],
 					c9: [walkBlock("p9", "p", "", "inside container")],
 				},
-				onDelete: () => {
+				transactPrune: (id) => id === "p1",
+				onTransact: () => {
 					// Grow the depth run under c9 past the walk bound and hang
-					// p9 past its end: the pre-write walk (taken before any
-					// delete) enumerated p9 at depth 2, but the post-sweep walk
-					// truncates before reaching it.
+					// p9 past its end: the pre-batch walk (taken before the
+					// transaction) enumerated p9 at depth 2, but the post-write
+					// walk truncates before reaching it.
 					nestChain(childrenFor, "c9", 33);
 					childrenFor["n32"] = [walkBlock("p9", "p", "", "inside container")];
 				},
 			},
 		});
-		// cascadeDelete off: every delete acks and applies nothing — all
-		// members survive, so the members-survived arm renders over a
-		// truncated post-walk.
 		const result = await execute(params);
 		expect(result.status).toBe("error");
 		expect(result.message).toContain("silent no-op");
 		expect(result.message).toContain("depth-truncated");
-		// p9 is unconfirmed, not deleted — and not claimed present either.
+		// The projection's conservatism on a truncated walk: EVERY absence
+		// is unconfirmed — p1 (which the batch did remove) rides next to p9
+		// (which it never touched, past the bound). The receipt claims no
+		// deletion it cannot show.
 		expect(result.deletedBlockIds).toBeUndefined();
-		expect(result.unconfirmedBlockIds).toEqual(["p9"]);
-		expect(result.remainingBlockIds).toEqual(["p1", "c9", "h2", "p2", "h1"]);
+		expect(result.unconfirmedBlockIds).toEqual(["p1", "p9"]);
+		expect(result.survivedIds).toEqual(["c9", "h2", "p2", "h1"]);
 	});
 
-	it("sweep-truncated: the post-sweep walk hit the depth bound — applied but unverified", async () => {
-		// The section deletes land (the doc gets shallower), then the tree
-		// regrows past the bound under a surviving sibling container, so the
-		// post-sweep walk truncates while the enumeration did not.
+	it("post-walk-truncated: the batch landed but the post-write walk hit the depth bound — applied but unverified", async () => {
+		// The batch commits (the doc gets shallower), then the tree regrows
+		// past the bound under a surviving sibling container, so the
+		// post-write walk truncates while the enumeration did not.
 		const { execute, childrenFor } = setup({
 			config: {
 				childrenFor: {
@@ -281,8 +332,7 @@ describe("delete-section", () => {
 					"d-doc": [...DOC["d-doc"]!, walkBlock("c9", "", "", "container")],
 					c9: [],
 				},
-				cascadeDelete: true,
-				onDelete: () => {
+				onTransact: () => {
 					nestChain(childrenFor, "c9", 33);
 				},
 			},
@@ -292,7 +342,8 @@ describe("delete-section", () => {
 		expect(result.message).toContain("applied but unverified");
 		expect(result.message).toContain("depth bound");
 		expect(result.appliedUnverified).toBe(true);
-		expect(result.unconfirmedBlockIds).toEqual(["p1", "h2", "p2", "h1"]);
+		// The primitive's judged order — heading first, then the closure.
+		expect(result.unconfirmedBlockIds).toEqual(["h1", "p1", "h2", "p2"]);
 		expect(result.deletedBlockIds).toBeUndefined();
 		expect(result.remainingBlockIds).toBeUndefined();
 	});
@@ -319,7 +370,7 @@ describe("delete-section", () => {
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("delete-section refused");
 		expect(result.message).toContain("depth bound");
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(0);
 	});
 
 	it("a headingId that names no heading of the walk refuses before any kernel write", async () => {
@@ -329,7 +380,7 @@ describe("delete-section", () => {
 		const result = await execute({ ...params, headingId: "h9" });
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("is not a heading of doc");
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(0);
 	});
 
 	it("a headingId belonging to another doc reads as heading-absent — the tool surface cannot produce the foreign arm", async () => {
@@ -347,7 +398,7 @@ describe("delete-section", () => {
 		const result = await execute({ ...params, headingId: "h-other" });
 		expect(result.status).toBe("refused");
 		expect(result.message).toContain("is not a heading of doc");
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(0);
 	});
 
 	it("a member's index-lag divergence refuses stale_content before any kernel write", async () => {
@@ -366,7 +417,7 @@ describe("delete-section", () => {
 		expect(result.staleTargets).toEqual([
 			{ blockId: "p1", currentContent: "body one" },
 		]);
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(0);
 	});
 
 	it("an explicitly seeded member and heading baseline both refuse on divergence; staleTargets order is heading-first", async () => {
@@ -378,20 +429,27 @@ describe("delete-section", () => {
 		const result = await execute(params);
 		expect(result.status).toBe("refused");
 		expect(result.reason).toBe("stale_content");
-		expect(result.staleTargets).toEqual([
-			{ blockId: "h1", currentContent: "Goals" },
-			{ blockId: "p1", currentContent: "body one" },
-		]);
-		expect(calls.filter((c) => c.method === "deleteBlock")).toHaveLength(0);
+		// The session-held baselines are consulted alongside the index-lag
+		// rows; both divergences refuse. (The staleTargets ORDER is the
+		// primitives' judged order — pinned down-repo.)
+		expect(result.staleTargets).toContainEqual({
+			blockId: "h1",
+			currentContent: "Goals",
+		});
+		expect(result.staleTargets).toContainEqual({
+			blockId: "p1",
+			currentContent: "body one",
+		});
+		expect(calls.filter((c) => c.method === "transact")).toHaveLength(0);
 	});
 
 	it("walk-count pin: the fresh-content judgment rides the enumeration walk (2 walks, not 3)", async () => {
 		// The internal guard's falsifier at flow level: enumeration walk +
-		// sweep verification walk — the judgment rides the caller-held walk
+		// batch post-write walk — the judgment rides the caller-held walk
 		// and takes no walk of its own. A regression that re-walks inside
 		// the guard adds a third 'd-doc' call here.
 		const { execute, calls } = setup({
-			config: { childrenFor: DOC, cascadeDelete: true },
+			config: { childrenFor: DOC },
 		});
 		const result = await execute(params);
 		expect(result.status).toBe("ok");

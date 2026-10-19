@@ -39,7 +39,8 @@ export function refusedEnvelope(
  * partial label. */
 export interface PartialApplyState {
 	/** The replacement block the flow's insert leg landed — absent for
-	 * flows with no replacement (delete-section's sweep). */
+	 * flows with no replacement (the delete flows' walk-failed rethrow,
+	 * the doc move). */
 	newBlockId?: string;
 	remainingBlockIds: string[];
 	/** Ids the receipt claims as deleted — individually acked by the
@@ -87,10 +88,12 @@ export type PartialApplyMarker =
  * envelope never derives through here (see PartialApplyMarker). The
  * prose for the sentence-frame sites lives in partialApplyRender
  * (writeVerdicts.ts). */
-export function partialApplyMarker(state: {
-	remainingBlockIds: string[];
-}): PartialApplyMarker {
-	if (state.remainingBlockIds.length > 0) return { partialApply: true };
+export function partialApplyMarker(
+	remainingBlockIds?: string[],
+): PartialApplyMarker {
+	if (remainingBlockIds !== undefined && remainingBlockIds.length > 0) {
+		return { partialApply: true };
+	}
 	return { appliedUnverified: true };
 }
 

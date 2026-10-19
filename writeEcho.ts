@@ -42,16 +42,30 @@ async function errorTail(
  * non-judged arms differ only in the verdict key (extra); the kb name and
  * the error-path echo tail are the same at every site. The one exception
  * is the doc move's failure legs (empty tail, the pinned no-doc-target
- * shape), which bind mutationFailureEnvelope directly. */
+ * shape), which bind mutationFailureEnvelope directly. The optional
+ * `unconfirmedBlockIds` rides the transport-unverified frame (the ladder
+ * doc): only the delete-section batch supplies it — the whole judged
+ * set is what its post-issue pre-ack throw leaves unjudged. The optional
+ * `refusalNote` appends a flow-supplied clause to the kernel-refused arm
+ * — the route residual the shared frame cannot know (delete-section's
+ * batch: refused-by-HTTP is not proof of non-application). */
 export function mutationFailure(
 	outcome: MutationFailure,
 	input: WriteFlowBase,
 	doc: DocTarget,
 	extra: VerdictKey,
+	opts?: {
+		unconfirmedBlockIds?: string[];
+		refusalNote?: string;
+	},
 ): Promise<Envelope> {
 	return mutationFailureEnvelope(outcome, {
 		kb: input.name,
 		extra,
+		...(opts?.unconfirmedBlockIds !== undefined && {
+			unconfirmedBlockIds: opts.unconfirmedBlockIds,
+		}),
+		...(opts?.refusalNote !== undefined && { refusalNote: opts.refusalNote }),
 		tail: () => errorTail(input, doc),
 	});
 }

@@ -68,6 +68,22 @@ export interface StubConfig {
 	onMove?: () => void;
 	onUpdate?: () => void;
 	onRemoveDoc?: () => void;
+	/** The batched route's hook — invoked after the call is recorded and
+	 * the `transactError` arm checked, before the ops apply (a test arms
+	 * the post-write walk error here: the walk runs after the ack). */
+	onTransact?: (
+		transactions: Parameters<WriteKernelClient["transact"]>[0],
+	) => void;
+	/** Per-op predicate over the batch's delete ops: returning false
+	 * simulates the kernel's sub-cliff silent no-op — the op acks behind
+	 * HTTP success but the block stays (the survivor arm's input). An
+	 * absent id silently no-ops in either case (the kernel's sub-cliff
+	 * arm). Default: every op applies, cascade included — the batch lands
+	 * whole, exactly like the kernel. */
+	transactPrune?: (id: string) => boolean;
+	/** Throw to fail the batched transaction call — the whole batch is
+	 * unissued (nothing has landed either way; the batch is one call). */
+	transactError?: Error;
 	/** Override the updateBlock response tx — e.g. an ops array without the
 	 * target's id pins the edit flow's "no update operation" verified failure. */
 	updateTx?: BlockTransaction[];
@@ -153,6 +169,7 @@ export function writeKernelStub(config: StubConfig = {}) {
 	config.armVersionError?.((err) => {
 		versionError = err;
 	});
+	const transactError = config.transactError;
 	/** Remove an indexed block and its tree descendants from the live
 	 * children map — the kernel's delete cascade (an indexed container's
 	 * descendants leave the index with it). Returns false when the id is no
@@ -320,6 +337,28 @@ export function writeKernelStub(config: StubConfig = {}) {
 			calls.push({ method: "moveDocsByID", args: params });
 			config.onMove?.();
 			return null;
+		},
+		async transact(transactions) {
+			calls.push({ method: "transact", args: transactions });
+			if (transactError) throw transactError;
+			config.onTransact?.(transactions);
+			// The batch lands whole (the commit-wait fact): every delete op
+			// prunes its id, `transactPrune` returning false simulating the
+			// sub-cliff silent no-op, and an id no longer indexed no-ops too —
+			// the kernel's absent-id arm, never an error below the cliff.
+			for (const tx of transactions) {
+				for (const op of tx.doOperations) {
+					if (op.action !== "delete") {
+						throw new Error(
+							`write stub applies only delete ops, got: ${op.action}`,
+						);
+					}
+					const id = String(op.id);
+					if (config.transactPrune?.(id) === false) continue;
+					removeIndexed(id);
+				}
+			}
+			return transactions;
 		},
 	};
 	return { calls, client, childrenFor };

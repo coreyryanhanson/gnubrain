@@ -181,9 +181,10 @@ temp HOME for the headless child).
   wording), the verified block/doc moves (`moveBlockVerified` /
   `moveDocVerified`), the verified deletes (`deleteBlockVerified` /
   `deleteDocVerified`), `deleteSectionVerified` (the delete-section
-  sequence: enumeration → members-first heading-last sweep → absence
-  judgment, composed on the sweep core — the tool layer never sequences
-  kernel mutations), `orphanedMembersOf` (the heading-delete report's
+  sequence: enumeration → ONE transaction of the N+1 delete ops
+  (members first, heading last) → the walk partition over the single
+  post-write walk — the tool layer never sequences kernel mutations),
+  `orphanedMembersOf` (the heading-delete report's
   walk projection), `partitionByAbsence` (the members-survived acked-set
   split — both ride the read barrel), and the placement module (the
   section rule and the anchors derived from it)
@@ -194,16 +195,20 @@ temp HOME for the headless child).
   unions is exhaustive switches
   (no default) with `satisfies never`, so a new kind in a primitives
   release fails typecheck until its sentence is written, wherever that
-  sentence lives. Shared fragments live in `writeVerdicts.ts` — transport/verification/drift
-  sentences, the anchor echoes (`appendAnchorEcho` / `moveAnchorEcho`),
-  the `blockInDocRefusalKind` sentence, the sweep `members-survived` sentence
-  and its split-derived payload fields (one home for both sweep
-  consumers — replace-section and delete-section), and the one frame
-  shared across flows, the
-  pre-judgment failure ladder (`mutationFailureEnvelope`, the one async
-  piece: it awaits the flow-supplied echo tail, `writeEcho.mutationFailure`).
-  Each mode's own verdict sentences co-locate with that mode's flow, which
-  composes its envelope frames from both halves.
+  sentence lives. Shared fragments live in `writeVerdicts.ts` —
+  transport/verification/drift sentences, the anchor echoes
+  (`appendAnchorEcho` / `moveAnchorEcho`), the `blockInDocRefusalKind`
+  sentence, and the one frame shared across flows, the pre-judgment
+  failure ladder (`mutationFailureEnvelope`, the one async piece: it
+  awaits the flow-supplied echo tail, `writeEcho.mutationFailure`, and
+  takes the flow's optional `refusalNote` for route residuals the shared
+  frame cannot know). Each mode's own verdict sentences co-locate with
+  that mode's flow — the sweep `members-survived` sentence and its
+  split-derived payload fields in `writeReplaceSection.ts` (the batched
+  delete-section words its own survivor/nothing-deleted pair beside its
+  flow, whose recovery doctrine forbids the sweep sentence's by-id
+  instruction), and each remaining mode composes its envelope frames
+  from both halves.
   Schema/shape in `writeSchema.ts`, grant gate in `writeConfirm.ts`, mint
   policy in `writeGuard.ts` (`validateMintTitle` — wording only; the
   mint-title kernel facts live in the primitives' `mintTitleProblem`).
@@ -338,6 +343,22 @@ primitives.
   `deleteBlockVerified` / `deleteDocVerified` (primitives `delete.ts`). This
   repo keeps the flow-side wording: kernel error verbatim with the fresh
   outline; a still-present verdict is an error, never an ok receipt.
+- **Section-delete batch** — one transaction of the N+1 delete ops on the
+  batched route (ack-time commit-wait; whole-group rollback behind HTTP
+  success, cause-free over HTTP; sub-cliff silent no-op; ≥32 fail-closed
+  single-tree bulk path — accepted, no pre-mutation ceiling; rollback
+  index residue → repair-first recovery, never a by-id delete; queue
+  ordering) — the full statements live on the primitives'
+  `deleteSection.ts`/`batch.ts` docstrings, their canonical home;
+  falsified by the primitives' suites and the layer-1 probe suite →
+  `deleteSectionVerified` (primitives `deleteSection.ts`, over the
+  `batch.ts` foundation). This repo keeps the wording: the cause-free
+  lead, the survivor arm, and the repair-first guidance — the sentences
+  co-locate with the flow (`writeDeleteSection.ts`), pinned by
+  `writeDeleteSection.test.ts` — plus the batched-route refusal note
+  (`mutationFailureEnvelope`'s `refusalNote`) and the
+  transport-unverified frame's whole-judged-set unconfirmed payload
+  (`unconfirmedBlockIds`).
 - **Heading-delete scope** — `deleteBlock` on a heading removes only the
   heading; the members survive it and their section ownership moves to the
   preceding heading (the delete path is fold-blind, unlike move) →
@@ -396,9 +417,10 @@ primitives.
   resolve/echo/spill around the per-box fan-out.
 - **Delete cascade** — the kernel's cascade removes a container member's
   descendants with it, so the sweep deletes only the enumerated members →
-  `sweepCore` (primitives `sweep.ts`), the shared enumerated sweep with
-  two consumers (`sweepSectionMembers` = replace-section,
-  `deleteSectionVerified` = delete-section). The replace-section
+  `sweepSectionMembers` (primitives `sweep.ts`), the one consumer that
+  remains on the per-op route (the replace-section sequence;
+  delete-section rides the batched route, which never issues a
+  descendant op). The replace-section
   sequence itself (`replaceSectionVerified`: insert-before-sweep ordering,
   enumeration timing) lives in the primitives; this repo keeps the sweep's
   partial-apply envelope wording (byte-identical receipt, do-not-retry

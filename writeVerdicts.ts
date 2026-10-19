@@ -22,7 +22,6 @@ import {
 	type AppendAnchor,
 	type BlockInDocResult,
 	type MoveAnchor,
-	type PartitionByAbsence,
 } from "siyuan-kb-primitives";
 import type {
 	EditLandedOutcome,
@@ -162,11 +161,16 @@ export type VerdictKey =
 
 /** The shared failure ladder for the verified mutation flows — the four
  * pre-judgment arms every mutation outcome union carries (edit, append,
- * block move, replace-section, delete-section, and the block-delete half of
+ * block move, replace-section, and the block-delete half of
  * DeleteBlockOutcome — that half IS MutationFailure by type, so the block
  * delete shares this ladder rather than copying it), worded once so a new
  * arm in a primitives release fails typecheck here instead of diverging
- * across every flow.
+ * across every flow. Delete-section rides the narrower
+ * `DriftFailure | MutationPhaseFailure` composition (its post-mutation
+ * phase is the batched transport's walk-verdict arms, not this ladder's)
+ * — and its `transport-unverified` arm is the batch's post-issue pre-ack
+ * throw, so it carries the whole judged set as the unconfirmed payload
+ * (`opts.unconfirmedBlockIds`); every other consumer leaves it unset.
  * Per-arm doctrine:
  * - drift: the gate refuses first; this is defense-in-depth. Zero kernel
  *   calls — the tail thunk is never awaited on this arm.
@@ -174,7 +178,11 @@ export type VerdictKey =
  *   this as "unreachable", whose retry invitation would duplicate an
  *   applied write. The error-path echo reads run best-effort (tail).
  * - kernel-refused: a synchronous kernel rejection is not in-flight; it
- *   surfaces verbatim with the fresh outline attached (tail).
+ *   surfaces verbatim with the fresh outline attached (tail). One
+ *   batched-route residual: the kernel can fail after the batch has
+ *   committed (the post-commit echo re-marshal), so on delete-section
+ *   this arm is refused-by-HTTP, not proof of non-application — the tail
+ *   is the verification.
  * - verification-failed: the mutation's transport succeeded — the write
  *   may already be applied. Same never-retry-blindly contract, no garnish
  *   tail: the echo reads just failed and the message stands alone.
@@ -187,6 +195,17 @@ export async function mutationFailureEnvelope(
 		/** The flow's own verdict key — spread verbatim, never re-worded
 		 * here. */
 		extra?: VerdictKey;
+		/** The unconfirmed-block payload for the transport-unverified arm —
+		 * the set that may be gone when the mutation's outcome is unknown.
+		 * The delete-section batch supplies its whole judged set (the
+		 * batch's post-issue pre-ack throw leaves the entire set unjudged);
+		 * the other flows leave it unset. */
+		unconfirmedBlockIds?: string[];
+		/** A flow-supplied clause appended to the kernel's verbatim
+		 * rejection on the kernel-refused arm — the route residual the
+		 * shared frame cannot know (delete-section's batch: refused-by-HTTP
+		 * is not proof of non-application). */
+		refusalNote?: string;
 		tail: () => Promise<Record<string, unknown>>;
 	},
 ): Promise<Envelope> {
@@ -198,14 +217,22 @@ export async function mutationFailureEnvelope(
 				kb: opts.kb,
 				verificationFailed: true,
 				...opts.extra,
+				...(opts.unconfirmedBlockIds !== undefined && {
+					unconfirmedBlockIds: opts.unconfirmedBlockIds,
+				}),
 				...(await opts.tail()),
 			});
 		case "kernel-refused":
-			return errorEnvelope(outcome.message, {
-				kb: opts.kb,
-				...opts.extra,
-				...(await opts.tail()),
-			});
+			return errorEnvelope(
+				opts.refusalNote
+					? `${outcome.message} — ${opts.refusalNote}`
+					: outcome.message,
+				{
+					kb: opts.kb,
+					...opts.extra,
+					...(await opts.tail()),
+				},
+			);
 		case "verification-failed":
 			return verificationFailedEnvelope(outcome.cause, outcome.detail, {
 				kb: opts.kb,
@@ -282,7 +309,7 @@ export function partialApplyRender(state: { remainingBlockIds: string[] }): {
 	tail: string;
 	marker: PartialApplyMarker;
 } {
-	const marker = partialApplyMarker(state);
+	const marker = partialApplyMarker(state.remainingBlockIds);
 	return "partialApply" in marker
 		? {
 				marker,
@@ -294,46 +321,6 @@ export function partialApplyRender(state: { remainingBlockIds: string[] }): {
 				status: "applied but unverified",
 				tail: "nothing remains to apply",
 			};
-}
-
-/** The delete-sweep `members-survived` sentence and its payload fields —
- * one home for both sweep consumers (replace-section's sweep,
- * delete-section's sequence), so the shared arm cannot render two
- * different stories about the same silent no-op. The arm is the sweep
- * core's: a delete acked but the block is still present in the post-write
- * tree. `truncated` is true when the verification walk was depth-truncated
- * — the payload then carries unconfirmedBlockIds (absence unconfirmed),
- * and the sentence says so, in both flows. The label names the sweep,
- * not the per-block delete: the block-delete flow's singular variant
- * (writeDelete.ts) is a different primitive arm and keeps its own
- * sentence. */
-export function sweepMembersSurvivedMessage(
-	survivedIds: string[],
-	truncated: boolean,
-): string {
-	return (
-		`verified-sweep failed: the delete of '${survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id` +
-		(truncated
-			? "; the verification walk was depth-truncated, so ids absent from the walk are not claimed as deleted — see unconfirmedBlockIds and reconcile from the outline"
-			: "")
-	);
-}
-
-/** The payload fields derived from the acked-set split — the marker, the
- * certified/unconfirmed absence half, and the pending set. On a complete
- * walk the absence half is certified and rides deletedBlockIds; on a
- * truncated walk it is unconfirmed — but the acked ids still ride the
- * receipt (as unconfirmedBlockIds), never vanish from it. */
-export function sweepMembersSurvivedFields(
-	split: PartitionByAbsence,
-): Record<string, unknown> {
-	return {
-		...partialApplyMarker({ remainingBlockIds: split.presentIds }),
-		...(split.kind === "unconfirmed"
-			? { unconfirmedBlockIds: split.unconfirmedAbsentIds }
-			: { deletedBlockIds: split.absentIds }),
-		remainingBlockIds: split.presentIds,
-	};
 }
 
 /** Anchor echo wording — the agent-facing rendering of the placement

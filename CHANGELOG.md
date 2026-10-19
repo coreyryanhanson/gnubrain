@@ -35,7 +35,10 @@
     pointer). `delete-section` removes a whole section under a heading in one
     verified call — the heading plus every member block until the first
     same-or-shallower heading, deeper subheadings and their bodies included —
-    with a partial-apply receipt when the sweep dies mid-way; and a
+    in ONE kernel transaction (members in document order, the heading last),
+    judged from the single post-write walk: a silent no-op, a rollback, or an
+    unconfirmable walk refuses with repair-first recovery guidance, never a
+    partial apply; and a
     heading-scoped plain `delete` reports the body blocks its orphaned members
     left behind, since the kernel removes only the heading itself.
 

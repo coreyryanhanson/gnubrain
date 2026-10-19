@@ -11,6 +11,7 @@ import {
 	partitionByAbsence,
 	sectionOf,
 	walkBlockTree,
+	type PartitionByAbsence,
 } from "siyuan-kb-primitives";
 import {
 	replaceSectionVerified,
@@ -41,9 +42,48 @@ import {
 	blockInDocRefusalKind,
 	insertLandedRefusal,
 	replaceSectionWalkTruncatedMessage,
-	sweepMembersSurvivedFields,
-	sweepMembersSurvivedMessage,
 } from "./writeVerdicts.js";
+
+/** The delete-sweep `members-survived` sentence and its payload fields —
+ * replace-section's sweep-leg wording: a delete acked but the block is
+ * still present in the post-write tree. The batched delete-section words
+ * its own survivor arm (writeDeleteSection) — the batch's recovery
+ * doctrine forbids this sentence's by-id instruction (a damaged index
+ * makes by-id deletes silently no-op), so the two consumers must NOT
+ * share it. `truncated` is true when the verification walk was
+ * depth-truncated — the payload then carries unconfirmedBlockIds
+ * (absence unconfirmed), and the sentence says so. The label names the
+ * sweep, not the per-block delete: the block-delete flow's singular
+ * variant (writeDelete.ts) is a different primitive arm and keeps its
+ * own sentence. */
+function sweepMembersSurvivedMessage(
+	survivedIds: string[],
+	truncated: boolean,
+): string {
+	return (
+		`verified-sweep failed: the delete of '${survivedIds.join("', '")}' reported success but the block(s) are still present in the post-write tree — a silent no-op behind HTTP success; do not retry blindly — the current outline follows, delete the surviving block(s) by id` +
+		(truncated
+			? "; the verification walk was depth-truncated, so ids absent from the walk are not claimed as deleted — see unconfirmedBlockIds and reconcile from the outline"
+			: "")
+	);
+}
+
+/** The payload fields derived from the acked-set split — the marker, the
+ * certified/unconfirmed absence half, and the pending set. On a complete
+ * walk the absence half is certified and rides deletedBlockIds; on a
+ * truncated walk it is unconfirmed — but the acked ids still ride the
+ * receipt (as unconfirmedBlockIds), never vanish from it. */
+function sweepMembersSurvivedFields(
+	split: PartitionByAbsence,
+): Record<string, unknown> {
+	return {
+		...partialApplyMarker(split.presentIds),
+		...(split.kind === "unconfirmed"
+			? { unconfirmedBlockIds: split.unconfirmedAbsentIds }
+			: { deletedBlockIds: split.absentIds }),
+		remainingBlockIds: split.presentIds,
+	};
+}
 
 /** The delete-sweep refusal frame — the sweep outcome arms the flow does
  * not handle itself: `swept` (the success path continues), `interrupted`
@@ -85,9 +125,7 @@ function sweepRefusalEnvelope(
 					kb: ctx.kb,
 					anchor: ctx.anchor,
 					newBlockId: ctx.newBlockId,
-					...partialApplyMarker({
-						remainingBlockIds: outcome.remainingBlockIds,
-					}),
+					...partialApplyMarker(outcome.remainingBlockIds),
 					unconfirmedBlockIds: outcome.deletedBlockIds,
 					remainingBlockIds: outcome.remainingBlockIds,
 				},
@@ -110,10 +148,11 @@ function sweepRefusalEnvelope(
 				},
 			);
 		case "members-survived": {
-			// Presence-derived complement of the survivors, split by the shared
-			// primitives projection — the sentence and payload fields are the
-			// shared sweep fragment (writeVerdicts), same arm, same wording as
-			// delete-section's sweep.
+			// Presence-derived complement of the survivors, split by the
+			// shared primitives projection. The sentence and payload fields
+			// live in this file: replace-section's sweep-leg wording — the
+			// batched delete-section words its own survivor arm, whose
+			// recovery doctrine forbids this sentence's by-id instruction.
 			const split = partitionByAbsence(ctx.memberIds, outcome.postWalk);
 			return errorEnvelope(
 				sweepMembersSurvivedMessage(
@@ -303,7 +342,7 @@ export async function runReplaceSectionMode(
 						kb: name,
 						anchor: echo,
 						newBlockId: outcome.insertedId,
-						...partialApplyMarker({ remainingBlockIds: [] }),
+						...partialApplyMarker(),
 						unconfirmedBlockIds: outcome.deletedBlockIds,
 					},
 				);

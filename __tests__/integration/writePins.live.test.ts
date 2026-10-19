@@ -898,7 +898,7 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 		// -------------------------------------------------------------------
 
 		it(
-			"delete-section: ok envelope shape on a live section-bearing heading — members first, heading last, receipt itemizes the closure",
+			"delete-section: ok envelope shape on a live section-bearing heading — heading first, then the closure, receipt itemizes the whole removal",
 			async () => {
 				const docId = await mintDoc(
 					client,
@@ -925,13 +925,13 @@ describe.skipIf(!INTEGRATION || TOKEN === "")(
 				});
 				expect(result.status).toBe("ok");
 				expect(result.headingId).toBe(target);
-				// The receipt itemizes the whole removal — members (with the
-				// deeper heading among them) plus the heading itself, members
-				// first in document order.
+				// The receipt itemizes the whole removal — the heading first,
+				// then the closure in document order (the verdict's judged
+				// order — the fresh guard's, not the issued ops').
 				expect(result.deletedBlocks).toHaveLength(4);
 				expect(
 					(result.deletedBlocks as { blockId: string }[]).map((b) => b.blockId),
-				).toEqual([...memberIds, target]);
+				).toEqual([target, ...memberIds]);
 				// The echo tail reflects the post-delete tree: only "# Next" and
 				// its body remain.
 				expect(result.outline).toBeDefined();
