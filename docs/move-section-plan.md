@@ -2,7 +2,7 @@
 
 Status: **Held — codec decided (§2, spike-confirmed); §6 duties recorded, implementation pending**
 
-> **Foundation landed; §1–§4 predate it.** §5's non-goal "No kernel-side section API"
+> **Foundation landed; §1 and §3–§5 predate it, §2 is re-derived onto it.** §5's non-goal "No kernel-side section API"
 > is **false** for the pinned 3.8.7 — `POST /api/block/moveOutlineHeading` moves a
 > heading plus its whole section atomically, fold-blind, landing exactly at
 > end-of-destination-section (`kernel/model/outline.go:29`; already documented in the
@@ -10,7 +10,7 @@ Status: **Held — codec decided (§2, spike-confirmed); §6 duties recorded, im
 > transaction endpoint, now exposed: layer 1's `transact` plus the primitives'
 > `batch.ts` (`transactThenWalk`) landed, first consumed by the batched
 > `delete-section` — §2's hardest machinery (the two-phase judged sequence, the
-> partial-apply receipt) existed only because the plan issues N+1 separate
+> partial-apply receipt) existed only because the plan issued N+1 separate
 > `moveBlock` calls, and batching dissolves it. The route is **decided: batched
 > `move` ops** (§6 records the decision and the re-derivation duties;
 > `moveOutlineHeading` is rejected on the record: its unconditional level rewrite,
@@ -26,11 +26,10 @@ Status: **Held — codec decided (§2, spike-confirmed); §6 duties recorded, im
 > residue, ack-time commit-wait, the ≥32-op cliff, queue ordering). The surviving
 > §2 content — the fold-blind posture and the fresh-guard scoping — carries
 > over; the anchor-stability law and the reverse-order derivation are dissolved
-> by the codec decision (§2). Three decisions sit beyond the superseded
-> sections (§2, §6): the landed arm certifies the moved heading's new
-> owner; cross-doc is in v1 scope (this mode is the multi-doc
-> consumer `batch.ts`'s `walk-failed` arm defers to); and the codec is the
-> insert-before arm, decided by the spike and recorded in §2.
+> by the codec decision (§2). Two decisions sit beyond the superseded
+> sections (§6): the landed arm certifies the moved heading's new
+> owner, and cross-doc is in v1 scope (this mode is the multi-doc
+> consumer `batch.ts`'s `walk-failed` arm defers to).
 
 Origin: friction §2/§3 in [`../kb-write-friction.md`](../kb-write-friction.md).
 The **corruption half of heading-move is already closed** — `moveBlockVerified`
@@ -44,7 +43,7 @@ expressiveness fix, not a safety fix**.
 
 ## 1. Why this mode is pursued
 
-(The per-leg economics below is superseded by the one-batch economics of §6.)
+(The per-leg economics below is superseded by §6's one-batch route.)
 
 The foundation this sequence composes is complete — delete-section landed
 the batched-route plumbing and the enumerated loop shape (§3). And the problem this mode solves is **packaging, plus one
@@ -56,9 +55,9 @@ actually attached (§2's owner certification). What is missing is doing it in
 **one call** — order enforced and verified by construction, one group
 receipt — instead of ~2N+1 `kb_write` round trips. That efficiency for agent-driven workflows, plus closing the
 silent-corruption trap in the manual sequence (wrong ordering strands
-content), is why this mode is pursued rather than deferred — the design itself
-awaits re-derivation onto the batched route (§6) before any of it is
-built.
+content), is why this mode is pursued rather than deferred — the design is
+re-derived onto the batched route (§6), and what remains is
+implementation.
 
 ## 2. What the mode must solve
 
@@ -269,11 +268,18 @@ checks would otherwise only surface mid-sequence, after the tear:
 
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section is one the moved section contains.
-- The group is **already at the destination** — derived as: the
+- The group is **already at the destination** — derived two ways: the
   destination section's boundary lies inside the moved set (the boundary
   heading ∈ `sectionOf(sourceHeading).members ∪ {H}`; e.g. with `# A /
   a1 / ## B / b1`, moving B's section onto the end of A's section makes
-  `B` — the moved heading — the destination's boundary). One refusal,
+  `B` — the moved heading — the destination's boundary), or the moved
+  section is the destination section's **trailing run** — the moved
+  heading lies inside the destination section and no member of the
+  destination section follows the moved section's last block (e.g. with
+  `## B / b1 / ### D / d1 / ## C / c1`, moving D's section onto the end
+  of B's section: the boundary `## C` is outside the moved set, so the
+  first arm misses, yet D's section already occupies the destination's
+  end). One refusal,
   never a partial receipt with an empty moved set; on the batched route
   the alternative is the kernel's own skip arms (`TxErrCodeSkipTx`),
   which roll the whole batch back behind a success ack (spike case E).
@@ -313,8 +319,8 @@ checks would otherwise only surface mid-sequence, after the tear:
 
 ## 6. Re-derivation duties on the batched route
 
-These are the duties the re-derivation must satisfy; they are not yet
-re-derived.
+These are the duties the implementation must satisfy; the route and
+codec decisions they build on are recorded in §2.
 
 - **The route: one batched `move` transaction.** Members in document
   order onto the destination section's boundary (`nextID`), then the
@@ -335,9 +341,8 @@ re-derived.
   per-touched-doc post-write walks, so this mode extends `batch.ts`'s
   `walk-failed` arm to carry the partial walks its docstring defers to
   "a multi-doc consumer" — this mode is that consumer. The extension
-  lands in the primitives under the same posture as the anchor
-  classifier (§2): unpublished, `file:`-linked, shape perfected side by
-  side before either repo releases. The destination side composes the
+  lands in the primitives unpublished, `file:`-linked, its shape
+  perfected side by side before either repo releases. The destination side composes the
   caller-provenance gate delete-section models (`foreign` /
   `walk-truncated`): the anchor derives from a caller-held destination
   walk, and the kernel mutates by raw block id with no doc scoping of
@@ -382,11 +387,15 @@ re-derived.
   its unconfirmed payload. The landed judgment is a stated predicate over
   the destination walk, not a phrase — an unstated formula invites a
   membership-only check, which reads a fold-inverted group (body above
-  its heading) as landed. The landed predicate: the moved heading sits immediately before the
-  first enumerated member — equivalently, immediately after the
-  destination section's last pre-move block, as the caller-held walk
-  holds it — both clauses hold under the doc-end chain's landing too
-  (spike K1); `sectionOf(destWalk, H)
+  its heading) as landed. The landed predicate: the run `[H, m1 … mN]` occupies the position
+  immediately before the destination section's boundary (the codec's own
+  anchor), as the caller-held walk holds it — a memberless moved section
+  lands `H` alone immediately before the boundary, an empty destination
+  section contributes no block between its heading and the boundary, and
+  both degenerate shapes reduce to the same clause. The doc-end arm has
+  no boundary; there the run occupies the position immediately after the
+  destination section's last pre-existing block (the leaf-anchored
+  chain's landing, spike K1). `sectionOf(destWalk, H)
   .members` **starts with** the enumerated member run — a prefix, never
   equality, because a moved heading strictly shallower than the
   boundary legitimately claims following sections into itself (§2's
