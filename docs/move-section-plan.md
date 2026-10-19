@@ -83,13 +83,15 @@ implementation.
   LIFO across ops, which is why the leaf-anchored heading leg must
   issue last). A doc-end destination whose section offers no derivable
   last non-heading sibling block is refused (§4). **The anchors are container-local sibling positions.**
-  The boundary (and the doc-end chain anchor) lives inside the
-  destination section's own container, so a destination section that is
-  itself container-nested — a heading inside a quote, callout, or list —
-  re-nests the moved members **into that container**: spike M1 landed
-  the whole run as the destination quote's children, member order
-  preserved, heading immediately before the first member, the boundary
-  still bounding after it. This is the section rule's locality, the
+  The doc-end chain anchor lives inside the destination section's own
+  container by construction, and spike M1's boundary did too, so a
+  destination section that is itself container-nested ��� a heading
+  inside a quote, callout, or list — re-nests the moved members **into
+  that container**: spike M1 landed the whole run as the destination
+  quote's children, member order preserved, heading immediately before
+  the first member, the boundary still bounding after it. A boundary
+  outside the destination's container is unprobed (§3's owed leg, or
+  the recorded single-container limitation). This is the section rule's locality, the
   same rule `append` obeys — documented behavior the tool description
   must state, and the owner report is what surfaces it. The heading
   leg's anchor may likewise be a container member that has already
@@ -577,7 +579,9 @@ codec decisions they build on are recorded in §2.
   or it stays unpinned: the fold-combination matrix (cases B/B2/F5),
   the doc-end fold-dependence (F4a/F4b), the doc-end chain's fold
   variants (K1) and its container-anchor spread (CT1–CT4), the
-  containment matrix (L1–L3, M1–M3), the cross-doc
+  containment matrix (L1–L3, M1–M3 across container types and with the
+  boundary-outside-container variant — or the recorded single-container
+  limitation), the cross-doc
   residue round trip and the cross-box rollback (H1 — cross-doc is v1,
   so they pin with the mode), and the ≥32-op batch with its
   completion-latency assertion live as a batched-move pin in the
