@@ -85,4 +85,5 @@ open item is `move-section`
 ([`docs/move-section-plan.md`](docs/move-section-plan.md), design held —
 re-derivation onto the batched route pending, post-merge; it packages the
 already-expressible move-then-heading sequence into one verified call,
-trading ~2N+1 tool calls for one).
+trading N+1 tool calls (one per member, then the emptied heading) for one
+and buying atomicity the per-id path cannot have).
