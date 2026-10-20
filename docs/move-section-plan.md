@@ -10,7 +10,7 @@ Status: **Design decided (§2, §6); exposed as a widened `mode: move` section a
 > atomically, fold-blind, landing exactly at end-of-destination-section
 > (`kernel/model/outline.go:29` header; the end-of-destination landing
 > ground is `:88-96`, the level rewrite `:100-115`, the silent
-> rejections `:46-50`/`:76-80`), but its level rewrite is unconditional,
+> rejections `:49-52`/`:76-81`), but its level rewrite is unconditional,
 > it ceilings at same-doc/root-level, and it rejects silently through
 > `PushMsg`. The codec is the **insert-before (`nextID`) arm** — members
 > in document order onto the destination section's boundary, then the
@@ -52,9 +52,11 @@ actually attached (§2's owner certification). The batched route delivers
 **one call, one group receipt, all-or-nothing**, with the owner report.
 Two decisions were once conflated here and are now separated. The
 **batched transaction** is genuinely new machinery and unavoidable for
-atomicity — a flow cannot call `transact` itself (`layerBoundary.test.ts`
-enforces the layering), so the batched primitive is the only route to
-all-or-nothing. The **mode vocabulary** is a separate choice: a distinct
+atomicity — a flow cannot call `transact` itself — the tool layer never
+sequences kernel mutations, the layering contract both repos carry
+(`layerBoundary.test.ts` greps imports, not client capabilities, so the
+bar is the contract, not the test) — so the batched primitive is the
+only route to all-or-nothing. The **mode vocabulary** is a separate choice: a distinct
 `move-section` mode was considered and rejected — its params
 would be the per-id shape verbatim (`blockId`/`toDocId`/`toHeadingId`,
 already on `move`), and a second mode keeps the original friction (the
@@ -63,6 +65,10 @@ decomposition problem wearing a new name). The decision: **`mode: move`
 widens** — a section-bearing `blockId` names the moved section, the
 members-then-heading legs ride the batched route inside the existing
 `move` flow, and the memberless degenerate is today's behavior. The
+asymmetry with `delete`/`delete-section` is a principle, not an
+inconsistency: inferring scope from hidden state is safe for a
+non-destructive mode and catastrophic for a destructive one, which is
+why `delete-section` stays an explicit mode while `move` widens. The
 cheapest rejected alternative remains on the record: running those legs
 as sequential per-id verified keeps — it closes the call count at a
 fraction of the pin burden but loses all-or-nothing, and a torn per-id
@@ -134,7 +140,18 @@ the batched route is how it ships. The design rides the batched route
   spike D1h–j). A memberless moved section on the chain arm reduces to
   a single heading leg (`previousID = <the chain anchor>`, or
   `previousID = <the destination heading>` on an empty destination —
-  spike D1f–g). **The anchors are container-local sibling positions.**
+  spike D1f–g). **A destination with no `toHeadingId` at all** — the
+  per-id shape's documented doc-end form — has no destination section:
+  the codec rides the chain arm anchored on
+  `deriveMoveAnchor(destWalk, undefined)`'s projection — the
+  destination doc's last root-level block on `previousID`, the
+  `parentID = <docId>` prepend when the doc is empty — the projection
+  the per-id path already uses for its doc-end form, with the heading
+  leg unchanged (`nextID = <the first landed member>`); the predicate's
+  chain clause reduces to "nothing follows the run at doc level", and
+  the owner projection reads the landed state unchanged. Same-doc and
+  cross-doc are identical there. **The anchors are container-local
+  sibling positions.**
   The doc-end chain anchor lives inside the destination section's own
   container by construction, and spike M1's boundary did too, so a
   destination section that is itself container-nested — a heading
@@ -160,8 +177,10 @@ the batched route is how it ships. The design rides the batched route
   (§5): inserting a same-or-shallower heading at a section's *start*
   re-bounds the destination
   heading's section — the destination's body would become the moved
-  section's body — and the prepend arm it would need is live-pinned
-  unreachable.
+  section's body — and the only prepend arm the kernel offers is the
+  doc-start `parentID` form, live-confirmed reachable but landing at
+  the document's start (spike F2), the wrong position — so a
+  start-of-section landing cannot be expressed.
 
 - **Anchor stability: dissolved by the arm choice; the per-id path keeps
   its own refusals.** The fold redirect (`transaction.go:762-768`) fires
@@ -211,9 +230,12 @@ the batched route is how it ships. The design rides the batched route
   the live post-move walk (§6). Guarding the group while the per-id legs
   stay unguarded would judge identical content differently by path, so the
   line is drawn at the primitives level: **no move path carries the guard**.
-  The rationale is recorded in the tool-side fact list when the
-  mode lands (§6), so the absence reads as a decision, not an
-  omission.
+  The cross-doc residual is named, not absorbed: a moved member also
+  leaves the source doc — delete-shaped for the source's readers — and
+  the per-id path carries that exposure unguarded today, so the same
+  path-symmetry argument covers it. The rationale is recorded in the
+  tool-side fact list when the mode lands (§6), so the absence reads
+  as a decision, not an omission.
 
 - **Landing is level-blind; the judgment certifies the owner, not just
   the order.** Landing is end-of-section for every level, but the
@@ -304,8 +326,10 @@ Before writing the implementation plan:
 
 ## 4. Refusals the mode must add
 
-Group-level, pre-mutation, zero kernel calls — conditions that would
-otherwise only surface mid-sequence, after the tear. (The named
+Group-level, pre-mutation, zero kernel calls in the refusal itself —
+every refusal judges walks the sequence already holds, never a fresh
+fetch — conditions that would otherwise only surface mid-sequence,
+after the tear. (The named
 `headingId`/`toHeadingId` must resolve to heading rows in their walks —
 `heading-absent` otherwise, a precondition rather than a §4 refusal.
 The destination heading is additionally judged flow-side by the
@@ -351,8 +375,16 @@ owner, flow-side, for both arms of `move`.)
   m1`, moving H's section onto the end of B's section makes `H` — the
   moved heading — the destination's boundary), or the moved
   section is the destination section's **trailing run** — the moved
-  heading lies inside the destination section and no member of the
-  destination section follows the moved section's last block (e.g. with
+  heading is a **member** of the destination section (`sectionOf`
+  members, not the closure: a moved section nested in a container
+  inside the destination section sits in the closure but is a
+  legitimate destination, judged normally by the landed predicate's
+  span clause) and no member of the destination section follows the
+  moved section's last block — the memberless degenerate compares the
+  moved heading itself, so the arm fires when it is already the
+  destination section's last member, and with `toHeadingId` omitted the
+  same reads at doc level (the moved section already occupies the
+  document's end) — e.g. with
   `## B / b1 / ### D / d1 / ## C / c1`, moving D's section onto the end
   of B's section: the boundary `## C` is outside the moved set, so the
   first arm misses, yet D's section already occupies the destination's
@@ -416,22 +448,32 @@ codec decisions they build on are recorded in §2.
   route has no drift arm of its own — the primitive owns the probe and the
   `drift` arm, refusing before issuing (delete-section's shape, recorded in
   its union docstring); the gate's cached-verdict refusal stays as
-  defence-in-depth. The new primitive takes caller walks while
-  `moveBlockVerified` fetches its own cross-doc source walk — both
-  right for their consumers; the module docstring states the rule
-  (batched sequences take caller walks because the flow must serve and
-  seed from them and the pre-mutation refusals stay zero-call; per-op
-  verified moves fetch because the caller holds no source walk).
+  defence-in-depth. The dispatch is a walk
+  judgment — "is `blockId` section-bearing?" — so it lives in the
+  primitives: one entry point over the per-id shape, which owns the
+  source walk's single fetch (the fetch `moveBlockVerified` already
+  makes), resolves section-bearing from it, and dispatches internally
+  between the per-id sequence and the batched section sequence — no
+  path fetches the source walk twice, and the flow's cross-doc shape
+  is unchanged (it holds only the destination walk, from the
+  destination resolution). The flow keeps its wording branch (the two
+  outcome unions differ); the module docstring states the walk rule
+  (the entry takes the caller's destination walk — the flow serves and
+  seeds from it — and owns the source walk's single fetch, reusing the
+  caller's walk for both roles same-doc).
 - **Cross-doc is in v1 scope.** The judgment is
   per-touched-doc post-write walks, so this mode extends `batch.ts`'s
   `walk-failed` arm to carry the partial walks its docstring defers to
   "a multi-doc consumer" — this mode is that consumer. The extension
   lands in the primitives unpublished, `file:`-linked, its shape
-  perfected side by side before either repo releases. Both walks are
-  caller-held — the flow walks both docs before the primitive call
-  (the pre-mutation refusals stay zero-kernel-call past the gate, and
-  the destination serve seeds baselines per the seed-site rule) — so
-  the primitive takes walks, never doc ids to walk itself. Both walks ride the
+  perfected side by side before either repo releases. The destination walk is
+  caller-held — the flow holds it from the destination resolution, and
+  the destination serve seeds baselines per the seed-site rule. The
+  source walk is the entry's own single fetch (the route bullet's
+  dispatch), shared by the dispatch, the moved-set derivation, and the
+  §4 refusals — zero calls in the refusal itself (§4) — and the
+  caller-provenance gate applies to it as to any walk (the walk
+  carries its own root). Both walks ride the
   caller-provenance gate delete-section models (`sectionSubjectOf`:
   `foreign` / `walk-truncated`, per walk — the widened consumer needs a
   source-vs-destination role discriminant on per-walk refusals, and
@@ -460,7 +502,9 @@ codec decisions they build on are recorded in §2.
   backstop. Cross-**box** is policy, not kernel behavior: the kernel
   accepts plain↔plain cross-notebook moves natively (spike H2) and
   silently rolls back cross-crypto-boundary batches (`IsSameCryptoBoundary`
-  → `SkipTx`, spike H1) — the cross-box refusal is a
+  → `SkipTx`, spike H1 — transcript evidence and a `batch.ts`
+  raw-contract fact, not bought for this mode: unreachable through it,
+  since encrypted boxes are dropped at KB validation) — the cross-box refusal is a
   consequence of the destination resolution the flow already performs,
   not new gate machinery: `writeTarget.resolveDocTarget` resolves
   `toDocId` box-scoped — same-KB by construction, a cross-notebook
@@ -472,12 +516,17 @@ codec decisions they build on are recorded in §2.
   Single-doc v1 would make the automated route narrower than the per-id
   path it replaces, and a later cross-doc release would pay a second
   wording/probe/pin ship. Packaging rides the same pass: the new
-  primitive module joins the primitives' `package.json` `files`
-  allowlist and the `./write` barrel exports, the barrel-completeness
-  test lists it, and the tool side's `layerBoundary.test.ts` import
-  discipline covers the widened flow (the section-arm module beside
-  `writeMove.ts`, or the branch within it — whichever imports the new
-  primitive). Two `batch.ts` duties ride the
+  primitive module (`moveSection.ts`, exporting `moveSectionVerified` —
+  the `deleteSection.ts`/`deleteSectionVerified` precedent) joins the
+  primitives' `package.json` `files` allowlist and the `./write` barrel
+  exports, the barrel-completeness test lists it, the two new
+  `placement.ts` projections (the next-sibling-of-the-run projection
+  and the owner projection) join the read barrel's internal exports per
+  its placement bullet (`sectionSubjectOf`/`cascadeDescendantsOf`
+  precedent, completeness guard updated in the same pass), and the
+  tool side's `layerBoundary.test.ts` import discipline covers the
+  widened flow (the section-arm module beside `writeMove.ts`, or the
+  branch within it — whichever imports the new primitive). Two `batch.ts` duties ride the
   same extension: the docstring's "consumers keep the batch single-doc"
   sentence is amended to its real scope — the ≥32 bulk path is
   all-delete, so the single-doc habit was delete-route hygiene, not a
@@ -534,7 +583,9 @@ codec decisions they build on are recorded in §2.
   doc-end arm has no boundary; there the run occupies the position
   immediately after the destination section's last pre-existing block —
   the chain anchor as the pre-move walk holds it (the chain arm's
-  landing, spike D1a). The
+  landing, spike D1a); with `toHeadingId` omitted the same clause reads
+  at doc level — the run immediately after the destination doc's last
+  root-level block (`docEndMoveAnchor`'s anchor). The
   run's tail is pinned with its head: on the chain arm nothing follows
   the run within the destination's container — the destination section
   is the container's last, so a block in that position arrived after
@@ -569,9 +620,12 @@ codec decisions they build on are recorded in §2.
   absence), then the landed arms. Beside the order, the judgment
   certifies the moved heading's **new owner** (the heading whose
   `sectionOf`-derived section contains the landed heading, read
-  container-locally — §2's owner bullet — derived as a heading stack
-  maintained over the walk's pre-order, container boundaries popping
-  it, never a backward scan of any form), so both divergences — the
+  container-locally — §2's owner bullet — derived as the last heading in
+  document order preceding the landed heading whose `sectionOf`
+  closure contains it — containment is `sectionOf`'s own product, so
+  the projection cannot diverge from the section rule the way a second
+  placement derivation would, and it is never a backward level scan,
+  which M1's landed state falsifies), so both divergences — the
   strictly-shallower swallow (the section takes the destination's
   boundary heading and the sections after it with it) and the deeper
   landing (the section nests inside the destination's) — surface in the
@@ -580,12 +634,12 @@ codec decisions they build on are recorded in §2.
   headings' levels pre-move, so the owner is predictable: the post-walk
   projection confirms the prediction, and a mismatch is
   `landed-divergent` — never a silently-different-but-passing reading.
-  When the landed heading's own container has no preceding
-  same-or-shallower heading, the answer comes from the enclosing
-  container's stack (a `sectionOf` section contains such a landing via
-  `closure`, not `members`), with pops on container exit restoring the
-  outer frames; that case joins the placement corpus beside M1 and the
-  deeper landing. The anchor derivations
+  When the landed heading sits inside a container with no heading
+  around it, the enclosing container's preceding heading is the answer
+  — a `sectionOf` section contains such a landing via `closure`, not
+  `members`; that case joins the placement corpus beside M1 and the
+  deeper landing, and the corpus arbitrates the formulation over
+  synthetic walks before the kernel wiring. The anchor derivations
   (§2's two forms) and the owner projection live in the primitives'
   `placement.ts` beside `sectionOf`, with placement-corpus cases — the
   flow never re-derives placement from walk order.
@@ -647,7 +701,18 @@ codec decisions they build on are recorded in §2.
   arm is the existing per-id shape with `blockId` widened to the
   section's heading (`toDocId` required, matching `move`'s verdict).
   The `writePrepare.ts` dispatch and its exhaustive tail keep their
-  shape — the section arm is a branch inside the `move` flow. The
+  shape — the section arm is a wording branch inside the `move` flow,
+  while the section-bearing dispatch itself lives in the primitives'
+  entry point (the route bullet above): the flow cannot answer that
+  question without a source walk the per-id path does not hold. With
+  the section arm live, `heading-with-section` is unreachable from the
+  tool path — every section-bearing `blockId` routes to the section
+  sequence — so it stays in the primitives' union as the per-id
+  contract and defence-in-depth, its docstring marking it unreachable
+  from the widened flow (an arm a later contributor could misread as
+  live otherwise); the description change also retires the per-id
+  refusal's move-the-members-individually advice sentence, which the
+  widened capability contradicts. The
   destination-doc resolution the flow already performs for `move`
   (`writeTarget.resolveDocTarget` on `toDocId` — box-scoped, so a
   cross-KB destination refuses before any op; the grant gate gains
@@ -666,8 +731,10 @@ codec decisions they build on are recorded in §2.
   widens to the batched route and gains the move-specific facts (the
   codec and its landing, the chain arm's anchors, the
   no-single-use-anchor posture, the rollback residue and heal
-  doctrine); the tool-side list gains the §4 refusal set, the
-  landed/owner predicate, and the no-fresh-guard rationale. A plan that
+  doctrine); the tool-side list gains the §4 refusal set and the
+  landed/owner sentences as wording-only entries (the judgments are
+  the primitive's — the delete-section entry's shape), plus the
+  no-fresh-guard rationale. A plan that
   covers only the kernel side leaves these to be discovered later.
 - **The outcome union.** The primitive returns one closed union, and
   every consumer switch is exhaustive over it. Arms:
@@ -706,10 +773,13 @@ codec decisions they build on are recorded in §2.
     `nothing-moved` (the
     cause-free silent-rollback arm — detected when the landed predicate
     failed and the batch did not apply: cross-doc, every enumerated id
-    still present in the complete post-write source walk; same-doc, the
-    run still occupying its pre-move position in the single walk, since
-    set membership alone cannot distinguish landed from a silent no-op
-    there; carries both post-write walks and the judged set,
+    still present in the complete post-write source walk; same-doc, neighbour
+    identity over the single walk — the block immediately preceding
+    the enumerated run's head in the pre-move walk still immediately
+    precedes it, with the enumerated members following in the
+    enumerated order (index-shaped adjacency would misread any
+    concurrent earlier insertion) — since set membership alone cannot
+    distinguish landed from a silent no-op there; carries both post-write walks and the judged set,
     delete-section's `nothing-deleted` shape, so the flow serves and
     re-baselines from the state the verdict certified); `post-walk-truncated` (a
     truncated post-write walk — carries the complete walks and the
@@ -771,9 +841,12 @@ codec decisions they build on are recorded in §2.
     re-nests the moved members into that container — the section rule's
     locality, spike M1), leading with the swallow example (a
     strictly-shallower move takes the destination's boundary heading
-    and the sections after it with it), and the heavy-operation
+    and the sections after it with it), the heavy-operation
     statement (a large section move delays every other write for the
-    batch's window) — the `kb_write` tool description (`write.ts`);
+    batch's window), and the same-KB scope statement (a cross-notebook
+    `toDocId` reads as `noSuchDoc` — the per-id path's existing
+    wording, now stated in the description) — the `kb_write` tool
+    description (`write.ts`);
   - shared fragments stay in `writeVerdicts.ts`; a new one lands there
     only when a second consumer exists.
 - **Pins and suite placement — the single pin table.** The landed
@@ -782,18 +855,21 @@ codec decisions they build on are recorded in §2.
   `WalkedTree`s lands before the primitive is wired to the kernel, so
   the live cases confirm the corpus rather than define the semantics;
   without it the mode's silent failure mode is "accepted a wrong
-  landing". The live pins ride the primitives' live suite beside
-  `move.live`; a backstop fact the code does not branch on pins one
+  landing". The live pins join `move.live.test.ts` — no new live file and no
+  `INTEGRATION_ORDER` change; a backstop fact the code does not branch on pins one
   case each, its multiplicity living as transcript evidence in the fact
-  list, never as pins. §3 records what the spike executed; this table
+  list, never as pins — and the fact lists carry the docstring/live
+  split explicitly: a fact a module docstring records without a live
+  pin is named as docstring-only there, so an upgrade pass does not
+  re-derive which facts the suites falsify. §3 records what the spike executed; this table
   is the only pin plan.
 
 | Case ids | What it falsifies | Home |
 |---|---|---|
 | §4 refusals — `own-closure`, both `already-at-destination` derivations | the refusal derivations, including the L0 closure-over-siblings reading | unit corpus |
 | `untargetable` (flow-side, not a primitive arm) | the widened arm composes the per-id path's existing `resolveHeadingTarget` judgment — no new pin; the composition rides the flow's existing move-path tests | none (already pinned) |
-| Predicate arms — prefix tolerance, span, tail, `nothing-moved`, truncation ordering | the landed judgment over synthetic walks: swallow, deeper landing, drag-at-front, chain-tail append, truncated walks | unit corpus |
-| Owner projection — M1's quote case, the deeper landing, the enclosing-container case | the owner stack; pops on container exit restore the outer frames | unit corpus |
+| Predicate arms — prefix tolerance, span, tail, `nothing-moved`, truncation ordering | the landed judgment over synthetic walks: swallow, deeper landing, drag-at-front, chain-tail append, doc-end (omitted `toHeadingId`), truncated walks | unit corpus |
+| Owner projection — M1's quote case, the deeper landing, the enclosing-container case | the closure-containment formulation — `sectionOf`'s own product, container-local by construction | unit corpus |
 | B/B2/F5 | the folded-source drag and its redirect interaction, across every fold combination of the source heading and its nested subsection headings | primitives live |
 | D1a–c | the trim chain's landing across folds — no LIFO rule, no shared-anchor hazard | primitives live |
 | D1d–e | the empty-destination degenerates under both anchor folds | primitives live |
@@ -806,13 +882,12 @@ codec decisions they build on are recorded in §2.
 | cross-doc residue round trip | wrong-root rows resolve not-found; the destination write heals nothing; the source write restores; heal-then-retry lands whole | primitives live |
 | L1–L3 | the containment-rollback backstop — the §4 closure refusal's ground | primitives live, one case |
 | M2 | the source-tree-anchor rollback backstop — the cross-doc note's ground | primitives live, one case |
-| H1 (raw-kernel fact) | the cross-crypto-boundary rollback — unreachable through this mode (encrypted boxes are dropped at KB validation, so no KB can arm the cross-crypto path) | primitives live, one case |
 | ≥32-op batch | a move-only batch takes the per-op path at any arity and lands whole (the latency datum — 36 ops / 341 ms — lives in the module docstring, never a wall-clock assertion) | primitives live |
 | Widened-capability wording | the tool description states what a section-bearing `blockId` now does | `__tests__/unit/writeSchema.test.ts`, `writePins.live` |
 
 The widened arm rides `move`'s existing pins; the integration
 project's `INTEGRATION_ORDER` changes only if the section arm becomes
-its own module. The spike's standalone containment probe files are
+its own module (the new cases above join `move.live.test.ts`). The spike's standalone containment probe files are
 transcript evidence; the live-suite pins replace them when they land.
 The upgrade checklist's re-run-the-suites pass then falsifies these
 facts in place, not against a transcript.

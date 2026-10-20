@@ -294,8 +294,8 @@ member at the destination section's sibling-run level — leaf or container,
 any tail — and the decided codec carries no refusal for the anchor's tail
 shape (the `doc-end-heading` refusal was dropped with the D1 trim; the
 anchor rule stands). The redirect fires only on heading anchors
-(`transaction.go:772-776`), and the sibling insert is anchor-type-blind
-(`:792-800`); the superblock/task-list special-casing lives in `doMove`'s
+(`transaction.go:762-768`), and the sibling insert is anchor-type-blind
+(`:793-797`); the superblock/task-list special-casing lives in `doMove`'s
 parent branch only (`:850-872`), so **superblock chain anchors remain
 unprobed** (the code predicts clean; CT did not cover them) — a fact-list
 note, not a refusal. Container-type coverage now holds for blockquote
@@ -499,7 +499,7 @@ predicted:
   heading), E unfolded and E folded, plus the memberless-moved-section
   forms (single heading leg on `previousID = e1` and `previousID = E`):
   all landed correctly, both folds. With E empty the redirect has no
-  target (`0 < len(targetChildren)` fails, `transaction.go:775`) — the
+  target (`0 < len(targetChildren)` fails, `transaction.go:765`) — the
   heading anchor is fold-**independent** while the section stays empty.
   The empty-destination case needs no refusal and no workaround, confirming
   the oracle's reading.
@@ -558,7 +558,7 @@ predicted:
    the pre-move walk), never destination content that drifted behind the
    run. This closes the silent-swallow hole on both arms' chain forms.
 4. The concurrent-append readings are fold-gated on the *anchor's* fold
-   state (`transaction.go:772-776`: the redirect requires
+   state (`transaction.go:762-768`: the redirect requires
    `IsSelfFolded(targetNode)`) — a distinct gate from the moved-node's
    drag (`:927-929`). The §3 rehearsal list should carry both fold
    matrices for the chain arm (anchor-fold × moved-fold), not just the
