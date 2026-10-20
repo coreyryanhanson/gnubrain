@@ -121,10 +121,15 @@ the batched route is how it ships. The design rides the batched route
   anchor is a sibling position, never a block inside a container's tail
   — anchoring on a tail heading *inside* a container lands the run
   inside the container around that heading's section (spike CT3),
-  against container-locality, and the recursion never reaches such a
-  heading because a heading inside a container is not a section-level
-  member — and the heading issues **last** on the boundary arm's own
-  leg,
+  against container-locality; the one heading inside a container the
+  recursion does reach is the fixed point itself — an EMPTY destination
+  section inside a container anchors on the destination heading, inside
+  that container, and is clean and fold-independent (spike CT6/CT6h:
+  after-heading is end-of-section while the section is empty, the
+  redirect has no target) — a heading anchor inside a container is safe
+  exactly when its section is empty, the only heading shape
+  `deriveMoveAnchor` derives — and the heading issues **last** on the
+  boundary arm's own leg,
   `nextID = <the first landed member>` (spike D1a–c: exact landing
   unfolded, with the source heading folded, and with the nested
   subsection folded — the same fold-blind branch, so the chain arm
@@ -161,11 +166,11 @@ the batched route is how it ships. The design rides the batched route
   quote's children, member order preserved, heading immediately before
   the first member, the boundary still bounding after it. A boundary outside the
   destination's container cannot arise — `sectionOf`'s boundary shares the
-  heading's parent, container-local by construction; the genuinely unprobed
-  shape is the container-nested doc-end chain, where the destination
-  section is its container's last section and the chain anchor is a
-  sibling inside that container (spike CT's doc-end section was
-  doc-level). This is the section rule's locality, the
+  heading's parent, container-local by construction; the container-nested
+  doc-end chain is live-confirmed too (spike CT5/CT6: the destination
+  section is its container's last section, the chain anchor a sibling
+  inside that container, and the run re-nests into it — the same
+  locality, both arms). This is the section rule's locality, the
   same rule `append` obeys — documented behavior the tool description
   must state, and the owner report is what surfaces it. The heading
   leg's anchor may likewise be a container member that has already
@@ -324,7 +329,9 @@ Before writing the implementation plan:
    section records only what the spike executed, never a second copy of
    the pin plan. The original spike's raw transcript files under `/tmp` are gone except
    the `/tmp/spike-move-trim-*.log` set (which corroborates all ten D1
-   verdicts) and the N-leg transcript `/tmp/spike-move-tailheading.log`;
+   verdicts), the N-leg transcript `/tmp/spike-move-tailheading.log`, and
+   the CT5–CT10 container-shapes transcript
+   `/tmp/spike-move-unprobed.log`;
    the spike doc is now the record — re-probe any reading
    the live suite has not yet pinned before relying on it.
 
@@ -884,7 +891,8 @@ codec decisions they build on are recorded in §2.
 | D1d–e | the empty-destination degenerates under both anchor folds | primitives live |
 | D1f–g | the memberless forms on both arms | primitives live |
 | D1h–j | the concurrent-append swallow matrix — the tail clause's falsifier (the anchor's fold decides swallow vs redirect) | primitives live |
-| CT1–CT4 | container anchors — quote/list chain anchors land the run as siblings; callout and superblock re-nests remain unprobed (the kernel's insertion path diverges per container; superblocks are special-cased in `doMove`; superblock chain anchors unprobed too) | primitives live; unprobed shapes re-probed before pinning |
+| CT1–CT4 | container anchors — quote/list chain anchors land the run as siblings | primitives live |
+| CT5–CT10 | the container shapes: the container-nested doc-end chain re-nests the run (both arms), the empty-section fixed point anchors on the destination heading inside its container fold-independently, and callout (`callout`/`NOTE`) and superblock (`s`) chain anchors land the run as siblings after the container with no per-container divergence on the sibling insert | primitives live |
 | M1/M3 | the destination-container re-nest and the crossed-container heading leg, across container types | primitives live |
 | N1/N1h/N2/N2h | the chain anchor on an empty-section tail heading — `deriveMoveAnchor`'s recursion fixed point lands end-of-section, fold-independent (the redirect's `0 < l` guard); N1x is the mis-landing record: the retired "last non-heading member" rule swallows the tail heading | primitives live |
 | container-nested doc-end chain; container-tail chain form (spike case CT) | the chain anchor inside a nested container / on a non-heading container (spike CT's doc-end section was doc-level) | primitives live |

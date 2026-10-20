@@ -7,12 +7,16 @@ F–J), `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
 review follow-up), and `/tmp/spike-move-conttail.mjs` (case CT, the
 container-tail chain anchor, review follow-up), and
 `/tmp/spike-move-tailheading.mjs` (case N, the
-chain anchor on an empty-section tail heading, pre-implementation probe) —
+chain anchor on an empty-section tail heading, pre-implementation probe),
+and `/tmp/spike-move-unprobed.mjs` (cases CT5–CT10, the container shapes —
+container-nested doc-end chain, callout/superblock anchors and re-nests,
+pre-implementation probe) —
 raw clients, zero deps,
 disposable notebooks created and
 torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
 `/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`,
-`/tmp/spike-move-conttail.log`, and `/tmp/spike-move-tailheading.log`. The containment
+`/tmp/spike-move-conttail.log`, `/tmp/spike-move-tailheading.log`, and
+`/tmp/spike-move-unprobed.log`. The containment
 legs (cases L, M below) ran as one-off vitest live files over the
 primitives — real `sectionOf`/`walkBlockTree`, no replicas, removed after
 the run; transcripts: `/tmp/containment-probe-77257.log`,
@@ -623,3 +627,68 @@ Source reduced to `S, s0, T, t1` on every leg.
    cost this probe a debugging loop; `getChildBlocks(docId)` returns
    the top-level blocks with the doc block itself (type `h`, subType
    `h1`) as the first row.
+
+### CT5–CT10 — the container shapes (pre-implementation probe)
+
+Executed 2026-10-20. Settles the shapes review finding 4 left unprobed: the
+**container-nested doc-end chain** (§2's named gap — spike CT's doc-end
+section was doc-level), the **callout and superblock chain anchors** (CT
+covered quote/list only), and the **callout and superblock re-nests** (M1's
+`nextID` re-nest was blockquote-only). Script:
+`/tmp/spike-move-unprobed.mjs`; transcript:
+`/tmp/spike-move-unprobed.log`. Same source fixture (`H`'s section:
+`m1, m2, H2, sub1, m3`), one disposable notebook, seven legs, all cross-doc
+within the notebook, each issued as ONE `/api/transactions` transaction of
+the decided codec (chain arm: members chained `previousID` in document
+order from `deriveMoveAnchor`'s projection, heading leg last on
+`nextID = <first member>`; boundary arm: members `nextID = <boundary>`,
+heading `nextID = <first member>`); verdicts are live-tree walks. The
+`transactions` request requires a `reqId` field (the queue-order stamp) —
+a batch without one is refused `code: -1` outright, not silently no-oped.
+
+| Leg | Destination | Anchor | Landed dest (container children / doc order) | Verdict |
+|---|---|---|---|---|
+| CT5 | `# DA / da1 / quote(## E / e1)` — quote is the doc's LAST root child, E's section `{e1}` | `e1` — a leaf INSIDE the container | quote children `E, e1, H, m1, m2, H2, sub1, m3`; source reduced | PASS — the chain arm re-nests the run INTO the container (container locality, the boundary arm's M1 rule), order preserved, heading immediately before the first member |
+| CT6 | `# DB / db1 / quote(## E)` — E's section EMPTY, quote last root child | `E` itself — the recursion's fixed point, a heading INSIDE a container | quote children `E, H, m1 … m3` | PASS — after-heading placement is end-of-section while the section is empty (the redirect has no target); clean, no swallow |
+| CT6h | CT6 with the anchor heading `E` folded | `E` (folded) | identical to CT6 | PASS — fold-independent (`0 < l` guard: no children to redirect past) |
+| CT7 | `# DC / dc1 / ## E / e1 / callout(c1)` — E's section tail = the callout, doc's last section | the callout container | doc order `dc1, E, e1, callout(c1), H, m1 … m3` | PASS — the run lands as doc-level siblings AFTER the callout, callout untouched (the CT1/CT4 pattern, no per-container divergence on the sibling insert) |
+| CT8 | `# DD / dd1 / ## E / e1 / superblock(sb1)` | the superblock container | doc order `dd1, E, e1, superblock(sb1), H, m1 … m3` | PASS — the superblock sibling insert is clean; the special-casing stays in `doMove`'s parent branch only |
+| CT9 | `# DE / de1 / callout(## Q / q1 / ## R / r1)` — destination section Q inside the callout, boundary R in the same callout | boundary arm (`nextID = R`) | callout children `Q, q1, H, m1, m2, H2, sub1, m3, R, r1` | PASS — M1's re-nest reading generalizes: the run lands inside the callout as Q's section end, order preserved, R still bounding after |
+| CT10 | `# DF / df1 / superblock(## Q / q1 / ## R / r1)` | boundary arm (`nextID = R`) | superblock children `Q, q1, H, m1, m2, H2, sub1, m3, R, r1` | PASS — the superblock re-nest is clean, same shape as CT9 |
+
+Source reduced to `S, s0, T, t1` on every leg; notebook torn down clean.
+
+**Wire/walk notes (mechanics, not kernel facts):** the walk types a
+callout as its own type `callout` (subType `NOTE`), not `b`, and a
+superblock as `s` — both already in the primitives'
+`TARGETABLE_CONTAINER_TYPES` vocabulary, so no walk-recursion or
+targetability gap; `getChildBlocks` rows carry `content`, which makes
+fixture resolution content-keyed and structure-position-free.
+
+**Implications for the plan:**
+
+1. **The container-nested doc-end chain is real and clean (CT5)** — the
+   chain arm obeys the same container-locality rule the boundary arm does
+   (M1): a destination section inside a quote/callout/superblock re-nests
+   the moved run INTO that container. §2's "genuinely unprobed shape" is
+   probed; the tool description's locality statement covers both arms.
+2. **§2's anchor-rule sentence needs its exception named (CT6/CT6h)**:
+   the claim "the recursion never reaches a heading inside a container"
+   is falsified at the fixed point — an EMPTY destination section inside
+   a container anchors on the destination heading itself, inside the
+   container, and that anchor is clean and fold-independent (after-heading
+   IS end-of-section while the section is empty; the redirect has no
+   target, the same ground as N1/N1h). The corrected rule: a heading
+   anchor inside a container is safe exactly when its section is empty
+   (the only heading shape `deriveMoveAnchor` derives); a populated one
+   remains the CT3 hazard.
+3. **The sibling insert is anchor-type-blind across the whole container
+   vocabulary (CT7/CT8)** — callout and superblock chain anchors land the
+   run as siblings after the container, no per-container divergence on
+   the `previousID`/sibling path; the kernel's superblock/callout
+   special-casing stays confined to `doMove`'s parent branch. The
+   fact-list's "superblock chain anchors unprobed" note is discharged.
+4. **The M1 re-nest generalizes (CT9/CT10)** — callout and superblock
+   destination sections re-nest the run exactly as the quote did; the
+   owner certification's container-locality requirement now has live
+   ground beyond blockquote.
