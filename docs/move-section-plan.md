@@ -52,11 +52,11 @@ actually attached (§2's owner certification). The batched route delivers
 **one call, one group receipt, all-or-nothing**, with the owner report.
 Two decisions were once conflated here and are now separated. The
 **batched transaction** is genuinely new machinery and unavoidable for
-atomicity — a flow cannot call `transact` itself — the tool layer never
-sequences kernel mutations, the layering contract both repos carry
-(`layerBoundary.test.ts` greps imports, not client capabilities, so the
-bar is the contract, not the test) — so the batched primitive is the
-only route to all-or-nothing. The **mode vocabulary** is a separate choice: a distinct
+atomicity — a flow cannot call `transact` itself, because the tool
+layer never sequences kernel mutations (the layering contract both
+repos carry; `layerBoundary.test.ts` greps imports, not client
+capabilities, so the bar is the contract, not the test) — so the
+batched primitive is the only route to all-or-nothing. The **mode vocabulary** is a separate choice: a distinct
 `move-section` mode was considered and rejected — its params
 would be the per-id shape verbatim (`blockId`/`toDocId`/`toHeadingId`,
 already on `move`), and a second mode keeps the original friction (the
@@ -114,7 +114,7 @@ the batched route is how it ships. The design rides the batched route
   heading, so the anchor is a leaf, a container, or a heading with an
   EMPTY section (spike CT1–CT4: the container anchor lands the run
   after it as siblings, heading tail included; spike N1/N2: the
-  empty-section tail heading anchors after-heading — placement IS
+  empty-section tail heading anchors after-heading — placement **is**
   end-of-section there and the fold branch has nothing to jump past —
   while the earlier "last non-heading member" phrasing landed the run
   before the tail heading and swallowed it, live-confirmed as N1x); the
@@ -132,7 +132,7 @@ the batched route is how it ships. The design rides the batched route
   The chain legs are explicit `previousID` ops: an omitted or empty
   `nextID` is not a doc-end address — an op with all anchors empty
   rolls the batch back behind code 0 (spike F1). The recursion's fixed
-  point IS the empty destination section: no members → the anchor is
+  point **is** the empty destination section: no members → the anchor is
   the destination heading itself:
   fold-independent while the section is empty (the redirect has no
   target, `transaction.go:765`), and the landed judgment, not a
@@ -140,7 +140,8 @@ the batched route is how it ships. The design rides the batched route
   spike D1h–j). A memberless moved section on the chain arm reduces to
   a single heading leg (`previousID = <the chain anchor>`, or
   `previousID = <the destination heading>` on an empty destination —
-  spike D1f–g). **A destination with no `toHeadingId` at all** — the
+  spike D1f–g — or, with `toHeadingId` omitted against an empty
+  destination doc, the doc-end form's `parentID = <docId>` prepend). **A destination with no `toHeadingId` at all** — the
   per-id shape's documented doc-end form — has no destination section:
   the codec rides the chain arm anchored on
   `deriveMoveAnchor(destWalk, undefined)`'s projection — the
@@ -319,9 +320,10 @@ Before writing the implementation plan:
    kernel upgrade. The single inventory of those rehearsals — case id →
    what it falsifies → where it is pinned — is §6's pin table; this
    section records only what the spike executed, never a second copy of
-   the pin plan. The raw transcript files under `/tmp` are gone except
-   `/tmp/spike-move-trim-6236.log` (which corroborates all ten D1
-   verdicts); the spike doc is now the record — re-probe any reading
+   the pin plan. The original spike's raw transcript files under `/tmp` are gone except
+   the `/tmp/spike-move-trim-*.log` set (which corroborates all ten D1
+   verdicts) and the N-leg transcript `/tmp/spike-move-tailheading.log`;
+   the spike doc is now the record — re-probe any reading
    the live suite has not yet pinned before relying on it.
 
 ## 4. Refusals the mode must add
@@ -456,8 +458,11 @@ codec decisions they build on are recorded in §2.
   between the per-id sequence and the batched section sequence — no
   path fetches the source walk twice, and the flow's cross-doc shape
   is unchanged (it holds only the destination walk, from the
-  destination resolution). The flow keeps its wording branch (the two
-  outcome unions differ); the module docstring states the walk rule
+  destination resolution). The flow keeps its wording branch — the entry returns
+  one closed union spanning both sequences' arm families, so the
+  flow's exhaustive switch covers the whole set and never needs to
+  know which route ran before the verdict names it; the module
+  docstring states the walk rule
   (the entry takes the caller's destination walk — the flow serves and
   seeds from it — and owns the source walk's single fetch, reusing the
   caller's walk for both roles same-doc).
@@ -886,8 +891,8 @@ codec decisions they build on are recorded in §2.
 | Widened-capability wording | the tool description states what a section-bearing `blockId` now does | `__tests__/unit/writeSchema.test.ts`, `writePins.live` |
 
 The widened arm rides `move`'s existing pins; the integration
-project's `INTEGRATION_ORDER` changes only if the section arm becomes
-its own module (the new cases above join `move.live.test.ts`). The spike's standalone containment probe files are
+project's `INTEGRATION_ORDER` is unchanged — the new cases above join
+`move.live.test.ts`. The spike's standalone containment probe files are
 transcript evidence; the live-suite pins replace them when they land.
 The upgrade checklist's re-run-the-suites pass then falsifies these
 facts in place, not against a transcript.

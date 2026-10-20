@@ -5,13 +5,14 @@ Status: **executed 2026-10-19** against the live SiYuan 3.8.7 kernel
 (codec matrix, cases A–E), `/tmp/spike-move-owed.mjs` (the owed legs, cases
 F–J), `/tmp/spike-move-docend.mjs` (case K, the doc-end chain order,
 review follow-up), and `/tmp/spike-move-conttail.mjs` (case CT, the
-container-tail chain anchor, review follow-up) — raw clients, zero deps,
+container-tail chain anchor, review follow-up), and
+`/tmp/spike-move-tailheading.mjs` (case N, the
+chain anchor on an empty-section tail heading, pre-implementation probe) —
+raw clients, zero deps,
 disposable notebooks created and
 torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
 `/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`,
-`/tmp/spike-move-conttail.log`, and `/tmp/spike-move-tailheading.mjs` (case N, the
-chain anchor on an empty-section tail heading, pre-implementation probe) —
-transcript `/tmp/spike-move-tailheading.log`. The containment
+`/tmp/spike-move-conttail.log`, and `/tmp/spike-move-tailheading.log`. The containment
 legs (cases L, M below) ran as one-off vitest live files over the
 primitives — real `sectionOf`/`walkBlockTree`, no replicas, removed after
 the run; transcripts: `/tmp/containment-probe-77257.log`,
