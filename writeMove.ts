@@ -283,6 +283,16 @@ export async function runMoveMode(
 	) {
 		return movePlacementRefusalEnvelope(outcome, doc);
 	}
+	if (outcome.kind === "heading-absent") {
+		// Unreachable through moveBlockVerified: the flow derives the anchor
+		// above and words its refusal there — the arm rides the union for
+		// the widened dispatch entry, worded here with the same
+		// stale-heading sentence.
+		return refusedEnvelope(
+			staleHeadingMessage(params.toHeadingId as string, dest),
+			{ kb: name },
+		);
+	}
 	if (outcome.kind !== "judged") {
 		return mutationFailure(outcome, input, doc, { anchor: echo });
 	}
