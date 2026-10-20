@@ -203,8 +203,10 @@ other arms. Three readings:
   The landing position is correct in both folds (doc end), but the **order**
   is fold-dependent: the doc-end heading anchor is exactly the fold-hidden
   hazard class the plan refuses, in a new costume. A doc-end codec form must
-  either chain on non-heading leaves (case K's leaf-anchored form) or refuse
-  the heading anchor.
+  chain on non-heading leaves; the decided codec's heading leg rides
+  `nextID` (case D1 below), and a destination heading anchors a
+  `previousID` leg only when no non-heading sibling is derivable and the
+  section is empty (D1d–g).
 - **F5 — chained `previousID` with the nested subsection heading `H2` folded.**
   The drag rides `H2`'s own op (H2 + its section move together after `m2`),
   and `sub1`'s chained op then redirects into H2's landed section and
@@ -243,8 +245,10 @@ is the **members-first chain with the heading leg last, anchored
 
 **Implication for the plan (§4):** the doc-end arm is real and fold-safe —
 members chain `previousID` in document order from the destination section's
-last non-heading leaf, and the heading issues **last** anchored on that same
-leaf (K1). The heading-anchored doc-end forms stay refused (F4a/F4b, the
+last non-heading leaf, and the heading issues **last** (K1). The heading
+leg's anchor was later moved onto the boundary arm's own `nextID` leg (case
+D1 below), retiring K's same-leaf heading anchor and the LIFO rule it
+needed. The heading-anchored doc-end forms stay excluded (F4a/F4b, the
 fold-dependent order); F3's heading-last chain is the corrupted layout, not a
 form. F1's precondition stands unchanged: an omitted/empty `nextID` is not a
 doc-end address, it is a rollback.
@@ -285,8 +289,9 @@ section); the chain anchors `previousID = <the container>` unless noted.
 
 **Implication for the plan:** the doc-end chain anchor is any non-heading
 member at the destination section's sibling-run level — leaf or container,
-any tail — and §4's refusal narrows to its F4-grounded core (the last
-sibling block is a heading). The redirect fires only on heading anchors
+any tail — and the decided codec carries no refusal for the anchor's tail
+shape (the `doc-end-heading` refusal was dropped with the D1 trim; the
+anchor rule stands). The redirect fires only on heading anchors
 (`transaction.go:772-776`), and the sibling insert is anchor-type-blind
 (`:792-800`); the superblock/task-list special-casing lives in `doMove`'s
 parent branch only (`:850-872`), so **superblock chain anchors remain
@@ -460,3 +465,99 @@ established, now confirmed for a second op class.
   pre-mutation regardless of fold, and the §3 rehearsal list covers the
   decided codec's fold matrix. The M runs are also single-shape samples
   (one container type — blockquote — per landing shape).
+
+### D1 — the trim leg: the doc-end chain reusing the boundary arm's heading leg
+
+The D1 trim replaces the plan's dedicated doc-end heading leg
+(`previousID = <chain anchor>`, issued last under K2's LIFO rule, fold-
+dependent per F4a/F4b, refused at §4's `doc-end-heading` arm) with the
+boundary arm's own heading leg — `nextID = <first landed member>` — leaving
+the members `previousID`-chained. Script:
+`/tmp/spike-move-trim.mjs`; transcript: `/tmp/spike-move-trim.log`. Same
+source fixture (`S / s0 / H / m1 / m2 / H2 / sub1 / m3 / T / t1`, and a
+memberless variant `S / s0 / H / T / t1`), doc-end destinations
+`D2 / d2 / E / e1` (E's section = `{e1}`) and `D3 / d3 / E` (E's section
+empty), one disposable notebook, torn down clean. Ten legs, all landed as
+predicted:
+
+- **D1a–c — the trim's chain form** (members chained `previousID` from `e1`
+  in document order, heading leg last on `nextID = m1`), unfolded / source
+  `H` folded / nested `H2` folded: all three landed exactly
+  `D2, d2, E, e1, H, m1, m2, H2, sub1, m3`, source reduced to
+  `S, s0, T, t1` — identical to K1's landing. The folded-`H` leg runs over
+  an already-emptied section (no drag, B2's guarantee); the folded-`H2` leg
+  drags `sub1` ahead of its own chained op, which self-inserts harmlessly
+  (K1h2's interaction, now under the trim's leg order). **The boundary
+  arm's heading leg is fold-blind at a doc-end destination too** — same
+  `!moveBefore` branch, no redirect, no LIFO exposure. K2's rule, F4's
+  heading-leg fold-dependence, and the non-empty core of the
+  `doc-end-heading` refusal lose their ground.
+- **D1d–g — the empty-destination degenerates** (no derivable non-heading
+  anchor; the first member leg anchors `previousID = E`, the destination
+  heading), E unfolded and E folded, plus the memberless-moved-section
+  forms (single heading leg on `previousID = e1` and `previousID = E`):
+  all landed correctly, both folds. With E empty the redirect has no
+  target (`0 < len(targetChildren)` fails, `transaction.go:775`) — the
+  heading anchor is fold-**independent** while the section stays empty.
+  The empty-destination case needs no refusal and no workaround, confirming
+  the oracle's reading.
+- **D1h–j — the concurrent-append swallow (new finding, shared by both
+  codecs).** A block appended into the destination section between anchor
+  derivation and batch (`insertBlock previousID=E` — headings are leaf
+  blocks, `parentID` is refused; after `e1` for the non-empty case):
+  - **D1h** (empty dest, E unfolded): the first member leg inserts between
+    E and the appended `ap` — the run lands `E, H, m1 … m3, ap`, and `ap`
+    is **swallowed into the moved section's tail** (it now belongs to H's
+    section). The redirect did not fire (E unfolded), so the append that
+    targeted end-of-section ends up *under* the moved run.
+  - **D1i** (same, E folded): the redirect fires (`IsSelfFolded(E)`), the
+    anchor resolves to `ap`, and the run lands after it —
+    `E, ap, H, m1 … m3`, correct end-of-section. **Fold-dependent**: the
+    same batch lands correctly or swallows, on hidden state.
+  - **D1j** (non-empty dest, append after `e1`, the plan's own K1 chain
+    form): the same swallow — `E, e1, H, m1 … m3, ap`. This one is
+    **pre-existing in the plan's codec**, not trim-caused: the chain
+    anchor is the last pre-existing block, so any append after it lands
+    ahead of the run's insertion point and behind the run.
+
+  The swallow passes the plan's current landed-predicate wording silently:
+  the run's head adjacency holds (entry before `H` is the anchor), the
+  prefix clause holds (`sectionOf(H).members` starts with the enumerated
+  run — `ap` merely extends the tail the prefix tolerance under-reports),
+  and `ap` sits *outside* the enumerated run's span, so the
+  unjudged-presence clause never sees it. The boundary arm is immune —
+  its member legs anchor `nextID = <boundary>`, so a concurrent append
+  stays ahead of the run and the run still lands at the section's end
+  (the plan's currency bullet is correct *for that arm alone*).
+
+**Implications for the plan:**
+
+1. **Adopt the trim**: the doc-end arm reuses the boundary arm's heading
+   leg (`nextID = <first landed member>`); delete K2's LIFO rule, F4a/F4b's
+   heading-leg reasoning, and the `doc-end-heading` refusal's non-empty
+   core (CT2/CT4 already generalized the anchor). One codec, one heading
+   leg, fold-blind on both arms.
+2. **The refusal's surviving core is narrower than the plan's and needs
+   its fold-ground restated**: an empty destination section at doc end is
+   *reachable* (D1d–g) and fold-safe absent concurrency; the genuinely
+   fold-dependent shapes are heading anchors under concurrency (D1h) —
+   and the same swallow arises on the non-heading anchor too (D1j), so a
+   refusal cannot close the class. Do not refuse it — judge it (next).
+3. **The landed predicate needs a tail clause on the chain arm**: the
+   entry immediately *following* the enumerated run's last member must be
+   the pre-move-known successor — for the doc-end arm, nothing (the
+   destination section is its container's last); for the boundary arm the
+   existing adjacency clause already pins the tail (the run sits
+   immediately before the pre-move boundary, and the swallow case keeps
+   the boundary immediately after the run). Anything else after the run —
+   `ap` in D1h/D1j — is a `landed-divergent` arm, not a tolerated prefix
+   extension: the swallow tolerance covers content the *moved* section
+   legitimately claimed (the pre-move boundary's section, known ids from
+   the pre-move walk), never destination content that drifted behind the
+   run. This closes the silent-swallow hole on both arms' chain forms.
+4. The concurrent-append readings are fold-gated on the *anchor's* fold
+   state (`transaction.go:772-776`: the redirect requires
+   `IsSelfFolded(targetNode)`) — a distinct gate from the moved-node's
+   drag (`:927-929`). The §3 rehearsal list should carry both fold
+   matrices for the chain arm (anchor-fold × moved-fold), not just the
+   moved-node's.
