@@ -117,8 +117,9 @@ the batched route is how it ships. The design rides the batched route
   `deriveMoveAnchor`'s projection — the destination section's **last
   member** (`section.members.at(-1)`), recursing into it while it is a
   heading, so the anchor is a leaf, a container, or a heading with an
-  EMPTY section (spike CT1–CT4: the container anchor lands the run
-  after it as siblings, heading tail included; spike N1/N2: the
+  EMPTY section (spike CT1–CT4, CT7–CT8: the container anchor lands
+  the run after it as siblings, heading tail included — quotes, lists,
+  callouts, and superblocks alike; spike N1/N2: the
   empty-section tail heading anchors after-heading — placement **is**
   end-of-section there and the fold branch has nothing to jump past —
   while the earlier "last non-heading member" phrasing landed the run
@@ -166,10 +167,12 @@ the batched route is how it ships. The design rides the batched route
   The doc-end chain anchor lives inside the destination section's own
   container by construction, and spike M1's boundary did too, so a
   destination section that is itself container-nested — a heading
-  inside a quote, callout, or list — re-nests the moved members **into
-  that container**: spike M1 landed the whole run as the destination
-  quote's children, member order preserved, heading immediately before
-  the first member, the boundary still bounding after it. A boundary outside the
+  inside a quote, callout, list, or superblock — re-nests the moved
+  members **into that container**: spike M1 landed the whole run as the
+  destination quote's children, member order preserved, heading
+  immediately before the first member, the boundary still bounding
+  after it (spike CT9/CT10: the same re-nest through a callout and a
+  superblock). A boundary outside the
   destination's container cannot arise — `sectionOf`'s boundary shares the
   heading's parent, container-local by construction; the container-nested
   doc-end chain is live-confirmed too (spike CT5/CT6: the destination
@@ -746,7 +749,7 @@ codec decisions they build on are recorded in §2.
   `blockId`/`toDocId`/`toHeadingId` (`writeSchema.ts`), so the widened
   arm is the existing per-id shape with `blockId` widened to name a
   heading (the moved section's root; non-heading blocks keep the
-  per-id semantics) and `toDocId` required, matching `move`'s verdict).
+  per-id semantics) and `toDocId` required, matching `move`'s verdict.
   The `writePrepare.ts` dispatch and its exhaustive tail keep their
   shape — the section arm is a wording branch inside the `move` flow,
   while the row-type dispatch itself lives in the primitives' entry
@@ -859,7 +862,8 @@ codec decisions they build on are recorded in §2.
   serve-seeds-baselines policy is the seed-site rule's, unchanged.
 - **Wording homes are named.** The primitives return the closed verdict
   unions; this repo words them, and every sentence has a home:
-  - the §4 refusals (identity/containment, already-at-destination) —
+  - the §4 refusals (identity/containment, `shallower-than-boundary`,
+    already-at-destination) —
     refusal-envelope wording in the widened move flow (a section-arm
     module beside `writeMove.ts` or a branch within it), exhaustive over
     the primitives' refusal union; the `untargetable` refusal is not on
@@ -879,9 +883,10 @@ codec decisions they build on are recorded in §2.
     made, and a wording-path kernel call would re-fetch state the
     verdict already judged. Same-doc: nothing applied — the batch
     rolled back whole; retry once from fresh walks (ids stay
-    resolvable; the mild case self-converges). Cross-doc: a committed
-    write to the **source** doc first, then re-issue once — the heal is
-    safe advice whether or not residue exists (a clean
+    resolvable; the mild case self-converges). Cross-doc: heal the
+    **source** doc first (any committed write, e.g. a placeholder
+    `mode: append` block there), then re-issue once — the heal is safe
+    advice whether or not residue exists (a clean
     `TxErrCodeBlockNotFound` rollback leaves no damage, so the
     heal-first step is merely unnecessary there, never wrong); no
     execution path is claimed beyond that (delete-section's posture) —
@@ -895,9 +900,10 @@ codec decisions they build on are recorded in §2.
     section (memberless or not — a memberless heading moves as its
     single block, same route and landing), landing at the
     destination section's end — followed by the container-local landing
-    statement (a destination section inside a quote, callout, or list
-    re-nests the moved members into that container — the section rule's
-    locality, spike M1), leading with the shallower refusal (a move
+    statement (a destination section inside a quote, callout, list, or
+    superblock re-nests the moved members into that container — the
+    section rule's locality, spike M1, CT9/CT10), leading with the
+    shallower refusal (a move
     whose heading is strictly shallower than the destination section's
     boundary is refused — it would swallow the destination's boundary
     heading and the sections after it), the heavy-operation
@@ -963,10 +969,11 @@ facts in place, not against a transcript.
   behind success acks; the heal is a committed write to the **source**
   doc — the tree that actually contains the node — never the destination
   (a destination write never walks the moved node's row). Move therefore
-  keeps the cross-doc arm conservative: **do not re-issue; heal first,
-  then retry** — a re-issued move batch over residue trips its own skip
-  arms and rolls back again, looping until an out-of-band committed
-  write to the source doc restores resolvability. The same-doc arm's
+  keeps the cross-doc arm conservative: **heal the source doc first,
+  then re-issue once; never re-issue before the heal** — a re-issued
+  move batch over residue trips its own skip arms and rolls back again,
+  looping until an out-of-band committed write to the source doc
+  restores resolvability. The same-doc arm's
   recovery is the plain retry-once the silent-rollback wording gives
   (ids stay resolvable, so no heal precedes it). The recovery wording is move's own, not
   delete-section's: the delete-section repair sentence (committed write,
