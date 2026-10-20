@@ -238,32 +238,34 @@ the batched route is how it ships. The design rides the batched route
   tool-side fact list when the mode lands (§6), so the absence reads
   as a decision, not an omission.
 
-- **Landing is level-blind; the judgment certifies the owner, not just
-  the order.** Landing is end-of-section for every level, but the
-  section rule re-bounds the landed heading differently by its level
-  relative to the destination section's **boundary** (the next heading
-  at level ≤ the destination heading's — the codec's own anchor):
-  - A moved heading **strictly shallower than the boundary** is not
-    terminated by it: the moved section swallows the boundary heading
-    and everything after it, up to the next heading at the moved
-    heading's level or shallower. The landed section is larger than
-    what was moved — the outline side effect, documented behavior
-    stated in the tool description.
+- **Landing is level-bounded; the judgment certifies the owner, not
+  just the order.** Landing is end-of-section for every level, but the
+  section rule re-bounds the landed heading by its level relative to
+  the destination section's **boundary** (the next heading at level ≤
+  the destination heading's — the codec's own anchor):
+  - A moved heading **strictly shallower than the boundary** is
+    refused before the batch (§4's `shallower-than-boundary`): it
+    would not be terminated by the boundary — the moved section would
+    swallow the destination's boundary heading and the sections after
+    it into itself, silently re-bounding the destination's section.
+    That is the outline corruption this mode exists to prevent, and §5
+    forbids the level rewrite that would make it safe, so the mode
+    refuses rather than reports. The refusal is a level comparison
+    over walks the sequence already holds — zero kernel calls.
   - A moved heading **at the boundary's level or deeper** is terminated
     by the boundary and claims nothing beyond the moved members: at the
     destination heading's level it lands as a following sibling;
     deeper, it lands **inside** the destination's section and nests
     under the destination heading (owner: the destination heading, or a
     deeper heading within the destination section that precedes it).
-  The prefix judgment alone passes in every case, so the landed arm
+  The landed arm
   certifies the moved heading's **new owner** — the heading whose
   `sectionOf`-derived section contains the landed heading, read
   container-locally off the walk, never a document-order backward level
   scan (in spike M1's landed state the true owner sits inside the
   destination's quote, and a backward scan names a heading outside it) —
   alongside the order, and
-  the receipt says where the section actually attached — including the
-  swallow case, where the destination's boundary changed hands. This is
+  the receipt says where the section actually attached. This is
   reporting, not a level rewrite — the mode still never rewrites levels
   (§5). The projection is new code, not a read the primitives already
   have: no owner projection exists today, so it lives in `placement.ts`
@@ -368,6 +370,17 @@ owner, flow-side, for both arms of `move`.)
   walks the anchor's real ancestry in whatever tree it resolved into;
   `id == targetParentID`), rolling back whole (spike M2). One closure
   test serves both docs' resolutions.
+- The moved heading is **strictly shallower than the destination
+  section's boundary** — landing would not be terminated by it: the
+  moved section would swallow the destination's boundary heading and
+  the sections after it into itself, silently re-bounding the
+  destination's section (the outline corruption this mode exists to
+  prevent; §5 forbids the level rewrite that would make it safe).
+  Refusing keeps every reachable landing inside the landed predicate's
+  exact-equality scope (§6's order clause). Judged pre-mutation with
+  zero kernel calls: both levels read off walks the sequence already
+  holds — the moved heading's off the source walk, the boundary's off
+  the destination walk (`sectionOf`'s boundary, container-local).
 - The group is **already at the destination** — derived two ways: the
   destination section's boundary is the moved heading itself or lies
   inside what the move transports (the boundary heading is `headingId`,
@@ -570,14 +583,15 @@ codec decisions they build on are recorded in §2.
   CT1–CT4), so "contiguous in order" read as array adjacency would
   report legitimate container landings as divergent. Two facts over the
   post-write destination walk: (a) `sectionOf(postDestWalk, H)`'s member
-  run starts with the enumerated member run — prefix, never equality
-  (the tolerance clause below); (b) the next sibling after that run in
+  run **is** the enumerated member run — exact equality, in landed
+  order (the strictly-shallower swallow is refused pre-mutation, §4's
+  `shallower-than-boundary`, so the landed section claims nothing
+  beyond the moved members); (b) the next sibling after that run in
   `H`'s sibling run is the destination section's boundary **as the
   pre-move destination walk holds it** (the codec's own anchor), never
-  a boundary re-derived from the post-write walk, where a swallow has
-  already changed it — clause (b) needs a next-sibling-of-the-run
-  projection beside `landingId`, not `sectionOf` (the boundary is
-  excluded from `members` at equal level and inside it on a swallow). A
+  a boundary re-derived from the post-write walk — clause (b) needs a
+  next-sibling-of-the-run projection beside `landingId`, not
+  `sectionOf`. A
   memberless moved section lands `H` alone immediately before the
   boundary, an empty destination section contributes no block between
   its heading and the boundary, and both degenerate shapes reduce to
@@ -596,19 +610,14 @@ codec decisions they build on are recorded in §2.
   is the container's last, so a block in that position arrived after
   anchor derivation and was swallowed behind the run's insertion point
   (spike D1h/D1j); on the boundary arm the head clause already pins the
-  tail (the run sits immediately before the pre-move boundary, and a
-  legitimate swallow keeps the boundary immediately after the run).
+  tail (the run sits immediately before the pre-move boundary).
   Content in the tail position that the pre-move walks do not account
-  for is a `landed-divergent` arm, never a tolerated prefix extension —
-  the prefix tolerance covers only what the moved section legitimately
-  claimed (the pre-move boundary's section, ids known from the pre-move
-  walk). The order clause is a **prefix, never equality**:
-  `sectionOf(destWalk, H).members` starts with the enumerated member
-  run, because a moved heading strictly shallower than the boundary
-  legitimately claims following sections into itself (§2's ownership
-  bullet: the outline side effect) — a tolerance bounded by the owner
-  certification: order may under-report what follows the moved section,
-  never where the section attached. The members are **absent from the
+  for is a `landed-divergent` arm, never a tolerated extension. The
+  order clause is **exact equality**: `sectionOf(destWalk, H).members`
+  equals the enumerated member run in landed order — the prefix
+  tolerance existed only for the strictly-shallower swallow, and §4's
+  `shallower-than-boundary` refusal removes that landing from the
+  reachable set. The members are **absent from the
   source walk** — a cross-doc clause only. Same-doc one walk serves
   both roles, and a successful move leaves every member present in it,
   so absence there is false after every landing and proves nothing;
@@ -630,15 +639,12 @@ codec decisions they build on are recorded in §2.
   closure contains it — containment is `sectionOf`'s own product, so
   the projection cannot diverge from the section rule the way a second
   placement derivation would, and it is never a backward level scan,
-  which M1's landed state falsifies), so both divergences — the
-  strictly-shallower swallow (the section takes the destination's
-  boundary heading and the sections after it with it) and the deeper
-  landing (the section nests inside the destination's) — surface in the
-  envelope instead of passing silently; the ownership projection is
-  reporting off the walk, never a level rewrite. The codec holds both
-  headings' levels pre-move, so the owner is predictable: the post-walk
-  projection confirms the prediction, and a mismatch is
-  `landed-divergent` — never a silently-different-but-passing reading.
+  which M1's landed state falsifies), so the deeper landing (the
+  section nests inside the destination's) surfaces in the envelope
+  instead of passing silently; the ownership projection is reporting
+  off the walk, never a level rewrite, and no prediction is checked
+  against it — the level comparison that bounds landing is §4's
+  pre-mutation refusal, not a post-walk double derivation.
   When the landed heading sits inside a container with no heading
   around it, the enclosing container's preceding heading is the answer
   — a `sectionOf` section contains such a landing via `closure`, not
@@ -672,11 +678,9 @@ codec decisions they build on are recorded in §2.
   the enumerated set nor the pre-move destination section
   (`sectionOf(preDestWalk, toHeadingId)`'s heading and members) is an
   unjudged presence, whatever its provenance, never a silent one. The
-  span is the enumerated run's, never the landed section's: the
-  strictly-shallower swallow (§2's ownership bullet) legitimately
-  places the destination's boundary heading and the sections after it
-  inside the landed section, and swallowed content is the owner
-  certification's subject, never a divergence. The section-scoped
+  span is the enumerated run's — with the shallower refusal in place
+  the landed section's members are exactly the enumerated run, so span
+  and landed section coincide. The section-scoped
   comparison set is what keeps
   same-doc honest: the caller holds one walk serving both roles, so a
   walk-wide exemption would sweep the whole document's pre-move content
@@ -727,8 +731,8 @@ codec decisions they build on are recorded in §2.
   (`heading-with-section`), so the description must say what a
   section-bearing `blockId` now does — "move this heading" moves the
   heading's whole section (memberless = the per-id behavior), with
-  landing, locality, swallow, and weight stated per the wording bullet
-  below. The description-name pin lives in
+  landing, locality, the shallower refusal, and weight stated per the
+  wording bullet below. The description-name pin lives in
   `__tests__/unit/writeSchema.test.ts` (the mode-description sweep;
   `contract.test.ts` pins the wire key list, which does not change).
   Both fact lists gain their entries in the
@@ -751,7 +755,9 @@ codec decisions they build on are recorded in §2.
     carrying `role: "source" | "destination"` (the cross-doc bullet's
     local wrapper; the shared types stay untouched); `own-closure` (§4's
     identity/containment refusal, judged over the moved section's
-    closure); `already-at-destination` (§4's two derivations).
+    closure); `shallower-than-boundary` (§4's level refusal, judged on
+    the held walks' levels); `already-at-destination` (§4's two
+    derivations).
   - *Transport*: `kernel-refused` (the batch call was refused by HTTP —
     on the batched route that is not proof of non-application, so the
     flow's refusal frame carries the route's `refusalNote`, never a
@@ -763,9 +769,7 @@ codec decisions they build on are recorded in §2.
     carries the landed run's ids in document order, the owner's id and
     level, or `null` when no heading owns the landing (§2's owner
     bullet), the anchor echo — boundary id or doc-end chain anchor — and
-    both post-write walks, same-doc one walk serving both; the swallow
-    note derives from the levels the flow already holds (pre-move walk
-    + codec inputs), no new verdict field);
+    both post-write walks, same-doc one walk serving both);
     `landed-divergent` (the run broke — carries the divergent position
     (`null` when the run is absent from the destination's complete
     walk: destination complete, a source-side member vanished, so
@@ -792,8 +796,7 @@ codec decisions they build on are recorded in §2.
 - **The ok envelope's payload.** The landed receipt is built from the
   verdict's own evidence, never a re-fetch: the landed run's ids in
   document order as the post-write walk holds them; the owner report
-  (id and level, with the swallow note when a strictly-shallower move
-  took the destination's boundary with it); the destination outline
+  (id and level); the destination outline
   served from the verdict's post-write destination walk and
   baseline-seeded from that serve (the `destOutlinePayload` precedent,
   anti-laundering invariant); and the source echo tail rendered from
@@ -844,9 +847,10 @@ codec decisions they build on are recorded in §2.
     destination section's end — followed by the container-local landing
     statement (a destination section inside a quote, callout, or list
     re-nests the moved members into that container — the section rule's
-    locality, spike M1), leading with the swallow example (a
-    strictly-shallower move takes the destination's boundary heading
-    and the sections after it with it), the heavy-operation
+    locality, spike M1), leading with the shallower refusal (a move
+    whose heading is strictly shallower than the destination section's
+    boundary is refused — it would swallow the destination's boundary
+    heading and the sections after it), the heavy-operation
     statement (a large section move delays every other write for the
     batch's window), and the same-KB scope statement (a cross-notebook
     `toDocId` reads as `noSuchDoc` — the per-id path's existing
@@ -871,9 +875,9 @@ codec decisions they build on are recorded in §2.
 
 | Case ids | What it falsifies | Home |
 |---|---|---|
-| §4 refusals — `own-closure`, both `already-at-destination` derivations | the refusal derivations, including the L0 closure-over-siblings reading | unit corpus |
+| §4 refusals — `own-closure`, `shallower-than-boundary`, both `already-at-destination` derivations | the refusal derivations, including the L0 closure-over-siblings reading | unit corpus |
 | `untargetable` (flow-side, not a primitive arm) | the widened arm composes the per-id path's existing `resolveHeadingTarget` judgment — no new pin; the composition rides the flow's existing move-path tests | none (already pinned) |
-| Predicate arms — prefix tolerance, span, tail, `nothing-moved`, truncation ordering | the landed judgment over synthetic walks: swallow, deeper landing, drag-at-front, chain-tail append, doc-end (omitted `toHeadingId`), truncated walks | unit corpus |
+| Predicate arms — exact member equality, span, tail, `nothing-moved`, truncation ordering | the landed judgment over synthetic walks: sibling landing, deeper landing, drag-at-front, chain-tail append, doc-end (omitted `toHeadingId`), truncated walks | unit corpus |
 | Owner projection — M1's quote case, the deeper landing, the enclosing-container case | the closure-containment formulation — `sectionOf`'s own product, container-local by construction | unit corpus |
 | B/B2/F5 | the folded-source drag and its redirect interaction, across every fold combination of the source heading and its nested subsection headings | primitives live |
 | D1a–c | the trim chain's landing across folds — no LIFO rule, no shared-anchor hazard | primitives live |
