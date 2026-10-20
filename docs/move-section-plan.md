@@ -358,7 +358,7 @@ already on the row, so the judgment is free.)
   the no-op (the run sits immediately before the pre-move anchor); the
   first derivation's anchor lies inside the transported set, so adjacency
   cannot pass and the judgment lands on a `nothing-moved` whose
-  heal-and-retry guidance fits nothing. Either way the receipt misreports
+  recovery guidance fits nothing. Either way the receipt misreports
   a no-op — the same ground the per-id path's `already-at-destination`
   arm stands on. The kernel's skip arms are not the ground here: no anchor
   names the op's own id, and no anchor sits inside the moved subtree
@@ -738,14 +738,22 @@ codec decisions they build on are recorded in §2.
     flow module, over the landed union;
   - the silent-rollback sentence (a `nothing-moved` arm, on
     delete-section's `nothing-deleted` precedent) — it leads with the
-    observation and branches recovery on a re-read: every enumerated id
-    still at its pre-move position → nothing applied, retry once from
-    fresh walks; any moved id resolving not-found → cross-doc rollback
-    residue, heal the source doc first, then retry (a `nothing-moved`
-    also catches `TxErrCodeBlockNotFound` rollbacks, where the
-    heal-first instruction would be wrong advice) — plus move's own
-    residue/heal recovery wording, and the refusal note move's own
-    transport failure carries (`mutationFailureEnvelope`'s
+    observation and branches recovery on `sameDoc`, a fact the flow
+    already holds, never on a re-read: the rollback residue is
+    invisible to every read the tool surface issues (SQL and the doc
+    walk hold the pre-move truth; only by-ID resolution sees the
+    wrong-root rows — spike I), so a distinguishing re-read cannot be
+    made, and a wording-path kernel call would re-fetch state the
+    verdict already judged. Same-doc: nothing applied — the batch
+    rolled back whole; retry once from fresh walks (ids stay
+    resolvable; the mild case self-converges). Cross-doc: a committed
+    write to the **source** doc first, then re-issue once — the heal is
+    safe advice whether or not residue exists (a clean
+    `TxErrCodeBlockNotFound` rollback leaves no damage, so the
+    heal-first step is merely unnecessary there, never wrong); no
+    execution path is claimed beyond that (delete-section's posture) —
+    plus move's own residue/heal recovery wording, and the refusal note
+    move's own transport failure carries (`mutationFailureEnvelope`'s
     `refusalNote` — a refused batch is not proven unapplied) — the same
     flow module, never delete-section's repair sentence (the residue
     bullet below);
@@ -813,10 +821,12 @@ facts in place, not against a transcript.
   behind success acks; the heal is a committed write to the **source**
   doc — the tree that actually contains the node — never the destination
   (a destination write never walks the moved node's row). Move therefore
-  keeps the conservative arm: **do not re-issue; heal first, then
-  retry** — a re-issued move batch trips its own skip arms and rolls
-  back again, looping until an out-of-band committed write to the source
-  doc restores resolvability. The recovery wording is move's own, not
+  keeps the cross-doc arm conservative: **do not re-issue; heal first,
+  then retry** — a re-issued move batch over residue trips its own skip
+  arms and rolls back again, looping until an out-of-band committed
+  write to the source doc restores resolvability. The same-doc arm's
+  recovery is the plain retry-once the silent-rollback wording gives
+  (ids stay resolvable, so no heal precedes it). The recovery wording is move's own, not
   delete-section's: the delete-section repair sentence (committed write,
   then one re-issue) re-issued here would re-trip the skip arms and
   strand the agent healing the wrong doc. The kernel records undo data
