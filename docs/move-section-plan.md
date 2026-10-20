@@ -74,7 +74,10 @@ remains is implementation.
   the section's last pre-existing block and the first member:
   end-of-section semantics, no reverse order. A memberless section issues
   only the heading leg (`nextID = <the boundary>`). A destination
-  section with **no following boundary** — the doc's last section — has
+  section with **no following boundary** — no next sibling heading in
+  its container, so the section is its container's last, which includes
+  but is not limited to the document's last section (what "doc-end"
+  names below) — has
   no `nextID` address; there the codec switches to the **chain arm**:
   the members chain `previousID` in document order from the destination
   section's last non-heading member at the section's sibling-run level
@@ -102,7 +105,7 @@ remains is implementation.
   spike D1f–g). **The anchors are container-local sibling positions.**
   The doc-end chain anchor lives inside the destination section's own
   container by construction, and spike M1's boundary did too, so a
-  destination section that is itself container-nested ��� a heading
+  destination section that is itself container-nested — a heading
   inside a quote, callout, or list — re-nests the moved members **into
   that container**: spike M1 landed the whole run as the destination
   quote's children, member order preserved, heading immediately before
@@ -329,11 +332,15 @@ otherwise only surface mid-sequence, after the tear. (The named
   of B's section: the boundary `## C` is outside the moved set, so the
   first arm misses, yet D's section already occupies the destination's
   end). One refusal,
-  never a receipt reporting a move: both derivations issue only
-  position-preserving re-inserts, so the batch acks behind an unchanged
-  layout and the landed predicate would read a false `landed` over a
-  no-op — the same ground the per-id path's `already-at-destination` arm
-  stands on. The kernel's skip arms are not the ground here: no anchor
+  never a receipt reporting a move: the trailing-run derivation issues
+  only position-preserving re-inserts, so the batch acks behind an
+  unchanged layout and the landed predicate reads a false `landed` over
+  the no-op (the run sits immediately before the pre-move anchor); the
+  first derivation's anchor lies inside the transported set, so adjacency
+  cannot pass and the judgment lands on a `nothing-moved` whose
+  heal-and-retry guidance fits nothing. Either way the receipt misreports
+  a no-op — the same ground the per-id path's `already-at-destination`
+  arm stands on. The kernel's skip arms are not the ground here: no anchor
   names the op's own id, and no anchor sits inside the moved subtree
   (spike case E's skip-class rollback is a different shape — the §6
   cause-free arm covers it).
@@ -583,8 +590,9 @@ codec decisions they build on are recorded in §2.
   covers only the kernel side leaves these to be discovered later.
 - **The outcome union.** The primitive returns one closed union, and
   every consumer switch is exhaustive over it. Arms:
-  - *Refusal* (pre-mutation, nothing applied — cross-box is refused at
-    the grant gate, so no box arm exists here): `drift`; `foreign` and
+  - *Refusal* (pre-mutation, nothing applied — cross-box is refused
+    flow-side at the destination resolution, so no box arm exists
+    here): `drift`; `foreign` and
     `walk-truncated`, per walk (source and destination alike — the
     `sectionSubjectOf` gate); `heading-absent`, per walk (the named id
     is not in its walk or resolves to a non-heading row — one arm,
@@ -648,7 +656,9 @@ codec decisions they build on are recorded in §2.
     moved members into that container — the section rule's locality,
     spike M1), leading with the swallow example (a strictly-shallower
     move takes the destination's boundary heading and the sections
-    after it with it) — the `kb_write` tool description (`write.ts`);
+    after it with it), and the heavy-operation statement (a large
+    section move delays every other write for the batch's window) —
+    the `kb_write` tool description (`write.ts`);
   - shared fragments stay in `writeVerdicts.ts`; a new one lands there
     only when a second consumer exists.
 - **Pins and suite placement.** Every §3 reading lands in a named case
@@ -692,4 +702,4 @@ codec decisions they build on are recorded in §2.
   strand the agent healing the wrong doc. The kernel records undo data
   for these ops (`storeHeadingMoveBlockIDs`); the dead-`undoState`
   posture the no-channel bullet records covers it. The probe legs are
-  in §3.2.
+  in §3, precondition 2.
