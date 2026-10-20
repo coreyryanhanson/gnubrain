@@ -62,9 +62,14 @@ would be the per-id shape verbatim (`blockId`/`toDocId`/`toHeadingId`,
 already on `move`), and a second mode keeps the original friction (the
 agent must know whether a heading bears a section *before* calling — the
 decomposition problem wearing a new name). The decision: **`mode: move`
-widens** — a section-bearing `blockId` names the moved section, the
+widens** — a heading `blockId` names the moved section, the
 members-then-heading legs ride the batched route inside the existing
-`move` flow, and the memberless degenerate is today's behavior. The
+`move` flow, and the dispatch keys on row type, not on
+section-bearingness: every heading — memberless or not — rides the
+batched route, so the agent never needs to know whether a heading bears
+a section before calling (the memberless degenerate is the same route
+at its degenerate shape, not the per-id path; non-heading blocks keep
+the per-id semantics). The
 asymmetry with `delete`/`delete-section` is a principle, not an
 inconsistency: inferring scope from hidden state is safe for a
 non-destructive mode and catastrophic for a destructive one, which is
@@ -441,9 +446,10 @@ owner, flow-side, for both arms of `move`.)
   is rejected on the record (header note above).
 - No new refusals on the per-id move path beyond the fold-blind
   refusals already in place — the widened section arm *replaces*
-  `heading-with-section` for section-bearing `blockId`s (its concern is
-  discharged by the section arm's own §4 refusals), it does not add
-  gates beside it.
+  `heading-with-section` for every heading `blockId` (the row-type
+  dispatch routes all headings to the section sequence;
+  `heading-with-section`'s concern is discharged by the section arm's
+  own §4 refusals), it does not add gates beside it.
 
 ## 6. Duties on the batched route
 
@@ -470,18 +476,36 @@ codec decisions they build on are recorded in §2.
   route has no drift arm of its own — the primitive owns the probe and the
   `drift` arm, refusing before issuing (delete-section's shape, recorded in
   its union docstring); the gate's cached-verdict refusal stays as
-  defence-in-depth. The dispatch is a walk
-  judgment — "is `blockId` section-bearing?" — so it lives in the
-  primitives: one entry point over the per-id shape, which owns the
-  source walk's single fetch (the fetch `moveBlockVerified` already
-  makes), resolves section-bearing from it, and dispatches internally
-  between the per-id sequence and the batched section sequence — no
-  path fetches the source walk twice, and the flow's cross-doc shape
-  is unchanged (it holds only the destination walk, from the
-  destination resolution). The flow keeps its wording branch — the entry returns
-  one closed union spanning both sequences' arm families, so the
-  flow's exhaustive switch covers the whole set and never needs to
-  know which route ran before the verdict names it; the module
+  defence-in-depth. The dispatch is a row-type
+  judgment — "is `blockId` a heading?" — and it lives in the
+  primitives, beside the sequences it routes between: one entry point,
+  `moveVerified` in `move.ts`, over the per-id input shape
+  (`blockId`, `rootId`, `destRootId`, `sameDoc`, the caller's
+  destination walk, `toHeadingId?`). The entry owns the source walk's
+  single fetch, reads the row type off it, and dispatches internally —
+  a heading to the batched section sequence (`moveSectionVerified`,
+  every heading memberless or not), a non-heading block to the per-id
+  sequence, which becomes an internal core taking the fetched walk
+  instead of fetching its own (the cross-doc fetch `moveBlockVerified`
+  performs today moves into the entry; the core's scoping and target
+  checks are unchanged). No path fetches the source walk twice, and
+  the flow's cross-doc shape is unchanged (it holds only the
+  destination walk, from the destination resolution). The placement
+  rides the layering contract, not a capability claim: the routing
+  judgment sits with the mutation sequences it routes between, inside
+  the write barrel's boundary, so the flow neither sequences kernel
+  mutations nor re-derives placement — same-doc the flow does hold the
+  source walk, and routing there would still split the routes'
+  ownership across the layer line. The flow keeps its wording branch
+  over a closed wrapper — `{ route: "per-id" | "section", outcome }` —
+  the plan's own `walk-refused` argument one level up: one flat union
+  across both routes would carry every arm in a single kind space,
+  with `already-at-destination` colliding at two payload shapes (the
+  per-id arm's `{ blockId }` against §4's group derivation) and
+  forcing field-presence narrowing inside the flow's `satisfies never`
+  switch; the wrapper keeps each route's union exactly as closed as it
+  is today, and the two nested exhaustive switches never need to know
+  which route ran before the wrapper names it. The module
   docstring states the walk rule
   (the entry takes the caller's destination walk — the flow serves and
   seeds from it — and owns the source walk's single fetch, reusing the
@@ -496,26 +520,30 @@ codec decisions they build on are recorded in §2.
   the destination serve seeds baselines per the seed-site rule. The
   source walk is the entry's own single fetch (the route bullet's
   dispatch), shared by the dispatch, the moved-set derivation, and the
-  §4 refusals — zero calls in the refusal itself (§4) — and the
-  caller-provenance gate applies to it as to any walk (the walk
-  carries its own root). Both walks ride the
-  caller-provenance gate delete-section models (`sectionSubjectOf`:
-  `foreign` / `walk-truncated`, per walk — the widened consumer needs a
-  source-vs-destination role discriminant on per-walk refusals, and
-  takes it as a local wrapper arm in the new module — `walk-refused`
-  carrying `role: "source" | "destination"` over the existing shared
-  types — because two of the three per-walk arms are payload-free
-  shared types (`WalkTruncated`; `heading-absent`'s `SectionRefusal`),
-  so widening the shared shapes ripples across every consumer;
-  `ForeignRefusal`'s payload stays as it is and delete-section is
-  untouched): the
-  moved set derives from
-  the source walk and the anchor from the destination walk, and the
-  kernel mutates by raw block id with no doc scoping of its own — a
-  destination-side gate miss mis-anchors the batch, but a source-side
-  gate miss would issue raw `move` ops for another doc's blocks behind a
-  clean receipt, so both enumerations are gated, the source side the
-  more dangerous half. The kernel guards are the backstop, and their cross-doc
+  §4 refusals — zero calls in the refusal itself (§4). Both walks pass
+  through the caller-provenance gate delete-section models
+  (`sectionSubjectOf`: `foreign` / `walk-truncated`, per walk — the
+  widened consumer needs a source-vs-destination role discriminant on
+  per-walk refusals, and takes it as a local wrapper arm in the new
+  module — `walk-refused` carrying `role: "source" | "destination"`
+  over the existing shared types — because two of the three per-walk
+  arms are payload-free shared types (`WalkTruncated`;
+  `heading-absent`'s `SectionRefusal`), so widening the shared shapes
+  ripples across every consumer; `ForeignRefusal`'s payload stays as it
+  is and delete-section is untouched). The roles are not symmetric, and
+  the asymmetry is where the safety lives: the source walk is fetched
+  by the entry's own `rootId`, so its root matches by construction and
+  `foreign` cannot fire on it — the source side's guard is the
+  derivation itself, the moved set read off the fetched walk and never
+  caller-supplied (delete-section's own rationale: the derivation, not
+  post-hoc validation, is the guard), so no gate miss can issue raw
+  `move` ops for another doc's blocks; only the caller-held destination
+  walk can be foreign, and a gate miss there mis-anchors the batch — a
+  misplaced landing the landed judgment and the kernel guards catch,
+  never a foreign-doc mutation. The source-side `foreign` check stays
+  as a cheap fail-closed tripwire against a future caller, and the
+  `role` discriminant exists for wording, not safety — same-doc one
+  walk serves both roles. The kernel guards are the backstop, and their cross-doc
   reach is characterized (spike M1–M3): the containment shape cannot
   arise cross-doc (the moved set lives in the source tree, the
   destination resolution in the destination tree), and an anchor that
@@ -540,11 +568,13 @@ codec decisions they build on are recorded in §2.
   cross-box arm exists to invent.
   Single-doc v1 would make the automated route narrower than the per-id
   path it replaces, and a later cross-doc release would pay a second
-  wording/probe/pin ship. Packaging rides the same pass: the new
+  wording/probe/pin ship. Packaging rides the same pass: the dispatch
+  entry `moveVerified` (`move.ts`, already a shipped module) joins the
+  `./write` barrel exports as the flow's one entry, and the new
   primitive module (`moveSection.ts`, exporting `moveSectionVerified` —
   the `deleteSection.ts`/`deleteSectionVerified` precedent) joins the
-  primitives' `package.json` `files` allowlist and the `./write` barrel
-  exports, the barrel-completeness test lists it, the two new
+  primitives' `package.json` `files` allowlist and the barrel beside
+  it; the barrel-completeness test lists both, the two new
   `placement.ts` projections (the next-sibling-of-the-run projection
   and the owner projection) join the read barrel's internal exports per
   its placement bullet (`sectionSubjectOf`/`cascadeDescendantsOf`
@@ -714,21 +744,26 @@ codec decisions they build on are recorded in §2.
 - **The tool-side seams land with the primitive — inside `mode: move`,
   not a new mode.** No new schema row: `move` already carries
   `blockId`/`toDocId`/`toHeadingId` (`writeSchema.ts`), so the widened
-  arm is the existing per-id shape with `blockId` widened to the
-  section's heading (`toDocId` required, matching `move`'s verdict).
+  arm is the existing per-id shape with `blockId` widened to name a
+  heading (the moved section's root; non-heading blocks keep the
+  per-id semantics) and `toDocId` required, matching `move`'s verdict).
   The `writePrepare.ts` dispatch and its exhaustive tail keep their
   shape — the section arm is a wording branch inside the `move` flow,
-  while the section-bearing dispatch itself lives in the primitives'
-  entry point (the route bullet above): the flow cannot answer that
-  question without a source walk the per-id path does not hold. With
-  the section arm live, `heading-with-section` is unreachable from the
-  tool path — every section-bearing `blockId` routes to the section
-  sequence — so it stays in the primitives' union as the per-id
-  contract and defence-in-depth, its docstring marking it unreachable
-  from the widened flow (an arm a later contributor could misread as
-  live otherwise); the description change also retires the per-id
-  refusal's move-the-members-individually advice sentence, which the
-  widened capability contradicts. The
+  while the row-type dispatch itself lives in the primitives' entry
+  point (the route bullet above): the routing judgment sits with the
+  mutation sequences it routes between, inside the write barrel's
+  boundary — not because the flow lacks the walk (same-doc it holds
+  the source walk), but because the tool layer neither sequences
+  kernel mutations nor re-derives placement. With the section arm
+  live, `heading-with-section` is unreachable from the tool path —
+  every heading `blockId` routes to the section sequence, memberless
+  or not — so it stays in the primitives' union as the per-id
+  contract and defence-in-depth for non-tool callers, its docstring
+  marking it unreachable from the widened flow (an arm a later
+  contributor could misread as live otherwise); the description
+  change also retires the per-id refusal's
+  move-the-members-individually advice sentence, which the widened
+  capability contradicts. The
   destination-doc resolution the flow already performs for `move`
   (`writeTarget.resolveDocTarget` on `toDocId` — box-scoped, so a
   cross-KB destination refuses before any op; the grant gate gains
@@ -736,8 +771,9 @@ codec decisions they build on are recorded in §2.
   `kb_write` tool description (`write.ts`) carries the capability
   statement, and it is load-bearing: the widened arm removes a refusal
   (`heading-with-section`), so the description must say what a
-  section-bearing `blockId` now does — "move this heading" moves the
-  heading's whole section (memberless = the per-id behavior), with
+  heading `blockId` now does — "move this heading" moves the
+  heading's whole section, memberless or not (a memberless heading
+  moves as its single block, same route and landing), with
   landing, locality, the shallower refusal, and weight stated per the
   wording bullet below. The description-name pin lives in
   `__tests__/unit/writeSchema.test.ts` (the mode-description sweep;
@@ -752,15 +788,21 @@ codec decisions they build on are recorded in §2.
   the primitive's — the delete-section entry's shape), plus the
   no-fresh-guard rationale. A plan that
   covers only the kernel side leaves these to be discovered later.
-- **The outcome union.** The primitive returns one closed union, and
-  every consumer switch is exhaustive over it. Arms:
+- **The outcome unions.** The entry returns one closed wrapper —
+  `{ route: "per-id" | "section", outcome }` — over the two routes'
+  closed unions, and every consumer switch is exhaustive at both
+  levels: the wrapper's `route` discriminant, then the route's own
+  union. The per-id family is `moveBlockVerified`'s union, unchanged.
+  The section family: Arms:
   - *Refusal* (pre-mutation, nothing applied — cross-box is refused
     flow-side at the destination resolution, so no box arm exists
     here): `drift`; the per-walk gate refusals (`foreign`,
-    `walk-truncated`, `heading-absent` — source and destination alike,
-    the `sectionSubjectOf` gate) wrapped in the `walk-refused` arm
+    `walk-truncated`, `heading-absent` — per walk, the
+    `sectionSubjectOf` gate) wrapped in the `walk-refused` arm
     carrying `role: "source" | "destination"` (the cross-doc bullet's
-    local wrapper; the shared types stay untouched); `own-closure` (§4's
+    local wrapper; the shared types stay untouched; `foreign` is
+    reachable only on the destination role — the cross-doc bullet's
+    asymmetry); `own-closure` (§4's
     identity/containment refusal, judged over the moved section's
     closure); `shallower-than-boundary` (§4's level refusal, judged on
     the held walks' levels); `already-at-destination` (§4's two
@@ -849,8 +891,9 @@ codec decisions they build on are recorded in §2.
     flow module, never delete-section's repair sentence (the residue
     bullet below);
   - the tool description's widened-capability statement — a
-    section-bearing `blockId` on `mode: move` moves the heading's whole
-    section (memberless = the per-id behavior), landing at the
+    heading `blockId` on `mode: move` moves the heading's whole
+    section (memberless or not — a memberless heading moves as its
+    single block, same route and landing), landing at the
     destination section's end — followed by the container-local landing
     statement (a destination section inside a quote, callout, or list
     re-nests the moved members into that container — the section rule's
@@ -889,7 +932,7 @@ codec decisions they build on are recorded in §2.
 | B/B2/F5 | the folded-source drag and its redirect interaction, across every fold combination of the source heading and its nested subsection headings | primitives live |
 | D1a–c | the trim chain's landing across folds — no LIFO rule, no shared-anchor hazard | primitives live |
 | D1d–e | the empty-destination degenerates under both anchor folds | primitives live |
-| D1f–g | the memberless forms on both arms | primitives live |
+| D1f–g | the memberless forms on both arms — under the row-type dispatch these are every memberless heading's route, not a dead branch | primitives live |
 | D1h–j | the concurrent-append swallow matrix — the tail clause's falsifier (the anchor's fold decides swallow vs redirect) | primitives live |
 | CT1–CT4 | container anchors — quote/list chain anchors land the run as siblings | primitives live |
 | CT5–CT10 | the container shapes: the container-nested doc-end chain re-nests the run (both arms), the empty-section fixed point anchors on the destination heading inside its container fold-independently, and callout (`callout`/`NOTE`) and superblock (`s`) chain anchors land the run as siblings after the container with no per-container divergence on the sibling insert | primitives live |
@@ -900,7 +943,7 @@ codec decisions they build on are recorded in §2.
 | L1–L3 | the containment-rollback backstop — the §4 closure refusal's ground | primitives live, one case |
 | M2 | the source-tree-anchor rollback backstop — the cross-doc note's ground | primitives live, one case |
 | ≥32-op batch | a move-only batch takes the per-op path at any arity and lands whole (the latency datum — 36 ops / 341 ms — lives in the module docstring, never a wall-clock assertion) | primitives live |
-| Widened-capability wording | the tool description states what a section-bearing `blockId` now does | `__tests__/unit/writeSchema.test.ts`, `writePins.live` |
+| Widened-capability wording | the tool description states what a heading `blockId` now does | `__tests__/unit/writeSchema.test.ts`, `writePins.live` |
 
 The widened arm rides `move`'s existing pins; the integration
 project's `INTEGRATION_ORDER` is unchanged — the new cases above join
