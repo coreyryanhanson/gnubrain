@@ -308,13 +308,18 @@ Group-level, pre-mutation, zero kernel calls — conditions that would
 otherwise only surface mid-sequence, after the tear. (The named
 `headingId`/`toHeadingId` must resolve to heading rows in their walks —
 `heading-absent` otherwise, a precondition rather than a §4 refusal.
-The destination heading is additionally judged by `resolveHeadingTarget`
-over the pre-move destination walk — the per-id path's arm, composed
-rather than invented: `untargetable` when its parent type is outside
-`TARGETABLE_CONTAINER_TYPES` (`tabs`, unnamed containers). The read
-surface marks those headings `(not targetable)`, so accepting one here
-would contradict the outline notation; `WalkedBlock.parentType` is
-already on the row, so the judgment is free.)
+The destination heading is additionally judged flow-side by the
+per-id path's existing arm — `resolveHeadingTarget` (read barrel) over
+the pre-move destination walk: `untargetable` when its parent type is
+outside `TARGETABLE_CONTAINER_TYPES` (`tabs`, unnamed containers). The
+read surface marks those headings `(not targetable)`, so accepting one
+here would contradict the outline notation; `WalkedBlock.parentType` is
+already on the row, so the judgment is free. The judgment is not an arm
+of the new primitive's union: the flow holds the destination walk before
+the primitive call, the derivation already lives in the primitives and
+is shared with the per-id path, and a duplicate union arm would double
+the judgment and word it from a payload the flow already holds. One
+owner, flow-side, for both arms of `move`.)
 
 - `toHeadingId` names the moved heading itself (identity), or the
   destination section lies inside what the move transports — judged over
@@ -672,9 +677,7 @@ codec decisions they build on are recorded in §2.
     `walk-truncated`, `heading-absent` — source and destination alike,
     the `sectionSubjectOf` gate) wrapped in the `walk-refused` arm
     carrying `role: "source" | "destination"` (the cross-doc bullet's
-    local wrapper; the shared types stay untouched); `untargetable`,
-    destination side only (§4's targetability judgment, composed from
-    the per-id path's arm); `own-closure` (§4's
+    local wrapper; the shared types stay untouched); `own-closure` (§4's
     identity/containment refusal, judged over the moved section's
     closure); `already-at-destination` (§4's two derivations).
   - *Transport*: `kernel-refused` (the batch call was refused by HTTP —
@@ -729,10 +732,13 @@ codec decisions they build on are recorded in §2.
   serve-seeds-baselines policy is the seed-site rule's, unchanged.
 - **Wording homes are named.** The primitives return the closed verdict
   unions; this repo words them, and every sentence has a home:
-  - the §4 refusals (identity/containment, already-at-destination,
-    untargetable) — refusal-envelope wording in the widened move flow
-    (a section-arm module beside `writeMove.ts` or a branch within
-    it), exhaustive over the primitives' refusal union;
+  - the §4 refusals (identity/containment, already-at-destination) —
+    refusal-envelope wording in the widened move flow (a section-arm
+    module beside `writeMove.ts` or a branch within it), exhaustive over
+    the primitives' refusal union; the `untargetable` refusal is not on
+    that union — it is judged and worded flow-side, composed from the
+    per-id path's existing arm, so its wording home is the same flow
+    module without riding the primitives' switch;
   - the landed arm's owner report and the landed-divergent /
     unjudged-presence sentences (the currency bullet above) — the same
     flow module, over the landed union;
@@ -784,7 +790,8 @@ codec decisions they build on are recorded in §2.
 
 | Case ids | What it falsifies | Home |
 |---|---|---|
-| §4 refusals — `own-closure`, both `already-at-destination` derivations, `untargetable` | the refusal derivations, including the L0 closure-over-siblings reading | unit corpus |
+| §4 refusals — `own-closure`, both `already-at-destination` derivations | the refusal derivations, including the L0 closure-over-siblings reading | unit corpus |
+| `untargetable` (flow-side, not a primitive arm) | the widened arm composes the per-id path's existing `resolveHeadingTarget` judgment — no new pin; the composition rides the flow's existing move-path tests | none (already pinned) |
 | Predicate arms — prefix tolerance, span, tail, `nothing-moved`, truncation ordering | the landed judgment over synthetic walks: swallow, deeper landing, drag-at-front, chain-tail append, truncated walks | unit corpus |
 | Owner projection — M1's quote case, the deeper landing, the enclosing-container case | the owner stack; pops on container exit restore the outer frames | unit corpus |
 | B/B2/F5 | the folded-source drag and its redirect interaction, across every fold combination of the source heading and its nested subsection headings | primitives live |
