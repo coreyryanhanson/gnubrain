@@ -102,23 +102,32 @@ the batched route is how it ships. The design rides the batched route
   but is not limited to the document's last section (what "doc-end"
   names below) — has
   no `nextID` address; there the codec switches to the **chain arm**:
-  the members chain `previousID` in document order from the destination
-  section's last non-heading member at the section's sibling-run level
-  — leaf or container (spike CT1–CT4: the container anchor lands the
-  run after it as siblings, heading tail included); the anchor is a
-  sibling position, never a block inside a container's tail — anchoring
-  on the tail heading lands the run inside the container around that
-  heading's section (spike CT3), against container-locality — and the
-  heading issues **last** on the boundary arm's own leg,
+  the members chain `previousID` in document order from
+  `deriveMoveAnchor`'s projection — the destination section's **last
+  member** (`section.members.at(-1)`), recursing into it while it is a
+  heading, so the anchor is a leaf, a container, or a heading with an
+  EMPTY section (spike CT1–CT4: the container anchor lands the run
+  after it as siblings, heading tail included; spike N1/N2: the
+  empty-section tail heading anchors after-heading — placement IS
+  end-of-section there and the fold branch has nothing to jump past —
+  while the earlier "last non-heading member" phrasing landed the run
+  before the tail heading and swallowed it, live-confirmed as N1x); the
+  anchor is a sibling position, never a block inside a container's tail
+  — anchoring on a tail heading *inside* a container lands the run
+  inside the container around that heading's section (spike CT3),
+  against container-locality, and the recursion never reaches such a
+  heading because a heading inside a container is not a section-level
+  member — and the heading issues **last** on the boundary arm's own
+  leg,
   `nextID = <the first landed member>` (spike D1a–c: exact landing
   unfolded, with the source heading folded, and with the nested
   subsection folded — the same fold-blind branch, so the chain arm
   carries no LIFO rule and its heading leg carries no heading anchor).
   The chain legs are explicit `previousID` ops: an omitted or empty
   `nextID` is not a doc-end address — an op with all anchors empty
-  rolls the batch back behind code 0 (spike F1). When no non-heading
-  sibling is derivable — an empty destination section — the first
-  member leg anchors on the destination heading itself:
+  rolls the batch back behind code 0 (spike F1). The recursion's fixed
+  point IS the empty destination section: no members → the anchor is
+  the destination heading itself:
   fold-independent while the section is empty (the redirect has no
   target, `transaction.go:765`), and the landed judgment, not a
   refusal, owns the concurrent-append divergence (§6's tail clause;
@@ -277,6 +286,8 @@ Before writing the implementation plan:
    write heals nothing; source write restores; heal-then-retry lands
    whole), the **containment matrix** (L0–L3, M1–M3: the closure
    refusal's ground, the container-local landings, the guard backstop),
+   the **chain anchor on an empty-section tail heading** (N1/N1h/N2/N2h, plus the N1x
+   mis-landing contrast — the §2 anchor-rule correction's live ground),
    and the **≥32-op batch** (per-op path, 36 ops / 341 ms, lands
    whole). Their transcript is the implementation plan.
 
@@ -775,6 +786,7 @@ codec decisions they build on are recorded in §2.
 | D1h–j | the concurrent-append swallow matrix — the tail clause's falsifier (the anchor's fold decides swallow vs redirect) | primitives live |
 | CT1–CT4 | container anchors — quote/list chain anchors land the run as siblings; callout and superblock re-nests remain unprobed (the kernel's insertion path diverges per container; superblocks are special-cased in `doMove`; superblock chain anchors unprobed too) | primitives live; unprobed shapes re-probed before pinning |
 | M1/M3 | the destination-container re-nest and the crossed-container heading leg, across container types | primitives live |
+| N1/N1h/N2/N2h | the chain anchor on an empty-section tail heading — `deriveMoveAnchor`'s recursion fixed point lands end-of-section, fold-independent (the redirect's `0 < l` guard); N1x is the mis-landing record: the retired "last non-heading member" rule swallows the tail heading | primitives live |
 | container-nested doc-end chain; container-tail chain form (spike case CT) | the chain anchor inside a nested container / on a non-heading container (spike CT's doc-end section was doc-level) | primitives live |
 | cross-doc residue round trip | wrong-root rows resolve not-found; the destination write heals nothing; the source write restores; heal-then-retry lands whole | primitives live |
 | L1–L3 | the containment-rollback backstop — the §4 closure refusal's ground | primitives live, one case |

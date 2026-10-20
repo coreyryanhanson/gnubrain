@@ -9,7 +9,9 @@ container-tail chain anchor, review follow-up) — raw clients, zero deps,
 disposable notebooks created and
 torn down (no strays). Raw transcripts: `/tmp/spike-move-nextid.log`,
 `/tmp/spike-move-owed.log`, `/tmp/spike-move-docend.log`,
-`/tmp/spike-move-conttail.log`. The containment
+`/tmp/spike-move-conttail.log`, and `/tmp/spike-move-tailheading.mjs` (case N, the
+chain anchor on an empty-section tail heading, pre-implementation probe) —
+transcript `/tmp/spike-move-tailheading.log`. The containment
 legs (cases L, M below) ran as one-off vitest live files over the
 primitives — real `sectionOf`/`walkBlockTree`, no replicas, removed after
 the run; transcripts: `/tmp/containment-probe-77257.log`,
@@ -561,3 +563,62 @@ predicted:
    drag (`:927-929`). The §3 rehearsal list should carry both fold
    matrices for the chain arm (anchor-fold × moved-fold), not just the
    moved-node's.
+
+### N — the chain anchor on an empty-section tail heading (pre-implementation probe)
+
+Executed 2026-10-20. Settles the reviewer/oracle finding that §2's
+"last **non-heading** member" chain-anchor rule contradicts
+`deriveMoveAnchor` (the primitives' own projection, which recurses into
+heading members and anchors on a heading only with an EMPTY section) on
+the destination shape where the two rules diverge — a destination
+section whose tail is a heading with an empty section. Script:
+`/tmp/spike-move-tailheading.mjs`; transcript:
+`/tmp/spike-move-tailheading.log`. Same source fixture (`H`'s section:
+`m1, m2, H2, sub1, m3`), one disposable notebook, five legs, each
+issued as the trim codec (members chained `previousID` in document
+order from the anchor, heading `nextID = <first member>`) in ONE
+`/api/transactions` transaction; verdicts are live-tree walks (the
+response's `doOperations` echo read null even on applied batches in
+these runs — informational only, the walk is the verdict).
+
+Destination `# D / d1 / ## E / e1 / ### E2` (E2 empty section, doc
+tail) unless noted:
+
+| Leg | Anchor | Fold | Landed dest | Verdict |
+|---|---|---|---|---|
+| N1 | `E2` (the empty-section tail heading — `deriveMoveAnchor`'s rule) | — | `d1, E, e1, E2, H, m1, m2, H2, sub1, m3` | PASS — end-of-section; E2 stays before the run |
+| N1h | `E2` | `fold=1` on `E2` | identical to N1 | PASS — fold-independent (the redirect has no target, the `0 < l` guard) |
+| N1x | `e1` (the §2 "last non-heading member" rule — contrast) | — | `d1, E, e1, H, m1, m2, H2, sub1, m3, E2` | PASS as mis-landing — the run lands *before* the tail heading and E2 is **swallowed into the moved section** |
+| N2 | `e2body` (populated tail `### E2 / e2body` — the recursion's fixed point) | — | `d1, E, e1, E2, e2body, H, m1, m2, H2, sub1, m3` | PASS — end-of-section |
+| N2h | `e2body` | `fold=1` on source `H` | identical to N2 | PASS — the drag rode the heading leg, order preserved |
+
+Source reduced to `S, s0, T, t1` on every leg.
+
+**Implications for the plan:**
+
+1. **The §2 chain-anchor rule is corrected to `deriveMoveAnchor`
+   verbatim**: the anchor is the destination section's **last member**
+   (`section.members.at(-1)`), recursing into it while it is a heading;
+   a heading anchor always names an EMPTY section — after-heading
+   placement IS end-of-section there, and the fold branch has nothing
+   to jump past. The "last non-heading member" phrasing mis-derived the
+   empty-section tail heading and would swallow it (N1x — now
+   live-confirmed, not just argued from source). The empty-destination
+   case is the same rule's natural fixed point (no members → the
+   heading itself), not a separate derivation.
+2. The "anchor is a sibling position, never a block inside a
+   container's tail" hazard (CT3) is unaffected — a heading INSIDE a
+   container is not a section-level member, so the recursion never
+   reaches it; what the recursion adds is the section-level
+   empty-section heading, which after-heading anchors correctly.
+3. Both shapes (`## B / b1 / ### E` and `## B / b1 / ### E / e1`)
+   join the placement corpus and the live pin table (§6's N row).
+4. Probe-mechanics notes for whoever re-runs this (no kernel facts —
+   layer-1's `transact` already models the wire correctly): each
+   element of the `transactions` array is a TRANSACTION carrying its
+   own `doOperations` array (ops sent as bare transaction entries are
+   silent no-ops behind code 0 with an empty `DoOperations`), and
+   unknown `/api/*` routes answer HTTP 200 with an EMPTY body — both
+   cost this probe a debugging loop; `getChildBlocks(docId)` returns
+   the top-level blocks with the doc block itself (type `h`, subType
+   `h1`) as the first row.
