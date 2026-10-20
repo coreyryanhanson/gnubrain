@@ -414,16 +414,21 @@ codec decisions they build on are recorded in §2.
   phrase — an unstated formula invites a membership-only check, which
   reads a fold-inverted group (body above its heading) as landed. The
   predicate: in the destination walk the enumerated run `[H, m1 … mN]`
-  appears **contiguously and in order**, immediately before the
-  destination section's boundary (the codec's own anchor) — a memberless
-  moved section lands `H` alone immediately before the boundary, an
-  empty destination section contributes no block between its heading and
-  the boundary, and both degenerate shapes reduce to the same clause.
-  The predicate reads `sectionOf`, so it is container-local by
-  construction: a destination re-nest into a quote or callout (spike
-  M1) keeps its reading. The doc-end arm has no boundary; there the run
-  occupies the position immediately after the destination section's
-  last pre-existing block (the chain arm's landing, spike D1a). The
+  appears **contiguously and in order**, immediately before the anchor
+  the codec addressed — the destination section's boundary **as the
+  pre-move destination walk holds it** (the codec's own anchor), never
+  a boundary re-derived from the post-write walk, where a swallow has
+  already changed it — a memberless moved section lands `H` alone
+  immediately before the boundary, an empty destination section
+  contributes no block between its heading and the boundary, and both
+  degenerate shapes reduce to the same clause. Adjacency pins the
+  container for free — the anchor and the run read as siblings wherever
+  they landed — so a destination re-nest into a quote or callout (spike
+  M1) keeps its reading without any container-local reasoning. The
+  doc-end arm has no boundary; there the run occupies the position
+  immediately after the destination section's last pre-existing block —
+  the chain anchor as the pre-move walk holds it (the chain arm's
+  landing, spike D1a). The
   run's tail is pinned with its head: on the chain arm nothing follows
   the run within the destination's container — the destination section
   is the container's last, so a block in that position arrived after
@@ -442,10 +447,18 @@ codec decisions they build on are recorded in §2.
   bullet: the outline side effect) — a tolerance bounded by the owner
   certification: order may under-report what follows the moved section,
   never where the section attached. The members are **absent from the
-  source walk**; a truncated post-write walk refuses
+  source walk** — a cross-doc clause only. Same-doc one walk serves
+  both roles, and a successful move leaves every member present in it,
+  so absence there is false after every landing and proves nothing;
+  same-doc success is the positional clauses above, judged on the
+  single walk. Cross-doc, the moved ids are checked absent from the
+  complete post-write source walk. A truncated post-write walk refuses
   (`post-walk-truncated`, per touched doc, carrying whatever its
   complete walks certify — absence is never asserted off a truncated
-  walk) rather than asserting absence. Beside the order, the judgment
+  walk) rather than asserting absence. The judgment runs in a fixed
+  order — `post-walk-truncated` first (a truncated walk grounds neither
+  landing nor absence), then `nothing-moved`, then the landed arms —
+  mirroring `deleteSectionVerified`'s ordering. Beside the order, the judgment
   certifies the moved heading's **new owner** (the heading whose
   `sectionOf`-derived section contains the landed heading, read
   container-locally — §2's owner bullet — derived as a heading stack
@@ -536,11 +549,14 @@ codec decisions they build on are recorded in §2.
     `landed-divergent` (the run broke — carries the divergent position,
     the unjudged presences, span and tail alike, and the walks);
     `nothing-moved` (the
-    cause-free silent-rollback arm — detected as the enumerated
-    members still present in the post-write source walk; carries both
-    post-write walks and the judged set, delete-section's
-    `nothing-deleted` shape, so the flow serves and re-baselines from
-    the state the verdict certified); `post-walk-truncated` (a
+    cause-free silent-rollback arm — detected when the landed predicate
+    failed and the batch did not apply: cross-doc, every enumerated id
+    still present in the complete post-write source walk; same-doc, the
+    run still occupying its pre-move position in the single walk, since
+    set membership alone cannot distinguish landed from a silent no-op
+    there; carries both post-write walks and the judged set,
+    delete-section's `nothing-deleted` shape, so the flow serves and
+    re-baselines from the state the verdict certified); `post-walk-truncated` (a
     truncated post-write walk — carries the complete walks and the
     judged set, whatever they certify; absence never asserted).
 - **The ok envelope's payload.** The landed receipt is built from the
