@@ -1,13 +1,355 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFile as fsReadFile } from "node:fs/promises";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import {
+	TOOLSET_EVENTS,
+	type Toolset,
+	readMergedToolsetDefaults,
+	type BatchOp,
+} from "pi-tool-masking";
+import { SiYuanKernelClient } from "siyuan-kernel-primitives";
+import { CircuitBreaker } from "./breaker.js";
+import { dispatchKbCommand } from "./kbCommand.js";
+import {
+	globalSettingsPath,
+	loadGnubrainSettings,
+	projectSettingsPath,
+} from "./settings.js";
+import { renderKbStatus, statusInput } from "./status.js";
+import {
+	KB_SCOPE_ENTRY_TYPE,
+	degradedValidation,
+	latestPersistedScope,
+	rateLimitedValidation,
+	resolveValidatedScope,
+	runSessionValidation,
+	type SessionValidation,
+} from "./validation.js";
+import { READ_TOOLSET_ID, WRITE_TOOLSET_ID } from "./toolsetIds.js";
+import {
+	applyToolsetToggleBatch,
+	toolsetIntent,
+	toolsetState,
+} from "./toolsets.js";
+import { registerReadToolsAndToolset } from "./tools.js";
+import { ContentBaselines } from "./baselines.js";
+import {
+	clearInteractionGrants,
+	clearSessionGrants,
+	createWriteGrantState,
+} from "./writeConfirm.js";
+import { type WriteKernelClient } from "siyuan-kernel-primitives/write";
+import { registerWriteToolAndToolset } from "./write.js";
+import { type WriteToolHooks } from "./writePrepare.js";
 
-// Milestone 1 scaffold: loads in a real session, registers zero tools.
-// Kernel probe, version gate, tools, and /kb all arrive in M2+.
-export default function (pi: ExtensionAPI) {
-	pi.on("session_start", async (_event, _ctx) => {
-		// M2: settings load + validation, eager version probe, verdict caching.
+// Chassis: the machinery every kb tool call routes through —
+// validation, scope resolution, breaker/cooldown gate, status slot, the
+// /kb command (scope toggles + recovery), the read tools (kb_query /
+// kb_search / kb_read) and read toolset, kb_write (per-KB write grant gate
+// + six write modes), and the write toolset (requires the read toolset —
+// live-toggle cascade), the /kb tools write verb, the fresh-content
+// baselines, and the write-mode dispatch.
+// All of it hangs off the same register(pi, deps) seam.
+
+const STATUS_KEY = "kb";
+
+/** Test seams for register(pi, deps): injectable settings read and
+ * kernel-client factory. */
+export interface GnubrainDeps {
+	/** Injectable file read — unit tests mock it; harness code feeds fixture
+	 * settings to loadGnubrainSettings through the same shape. Key mocks off
+	 * globalSettingsPath/projectSettingsPath, and mind the two file shapes: the
+	 * global file must carry the full `gnubrain` object (baseUrl/apiToken/kbs);
+	 * a project file may omit `gnubrain` entirely or hold only
+	 * `{gnubrain: {defaultKBs}}` — connection keys there fail shape validation
+	 * and degrade the whole session. */
+	readFile?: (path: string) => Promise<string>;
+	/** Test seam for the kernel client. */
+	createClient?: (baseUrl: string, token: string) => WriteKernelClient;
+}
+
+function defaultReadFile(path: string): Promise<string> {
+	return fsReadFile(path, "utf8");
+}
+
+export default function register(pi: ExtensionAPI, deps: GnubrainDeps = {}) {
+	const readFile = deps.readFile ?? defaultReadFile;
+	const createClient =
+		deps.createClient ??
+		((baseUrl, token) => new SiYuanKernelClient(baseUrl, token));
+
+	// Session-scoped state; "never-probed" until session_start validation runs.
+	let validation: SessionValidation | undefined;
+	const breaker = new CircuitBreaker();
+	// Kernel client built from the freshest settings on every validation pass.
+	let kernelClient: WriteKernelClient | undefined;
+	// Session-scoped fresh-content baselines: the read tools feed it where
+	// content is served, the write precondition checks against it (empty
+	// after resume/fork, the no-baseline fallback applies).
+	const baselines = ContentBaselines.create();
+
+	// Both registrations ride one hooks literal over the live closure state,
+	// so masking and post-toggle scope compose mid-session. The grant state
+	// is session-scoped machinery, same lifecycle class as the breaker.
+	const grantState = createWriteGrantState();
+	const hooks: WriteToolHooks = {
+		getValidation: () => validation,
+		getKernel: () => kernelClient,
+		breaker,
+		baselines,
+		grantState,
+	};
+	const readToolset: Toolset = registerReadToolsAndToolset(pi, hooks);
+	// Write tool: rides the same gate + probe verdict.
+	const writeToolset: Toolset = registerWriteToolAndToolset(pi, hooks);
+
+	// Last ctx seen by a render — TOOLSET_EVENTS carry no ctx, so the glyph
+	// repaints against it (/kb tools verbs recolor mid-session). Shared by
+	// the toolset-event handlers and the tool-result boundary.
+	let lastRenderCtx: ExtensionContext | undefined;
+
+	function repaint() {
+		if (lastRenderCtx !== undefined) renderStatus(lastRenderCtx);
+	}
+
+	function renderStatus(ctx: ExtensionContext) {
+		lastRenderCtx = ctx;
+		try {
+			const input = statusInput(breaker, validation, {
+				reads: readToolset.isEnabled(pi),
+				writes: writeToolset.isEnabled(pi),
+			});
+			ctx.ui.setStatus(STATUS_KEY, renderKbStatus(input, ctx.ui.theme));
+		} catch {
+			// Headless / no UI — the slot is best-effort by design.
+		}
+	}
+
+	for (const event of [TOOLSET_EVENTS.changed, TOOLSET_EVENTS.restored]) {
+		pi.events.on(event, repaint);
+	}
+
+	// The tool-result boundary repaints: every status-input mutation lands
+	// inside a kb tool call or an already-painting path — the contract is
+	// canonical on statusInput in status.ts.
+	pi.on("tool_result", repaint);
+
+	/** The full validation pass — shared by session_start and /kb recovery
+	 * (every /kb dispatch re-runs it; corrected credentials and defaultKBs
+	 * edits take effect mid-session). Never throws: a settings read error
+	 * (EACCES, EISDIR, ...) degrades here rather than in the callers, so the
+	 * two stay mirrored by construction — a thrown error can never leave the
+	 * previous verdict live. */
+	async function revalidate(ctx: ExtensionContext): Promise<SessionValidation> {
+		try {
+			return await runRevalidate(ctx);
+		} catch (err) {
+			return degradedValidation([
+				`settings load failed: ${err instanceof Error ? err.message : String(err)}`,
+			]);
+		}
+	}
+
+	async function runRevalidate(
+		ctx: ExtensionContext,
+	): Promise<SessionValidation> {
+		const loaded = await loadGnubrainSettings(
+			readFile,
+			globalSettingsPath(),
+			projectSettingsPath(ctx.cwd),
+		);
+		// An armed 429 cooldown means the kernel refuses us per-IP and any call
+		// extends the lock — including the validation probes. The client is
+		// still built first (a pure constructor, no I/O): the gate refuses
+		// locally while the lock is armed, and after it expires calls get an
+		// honest "validation skipped" refusal instead of "stale or encrypted"
+		// until /kb re-validates for real. In-process only: restarting pi (or
+		// the kernel) starts fresh by design — do not persist the deadline.
+		const kernel =
+			loaded.global.ok && loaded.global.settings
+				? createClient(
+						loaded.global.settings.baseUrl,
+						loaded.global.settings.apiToken,
+					)
+				: undefined;
+		// Assign unconditionally — including the undefined a shape-failed
+		// revalidate produces — so the closure never holds a stale client.
+		kernelClient = kernel;
+		// Only the probes are skipped — the client above is already built.
+		if (breaker.inCooldown()) {
+			return rateLimitedValidation({
+				loaded,
+			});
+		}
+		// Branch-scoped read: only the active branch's scope snapshot counts —
+		// a scope toggle on an abandoned branch must not leak back in.
+		const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
+		return runSessionValidation({
+			loaded,
+			kernel,
+			persistedScope: persisted,
+		});
+	}
+
+	// The validation verdict's breaker accounting, shared by session_start
+	// and the /kb re-check: an auth failure feeds the breaker (counting),
+	// a 429 the listing observed arms the local cooldown from the served
+	// Retry-After — the same reducer the gate uses — so the session refuses
+	// locally instead of extending the live lock call by call. Only a
+	// successful recovery listing resets the counter, and only the /kb
+	// re-check can be one: session_start has already reset above.
+	function applyValidationVerdict(
+		validation: SessionValidation,
+		recoveryResets: boolean,
+	): void {
+		if (validation.authFailed) {
+			breaker.recordAuthFailure();
+		} else if (recoveryResets && validation.lsNotebooksOk) {
+			// Recovery succeeded: clears degradation + the breaker counter.
+			// The 429 cooldown is deliberately untouched — it self-heals.
+			breaker.reset();
+		} else if (validation.rateLimitRetryAfterSeconds !== undefined) {
+			breaker.recordRateLimitFromVerdict(validation.rateLimitRetryAfterSeconds);
+		}
+	}
+
+	// The session-scoped triple — kernel client, grants/denials, baselines
+	// — is swept as one at every session boundary (session_start after the
+	// breaker reset, session_shutdown at teardown): a shape-failed
+	// revalidate builds no client, grants and denials are terminal within
+	// their scope, and baselines are session-scoped — none may leak across
+	// a session replacement in the same process, and a stale denial must
+	// not survive one.
+	function sweepSessionState(): void {
+		kernelClient = undefined;
+		clearSessionGrants(grantState);
+		baselines.clear();
+	}
+
+	pi.on("session_start", async (_event, ctx) => {
+		// The breaker counts per session; a new session in this process must
+		// not inherit a partial or tipped count from the previous one. The 429
+		// cooldown is deliberately untouched — wall-clock and self-healing.
+		breaker.reset();
+		sweepSessionState();
+		validation = await revalidate(ctx);
+		applyValidationVerdict(validation, false);
+		renderStatus(ctx);
 	});
 
-	pi.on("session_shutdown", async (_event, _ctx) => {
-		// M2+: session-scoped resource cleanup (currently none).
+	// /kb command: every dispatch first re-runs the full
+	// validation pass — success clears degradation + the breaker counter,
+	// failure re-engages all-or-nothing — before the subcommand runs.
+	pi.registerCommand("kb", {
+		description:
+			"Show or toggle active KBs and kb tools (usage: /kb | /kb <name> on|off | /kb all on|off | /kb tools [read|write|off])",
+		handler: async (args, ctx) => {
+			const ui = ctx.ui;
+			// One settings snapshot + the live branch resolve the toolset
+			// intent the state lines display and the toggles compare against
+			// (the masking library's display contract; see toolsets.ts).
+			const intent = toolsetIntent(readMergedToolsetDefaults());
+			const branch = ctx.sessionManager.getBranch();
+			// revalidate degrades rather than throwing, so a failed re-check
+			// re-engages all-or-nothing right here.
+			validation = await revalidate(ctx);
+			// The re-check is the recovery path: its success resets the
+			// breaker counter (see applyValidationVerdict).
+			applyValidationVerdict(validation, true);
+			const state = toolsetState(intent, branch);
+			const result = dispatchKbCommand(
+				args,
+				validation,
+				state.lines,
+				// The /kb tools verbs are intent setters — the no-op detection
+				// reads the same recorded intent the lines above display.
+				state.readsOn,
+				state.writesOn,
+			);
+			if (result.newScope !== undefined) {
+				// A complete snapshot of the active set; latest entry wins.
+				pi.appendEntry(KB_SCOPE_ENTRY_TYPE, { active: result.newScope });
+				validation.scope = result.newScope;
+			}
+			const toggleOps: BatchOp[] = [];
+			if (result.newReadsEnabled !== undefined) {
+				toggleOps.push({
+					id: READ_TOOLSET_ID,
+					desired: result.newReadsEnabled,
+				});
+			}
+			if (result.newWritesEnabled !== undefined) {
+				toggleOps.push({
+					id: WRITE_TOOLSET_ID,
+					desired: result.newWritesEnabled,
+				});
+			}
+			let message = result.message;
+			let severity = result.severity;
+			if (toggleOps.length > 0) {
+				const patch = applyToolsetToggleBatch(
+					pi,
+					ctx.sessionManager,
+					toggleOps,
+					intent,
+				);
+				message = patch.message ?? message;
+				severity = patch.severity ?? severity;
+			}
+			renderStatus(ctx);
+			ui.notify(message, severity);
+		},
+	});
+
+	// /tree navigation: the active branch changed, so branch-derived state
+	// must be re-derived from the new branch — nothing else is re-probed
+	// (settings/kernel state is navigation-invariant; /new, /resume and /fork
+	// all fire session_start, which re-runs the full pipeline).
+	pi.on("session_tree", (_event, ctx) => {
+		const v = validation;
+		if (v !== undefined && v.settings !== undefined) {
+			// Offline re-resolution against the cached valid set: no kernel
+			// probe (the status slot reflects the result).
+			const persisted = latestPersistedScope(ctx.sessionManager.getBranch());
+			// A scratch warning sink: bare /kb renders only the session's own
+			// warnings, and appending per navigation would accumulate here; the
+			// drop decisions are already reflected in the resulting scope (the
+			// slot shows it).
+			v.scope = resolveValidatedScope(
+				persisted ?? v.defaultKBs,
+				v.settings,
+				v.validKBs,
+				[],
+			);
+		}
+		// A different branch is a different conversation history: served-content
+		// baselines from the old branch must not verify writes on this one.
+		baselines.clear();
+		renderStatus(ctx);
+	});
+
+	// Interaction boundary: turn grants and the turn-denial set clear once
+	// nothing is left in this interaction (no retry, compaction, or queued
+	// follow-up pending) — the dialog re-arms for the next message. Session
+	// grants survive. agent_settled, not agent_end: the latter fires per
+	// low-level run, and clearing there would re-prompt mid-conversation
+	// when a retry or follow-up continues the same interaction.
+	pi.on("agent_settled", () => {
+		clearInteractionGrants(grantState);
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		try {
+			ctx.ui.setStatus(STATUS_KEY, undefined);
+		} catch {
+			// Headless — nothing to clear.
+		}
+		validation = undefined;
+		// A later toolset event must not repaint the cleared slot against a
+		// dead ctx — drop the render anchor with the session.
+		lastRenderCtx = undefined;
+		sweepSessionState();
 	});
 }

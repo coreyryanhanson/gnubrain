@@ -1,0 +1,238 @@
+import { describe, expect, it } from "vitest";
+import { dispatchKbCommand } from "../../kbCommand.js";
+import { validation } from "./fixtures.js";
+
+describe("dispatchKbCommand", () => {
+	it("bare /kb prints the scope and the available-but-off set", () => {
+		const result = dispatchKbCommand("", validation(), [], true, false);
+		expect(result.message).toBe("scope: recipes\navailable but off: projects");
+		expect(result.newScope).toBeUndefined();
+	});
+
+	it("bare /kb on an empty scope says (none)", () => {
+		const result = dispatchKbCommand(
+			"",
+			validation({ scope: [] }),
+			[],
+			true,
+			false,
+		);
+		expect(result.message).toContain("scope: (none)");
+	});
+
+	it("bare /kb prints the warn-and-drop reasons — the scope silently shrank, so name what fell out", () => {
+		const result = dispatchKbCommand(
+			"",
+			validation({
+				warnings: ["KB 'stale' is not available — dropped from scope"],
+			}),
+			[],
+			true,
+			false,
+		);
+		expect(result.message).toContain(
+			"KB 'stale' is not available — dropped from scope",
+		);
+	});
+
+	it("verbless /kb <name> prints usage", () => {
+		const result = dispatchKbCommand("recipes", validation(), [], true, false);
+		expect(result.severity).toBe("error");
+		expect(result.message).toContain("usage: /kb");
+		expect(result.newScope).toBeUndefined();
+	});
+
+	it("/kb <name> on activates an inactive KB (full snapshot)", () => {
+		const result = dispatchKbCommand(
+			"projects on",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(result.newScope).toEqual(["recipes", "projects"]);
+	});
+
+	it("/kb <name> off deactivates an active KB", () => {
+		const result = dispatchKbCommand(
+			"recipes off",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(result.newScope).toEqual([]);
+	});
+
+	it("an idempotent re-toggle reports the no-op without rewriting the snapshot", () => {
+		const on = dispatchKbCommand("recipes on", validation(), [], true, false);
+		expect(on.message).toContain("scope unchanged");
+		expect(on.newScope).toBeUndefined();
+		const off = dispatchKbCommand(
+			"projects off",
+			validation({ scope: ["recipes"] }),
+			[],
+			true,
+			false,
+		);
+		expect(off.message).toContain("scope unchanged");
+		expect(off.newScope).toBeUndefined();
+	});
+
+	it("/kb all on activates the full valid set in config order, skipping invalid KBs", () => {
+		const v = validation({
+			validKBs: [
+				["recipes", "nb-r"],
+				["projects", "nb-p"],
+			],
+		});
+		const result = dispatchKbCommand("all on", v, [], true, false);
+		expect(result.newScope).toEqual(["recipes", "projects"]);
+	});
+
+	it("/kb all off writes an empty scope", () => {
+		const result = dispatchKbCommand("all off", validation(), [], true, false);
+		expect(result.newScope).toEqual([]);
+	});
+
+	it("/kb all on with zero valid KBs is a reported no-op", () => {
+		const result = dispatchKbCommand(
+			"all on",
+			validation({ validKBs: [] }),
+			[],
+			true,
+			false,
+		);
+		expect(result.message).toContain("no valid KBs to activate");
+		expect(result.newScope).toBeUndefined();
+	});
+
+	it("an unknown name is rejected with the same message as the tool kb param", () => {
+		const result = dispatchKbCommand("nope on", validation(), [], true, false);
+		expect(result.severity).toBe("error");
+		expect(result.message).toBe("unknown KB 'nope'. Active: recipes");
+	});
+
+	it("a configured-but-invalid name gets the stale/encrypted rejection", () => {
+		const result = dispatchKbCommand(
+			"archive on",
+			validation({
+				kbs: [
+					{ name: "recipes", notebook: "nb-r" },
+					{ name: "projects", notebook: "nb-p" },
+					{ name: "archive", notebook: "nb-a" },
+				],
+				validKBs: [
+					["recipes", "nb-r"],
+					["projects", "nb-p"],
+				],
+			}),
+			[],
+			true,
+			false,
+		);
+		expect(result.message).toContain(
+			"KB 'archive' is not available (stale or encrypted notebook",
+		);
+	});
+
+	it("bare /kb tools prints the toolset-state lines", () => {
+		const result = dispatchKbCommand(
+			"tools",
+			validation(),
+			["read toolset (kb_query, kb_search, kb_read): on"],
+			true,
+			false,
+		);
+		expect(result.severity).toBe("info");
+		expect(result.message).toBe(
+			"read toolset (kb_query, kb_search, kb_read): on",
+		);
+		expect(result.newScope).toBeUndefined();
+		expect(result.newReadsEnabled).toBeUndefined();
+	});
+
+	// /kb tools verbs are state setters over BOTH toolsets.
+	it("/kb tools read sets the read-only state; re-issuing it is a reported no-op", () => {
+		const on = dispatchKbCommand("tools read", validation(), [], true, false);
+		expect(on.message).toContain("already read-only");
+		expect(on.newReadsEnabled).toBeUndefined();
+		expect(on.newWritesEnabled).toBeUndefined();
+		// From read+write, `read` explicitly disables writes.
+		const fromWrite = dispatchKbCommand(
+			"tools read",
+			validation(),
+			[],
+			true,
+			true,
+		);
+		expect(fromWrite.message).toContain("read-only");
+		expect(fromWrite.newReadsEnabled).toBe(true);
+		expect(fromWrite.newWritesEnabled).toBe(false);
+		const off = dispatchKbCommand("tools read", validation(), [], false, false);
+		expect(off.message).toContain("read-only");
+		expect(off.newReadsEnabled).toBe(true);
+		expect(off.newWritesEnabled).toBe(false);
+	});
+
+	it("/kb tools write targets read+write; enabling cascades reads on", () => {
+		const fromRead = dispatchKbCommand(
+			"tools write",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(fromRead.message).toContain("read+write");
+		expect(fromRead.newReadsEnabled).toBe(true);
+		expect(fromRead.newWritesEnabled).toBe(true);
+		const fromOff = dispatchKbCommand(
+			"tools write",
+			validation(),
+			[],
+			false,
+			false,
+		);
+		expect(fromOff.newReadsEnabled).toBe(true);
+		expect(fromOff.newWritesEnabled).toBe(true);
+		const noop = dispatchKbCommand("tools write", validation(), [], true, true);
+		expect(noop.message).toContain("already read+write");
+		expect(noop.newReadsEnabled).toBeUndefined();
+		expect(noop.newWritesEnabled).toBeUndefined();
+	});
+
+	it("/kb tools off masks both toolsets; re-issuing it is a reported no-op", () => {
+		const on = dispatchKbCommand("tools off", validation(), [], true, true);
+		expect(on.message).toContain("all kb toolsets masked");
+		expect(on.newReadsEnabled).toBe(false);
+		expect(on.newWritesEnabled).toBe(false);
+		const partial = dispatchKbCommand(
+			"tools off",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(partial.newReadsEnabled).toBe(false);
+		expect(partial.newWritesEnabled).toBe(false);
+		const off = dispatchKbCommand("tools off", validation(), [], false, false);
+		expect(off.message).toContain("already off");
+		expect(off.newReadsEnabled).toBeUndefined();
+		expect(off.newWritesEnabled).toBeUndefined();
+	});
+
+	it("/kb tools with an unknown verb prints tool usage", () => {
+		const junk = dispatchKbCommand("tools junk", validation(), [], true, false);
+		expect(junk.severity).toBe("error");
+		expect(junk.message).toContain("usage: /kb tools");
+		const extra = dispatchKbCommand(
+			"tools read extra",
+			validation(),
+			[],
+			true,
+			false,
+		);
+		expect(extra.severity).toBe("error");
+		expect(extra.message).toContain("usage: /kb tools");
+	});
+});

@@ -1,0 +1,72 @@
+// The integration suite shares one live kernel and carries cross-file
+// execution order (harness self-check first, then gate/headless files). Its files
+// must never run in parallel with each other, and their order must not depend
+// on vitest's cache-driven default sort (unknown files by size, then
+// previous-run duration, longest first). Unit tests don't touch
+// the kernel, so they keep default parallelism via a separate project.
+import { defineConfig } from "vitest/config";
+import { BaseSequencer } from "vitest/node";
+import type { TestSpecification } from "vitest/node";
+
+// Execution order for the live integration suite (endsWith match on the
+// file name). No case here arms the kernel's per-IP lock: the throttle
+// schedule pin — and its one lock-arming case — live in the primitives'
+// live suite (throttle.live, strictly last there). The order below is
+// convention (cheapest falsifier first, pi children last). Exported for
+// the completeness guard (integrationOrder.test.ts).
+export const INTEGRATION_ORDER = [
+	"harness.live.test.ts", // self-check + cheapest falsifier first
+	"headlessKb.live.test.ts", // pi -p child process, needs the kernel
+	"readPins.live.test.ts",
+	"roundTrip.live.test.ts", // kb_read body → kb_write → re-read
+	"writePlacement.live.test.ts",
+	"writeEdit.live.test.ts",
+	"writeAppend.live.test.ts",
+	"writeReplaceSection.live.test.ts",
+	"writeDelete.live.test.ts",
+	"writeMove.live.test.ts",
+	"gate.live.test.ts", // pi children (masking/scope), in-process
+	"encryptedNotebook.live.test.ts", // encrypted-notebook (no lock arming)
+];
+
+class OrderedSequencer extends BaseSequencer {
+	async sort(specs: TestSpecification[]): Promise<TestSpecification[]> {
+		const sorted = await super.sort(specs);
+		return [...sorted].sort((a, b) => {
+			const ra = INTEGRATION_ORDER.findIndex((n) => a.moduleId.endsWith(n));
+			const rb = INTEGRATION_ORDER.findIndex((n) => b.moduleId.endsWith(n));
+			if (ra === rb) return 0; // includes both unlisted → keep default order
+			if (ra === -1) return 1;
+			if (rb === -1) return -1;
+			return ra - rb;
+		});
+	}
+}
+
+export default defineConfig({
+	test: {
+		// Verbose by default: runs tee to logs per policy, so per-case lines
+		// make failures greppable without a re-run. CLI flags still win.
+		reporters: ["verbose"],
+		setupFiles: ["__tests__/scrub-defer-env.ts"],
+		sequence: {
+			sequencer: OrderedSequencer,
+		},
+		projects: [
+			{
+				test: {
+					name: "unit",
+					include: ["__tests__/**/*.test.ts"],
+					exclude: ["__tests__/integration/**"],
+				},
+			},
+			{
+				test: {
+					name: "integration",
+					include: ["__tests__/integration/**/*.test.ts"],
+					fileParallelism: false,
+				},
+			},
+		],
+	},
+});

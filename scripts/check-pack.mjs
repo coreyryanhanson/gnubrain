@@ -1,0 +1,30 @@
+// Fails when the publishable tarball does not exactly match the tracked
+// production sources: every root module must ship, and nothing else may.
+import { execSync } from "node:child_process";
+
+// --ignore-scripts is load-bearing: npm runs `prepare` (husky) around the
+// pack, and husky prints to stdout on its skip paths (`.git can't be found` on
+// artifact checkouts), corrupting the JSON parse below.
+const pack = execSync("npm pack --dry-run --json --ignore-scripts", {
+	encoding: "utf8",
+});
+const packed = JSON.parse(pack)[0]
+	.files.map((f) => f.path)
+	.sort();
+
+const expected = execSync("git ls-files '*.ts'", { encoding: "utf8" })
+	.split("\n")
+	.filter((f) => f && !f.endsWith(".test.ts"))
+	// This package's files glob ("*.ts", "!vitest.config.ts") is
+	// non-recursive: test helpers under __tests__/ are dev-only, and
+	// vitest.config.ts is explicitly excluded from the tarball.
+	.filter((f) => !f.includes("/") && f !== "vitest.config.ts")
+	.sort();
+
+const missing = expected.filter((f) => !packed.includes(f));
+const extra = packed.filter((f) => f.endsWith(".ts") && !expected.includes(f));
+
+for (const f of missing) console.error(`MISSING from tarball: ${f}`);
+for (const f of extra) console.error(`UNEXPECTED in tarball: ${f}`);
+if (missing.length || extra.length) process.exit(1);
+console.log(`pack check ok (${expected.length} source files)`);

@@ -1,0 +1,111 @@
+import { describe, expect, it } from "vitest";
+import { PINNED_SIYUAN_VERSION } from "siyuan-kernel-primitives";
+import { renderKbStatus, type KbStatusInput } from "../../status.js";
+
+// Passthrough theme — the pure render is what's under test; a real theme
+// colorizes the glyph via Theme.fg.
+const theme = { fg: (_color: string, text: string) => text };
+
+function input(overrides?: Partial<KbStatusInput>): KbStatusInput {
+	return {
+		probe: { verdict: "ok", kernelVersion: PINNED_SIYUAN_VERSION },
+		shapeErrors: [],
+		breakerTripped: false,
+		lockout: false,
+		scope: ["recipes", "projects"],
+		readsEnabled: false,
+		writesEnabled: false,
+		...overrides,
+	};
+}
+
+describe("renderKbStatus", () => {
+	it("renders the scope names with a hollow glyph when no toolsets are active", () => {
+		expect(renderKbStatus(input(), theme)).toBe("○ kb: recipes, projects");
+	});
+
+	it("is headless-safe without a theme (plain text, no throw)", () => {
+		expect(renderKbStatus(input())).toBe("○ kb: recipes, projects");
+	});
+
+	it("an unreachable kernel shows red and keeps the scope text", () => {
+		const text = renderKbStatus(input({ probe: { verdict: "unreachable" } }), {
+			fg: (c, t) => `[${c}]${t}`,
+		});
+		expect(text).toBe("[error]● kb: recipes, projects");
+	});
+
+	it("degraded-config causes branch two-word tags, first match wins in severity order", () => {
+		const render = (o: Partial<KbStatusInput>) =>
+			renderKbStatus(input(o), theme);
+		expect(render({ shapeErrors: ["bad"] })).toBe("● kb: config");
+		// Unreachable wins over a tripped breaker — red, scope text, no tag.
+		expect(
+			render({ breakerTripped: true, probe: { verdict: "unreachable" } }),
+		).toBe("● kb: recipes, projects");
+		expect(render({ breakerTripped: true })).toBe("● kb: breaker");
+		expect(
+			render({
+				probe: { verdict: "drift", kernelVersion: PINNED_SIYUAN_VERSION },
+			}),
+		).toBe("● kb: version");
+		// Shape failure beats the breaker and version drift.
+		expect(
+			render({
+				shapeErrors: ["bad"],
+				breakerTripped: true,
+				probe: { verdict: "drift", kernelVersion: PINNED_SIYUAN_VERSION },
+			}),
+		).toBe("● kb: config");
+		expect(render({ lockout: true })).toBe("● kb: lockout");
+		// Unreachable stays red through a lockout.
+		expect(
+			renderKbStatus(
+				input({ lockout: true, probe: { verdict: "unreachable" } }),
+				{ fg: (c, t) => `[${c}]${t}` },
+			),
+		).toBe("[error]● kb: recipes, projects");
+		// Drift stays visible through a lockout.
+		expect(
+			render({
+				lockout: true,
+				probe: { verdict: "drift", kernelVersion: PINNED_SIYUAN_VERSION },
+			}),
+		).toBe("● kb: version");
+	});
+
+	it("degraded-config beats the healthy colors, and shape-failure beats never-probed grey", () => {
+		expect(
+			renderKbStatus(
+				input({ probe: { verdict: "never-probed" }, shapeErrors: ["bad"] }),
+				theme,
+			),
+		).toBe("● kb: config");
+	});
+
+	it("never-probed renders grey with the scope text", () => {
+		expect(
+			renderKbStatus(input({ probe: { verdict: "never-probed" } }), theme),
+		).toBe("● kb: recipes, projects");
+	});
+
+	it("the healthy capability ladder: reads on → filled dot", () => {
+		expect(
+			renderKbStatus(input({ readsEnabled: true }), {
+				fg: (c, t) => `[${c}]${t}`,
+			}),
+		).toBe("[accent]● kb: recipes, projects");
+	});
+
+	it("writes on beats reads on → success/green", () => {
+		expect(
+			renderKbStatus(input({ readsEnabled: true, writesEnabled: true }), {
+				fg: (c, t) => `[${c}]${t}`,
+			}),
+		).toBe("[success]● kb: recipes, projects");
+	});
+
+	it("an empty scope renders (none)", () => {
+		expect(renderKbStatus(input({ scope: [] }), theme)).toBe("○ kb: (none)");
+	});
+});

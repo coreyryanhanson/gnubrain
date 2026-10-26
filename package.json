@@ -1,7 +1,7 @@
 {
 	"name": "gnubrain",
-	"version": "0.0.2",
-	"description": "GNUbrain's Not gBrain: open-source agent memory for pi with SiYuan as the storage engine.",
+	"version": "0.0.3",
+	"description": "Local-first knowledge base for the pi coding agent, backed by SiYuan: an open-source, self-hosted note app with block refs, graph view, etc. Your agent can read, search, query with SQL, and write to it with per-KB approval.",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
@@ -15,14 +15,16 @@
 		"type": "git",
 		"url": "git+https://github.com/coreyryanhanson/gnubrain.git"
 	},
-	"files": [
-		"index.ts",
-		"settings.ts"
-	],
+	"files": ["*.ts", "!vitest.config.ts"],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
-		"prepublishOnly": "npm test && npx tsc --noEmit",
+		"prepublishOnly": "npm test && npx tsc --noEmit && node scripts/check-pack.mjs",
 		"release:patch": "node scripts/release.mjs patch",
 		"release:minor": "node scripts/release.mjs minor",
 		"release:major": "node scripts/release.mjs major",
@@ -31,11 +33,17 @@
 		"fmt:check": "oxfmt --check",
 		"prepare": "husky"
 	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
 	"dependencies": {
-		"siyuan-kernel-api": "0.1.0"
+		"node-sql-parser": "5.4.0",
+		"pi-tool-masking": "2.1.0",
+		"siyuan-kernel-primitives": "0.1.0"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "^0.85.1",
+		"@earendil-works/pi-coding-agent": "^1.2.0",
 		"@types/node": "^22.0.0",
 		"husky": "9.1.7",
 		"lint-staged": "17.5.1",

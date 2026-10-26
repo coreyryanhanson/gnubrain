@@ -154,10 +154,39 @@ function hasUnreleasedEntries() {
 	return false;
 }
 
+// file: specs are symlink-only co-development wiring; a published tarball
+// carrying one is unresolvable for installers. Refuse before anything runs.
+function refuseFileDeps() {
+	let pkg;
+	try {
+		pkg = JSON.parse(readFileSync("package.json", "utf-8"));
+	} catch (e) {
+		console.error("Failed to read or parse package.json:", e.message);
+		process.exit(1);
+	}
+	const fileDeps = Object.entries({
+		...pkg.dependencies,
+		...pkg.devDependencies,
+	}).filter(([, spec]) => typeof spec === "string" && spec.startsWith("file:"));
+	if (fileDeps.length === 0) return;
+	console.error(
+		"Error: refusing to release with file: dependency specs (not resolvable for installers):",
+	);
+	for (const [name, spec] of fileDeps) {
+		console.error(`  ${name}: ${spec}`);
+	}
+	console.error("Swap them to exact pins before releasing.");
+	process.exit(1);
+}
+
 // Main
 console.log("\n=== Release ===\n");
 
 console.log("Reminder: draft [Unreleased] entries before releasing.\n");
+
+console.log("Checking for file: dependency specs...");
+refuseFileDeps();
+console.log("  None found\n");
 
 console.log("Checking for uncommitted changes...");
 const status = run("git status --porcelain", { silent: true });
