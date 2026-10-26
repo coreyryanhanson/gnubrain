@@ -1,6 +1,6 @@
 {
 	"name": "gnubrain",
-	"version": "0.0.3",
+	"version": "0.1.0",
 	"description": "Local-first knowledge base for the pi coding agent, backed by SiYuan: an open-source, self-hosted note app with block refs, graph view, etc. Your agent can read, search, query with SQL, and write to it with per-KB approval.",
 	"keywords": [
 		"pi-package",
@@ -15,7 +15,10 @@
 		"type": "git",
 		"url": "git+https://github.com/coreyryanhanson/gnubrain.git"
 	},
-	"files": ["*.ts", "!vitest.config.ts"],
+	"files": [
+		"*.ts",
+		"!vitest.config.ts"
+	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
